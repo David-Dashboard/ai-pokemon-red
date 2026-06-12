@@ -41,15 +41,20 @@ uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
 ### Starting past the intro
 
 Pokémon Red's intro (Oak's speech + name entry) is unskippable, and a
-button-mashing brain can't reliably clear it. Make a save state once, then boot
-the agent straight into gameplay:
+button-mashing brain can't clear it. Generate a start state once, then boot the
+agent straight into the overworld:
 
 ```bash
-# play past the intro yourself, then close the window:
-uv run python human_play.py --rom "roms/Pokemon Red.gb" --out start.state
+# auto-play past the intro, headless — no window, picks preset names RED/BLUE:
+uv run python new_game.py --rom "roms/Pokemon Red.gb" --out start.state
 # boot the agent from there:
 uv run python play_pokemon.py --rom "roms/Pokemon Red.gb" --load-state start.state --brain scripted --steps 200
 ```
+
+`new_game.py` is headless, so it needs no SDL2 window (and no `pysdl2-dll`).
+Prefer to choose your own starting point (e.g. after getting a starter)? Use
+`human_play.py` to play it yourself and save a state — that one opens an SDL2
+window.
 
 Save states are gitignored (they embed copyrighted game memory) — keep them local.
 
