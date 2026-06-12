@@ -99,11 +99,15 @@ def _openai_complete(model: str, url: str) -> Callable[[str, Optional[str]], str
 
 
 _SYSTEM = (
-    "You are playing Pokémon Red on a Game Boy. Decide the single best next "
-    "button press to make progress (explore, win battles, earn badges).\n"
-    "Reply with EXACTLY one token from this list and nothing else:\n"
-    "a, b, start, select, up, down, left, right\n"
-    "(a = confirm/interact, b = cancel/back, d-pad = walk)."
+    "You are playing Pokémon Red (top-down view). You control the small trainer "
+    "sprite. Your job right now is to EXPLORE — walk to doors, stairs, and exits to "
+    "reach new areas.\n"
+    "Move with the d-pad. A single tap only TURNS you to face that way, so send a "
+    "direction 2-4 times to actually walk, e.g. 'down down down'. Press A ONLY to "
+    "talk to a person or confirm a dialog box; do NOT press A in an empty room — it "
+    "wastes the turn. Never press START or SELECT.\n"
+    "Reply with ONLY 2-4 movement buttons separated by spaces, e.g. 'left left up'. "
+    "Allowed: up down left right a b."
 )
 
 
@@ -132,26 +136,35 @@ class LLMButtonBrain:
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
-        prompt = f"{_SYSTEM}\n\n{strategy}\n\nCurrent state:\n{obs.text}\n\nNext button:"
+        prompt = f"{_SYSTEM}\n\n{strategy}\n\nCurrent state:\n{obs.text}\n\nButtons:"
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
             raw = self.complete(prompt, image)
         except Exception as e:
             print(f"[LLMButtonBrain] model call failed ({e}); defaulting to 'a'")
             return _call("press_button", {"button": "a"}, self.agent_id)
-        return _call("press_button", {"button": self._parse(raw)}, self.agent_id)
+        buttons = self._parse(raw)
+        if len(buttons) == 1:
+            return _call("press_button", {"button": buttons[0]}, self.agent_id)
+        return _call("press_sequence", {"buttons": buttons}, self.agent_id)
 
     @staticmethod
-    def _parse(raw: str) -> str:
+    def _parse(raw: str, max_buttons: int = 4) -> list[str]:
+        """Extract an ordered list of buttons from the model's reply (1..max)."""
         text = raw.strip().lower()
-        # Try strict JSON first, then fall back to first button keyword seen.
+        # Try strict JSON first ({"buttons": [...]} or {"button": "x"}).
         try:
             obj = json.loads(text)
-            if isinstance(obj, dict) and obj.get("button") in BUTTONS:
-                return obj["button"]
+            if isinstance(obj, dict):
+                seq = obj.get("buttons")
+                if isinstance(seq, list):
+                    picks = [b for b in seq if b in BUTTONS]
+                    if picks:
+                        return picks[:max_buttons]
+                if obj.get("button") in BUTTONS:
+                    return [obj["button"]]
         except (json.JSONDecodeError, TypeError):
             pass
-        for token in text.replace(",", " ").replace("\n", " ").split():
-            if token in BUTTONS:
-                return token
-        return "a"  # safe default: advance
+        # Fall back to the button keywords in order, capped.
+        picks = [t for t in text.replace(",", " ").replace("\n", " ").split() if t in BUTTONS]
+        return picks[:max_buttons] or ["a"]  # safe default: advance

@@ -44,8 +44,17 @@ uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm --backend lla
 ```
 
 `--backend llamacpp` talks to `http://localhost:8080/v1/chat/completions` by
-default (override with `--llm-url`). Vision needs a multimodal GGUF + its
-`--mmproj` projector; otherwise add `--no-vision` for a text-only prompt.
+default (override with `--llm-url`). Vision needs a multimodal model; otherwise
+add `--no-vision` for a text-only prompt.
+
+Example GPU server (Docker + CUDA) serving a vision model — `--jinja` enables the
+chat template, `-ngl 99` offloads all layers to the GPU:
+
+```bash
+docker run --gpus all -p 8080:8080 -v llama-cache:/root/.cache/llama.cpp \
+    ghcr.io/ggml-org/llama.cpp:server-cuda \
+    -hf unsloth/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M --jinja -ngl 99 -c 16384
+```
 
 ### Starting past the intro
 
