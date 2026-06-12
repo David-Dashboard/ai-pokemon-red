@@ -8,6 +8,11 @@ Examples:
     python play_pokemon.py --rom path/to/PokemonRed.gb --brain llm \
         --model llama3.2-vision --steps 200 --window
 
+    # ...or via a local llama.cpp server (llama-server, OpenAI-compatible;
+    # start it with --mmproj for vision):
+    python play_pokemon.py --rom path/to/PokemonRed.gb --brain llm --backend llamacpp \
+        --steps 200 --window
+
 You must supply your own legally-obtained Pokémon Red ROM. None is bundled.
 """
 
@@ -27,8 +32,12 @@ def main() -> int:
     ap.add_argument("--rom", required=True, help="path to your Pokémon Red ROM (.gb)")
     ap.add_argument("--brain", choices=["scripted", "llm"], default="scripted")
     ap.add_argument("--steps", type=int, default=100)
-    ap.add_argument("--model", default="llama3.2-vision", help="Ollama model for --brain llm")
-    ap.add_argument("--ollama-url", default="http://localhost:11434")
+    ap.add_argument("--backend", choices=["ollama", "llamacpp"], default="ollama",
+                    help="LLM server for --brain llm")
+    ap.add_argument("--model", default="llama3.2-vision",
+                    help="model name (Ollama tag, or llama.cpp's loaded model)")
+    ap.add_argument("--llm-url", default=None,
+                    help="LLM server URL (default: Ollama :11434, llama.cpp :8080)")
     ap.add_argument("--no-vision", action="store_true", help="text-only LLM prompt")
     ap.add_argument("--window", action="store_true", help="show the emulator window")
     ap.add_argument("--out", default="runs/pokemon_red")
@@ -51,8 +60,10 @@ def main() -> int:
 
     if args.brain == "llm":
         from core.brains import LLMButtonBrain
-        brain = LLMButtonBrain(agent_id, model=args.model, url=args.ollama_url,
-                               use_vision=not args.no_vision)
+        url = args.llm_url or ("http://localhost:8080" if args.backend == "llamacpp"
+                               else "http://localhost:11434")
+        brain = LLMButtonBrain(agent_id, model=args.model, url=url,
+                               backend=args.backend, use_vision=not args.no_vision)
     else:
         from core.brains import ScriptedBrain
         brain = ScriptedBrain(agent_id, seed=args.seed)

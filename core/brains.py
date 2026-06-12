@@ -68,6 +68,36 @@ def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str
     return complete
 
 
+def _openai_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:
+    """complete_fn for an OpenAI-compatible /v1/chat/completions endpoint —
+    e.g. llama.cpp's `llama-server` (run it with `--mmproj` for vision). Also
+    works with any OpenAI-shaped server. Images ride as base64 data URIs."""
+    import requests
+
+    def complete(prompt: str, image_path: Optional[str]) -> str:
+        content: list = [{"type": "text", "text": prompt}]
+        if image_path:
+            try:
+                with open(image_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                content.append({"type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{b64}"}})
+            except OSError:
+                pass
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": content}],
+            "stream": False,
+            "max_tokens": 16,
+            "temperature": 0,
+        }
+        r = requests.post(f"{url}/v1/chat/completions", json=payload, timeout=120)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
+    return complete
+
+
 _SYSTEM = (
     "You are playing Pokémon Red on a Game Boy. Decide the single best next "
     "button press to make progress (explore, win battles, earn badges).\n"
@@ -87,10 +117,18 @@ class LLMButtonBrain:
         url: str = "http://localhost:11434",
         use_vision: bool = True,
         complete_fn: Optional[Callable[[str, Optional[str]], str]] = None,
+        backend: str = "ollama",
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
-        self.complete = complete_fn or _ollama_complete(model, url)
+        if complete_fn is not None:
+            self.complete = complete_fn
+        elif backend == "ollama":
+            self.complete = _ollama_complete(model, url)
+        elif backend in ("llamacpp", "openai"):
+            self.complete = _openai_complete(model, url)
+        else:
+            raise ValueError(f"unknown LLM backend: {backend!r} (use 'ollama' or 'llamacpp')")
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any

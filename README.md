@@ -30,13 +30,22 @@ pip install -r requirements-pokemon.txt
 python play_pokemon.py --rom roms/PokemonRed.gb --brain scripted --steps 50
 ```
 
-`--brain scripted` is a zero-model smoke test. For an LLM agent via a local
-Ollama vision model:
+`--brain scripted` is a zero-model smoke test. For an LLM agent, point it at a
+local model server:
 
 ```bash
+# Ollama (default backend):
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
     --model llama3.2-vision --steps 200 --window
+
+# llama.cpp (llama-server, OpenAI-compatible; start it with --mmproj for vision):
+uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm --backend llamacpp \
+    --steps 200 --window
 ```
+
+`--backend llamacpp` talks to `http://localhost:8080/v1/chat/completions` by
+default (override with `--llm-url`). Vision needs a multimodal GGUF + its
+`--mmproj` projector; otherwise add `--no-vision` for a text-only prompt.
 
 ### Starting past the intro
 
