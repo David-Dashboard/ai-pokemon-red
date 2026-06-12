@@ -14,9 +14,19 @@ agents, RL policies, and classical search can all play through the same door.
 
 ## Quickstart
 
+With [uv](https://docs.astral.sh/uv/) (recommended — `uv sync` reads
+`pyproject.toml`/`uv.lock` and builds an isolated, reproducible `.venv`):
+
 ```bash
-pip install -r requirements-pokemon.txt        # installs PyBoy + deps
+uv sync                        # create .venv + install deps (incl. pytest)
 # put your ROM at roms/PokemonRed.gb, then:
+uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain scripted --steps 50
+```
+
+Or with pip:
+
+```bash
+pip install -r requirements-pokemon.txt
 python play_pokemon.py --rom roms/PokemonRed.gb --brain scripted --steps 50
 ```
 
@@ -24,7 +34,7 @@ python play_pokemon.py --rom roms/PokemonRed.gb --brain scripted --steps 50
 Ollama vision model:
 
 ```bash
-python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
+uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
     --model llama3.2-vision --steps 200 --window
 ```
 
@@ -40,7 +50,7 @@ python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
 Run the tests:
 
 ```bash
-python -m pytest -q
+uv run pytest -q       # or: python -m pytest -q
 ```
 
 ## Which models can learn this

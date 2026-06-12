@@ -1,0 +1,21 @@
+[project]
+name = "ai-pokemon-red"
+version = "0.1.0"
+description = "Let an AI agent play Pokémon Red through a tool-call gateway (Arena world plugin)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyboy>=2.0",   # Game Boy emulator (drives the actual game)
+    "pillow>=9.0",  # screenshot saving (Observation screen_path)
+    "numpy>=1.21",  # PyBoy dependency / state arrays
+    "requests>=2.25",  # LLMButtonBrain -> Ollama HTTP API (only for --brain llm)
+]
+
+# PEP 735 dependency group; `uv sync` installs it by default.
+[dependency-groups]
+dev = ["pytest>=7.0"]
+
+[tool.uv]
+# This is an application, not a library — don't try to build/install the repo
+# itself as a wheel; just manage its environment and dependencies.
+package = false
