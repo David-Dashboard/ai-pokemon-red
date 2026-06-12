@@ -13,12 +13,17 @@ Examples:
     python play_pokemon.py --rom path/to/PokemonRed.gb --brain llm --backend llamacpp \
         --steps 200 --window
 
+    # ...or via the decoupled ai-aria companion (its own bearer-authed service):
+    ARIA_BEARER_TOKEN=... python play_pokemon.py --rom path/to/PokemonRed.gb \
+        --brain llm --backend aria --steps 200 --window
+
 You must supply your own legally-obtained Pokémon Red ROM. None is bundled.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import uuid
 
@@ -32,12 +37,16 @@ def main() -> int:
     ap.add_argument("--rom", required=True, help="path to your Pokémon Red ROM (.gb)")
     ap.add_argument("--brain", choices=["scripted", "llm"], default="scripted")
     ap.add_argument("--steps", type=int, default=100)
-    ap.add_argument("--backend", choices=["ollama", "llamacpp"], default="ollama",
+    ap.add_argument("--backend", choices=["ollama", "llamacpp", "aria"], default="ollama",
                     help="LLM server for --brain llm")
-    ap.add_argument("--model", default="llama3.2-vision",
-                    help="model name (Ollama tag, or llama.cpp's loaded model)")
+    ap.add_argument("--model", default=None,
+                    help="model name (Ollama tag, llama.cpp's loaded model, "
+                         "or the aria model id; defaults per backend)")
     ap.add_argument("--llm-url", default=None,
-                    help="LLM server URL (default: Ollama :11434, llama.cpp :8080)")
+                    help="LLM server URL (default: Ollama :11434, llama.cpp :8080, aria :8001)")
+    ap.add_argument("--llm-token", default=os.environ.get("ARIA_BEARER_TOKEN"),
+                    help="bearer token for an authed endpoint (aria); "
+                         "defaults to $ARIA_BEARER_TOKEN")
     ap.add_argument("--no-vision", action="store_true", help="text-only LLM prompt")
     ap.add_argument("--window", action="store_true", help="show the emulator window")
     ap.add_argument("--out", default="runs/pokemon_red")
@@ -60,10 +69,19 @@ def main() -> int:
 
     if args.brain == "llm":
         from core.brains import LLMButtonBrain
-        url = args.llm_url or ("http://localhost:8080" if args.backend == "llamacpp"
-                               else "http://localhost:11434")
-        brain = LLMButtonBrain(agent_id, model=args.model, url=url,
-                               backend=args.backend, use_vision=not args.no_vision)
+        default_url = {"llamacpp": "http://localhost:8080",
+                       "aria": "http://localhost:8001"}.get(
+                           args.backend, "http://localhost:11434")
+        url = args.llm_url or default_url
+        default_model = {"aria": "aria"}.get(args.backend, "llama3.2-vision")
+        model = args.model or default_model
+        if args.backend == "aria" and not args.llm_token:
+            print("\nSetup error:\n--backend aria needs a bearer token "
+                  "(--llm-token or $ARIA_BEARER_TOKEN).\n", file=sys.stderr)
+            return 2
+        brain = LLMButtonBrain(agent_id, model=model, url=url,
+                               backend=args.backend, use_vision=not args.no_vision,
+                               api_key=args.llm_token)
     else:
         from core.brains import ScriptedBrain
         brain = ScriptedBrain(agent_id, seed=args.seed)

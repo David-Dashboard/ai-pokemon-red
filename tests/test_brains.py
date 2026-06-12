@@ -42,5 +42,6 @@ def test_llm_brain_takes_buttons_from_move_line_and_captures_thought():
 def test_llm_brain_backend_selection():
     LLMButtonBrain("a", backend="ollama")      # builds an Ollama complete_fn
     LLMButtonBrain("a", backend="llamacpp")    # builds an OpenAI-compatible one
+    LLMButtonBrain("a", backend="aria", api_key="tok")  # bearer-authed OpenAI shape
     with pytest.raises(ValueError):
         LLMButtonBrain("a", backend="bogus")

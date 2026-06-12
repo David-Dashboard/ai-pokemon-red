@@ -68,11 +68,17 @@ def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str
     return complete
 
 
-def _openai_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:
+def _openai_complete(
+    model: str, url: str, api_key: Optional[str] = None
+) -> Callable[[str, Optional[str]], str]:
     """complete_fn for an OpenAI-compatible /v1/chat/completions endpoint —
-    e.g. llama.cpp's `llama-server` (run it with `--mmproj` for vision). Also
-    works with any OpenAI-shaped server. Images ride as base64 data URIs."""
+    e.g. llama.cpp's `llama-server` (run it with `--mmproj` for vision), or the
+    decoupled `ai-aria` companion (POST :8001, bearer-authed, vision via data
+    URIs). Also works with any OpenAI-shaped server. Images ride as base64 data
+    URIs. Pass api_key to send an `Authorization: Bearer <key>` header."""
     import requests
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
 
     def complete(prompt: str, image_path: Optional[str]) -> str:
         content: list = [{"type": "text", "text": prompt}]
@@ -91,7 +97,8 @@ def _openai_complete(model: str, url: str) -> Callable[[str, Optional[str]], str
             "max_tokens": 64,   # room for a one-line THINK + the MOVE
             "temperature": 0,
         }
-        r = requests.post(f"{url}/v1/chat/completions", json=payload, timeout=120)
+        r = requests.post(f"{url}/v1/chat/completions", json=payload,
+                          headers=headers, timeout=120)
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
 
@@ -123,6 +130,7 @@ class LLMButtonBrain:
         use_vision: bool = True,
         complete_fn: Optional[Callable[[str, Optional[str]], str]] = None,
         backend: str = "ollama",
+        api_key: Optional[str] = None,
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
@@ -133,10 +141,14 @@ class LLMButtonBrain:
             self.complete = complete_fn
         elif backend == "ollama":
             self.complete = _ollama_complete(model, url)
-        elif backend in ("llamacpp", "openai"):
-            self.complete = _openai_complete(model, url)
+        # `aria` is the decoupled ai-aria companion: same OpenAI wire format as
+        # llamacpp/openai, but bearer-authed. It runs as its own service — we only
+        # speak HTTP to it, importing none of its code.
+        elif backend in ("llamacpp", "openai", "aria"):
+            self.complete = _openai_complete(model, url, api_key=api_key)
         else:
-            raise ValueError(f"unknown LLM backend: {backend!r} (use 'ollama' or 'llamacpp')")
+            raise ValueError(
+                f"unknown LLM backend: {backend!r} (use 'ollama', 'llamacpp', or 'aria')")
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any

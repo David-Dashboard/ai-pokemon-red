@@ -47,6 +47,31 @@ uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm --backend lla
 default (override with `--llm-url`). Vision needs a multimodal model; otherwise
 add `--no-vision` for a text-only prompt.
 
+### Playing through a decoupled agent (`ai-aria`)
+
+The agent's "brain" is fully decoupled from this project: any server that speaks
+the OpenAI `/v1/chat/completions` shape can drive the game. [`ai-aria`](https://github.com/David-Dashboard/ai-aria)
+is one such agent — it runs as its **own** service (its own repo + Docker) and we
+only ever speak HTTP to it; none of its code is imported here.
+
+Start aria separately (see its README — `docker compose up -d`, listens on
+`:8001`, bearer-authed), then point the game at it:
+
+```bash
+# token comes from $ARIA_BEARER_TOKEN, or pass --llm-token
+ARIA_BEARER_TOKEN=your-token uv run python play_pokemon.py \
+    --rom roms/PokemonRed.gb --brain llm --backend aria \
+    --load-state start.state --steps 200 --window
+```
+
+`--backend aria` defaults to `http://localhost:8001` and model `aria` (override
+with `--llm-url` / `--model`). It's the same OpenAI wire format as `llamacpp`,
+just with an `Authorization: Bearer` header. aria is a vision-capable companion,
+so screenshots are sent by default; add `--no-vision` for a text-only prompt.
+(Note: aria is a memory-keeping *companion*, not a tuned game policy — every turn
+writes to her journal and runs her full agent loop, so expect higher per-step
+latency than a bare model server.)
+
 Example GPU server (Docker + CUDA) serving a vision model — `--jinja` enables the
 chat template, `-ngl 99` offloads all layers to the GPU:
 
