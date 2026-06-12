@@ -125,6 +125,8 @@ class LLMButtonBrain:
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
+        self._last_pos = None        # (x, y) at the previous decision
+        self._last_buttons = None    # what we pressed last, for wall-bump feedback
         if complete_fn is not None:
             self.complete = complete_fn
         elif backend == "ollama":
@@ -136,7 +138,9 @@ class LLMButtonBrain:
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
-        prompt = f"{_SYSTEM}\n\n{strategy}\n\nCurrent state:\n{obs.text}\n\nButtons:"
+        feedback = self._movement_feedback(obs)
+        prompt = (f"{_SYSTEM}\n\n{strategy}\n{feedback}\n\n"
+                  f"Current state:\n{obs.text}\n\nButtons:")
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
             raw = self.complete(prompt, image)
@@ -144,9 +148,21 @@ class LLMButtonBrain:
             print(f"[LLMButtonBrain] model call failed ({e}); defaulting to 'a'")
             return _call("press_button", {"button": "a"}, self.agent_id)
         buttons = self._parse(raw)
+        self._last_pos = (obs.data.get("x"), obs.data.get("y"))
+        self._last_buttons = buttons
         if len(buttons) == 1:
             return _call("press_button", {"button": buttons[0]}, self.agent_id)
         return _call("press_sequence", {"buttons": buttons}, self.agent_id)
+
+    def _movement_feedback(self, obs: Observation) -> str:
+        """Tell the model when its previous move hit a wall (position unchanged)."""
+        pos = (obs.data.get("x"), obs.data.get("y"))
+        dirs = {"up", "down", "left", "right"}
+        if (self._last_pos is not None and pos == self._last_pos
+                and self._last_buttons and set(self._last_buttons) & dirs):
+            return (f"NOTE: your last move ({' '.join(self._last_buttons)}) did NOT "
+                    f"move you — you walked into a wall. Pick a DIFFERENT direction.")
+        return ""
 
     @staticmethod
     def _parse(raw: str, max_buttons: int = 4) -> list[str]:
