@@ -19,6 +19,30 @@ from typing import Protocol
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 
 
+def ensure_sdl_dll_path() -> None:
+    """Best-effort fallback for PySDL2's DLL discovery.
+
+    On some installs the `sdl2dll` helper package loses its `__init__.py` (e.g.
+    after antivirus quarantines files), so PySDL2 can't locate the bundled SDL2
+    binaries even though they're present — `import sdl2` then fails with
+    "could not find any library for SDL2". If PYSDL2_DLL_PATH is unset, point it
+    at the bundled `sdl2dll/dll` folder directly. Harmless when discovery already
+    works or SDL isn't installed (needed only for the visible window).
+    """
+    if os.environ.get("PYSDL2_DLL_PATH"):
+        return
+    try:
+        import sdl2dll  # noqa: F401  (namespace package; we only want its path)
+
+        for base in list(getattr(sdl2dll, "__path__", [])):
+            dll_dir = os.path.join(base, "dll")
+            if os.path.exists(os.path.join(dll_dir, "SDL2.dll")):
+                os.environ["PYSDL2_DLL_PATH"] = dll_dir
+                return
+    except Exception:
+        pass
+
+
 class Emulator(Protocol):
     """The minimal surface the plugin needs. Real and fake both satisfy it."""
 
@@ -43,6 +67,8 @@ class PyBoyEmulator:
                 "Supply your own legally-obtained Pokémon Red ROM (.gb) and pass "
                 "its path via --rom. This project bundles no ROM."
             )
+        if not headless:
+            ensure_sdl_dll_path()  # make the SDL2 window findable if discovery is broken
         try:
             from pyboy import PyBoy
         except ImportError as e:  # pragma: no cover - environment dependent

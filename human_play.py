@@ -27,6 +27,8 @@ def main() -> int:
     ap.add_argument("--out", default="start.state", help="where to write the save state")
     args = ap.parse_args()
 
+    from games.pokemon_red.emulator import ensure_sdl_dll_path
+    ensure_sdl_dll_path()
     from pyboy import PyBoy
 
     pyboy = PyBoy(args.rom, window="SDL2")

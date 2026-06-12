@@ -30,6 +30,9 @@ def main() -> int:
     ap.add_argument("--window", action="store_true", help="watch it run (needs SDL2)")
     args = ap.parse_args()
 
+    if args.window:
+        from games.pokemon_red.emulator import ensure_sdl_dll_path
+        ensure_sdl_dll_path()
     from pyboy import PyBoy
 
     pyboy = PyBoy(args.rom, window="SDL2" if args.window else "null")
