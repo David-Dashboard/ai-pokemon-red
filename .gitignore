@@ -21,7 +21,8 @@ runs/
 *.sav
 *.state
 *.sa1
-red_system_prompt.txt   # generated: rendered from the aria game constitution
+# generated: rendered from the aria game constitution
+red_system_prompt.txt
 
 # --- Python ---
 __pycache__/
