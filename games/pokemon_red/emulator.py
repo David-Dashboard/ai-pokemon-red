@@ -26,6 +26,8 @@ class Emulator(Protocol):
     def tick(self, frames: int) -> None: ...
     def read(self, addr: int) -> int: ...
     def save_screen(self, path: str) -> None: ...
+    def load_state(self, path: str) -> None: ...
+    def save_state(self, path: str) -> None: ...
     @property
     def frame(self) -> int: ...
     def close(self) -> None: ...
@@ -75,6 +77,14 @@ class PyBoyEmulator:
 
     def save_screen(self, path: str) -> None:
         self._pyboy.screen.image.save(path)
+
+    def load_state(self, path: str) -> None:
+        with open(path, "rb") as f:
+            self._pyboy.load_state(f)
+
+    def save_state(self, path: str) -> None:
+        with open(path, "wb") as f:
+            self._pyboy.save_state(f)
 
     @property
     def frame(self) -> int:

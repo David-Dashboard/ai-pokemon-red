@@ -38,12 +38,17 @@ class PokemonRedPlugin:
         emulator: Optional[Emulator] = None,
         out_dir: str = "runs/pokemon_red",
         headless: bool = True,
+        init_state: Optional[str] = None,
     ) -> None:
         if emulator is None:
             if rom_path is None:
                 raise ValueError("provide either rom_path or an emulator instance")
             emulator = PyBoyEmulator(rom_path, headless=headless)
         self.emu = emulator
+        # Boot straight into real gameplay by loading a save state made past the
+        # intro/name-entry (which a button-mashing brain can't reliably clear).
+        if init_state is not None:
+            self.emu.load_state(init_state)
         self.out_dir = out_dir
         os.makedirs(self.out_dir, exist_ok=True)
 
@@ -201,6 +206,10 @@ class PokemonRedPlugin:
         if screen_path:
             lines.append(f"Screen image: {screen_path}")
         return "\n".join(lines)
+
+    def save_state(self, path: str) -> None:
+        """Write the live emulator state to disk (for resuming or seeding runs)."""
+        self.emu.save_state(path)
 
     def close(self) -> None:
         self.emu.close()

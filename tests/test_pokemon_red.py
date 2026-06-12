@@ -39,6 +39,12 @@ class FakeEmulator:
         with open(path, "wb") as f:
             f.write(b"")  # empty PNG placeholder is enough for the path contract
 
+    def load_state(self, path):
+        self.loaded = path
+
+    def save_state(self, path):
+        self.saved = path
+
     @property
     def frame(self):
         return self._frame
@@ -115,6 +121,18 @@ def test_valid_press_returns_ok_and_emits_event(tmp_path):
     assert res.ok is True and res.data["action"] == "a"
     types = [e.type for e in p.drain_events()]
     assert "tool_called" in types
+
+
+def test_init_state_is_loaded_before_baseline(tmp_path):
+    emu = FakeEmulator()
+    PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), init_state="start.state")
+    assert emu.loaded == "start.state"
+
+
+def test_save_state_delegates_to_emulator(tmp_path):
+    p, emu = _plugin(tmp_path)
+    p.save_state("final.state")
+    assert emu.saved == "final.state"
 
 
 def test_observe_writes_screen_path_and_text(tmp_path):

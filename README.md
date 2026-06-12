@@ -38,6 +38,21 @@ uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
     --model llama3.2-vision --steps 200 --window
 ```
 
+### Starting past the intro
+
+Pokémon Red's intro (Oak's speech + name entry) is unskippable, and a
+button-mashing brain can't reliably clear it. Make a save state once, then boot
+the agent straight into gameplay:
+
+```bash
+# play past the intro yourself, then close the window:
+uv run python human_play.py --rom "roms/Pokemon Red.gb" --out start.state
+# boot the agent from there:
+uv run python play_pokemon.py --rom "roms/Pokemon Red.gb" --load-state start.state --brain scripted --steps 200
+```
+
+Save states are gitignored (they embed copyrighted game memory) — keep them local.
+
 ## How it's built
 
 | Layer | What |

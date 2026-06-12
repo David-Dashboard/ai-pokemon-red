@@ -33,13 +33,18 @@ def main() -> int:
     ap.add_argument("--window", action="store_true", help="show the emulator window")
     ap.add_argument("--out", default="runs/pokemon_red")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--load-state", default=None,
+                    help="boot from a .state saved past the intro (see human_play.py)")
+    ap.add_argument("--save-state", default=None,
+                    help="write the final emulator state here when the run ends")
     args = ap.parse_args()
 
     agent_id = f"agent-{uuid.uuid4()}"
 
     try:
         from games.pokemon_red import PokemonRedPlugin
-        plugin = PokemonRedPlugin(rom_path=args.rom, out_dir=args.out, headless=not args.window)
+        plugin = PokemonRedPlugin(rom_path=args.rom, out_dir=args.out,
+                                  headless=not args.window, init_state=args.load_state)
     except (FileNotFoundError, ImportError) as e:
         print(f"\nSetup error:\n{e}\n", file=sys.stderr)
         return 2
@@ -64,6 +69,9 @@ def main() -> int:
     try:
         summary = run_episode(gateway, plugin, brain, agent_id,
                               max_steps=args.steps, on_step=on_step)
+        if args.save_state:
+            plugin.save_state(args.save_state)
+            print(f"saved final state -> {args.save_state}")
     finally:
         plugin.close()
 
