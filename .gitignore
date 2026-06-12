@@ -1,0 +1,36 @@
+# --- Claude / local tooling (internal, not for publication) ---
+CLAUDE.md
+.claude/
+.CLAUDE/
+
+# --- Project governance docs (excluded from the public repo per request) ---
+CONTRACT.md
+
+# --- ROMs: copyrighted. NEVER publish a ROM. ---
+*.gb
+*.gbc
+*.gba
+*.sgb
+*.rom
+roms/*.gb
+roms/*.gbc
+roms/*.gba
+
+# --- Emulator save data / generated run artifacts ---
+runs/
+*.sav
+*.state
+*.sa1
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+*.log

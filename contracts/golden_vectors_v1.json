@@ -1,0 +1,62 @@
+{
+  "_comment": "FROZEN. Canonical wire-format examples for CONTRACT_VERSION 1. Every future version of this project, in any language, must parse these byte-identically into equivalent values and serialize them back. Covered by tests/test_contract_frozen.py. Never edit; new contract versions add golden_vectors_v2.json alongside.",
+  "contract_version": 1,
+  "ToolSpec": {
+    "name": "move",
+    "description": "Make a chess move in UCI notation.",
+    "schema": {
+      "type": "object",
+      "properties": {"uci": {"type": "string"}},
+      "required": ["uci"]
+    },
+    "cost": 1,
+    "mutating": true
+  },
+  "ToolCall": {
+    "tool": "move",
+    "args": {"uci": "e2e4"},
+    "agent_id": "agent-7f3c2e10-0000-4000-8000-000000000001",
+    "call_id": "call-7f3c2e10-0000-4000-8000-00000000002a"
+  },
+  "ToolResult_ok": {
+    "call_id": "call-7f3c2e10-0000-4000-8000-00000000002a",
+    "ok": true,
+    "data": {"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"},
+    "error": "",
+    "cost_charged": 1
+  },
+  "ToolResult_error_is_observation": {
+    "call_id": "call-7f3c2e10-0000-4000-8000-00000000002b",
+    "ok": false,
+    "data": {"legal_sample": ["e2e4", "d2d4", "g1f3"]},
+    "error": "illegal move: e2e5",
+    "cost_charged": 1
+  },
+  "ToolResult_permission_pending": {
+    "call_id": "call-7f3c2e10-0000-4000-8000-00000000002c",
+    "ok": false,
+    "data": {"approval_id": "appr-0001"},
+    "error": "pending:appr-0001",
+    "cost_charged": 0
+  },
+  "Event_reward": {
+    "type": "reward",
+    "t": 142.0,
+    "agent_id": "agent-7f3c2e10-0000-4000-8000-000000000001",
+    "data": {"source": "ate_food"},
+    "reward": 1.0
+  },
+  "Event_world_level": {
+    "type": "game_over",
+    "t": 318.0,
+    "agent_id": null,
+    "data": {"result": "0-1", "termination": "checkmate"},
+    "reward": 0.0
+  },
+  "Observation": {
+    "data": {"fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", "history": ["e2e4"]},
+    "text": "Black to move.\nFEN: rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+    "agent_id": "agent-7f3c2e10-0000-4000-8000-000000000002",
+    "t": 1.0
+  }
+}

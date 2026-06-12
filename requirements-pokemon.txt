@@ -1,0 +1,10 @@
+# Pokémon Red world plugin dependencies.
+# Install: pip install -r requirements-pokemon.txt
+#
+# You must ALSO supply your own legally-obtained Pokémon Red ROM (.gb).
+# No ROM is bundled with this project and one will never be downloaded for you.
+
+pyboy>=2.0        # Game Boy emulator (drives the actual game)
+pillow>=9.0       # screenshot saving (Observation screen_path)
+numpy>=1.21       # PyBoy dependency / state arrays
+requests>=2.25    # LLMButtonBrain -> Ollama HTTP API (only needed for --brain llm)

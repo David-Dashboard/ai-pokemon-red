@@ -1,0 +1,4 @@
+# ROMs are copyrighted — never commit them. This project bundles no ROM.
+*
+!.gitignore
+!README.md
