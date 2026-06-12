@@ -88,7 +88,7 @@ def _openai_complete(model: str, url: str) -> Callable[[str, Optional[str]], str
             "model": model,
             "messages": [{"role": "user", "content": content}],
             "stream": False,
-            "max_tokens": 16,
+            "max_tokens": 64,   # room for a one-line THINK + the MOVE
             "temperature": 0,
         }
         r = requests.post(f"{url}/v1/chat/completions", json=payload, timeout=120)
@@ -104,10 +104,11 @@ _SYSTEM = (
     "reach new areas.\n"
     "Move with the d-pad. A single tap only TURNS you to face that way, so send a "
     "direction 2-4 times to actually walk, e.g. 'down down down'. Press A ONLY to "
-    "talk to a person or confirm a dialog box; do NOT press A in an empty room — it "
-    "wastes the turn. Never press START or SELECT.\n"
-    "Reply with ONLY 2-4 movement buttons separated by spaces, e.g. 'left left up'. "
-    "Allowed: up down left right a b."
+    "talk to a person or confirm a dialog box; do NOT press A in an empty room. "
+    "Never press START or SELECT.\n"
+    "Reply in EXACTLY this format and nothing else:\n"
+    "THINK: <one short sentence — what you see and what you'll do>\n"
+    "MOVE: <2-4 buttons separated by spaces, from: up down left right a b>"
 )
 
 
@@ -125,6 +126,7 @@ class LLMButtonBrain:
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
+        self.last_thought = ""       # the model's latest reasoning, for display
         self._last_pos = None        # (x, y) at the previous decision
         self._last_buttons = None    # what we pressed last, for wall-bump feedback
         if complete_fn is not None:
@@ -140,14 +142,15 @@ class LLMButtonBrain:
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
         feedback = self._movement_feedback(obs)
         prompt = (f"{_SYSTEM}\n\n{strategy}\n{feedback}\n\n"
-                  f"Current state:\n{obs.text}\n\nButtons:")
+                  f"Current state:\n{obs.text}\n\nYour reply:")
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
             raw = self.complete(prompt, image)
         except Exception as e:
             print(f"[LLMButtonBrain] model call failed ({e}); defaulting to 'a'")
             return _call("press_button", {"button": "a"}, self.agent_id)
-        buttons = self._parse(raw)
+        buttons, thought = self._parse(raw)
+        self.last_thought = thought or raw.strip()[:160]
         self._last_pos = (obs.data.get("x"), obs.data.get("y"))
         self._last_buttons = buttons
         if len(buttons) == 1:
@@ -165,22 +168,21 @@ class LLMButtonBrain:
         return ""
 
     @staticmethod
-    def _parse(raw: str, max_buttons: int = 4) -> list[str]:
-        """Extract an ordered list of buttons from the model's reply (1..max)."""
-        text = raw.strip().lower()
-        # Try strict JSON first ({"buttons": [...]} or {"button": "x"}).
-        try:
-            obj = json.loads(text)
-            if isinstance(obj, dict):
-                seq = obj.get("buttons")
-                if isinstance(seq, list):
-                    picks = [b for b in seq if b in BUTTONS]
-                    if picks:
-                        return picks[:max_buttons]
-                if obj.get("button") in BUTTONS:
-                    return [obj["button"]]
-        except (json.JSONDecodeError, TypeError):
-            pass
-        # Fall back to the button keywords in order, capped.
-        picks = [t for t in text.replace(",", " ").replace("\n", " ").split() if t in BUTTONS]
-        return picks[:max_buttons] or ["a"]  # safe default: advance
+    def _parse(raw: str, max_buttons: int = 4) -> tuple[list[str], str]:
+        """Return (buttons, thought). When the model uses the THINK/MOVE format,
+        buttons are taken only from the MOVE line — so direction words in the
+        reasoning ('head down to the stairs') aren't mistaken for inputs.
+        Otherwise scan the whole reply."""
+        text = raw.strip()
+        thought, move_src = "", None
+        for line in text.splitlines():
+            low = line.strip().lower()
+            if low.startswith("think:"):
+                thought = line.split(":", 1)[1].strip()
+            elif low.startswith(("move:", "buttons:", "action:")):
+                move_src = line.split(":", 1)[1]
+        src = move_src if move_src is not None else text
+        picks = [t for t in src.lower().replace(",", " ").split() if t in BUTTONS]
+        if not picks:  # MOVE line empty/garbled — scan the whole reply
+            picks = [t for t in text.lower().replace(",", " ").split() if t in BUTTONS]
+        return picks[:max_buttons] or ["a"], thought  # 'a' = safe default

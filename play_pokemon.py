@@ -71,10 +71,18 @@ def main() -> int:
     gateway = Gateway(plugin, POKEMON_SANDBOX)
 
     def on_step(step, obs, result, events):
-        r = getattr(result, "data", {}).get("reward", 0.0)
+        data = getattr(result, "data", {})
+        r = data.get("reward", 0.0)
         flair = f"  reward={r:+.1f}" if r else ""
-        print(f"[{step:04d}] map={obs.data['map_id']} ({obs.data['x']},{obs.data['y']}) "
-              f"badges={obs.data['badges']} lvls={obs.data['party_level_sum']}{flair}")
+        head = (f"[{step:04d}] map={obs.data['map_id']} ({obs.data['x']},{obs.data['y']}) "
+                f"badges={obs.data['badges']}{flair}")
+        # The LLM brain exposes its latest reasoning; show it under each step.
+        thought = getattr(brain, "last_thought", "")
+        if thought:
+            safe = thought.encode("ascii", "replace").decode()  # Windows-console safe
+            print(f"{head}\n        think: {safe}  -> {data.get('action', '')}")
+        else:
+            print(head)
 
     print(f"Agent {agent_id} playing for {args.steps} steps with the {args.brain} brain...\n")
     try:

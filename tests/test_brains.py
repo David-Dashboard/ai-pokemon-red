@@ -30,6 +30,15 @@ def test_llm_brain_emits_sequence_for_multiple_buttons():
     assert call.tool == "press_sequence" and call.args["buttons"] == ["up", "up", "left"]
 
 
+def test_llm_brain_takes_buttons_from_move_line_and_captures_thought():
+    # 'down' appears in the reasoning, but only the MOVE line should drive input.
+    reply = "THINK: I'll head down to the stairs on the left\nMOVE: left left"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    call = brain.decide(_obs(), [], {})
+    assert call.tool == "press_sequence" and call.args["buttons"] == ["left", "left"]
+    assert "stairs" in brain.last_thought
+
+
 def test_llm_brain_backend_selection():
     LLMButtonBrain("a", backend="ollama")      # builds an Ollama complete_fn
     LLMButtonBrain("a", backend="llamacpp")    # builds an OpenAI-compatible one
