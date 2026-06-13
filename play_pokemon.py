@@ -35,7 +35,8 @@ from core.runner import run_episode
 def main() -> int:
     ap = argparse.ArgumentParser(description="Let an AI agent play Pokémon Red.")
     ap.add_argument("--rom", required=True, help="path to your Pokémon Red ROM (.gb)")
-    ap.add_argument("--brain", choices=["scripted", "llm"], default="scripted")
+    ap.add_argument("--brain", choices=["scripted", "llm", "explore"], default="scripted",
+                    help="explore = local frontier autopilot (no LLM/API; needs --perception)")
     ap.add_argument("--steps", type=int, default=100)
     ap.add_argument("--backend", choices=["ollama", "llamacpp", "aria"], default="ollama",
                     help="LLM server for --brain llm")
@@ -90,6 +91,13 @@ def main() -> int:
         brain = LLMButtonBrain(agent_id, model=model, url=url,
                                backend=args.backend, use_vision=not args.no_vision,
                                api_key=args.llm_token)
+    elif args.brain == "explore":
+        if not args.perception:
+            print("\nSetup error:\n--brain explore needs --perception (it navigates on the "
+                  "SymbolicState occupancy map).\n", file=sys.stderr)
+            return 2
+        from core.brains import ExploreBrain
+        brain = ExploreBrain(agent_id)
     else:
         from core.brains import ScriptedBrain
         brain = ScriptedBrain(agent_id, seed=args.seed)

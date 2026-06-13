@@ -95,12 +95,30 @@ class OverworldPerceiver:
                 open_unexplored.append(d)
 
         visited_n = sum(1 for c in m["cells"].values() if c.get("visited"))
+        # Full map + frontier cells, so a LOCAL controller can pathfind without the LLM. A frontier
+        # is a visited cell with a non-wall direction into an unvisited (unknown) cell.
+        grid, frontiers = [], []
+        for (cx, cy), c in m["cells"].items():
+            grid.append({"x": cx, "y": cy, "visited": bool(c.get("visited")),
+                         "walls": sorted(c["walls"])})
+            if not c.get("visited"):
+                continue
+            for d in _DIRS:
+                if d in c["walls"]:
+                    continue
+                ddx, ddy = _DELTA[d]
+                nbr = m["cells"].get((cx + ddx, cy + ddy))
+                if nbr is None or not nbr.get("visited"):
+                    frontiers.append([cx, cy])
+                    break
+
         return SymbolicState(
-            confidence=0.4,  # Step 2: keep the image attached; text-only is earned in Step 3
+            confidence=0.4,  # Step 2: keep the image attached; text-only is earned later
             context="overworld",
             pose={"frame": "grid", "value": [x, y], "uncertain": True},
-            spatial_memory={"kind": "occupancy-grid", "area": 0,
-                            "visited": visited_n, "walls_here": sorted(cell["walls"])},
+            spatial_memory={"kind": "occupancy-grid", "area": 0, "visited": visited_n,
+                            "walls_here": sorted(cell["walls"]),
+                            "map": grid, "frontiers": frontiers},
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome},
             raw_available=True,

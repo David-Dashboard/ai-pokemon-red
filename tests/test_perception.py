@@ -129,3 +129,37 @@ def test_scorer_walkability_confusion_and_escape():
     assert (c["true_moved"], c["true_blocked"], c["false_moved"], c["false_blocked_missed_move"]) == (1, 1, 1, 1)
     assert m["escaped_start_map"] and m["escape_step"] == 5
     assert m["maps_visited"] == [37, 38]
+
+
+# -- ExploreBrain: local frontier autopilot (no LLM) --------------------------
+
+def _obs_with_map(pose, cells, frontiers):
+    from core.contracts import Observation
+    return Observation(
+        data={"pose": {"value": list(pose)},
+              "spatial_memory": {"map": cells, "frontiers": frontiers}},
+        text="", agent_id="a", t=0.0)
+
+
+def test_explore_steps_into_the_open_unexplored_direction():
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left", "right"]}]  # only down open, unknown
+    call = ExploreBrain("a").decide(_obs_with_map((0, 0), cells, [[0, 0]]), [], {})
+    assert call.tool == "press_sequence" and call.args["buttons"] == ["down", "down"]
+
+
+def test_explore_bfs_paths_to_a_distant_frontier():
+    from core.brains import ExploreBrain
+    cells = [
+        {"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left"]},   # only right, to visited (1,0)
+        {"x": 1, "y": 0, "visited": True, "walls": ["up", "down"]},
+        {"x": 2, "y": 0, "visited": True, "walls": ["up", "left"]},           # down/right unknown => frontier
+    ]
+    call = ExploreBrain("a").decide(_obs_with_map((0, 0), cells, [[2, 0]]), [], {})
+    assert call.tool == "press_sequence" and call.args["buttons"][0] == "right"
+
+
+def test_explore_returns_none_when_no_frontier_remains():
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
+    assert ExploreBrain("a").decide(_obs_with_map((0, 0), cells, []), [], {}) is None

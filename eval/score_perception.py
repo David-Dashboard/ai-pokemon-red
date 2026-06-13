@@ -60,10 +60,12 @@ def score(records: list[dict]) -> dict:
     maps = [r.get("map_id") for r in records]
     start_map = maps[0] if maps else None
     escape_step = next((records[i]["step"] for i, m in enumerate(maps) if m != start_map), None)
+    true_cells = {_truth_pos(r) for r in records}  # unique (map,x,y) the agent actually stood on
 
     return {
         "steps": n,
         "scored_moves": scored,
+        "unique_true_cells": len(true_cells),
         "walkability_accuracy": acc,
         "confusion": {"true_moved": tp_move, "true_blocked": tp_block,
                       "false_moved": false_move, "false_blocked_missed_move": false_block},
@@ -88,6 +90,7 @@ def format_report(m: dict) -> str:
         f"  blocked precision: {pct(m['blocked_precision'])}   recall: {pct(m['blocked_recall'])}",
         f"  confusion: {m['confusion']}",
         f"escaped start map: {m['escaped_start_map']}  (step {m['escape_step']})",
+        f"unique cells explored (true): {m['unique_true_cells']}",
         f"maps visited: {m['maps_visited']}",
         f"odometry undercount: ~{und:.2f} real tiles per perceived move" if und is not None
         else "odometry undercount: n/a",

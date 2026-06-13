@@ -49,6 +49,80 @@ class ScriptedBrain:
         return _call("press_button", {"button": button}, self.agent_id)
 
 
+_DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+
+
+class ExploreBrain:
+    """Local frontier-exploration autopilot — NO LLM, NO API. Reads the SymbolicState's occupancy
+    map and BFS-paths to the nearest frontier, stepping there two presses at a time (turn+move) so a
+    turn-in-place isn't misread as a wall. This is the cheap controller that does routine traversal,
+    so an expensive brain is only needed at real decisions. Returns None when no frontier remains
+    (exploration of the known area is exhausted)."""
+
+    def __init__(self, agent_id: str) -> None:
+        self.agent_id = agent_id
+        self.last_thought = ""
+
+    def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
+        sm = obs.data.get("spatial_memory") or {}
+        pose = (obs.data.get("pose") or {}).get("value")
+        cells = {(c["x"], c["y"]): c for c in sm.get("map", [])}
+        if pose is None:
+            self.last_thought = "bootstrap"
+            return self._move("down")
+        cur = (pose[0], pose[1])
+        d = self._unexplored_dir(cur, cells)
+        if d:
+            self.last_thought = f"frontier here -> {d}"
+            return self._move(d)
+        d = self._bfs_first_step(cur, cells, {tuple(f) for f in sm.get("frontiers", [])})
+        if d:
+            self.last_thought = f"to nearest frontier via {d}"
+            return self._move(d)
+        self.last_thought = "no reachable frontier — area explored"
+        return None
+
+    @staticmethod
+    def _unexplored_dir(cur, cells) -> Optional[str]:
+        walls = set(cells.get(cur, {}).get("walls", []))
+        for d in ("up", "down", "left", "right"):
+            if d in walls:
+                continue
+            dx, dy = _DELTA[d]
+            nbr = cells.get((cur[0] + dx, cur[1] + dy))
+            if nbr is None or not nbr.get("visited"):
+                return d
+        return None
+
+    @staticmethod
+    def _bfs_first_step(cur, cells, frontiers) -> Optional[str]:
+        from collections import deque
+        prev = {cur: None}
+        q = deque([cur])
+        while q:
+            node = q.popleft()
+            if node != cur and node in frontiers:
+                path = [node]
+                while prev[path[-1]] is not None:
+                    path.append(prev[path[-1]])
+                step = path[-2]  # first cell after cur on the path back
+                dx, dy = step[0] - cur[0], step[1] - cur[1]
+                return next((k for k, v in _DELTA.items() if v == (dx, dy)), None)
+            walls = set(cells.get(node, {}).get("walls", []))
+            for d in ("up", "down", "left", "right"):
+                if d in walls:
+                    continue
+                dx, dy = _DELTA[d]
+                nb = (node[0] + dx, node[1] + dy)
+                if nb in cells and cells[nb].get("visited") and nb not in prev:
+                    prev[nb] = node
+                    q.append(nb)
+        return None
+
+    def _move(self, d: str) -> ToolCall:
+        return _call("press_sequence", {"buttons": [d, d]}, self.agent_id)  # turn, then move
+
+
 def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:
     """Return a complete_fn(prompt, image_path) -> text backed by Ollama."""
     import requests
