@@ -8,10 +8,17 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
+
 from core.perception import PerceptMemory, Perceiver, StubPerceiver, SymbolicState
 from games.pokemon_red import memory_map as mm
+from games.pokemon_red.perceiver import OverworldPerceiver, _dominant_dir
 from games.pokemon_red.plugin import PokemonRedPlugin
 from tests.test_pokemon_red import FakeEmulator
+
+
+def _frame(val: int):
+    return np.full((144, 160, 4), val, dtype=np.uint8)
 
 ROLE_KEYS = {"confidence", "context", "pose", "spatial_memory",
              "affordances", "last_action", "raw_available", "raw_ref"}
@@ -57,3 +64,47 @@ def test_plugin_with_perceiver_emits_symbolic_and_does_not_leak_ram(tmp_path):
     # RAM ground-truth lives only in the oracle side-channel.
     rec = json.loads((tmp_path / "oracle.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     assert rec["map_id"] == 38 and rec["x"] == 3 and rec["y"] == 7
+
+
+# -- OverworldPerceiver: odometry + occupancy map (Step 2) --------------------
+
+def test_dominant_dir_takes_net_direction():
+    assert _dominant_dir("up+up+up") == "up"
+    assert _dominant_dir("right+a") == "right"
+    assert _dominant_dir("a") is None and _dominant_dir(None) is None
+
+
+def test_first_obs_inits_pose_and_is_unknown_outcome():
+    s = OverworldPerceiver().perceive(_frame(0), PerceptMemory(),
+                                      {"frame_path": "f.png", "last_action": None})
+    assert s.context == "overworld" and s.pose["value"] == [0, 0]
+    assert s.last_action["outcome"] == "unknown" and s.raw_ref == "f.png"
+
+
+def test_moved_advances_the_dead_reckoned_cursor():
+    per, mem = OverworldPerceiver(move_threshold=4.0), PerceptMemory()
+    per.perceive(_frame(0), mem, {"last_action": None})            # prime prev_frame
+    s = per.perceive(_frame(200), mem, {"last_action": "down+down+down"})  # big diff ⇒ moved
+    assert s.last_action["outcome"] == "moved" and s.pose["value"] == [0, 1]
+
+
+def test_blocked_marks_a_wall_and_drops_that_direction():
+    per, mem = OverworldPerceiver(move_threshold=4.0), PerceptMemory()
+    f = _frame(50)
+    per.perceive(f, mem, {"last_action": None})
+    s = per.perceive(f.copy(), mem, {"last_action": "up+up+up"})   # identical ⇒ blocked
+    assert s.last_action["outcome"] == "blocked"
+    assert s.pose["value"] == [0, 0]                                # did not move
+    assert "up" in s.spatial_memory["walls_here"]
+    assert "up" not in s.affordances                               # the wall direction isn't offered
+
+
+def test_plugin_perception_run_logs_odometry_and_aliases_screen_path(tmp_path):
+    emu = FakeEmulator()
+    emu._screen = _frame(10)
+    p = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=OverworldPerceiver())
+    obs = p.observe("a")
+    assert obs.data["pose"]["value"] == [0, 0]                      # symbolic state surfaced
+    assert obs.data["screen_path"].endswith(".png")                # raw_ref aliased for the brain
+    assert "Overworld exploration" in obs.text                     # navigation-rich render
+    assert "map_id" not in obs.data                                # still no RAM leak

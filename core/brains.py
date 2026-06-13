@@ -170,7 +170,10 @@ class LLMButtonBrain:
         return _call("press_sequence", {"buttons": buttons}, self.agent_id)
 
     def _movement_feedback(self, obs: Observation) -> str:
-        """Tell the model when its previous move hit a wall (position unchanged)."""
+        """Tell the model when its previous move hit a wall (position unchanged). Skipped in
+        perception mode (no RAM x/y) — the wall signal comes from the symbolic text instead."""
+        if obs.data.get("x") is None:
+            return ""
         pos = (obs.data.get("x"), obs.data.get("y"))
         dirs = {"up", "down", "left", "right"}
         if (self._last_pos is not None and pos == self._last_pos

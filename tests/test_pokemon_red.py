@@ -25,6 +25,7 @@ class FakeEmulator:
     def __init__(self) -> None:
         self.mem: dict[int, int] = {}
         self._frame = 0
+        self._screen = None  # set to an ndarray to drive the perception path
 
     def press(self, button, hold_frames=8, settle_frames=16):
         self._frame += hold_frames + settle_frames
@@ -38,6 +39,10 @@ class FakeEmulator:
     def save_screen(self, path):
         with open(path, "wb") as f:
             f.write(b"")  # empty PNG placeholder is enough for the path contract
+
+    def screen_ndarray(self):
+        import numpy as np
+        return self._screen if self._screen is not None else np.zeros((144, 160, 4), dtype="uint8")
 
     def load_state(self, path):
         self.loaded = path

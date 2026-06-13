@@ -56,19 +56,23 @@ class PerceptMemory:
 
 @runtime_checkable
 class Perceiver(Protocol):
-    """screen -> SymbolicState. `frame` is the raw observation (an image path or array);
-    `memory` is the perceiver's own persisted state. The perceiver receives pixels only —
-    it has no access to RAM, which is what makes the no-leak rule structural."""
+    """screen -> SymbolicState. `frame` is the raw observation (an image path or pixel array);
+    `memory` is the perceiver's own persisted state; `context` carries auxiliaries the world can
+    supply (the just-taken `last_action`, the frame's `frame_path` for the image fallback). The
+    perceiver receives pixels only — it has no access to RAM, which makes the no-leak rule
+    structural."""
 
-    def perceive(self, frame: Any, memory: PerceptMemory) -> SymbolicState: ...
+    def perceive(self, frame: Any, memory: PerceptMemory,
+                 context: Optional[JSON] = None) -> SymbolicState: ...
 
 
 class StubPerceiver:
     """Step-1 placeholder: emits a low-confidence SymbolicState that just points at the raw
     frame, so the planner falls back to the image (today's behaviour) while the seam and the
-    oracle exist end-to-end. No pixel work yet — Step 2 fills in odometry + the occupancy map."""
+    oracle exist end-to-end. No pixel work — that's the Step-2 OverworldPerceiver."""
 
-    def perceive(self, frame: Any, memory: PerceptMemory) -> SymbolicState:
-        raw_ref = frame if isinstance(frame, str) else ""
+    def perceive(self, frame: Any, memory: PerceptMemory,
+                 context: Optional[JSON] = None) -> SymbolicState:
+        raw_ref = frame if isinstance(frame, str) else (context or {}).get("frame_path", "")
         return SymbolicState(confidence=0.0, context="unknown",
                              raw_available=bool(raw_ref), raw_ref=raw_ref)

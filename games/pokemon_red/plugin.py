@@ -66,6 +66,7 @@ class PokemonRedPlugin:
         self.perceiver = perceiver
         self._percept_memory = PerceptMemory() if perceiver is not None else None
         self._oracle_path = os.path.join(self.out_dir, "oracle.jsonl")
+        self._last_action: Optional[str] = None  # fed to the perceiver for odometry
 
     # -- GamePlugin surface --------------------------------------------------
 
@@ -155,10 +156,16 @@ class PokemonRedPlugin:
         if self.perceiver is not None:
             # Pixel-perception path: the agent sees a SymbolicState; RAM goes to the oracle
             # log (scoring only) and NEVER enters Observation.data. (no-leak, structural)
-            sym = self.perceiver.perceive(screen_path, self._percept_memory)
+            try:
+                pixels = self.emu.screen_ndarray()
+            except Exception:
+                pixels = None
+            context = {"frame_path": screen_path, "last_action": self._last_action}
+            sym = self.perceiver.perceive(pixels, self._percept_memory, context)
             self._log_oracle(state, screen_path)
             data = sym.to_dict()
             data["step"] = self._obs_count
+            data["screen_path"] = sym.raw_ref  # alias so an image-capable brain still finds the frame
             return Observation(data=data, text=self._render_symbolic(sym),
                                agent_id=agent_id, t=time.time())
 
@@ -192,15 +199,26 @@ class PokemonRedPlugin:
             pass
 
     def _render_symbolic(self, sym: SymbolicState) -> str:
-        lines = [f"Perception (confidence {sym.confidence:.2f}, context: {sym.context})"]
-        if sym.pose is not None:
-            lines.append(f"Pose: {sym.pose}")
+        """Turn the SymbolicState into a navigation-useful prompt for the planner. The spatial
+        memory (where I've been, what's a wall, where's unexplored) is what breaks the loop."""
+        pose = sym.pose or {}
+        sm = sym.spatial_memory or {}
+        la = sym.last_action or {}
+        lines = ["Overworld exploration. Perception is approximate; a screenshot is attached."]
+        if pose.get("value") is not None:
+            lines.append(f"Your position (dead-reckoned, approximate): {tuple(pose['value'])}.")
+        action, outcome = la.get("action"), la.get("outcome")
+        if action and outcome == "blocked":
+            lines.append(f"Last move '{action}' -> BLOCKED: you did NOT move; that direction is a "
+                         f"wall. Choose a DIFFERENT direction.")
+        elif action and outcome == "moved":
+            lines.append(f"Last move '{action}' -> moved.")
+        if sm.get("walls_here"):
+            lines.append(f"Known walls at this spot: {', '.join(sm['walls_here'])}.")
         if sym.affordances:
-            lines.append(f"Options: {sym.affordances}")
-        if sym.last_action is not None:
-            lines.append(f"Last action: {sym.last_action}")
-        if sym.raw_available and sym.raw_ref:
-            lines.append(f"Raw frame available: {sym.raw_ref}")
+            lines.append(f"Unexplored/open directions from here (head toward these to make "
+                         f"progress): {', '.join(sym.affordances)}.")
+        lines.append(f"Tiles explored in this area so far: {sm.get('visited', 0)}.")
         return "\n".join(lines)
 
     def drain_events(self) -> list[Event]:
@@ -219,6 +237,7 @@ class PokemonRedPlugin:
         return self._post_action(call, action="+".join(str(b) for b in buttons))
 
     def _post_action(self, call: ToolCall, action: str) -> ToolResult:
+        self._last_action = action  # remembered so the next observe() can do odometry
         state = read_state(self.emu.read)
         reward, breakdown = self._reward.update(state)
         now = time.time()

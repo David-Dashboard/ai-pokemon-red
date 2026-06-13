@@ -50,6 +50,7 @@ class Emulator(Protocol):
     def tick(self, frames: int) -> None: ...
     def read(self, addr: int) -> int: ...
     def save_screen(self, path: str) -> None: ...
+    def screen_ndarray(self): ...   # current frame as an (H, W, C) uint8 array — for pixel perception
     def load_state(self, path: str) -> None: ...
     def save_state(self, path: str) -> None: ...
     @property
@@ -103,6 +104,12 @@ class PyBoyEmulator:
 
     def save_screen(self, path: str) -> None:
         self._pyboy.screen.image.save(path)
+
+    def screen_ndarray(self):
+        """Current frame as an (144, 160, C) uint8 numpy array (a copy, so the live
+        framebuffer can't mutate it under the perceiver). Pixels only — the perception
+        path's input; no RAM."""
+        return self._pyboy.screen.ndarray.copy()
 
     def load_state(self, path: str) -> None:
         with open(path, "rb") as f:

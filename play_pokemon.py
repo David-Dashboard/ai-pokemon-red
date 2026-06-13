@@ -48,6 +48,9 @@ def main() -> int:
                     help="bearer token for an authed endpoint (aria); "
                          "defaults to $ARIA_BEARER_TOKEN")
     ap.add_argument("--no-vision", action="store_true", help="text-only LLM prompt")
+    ap.add_argument("--perception", action="store_true",
+                    help="Iteration-02: plan over a pixels-derived SymbolicState (odometry + "
+                         "occupancy map) instead of RAM; RAM is logged to oracle.jsonl for scoring")
     ap.add_argument("--window", action="store_true", help="show the emulator window")
     ap.add_argument("--out", default="runs/pokemon_red")
     ap.add_argument("--seed", type=int, default=0)
@@ -61,8 +64,13 @@ def main() -> int:
 
     try:
         from games.pokemon_red import PokemonRedPlugin
+        perceiver = None
+        if args.perception:
+            from games.pokemon_red.perceiver import OverworldPerceiver
+            perceiver = OverworldPerceiver()
         plugin = PokemonRedPlugin(rom_path=args.rom, out_dir=args.out,
-                                  headless=not args.window, init_state=args.load_state)
+                                  headless=not args.window, init_state=args.load_state,
+                                  perceiver=perceiver)
     except (FileNotFoundError, ImportError) as e:
         print(f"\nSetup error:\n{e}\n", file=sys.stderr)
         return 2
@@ -92,8 +100,14 @@ def main() -> int:
         data = getattr(result, "data", {})
         r = data.get("reward", 0.0)
         flair = f"  reward={r:+.1f}" if r else ""
-        head = (f"[{step:04d}] map={obs.data['map_id']} ({obs.data['x']},{obs.data['y']}) "
-                f"badges={obs.data['badges']}{flair}")
+        if "map_id" in obs.data:  # RAM-mode observation
+            head = (f"[{step:04d}] map={obs.data['map_id']} ({obs.data['x']},{obs.data['y']}) "
+                    f"badges={obs.data['badges']}{flair}")
+        else:                     # perception-mode observation (SymbolicState)
+            pose = (obs.data.get("pose") or {}).get("value")
+            la = obs.data.get("last_action") or {}
+            head = (f"[{step:04d}] pose={pose} last={la.get('outcome')} "
+                    f"conf={obs.data.get('confidence')}{flair}")
         # The LLM brain exposes its latest reasoning; show it under each step.
         thought = getattr(brain, "last_thought", "")
         if thought:
