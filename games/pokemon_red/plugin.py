@@ -18,11 +18,13 @@ FakeEmulator and no ROM.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Optional
 
 from core.contracts import Event, Observation, ToolCall, ToolResult, ToolSpec
+from core.perception import PerceptMemory, Perceiver, SymbolicState
 
 from .emulator import BUTTONS, Emulator, PyBoyEmulator
 from .memory_map import read_state
@@ -39,6 +41,7 @@ class PokemonRedPlugin:
         out_dir: str = "runs/pokemon_red",
         headless: bool = True,
         init_state: Optional[str] = None,
+        perceiver: Optional[Perceiver] = None,
     ) -> None:
         if emulator is None:
             if rom_path is None:
@@ -56,6 +59,13 @@ class PokemonRedPlugin:
         self._reward = RewardTracker()
         self._reward.reset_baseline(read_state(self.emu.read))
         self._obs_count = 0
+
+        # Iteration 02: optional pixel-perception path. When set, Observation.data is a
+        # SymbolicState (pixels-derived) and RAM is written to a separate oracle log for
+        # SCORING ONLY — it never enters the agent's input. Default (None) = legacy RAM obs.
+        self.perceiver = perceiver
+        self._percept_memory = PerceptMemory() if perceiver is not None else None
+        self._oracle_path = os.path.join(self.out_dir, "oracle.jsonl")
 
     # -- GamePlugin surface --------------------------------------------------
 
@@ -141,6 +151,18 @@ class PokemonRedPlugin:
             self.emu.save_screen(screen_path)
         except Exception:
             screen_path = ""
+
+        if self.perceiver is not None:
+            # Pixel-perception path: the agent sees a SymbolicState; RAM goes to the oracle
+            # log (scoring only) and NEVER enters Observation.data. (no-leak, structural)
+            sym = self.perceiver.perceive(screen_path, self._percept_memory)
+            self._log_oracle(state, screen_path)
+            data = sym.to_dict()
+            data["step"] = self._obs_count
+            return Observation(data=data, text=self._render_symbolic(sym),
+                               agent_id=agent_id, t=time.time())
+
+        # Legacy RAM-based observation (unchanged when no perceiver is injected).
         data = dict(state)
         data["screen_path"] = screen_path
         data["frame"] = self.emu.frame
@@ -152,6 +174,34 @@ class PokemonRedPlugin:
             agent_id=agent_id,
             t=time.time(),
         )
+
+    def _log_oracle(self, state: dict, screen_path: str) -> None:
+        """Append RAM ground-truth to a side log for SCORING ONLY — never an agent input.
+        This is how Iteration 02 measures perception accuracy without leaking RAM."""
+        rec = {
+            "step": self._obs_count, "t": time.time(), "frame": self.emu.frame,
+            "screen_path": screen_path,
+            "map_id": state["map_id"], "x": state["x"], "y": state["y"],
+            "in_battle": state["in_battle"], "badges": state["badges"],
+            "maps_seen": self._reward.maps_seen,
+        }
+        try:
+            with open(self._oracle_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    def _render_symbolic(self, sym: SymbolicState) -> str:
+        lines = [f"Perception (confidence {sym.confidence:.2f}, context: {sym.context})"]
+        if sym.pose is not None:
+            lines.append(f"Pose: {sym.pose}")
+        if sym.affordances:
+            lines.append(f"Options: {sym.affordances}")
+        if sym.last_action is not None:
+            lines.append(f"Last action: {sym.last_action}")
+        if sym.raw_available and sym.raw_ref:
+            lines.append(f"Raw frame available: {sym.raw_ref}")
+        return "\n".join(lines)
 
     def drain_events(self) -> list[Event]:
         out, self._events = self._events, []
