@@ -61,9 +61,10 @@ def test_plugin_with_perceiver_emits_symbolic_and_does_not_leak_ram(tmp_path):
     # ...and RAM is NOT leaked into the agent's input.
     assert "x" not in obs.data and "y" not in obs.data and "map_id" not in obs.data
 
-    # RAM ground-truth lives only in the oracle side-channel.
+    # RAM ground-truth lives only in the oracle side-channel, paired with the perceiver's verdict.
     rec = json.loads((tmp_path / "oracle.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     assert rec["map_id"] == 38 and rec["x"] == 3 and rec["y"] == 7
+    assert "perceived" in rec  # the paired (truth ⟂ perceived) record the scorer reads
 
 
 # -- OverworldPerceiver: odometry + occupancy map (Step 2) --------------------
@@ -108,3 +109,23 @@ def test_plugin_perception_run_logs_odometry_and_aliases_screen_path(tmp_path):
     assert obs.data["screen_path"].endswith(".png")                # raw_ref aliased for the brain
     assert "Overworld exploration" in obs.text                     # navigation-rich render
     assert "map_id" not in obs.data                                # still no RAM leak
+
+
+# -- the scorer (Iteration 03, Step 1: the measurement rig) -------------------
+
+def test_scorer_walkability_confusion_and_escape():
+    from eval.score_perception import score
+    recs = [
+        {"step": 1, "map_id": 38, "x": 3, "y": 7, "perceived": {"outcome": "unknown"}},
+        {"step": 2, "map_id": 38, "x": 3, "y": 6, "perceived": {"outcome": "moved"}},    # truth moved  -> correct
+        {"step": 3, "map_id": 38, "x": 3, "y": 6, "perceived": {"outcome": "blocked"}},  # truth still  -> correct
+        {"step": 4, "map_id": 38, "x": 3, "y": 6, "perceived": {"outcome": "moved"}},    # truth still  -> false_moved
+        {"step": 5, "map_id": 37, "x": 3, "y": 6, "perceived": {"outcome": "blocked"}},  # map changed  -> missed move
+    ]
+    m = score(recs)
+    assert m["scored_moves"] == 4
+    assert abs(m["walkability_accuracy"] - 0.5) < 1e-9             # 2 of 4 correct
+    c = m["confusion"]
+    assert (c["true_moved"], c["true_blocked"], c["false_moved"], c["false_blocked_missed_move"]) == (1, 1, 1, 1)
+    assert m["escaped_start_map"] and m["escape_step"] == 5
+    assert m["maps_visited"] == [37, 38]

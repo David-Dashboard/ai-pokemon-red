@@ -162,7 +162,7 @@ class PokemonRedPlugin:
                 pixels = None
             context = {"frame_path": screen_path, "last_action": self._last_action}
             sym = self.perceiver.perceive(pixels, self._percept_memory, context)
-            self._log_oracle(state, screen_path)
+            self._log_oracle(state, screen_path, sym)
             data = sym.to_dict()
             data["step"] = self._obs_count
             data["screen_path"] = sym.raw_ref  # alias so an image-capable brain still finds the frame
@@ -182,9 +182,11 @@ class PokemonRedPlugin:
             t=time.time(),
         )
 
-    def _log_oracle(self, state: dict, screen_path: str) -> None:
-        """Append RAM ground-truth to a side log for SCORING ONLY — never an agent input.
-        This is how Iteration 02 measures perception accuracy without leaking RAM."""
+    def _log_oracle(self, state: dict, screen_path: str,
+                    sym: Optional[SymbolicState] = None) -> None:
+        """Append a paired (truth ⟂ perceived) record for SCORING ONLY — never an agent input.
+        RAM truth stays top-level; the perceiver's verdict goes under `perceived`. The scorer
+        (eval/score_perception.py) compares the two to grade perception without leaking RAM."""
         rec = {
             "step": self._obs_count, "t": time.time(), "frame": self.emu.frame,
             "screen_path": screen_path,
@@ -192,6 +194,16 @@ class PokemonRedPlugin:
             "in_battle": state["in_battle"], "badges": state["badges"],
             "maps_seen": self._reward.maps_seen,
         }
+        if sym is not None:
+            la = sym.last_action or {}
+            rec["perceived"] = {
+                "outcome": la.get("outcome"),          # moved | blocked | unknown
+                "action": la.get("action"),
+                "pose": (sym.pose or {}).get("value"),
+                "context": sym.context,
+                "confidence": sym.confidence,
+                "walls_here": (sym.spatial_memory or {}).get("walls_here"),
+            }
         try:
             with open(self._oracle_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec) + "\n")
