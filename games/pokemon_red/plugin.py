@@ -199,7 +199,9 @@ class PokemonRedPlugin:
             rec["perceived"] = {
                 "outcome": la.get("outcome"),          # moved | blocked | unknown
                 "action": la.get("action"),
+                "diff": la.get("diff"),                # frame-diff value (for threshold tuning)
                 "pose": (sym.pose or {}).get("value"),
+                "area": (sym.pose or {}).get("area"),
                 "context": sym.context,
                 "confidence": sym.confidence,
                 "walls_here": (sym.spatial_memory or {}).get("walls_here"),

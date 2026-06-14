@@ -83,10 +83,19 @@ def test_first_obs_inits_pose_and_is_unknown_outcome():
 
 
 def test_moved_advances_the_dead_reckoned_cursor():
-    per, mem = OverworldPerceiver(move_threshold=4.0), PerceptMemory()
+    per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=300.0), PerceptMemory()
     per.perceive(_frame(0), mem, {"last_action": None})            # prime prev_frame
-    s = per.perceive(_frame(200), mem, {"last_action": "down+down+down"})  # big diff ⇒ moved
+    s = per.perceive(_frame(200), mem, {"last_action": "down+down+down"})  # move (< area thr) ⇒ moved
     assert s.last_action["outcome"] == "moved" and s.pose["value"] == [0, 1]
+
+
+def test_area_change_resets_the_coordinate_frame():
+    per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=100.0), PerceptMemory()
+    per.perceive(_frame(0), mem, {"last_action": None})            # prime
+    per.perceive(_frame(10), mem, {"last_action": "down+down"})    # diff 10 ⇒ moved within area -> (0,1)
+    s = per.perceive(_frame(255), mem, {"last_action": "down+down"})  # huge diff ⇒ AREA transition
+    assert s.last_action["outcome"] == "moved"
+    assert s.pose["value"] == [0, 0] and s.pose["area"] == 1       # fresh frame, area incremented
 
 
 def test_blocked_marks_a_wall_and_drops_that_direction():

@@ -18,7 +18,8 @@ from core.perception import JSON, PerceptMemory, SymbolicState
 
 _DIRS = ("up", "down", "left", "right")
 _DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
-_MOVE_THRESHOLD = 4.0  # mean abs pixel diff above which we count "the screen changed" (a move)
+_MOVE_THRESHOLD = 4.0   # mean abs pixel diff above which a move happened (tune via eval/tune_threshold.py)
+_AREA_THRESHOLD = 60.0  # diff at/above which the WHOLE screen changed => area/map transition (reset frame)
 
 
 def _dominant_dir(action: Optional[str]) -> Optional[str]:
@@ -43,8 +44,10 @@ def _frame_diff(a, b) -> float:
 class OverworldPerceiver:
     """Frame-diff walkability + a dead-reckoned occupancy map. All state lives in PerceptMemory."""
 
-    def __init__(self, move_threshold: float = _MOVE_THRESHOLD) -> None:
+    def __init__(self, move_threshold: float = _MOVE_THRESHOLD,
+                 area_threshold: float = _AREA_THRESHOLD) -> None:
         self.move_threshold = move_threshold
+        self.area_threshold = area_threshold
 
     def perceive(self, frame, memory: PerceptMemory,
                  context: Optional[JSON] = None) -> SymbolicState:
@@ -55,12 +58,14 @@ class OverworldPerceiver:
         m.setdefault("prev_frame", None)
         m.setdefault("steps", 0)
 
+        m.setdefault("area", 0)
         action = ctx.get("last_action")
         direction = _dominant_dir(action)
         prev = m["prev_frame"]
         first = prev is None
         diff = _frame_diff(prev, frame)
-        moved = None if first else (diff > self.move_threshold)
+        area_change = (not first) and (diff >= self.area_threshold)
+        moved = (not first) and (diff > self.move_threshold)
 
         x, y = m["cursor"]
         cell = m["cells"].setdefault((x, y), {"visited": True, "walls": set()})
@@ -68,7 +73,16 @@ class OverworldPerceiver:
 
         outcome = "unknown"
         if not first and direction:
-            if moved:
+            if area_change:
+                # The whole screen changed: we entered a NEW area (map transition). Start a fresh
+                # coordinate frame + map, so the old area's geometry isn't smeared into the new one.
+                m["area"] += 1
+                m["cells"] = {(0, 0): {"visited": True, "walls": set()}}
+                m["cursor"] = (0, 0)
+                x, y = 0, 0
+                cell = m["cells"][(0, 0)]
+                outcome = "moved"
+            elif moved:
                 dx, dy = _DELTA[direction]
                 x, y = x + dx, y + dy
                 m["cursor"] = (x, y)
@@ -115,12 +129,12 @@ class OverworldPerceiver:
         return SymbolicState(
             confidence=0.4,  # Step 2: keep the image attached; text-only is earned later
             context="overworld",
-            pose={"frame": "grid", "value": [x, y], "uncertain": True},
-            spatial_memory={"kind": "occupancy-grid", "area": 0, "visited": visited_n,
+            pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": m["area"]},
+            spatial_memory={"kind": "occupancy-grid", "area": m["area"], "visited": visited_n,
                             "walls_here": sorted(cell["walls"]),
                             "map": grid, "frontiers": frontiers},
             affordances=open_unexplored or open_all,
-            last_action={"action": action, "outcome": outcome},
+            last_action={"action": action, "outcome": outcome, "diff": round(diff, 2)},
             raw_available=True,
             raw_ref=ctx.get("frame_path", ""),
         )
