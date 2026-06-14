@@ -57,6 +57,9 @@ def main() -> int:
     ap.add_argument("--sound", action="store_true",
                     help="play the game audio (implies a window; runs at real-time so it's not "
                          "chipmunk-fast — best with --brain explore/hybrid for continuous sound)")
+    ap.add_argument("--watch-delay", type=int, default=0,
+                    help="idle frames to pause between moves (windowed/sound runs) so it's watchable; "
+                         "60 ~ a 1s pause per move. The music keeps playing through the pause.")
     ap.add_argument("--out", default="runs/pokemon_red")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--load-state", default=None,
@@ -136,6 +139,8 @@ def main() -> int:
             print(f"{head}\n        think: {safe}  -> {data.get('action', '')}")
         else:
             print(head)
+        if args.watch_delay > 0:                 # idle pause between moves (real-time only)
+            plugin.emu.tick(args.watch_delay)    # music keeps playing; the character waits
 
     print(f"Agent {agent_id} playing for {args.steps} steps with the {args.brain} brain...\n")
     try:

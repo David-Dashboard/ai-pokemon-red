@@ -84,9 +84,9 @@ class PyBoyEmulator:
             sound_emulated=sound,
             sound_volume=100 if sound else 0,
         )
-        if sound:
-            # Audio only sounds right at real-time; otherwise it plays chipmunk-fast (the agent
-            # normally runs unbounded). Trade speed for a watchable+listenable run.
+        if not headless:
+            # Any windowed/sound run plays at real-time so it's watchable (and audio isn't
+            # chipmunk-fast). Headless agent runs stay unbounded (as fast as possible).
             self._pyboy.set_emulation_speed(1)
         # Let the boot/intro settle a little so the first observation is real.
         self._pyboy.tick(60, render=True)
