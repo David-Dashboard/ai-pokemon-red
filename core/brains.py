@@ -123,6 +123,45 @@ class ExploreBrain:
         return _call("press_sequence", {"buttons": [d, d]}, self.agent_id)  # turn, then move
 
 
+class HybridBrain:
+    """Event-driven router (the cost win): run a free local autopilot by default, and WAKE an
+    expensive brain (the LLM) only at real decisions —
+      * a non-overworld mode (battle / menu / dialog), when perception reports `context != overworld`, or
+      * the autopilot is stuck (no frontier left to explore).
+    Dozens of free moves between rare LLM calls. `wake_rate` reports how often the expensive brain
+    was actually needed. The mode trigger is dormant until perception sets `context` (the CV sub-step)."""
+
+    def __init__(self, autopilot, fallback) -> None:
+        self.autopilot = autopilot
+        self.fallback = fallback
+        self.last_thought = ""
+        self.woke = 0
+        self.total = 0
+        self.mode = "autopilot"
+
+    def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
+        self.total += 1
+        if (obs.data.get("context") or "overworld") != "overworld":
+            return self._wake(obs, tools, context, "mode")
+        action = self.autopilot.decide(obs, tools, context)
+        if action is not None:
+            self.mode = "autopilot"
+            self.last_thought = getattr(self.autopilot, "last_thought", "")
+            return action
+        return self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> hand to the LLM
+
+    def _wake(self, obs, tools, context, why: str) -> Optional[ToolCall]:
+        self.mode = "llm"
+        self.woke += 1
+        call = self.fallback.decide(obs, tools, context)
+        self.last_thought = f"[wake:{why}] {getattr(self.fallback, 'last_thought', '')}".strip()
+        return call
+
+    @property
+    def wake_rate(self) -> float:
+        return self.woke / self.total if self.total else 0.0
+
+
 def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:
     """Return a complete_fn(prompt, image_path) -> text backed by Ollama."""
     import requests

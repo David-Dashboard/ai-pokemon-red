@@ -172,3 +172,41 @@ def test_explore_returns_none_when_no_frontier_remains():
     from core.brains import ExploreBrain
     cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
     assert ExploreBrain("a").decide(_obs_with_map((0, 0), cells, []), [], {}) is None
+
+
+# -- HybridBrain: event-driven autopilot + wake-the-LLM router ----------------
+
+class _StubBrain:
+    def __init__(self, action, thought=""):
+        self._a, self.last_thought = action, thought
+
+    def decide(self, obs, tools, context):
+        return self._a
+
+
+def _ctx_obs(context="overworld"):
+    from core.contracts import Observation
+    return Observation(data={"context": context}, text="", agent_id="a", t=0.0)
+
+
+def test_hybrid_uses_free_autopilot_when_it_acts():
+    from core.brains import HybridBrain, _call
+    ap = _StubBrain(_call("press_sequence", {"buttons": ["down", "down"]}, "a"), "explore")
+    h = HybridBrain(ap, _StubBrain(_call("press_button", {"button": "a"}, "a")))
+    call = h.decide(_ctx_obs("overworld"), [], {})
+    assert call.args.get("buttons") == ["down", "down"] and h.woke == 0  # LLM untouched
+
+
+def test_hybrid_wakes_llm_when_autopilot_is_stuck():
+    from core.brains import HybridBrain, _call
+    h = HybridBrain(_StubBrain(None), _StubBrain(_call("press_button", {"button": "a"}, "a"), "llm"))
+    call = h.decide(_ctx_obs("overworld"), [], {})
+    assert call.args.get("button") == "a" and h.woke == 1 and h.mode == "llm"
+
+
+def test_hybrid_wakes_llm_on_non_overworld_mode():
+    from core.brains import HybridBrain, _call
+    ap = _StubBrain(_call("press_button", {"button": "up"}, "a"))  # autopilot WOULD act...
+    h = HybridBrain(ap, _StubBrain(_call("press_button", {"button": "a"}, "a")))
+    call = h.decide(_ctx_obs("battle"), [], {})                    # ...but mode != overworld wakes the LLM
+    assert call.args.get("button") == "a" and h.woke == 1

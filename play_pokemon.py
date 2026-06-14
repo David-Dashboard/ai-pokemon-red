@@ -35,8 +35,9 @@ from core.runner import run_episode
 def main() -> int:
     ap = argparse.ArgumentParser(description="Let an AI agent play Pokémon Red.")
     ap.add_argument("--rom", required=True, help="path to your Pokémon Red ROM (.gb)")
-    ap.add_argument("--brain", choices=["scripted", "llm", "explore"], default="scripted",
-                    help="explore = local frontier autopilot (no LLM/API; needs --perception)")
+    ap.add_argument("--brain", choices=["scripted", "llm", "explore", "hybrid"], default="scripted",
+                    help="explore = local frontier autopilot (no LLM/API; needs --perception); "
+                         "hybrid = autopilot + wake the LLM only at decisions (needs --perception)")
     ap.add_argument("--steps", type=int, default=100)
     ap.add_argument("--backend", choices=["ollama", "llamacpp", "aria"], default="ollama",
                     help="LLM server for --brain llm")
@@ -76,7 +77,7 @@ def main() -> int:
         print(f"\nSetup error:\n{e}\n", file=sys.stderr)
         return 2
 
-    if args.brain == "llm":
+    if args.brain in ("llm", "hybrid"):
         from core.brains import LLMButtonBrain
         default_url = {"llamacpp": "http://localhost:8080",
                        "aria": "http://localhost:8001"}.get(
@@ -88,9 +89,17 @@ def main() -> int:
             print("\nSetup error:\n--backend aria needs a bearer token "
                   "(--llm-token or $ARIA_BEARER_TOKEN).\n", file=sys.stderr)
             return 2
-        brain = LLMButtonBrain(agent_id, model=model, url=url,
-                               backend=args.backend, use_vision=not args.no_vision,
-                               api_key=args.llm_token)
+        llm = LLMButtonBrain(agent_id, model=model, url=url,
+                             backend=args.backend, use_vision=not args.no_vision,
+                             api_key=args.llm_token)
+        if args.brain == "llm":
+            brain = llm
+        else:  # hybrid = free autopilot + wake the LLM only at decisions
+            if not args.perception:
+                print("\nSetup error:\n--brain hybrid needs --perception.\n", file=sys.stderr)
+                return 2
+            from core.brains import ExploreBrain, HybridBrain
+            brain = HybridBrain(ExploreBrain(agent_id), llm)
     elif args.brain == "explore":
         if not args.perception:
             print("\nSetup error:\n--brain explore needs --perception (it navigates on the "
@@ -137,6 +146,9 @@ def main() -> int:
     print("\n=== episode summary ===")
     for k, v in summary.items():
         print(f"  {k}: {v}")
+    if hasattr(brain, "wake_rate"):  # hybrid: how often the expensive brain was actually needed
+        print(f"  llm_woke: {brain.woke}/{brain.total} steps ({100 * brain.wake_rate:.1f}%) "
+              f"— autopilot handled the rest for free")
     return 0
 
 
