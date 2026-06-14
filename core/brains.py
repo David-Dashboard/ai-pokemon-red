@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import json
 import random
+import re
 import uuid
 from typing import Callable, Optional
 
@@ -150,6 +151,9 @@ class HybridBrain:
         self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
         self._last_sig = None
         self._last_action = None
+        # feature #2 (goto hookup): a destination the woken planner named, persisted so the FREE
+        # autopilot drives there over the next overworld steps without re-waking the LLM each tile.
+        self.goto: Optional[list] = None
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         self.total += 1
@@ -158,6 +162,13 @@ class HybridBrain:
             self.outcome.record(self._last_sig, self._last_action, effective=(sig != self._last_sig))
         # tell whoever decides which actions have repeatedly done nothing here, so it doesn't repeat them
         context = {**(context or {}), "avoid": self.outcome.dead_actions(sig)}
+
+        # goto(target): consume it on arrival, else hand the persistent target to the free autopilot.
+        pose = (obs.data.get("pose") or {}).get("value")
+        if self.goto is not None and pose is not None and list(pose) == list(self.goto):
+            self.goto = None                          # arrived — destination reached, stop steering there
+        if self.goto is not None:
+            context["goto"] = self.goto               # the autopilot A*'s toward it (free), else explores
 
         if (obs.data.get("context") or "overworld") != "overworld":
             call = self._wake(obs, tools, context, "mode")
@@ -176,7 +187,14 @@ class HybridBrain:
         self.mode = "llm"
         self.woke += 1
         call = self.fallback.decide(obs, tools, context)
-        self.last_thought = f"[wake:{why}] {getattr(self.fallback, 'last_thought', '')}".strip()
+        # If the planner named a destination this turn, adopt it — the free autopilot pursues it on
+        # the next overworld steps (no GOTO = keep any target already in flight).
+        named = getattr(self.fallback, "goto", None)
+        if named is not None:
+            self.goto = named
+        tail = f" goto={self.goto}" if self.goto else ""
+        self.last_thought = (f"[wake:{why}] "
+                             f"{getattr(self.fallback, 'last_thought', '')}{tail}").strip()
         return call
 
     @property
@@ -250,7 +268,10 @@ _SYSTEM = (
     "Never press START or SELECT.\n"
     "Reply in EXACTLY this format and nothing else:\n"
     "THINK: <one short sentence — what you see and what you'll do>\n"
-    "MOVE: <2-4 buttons separated by spaces, from: up down left right a b>"
+    "MOVE: <2-4 buttons separated by spaces, from: up down left right a b>\n"
+    "Optionally add a final line 'GOTO: x y' to send yourself to a known map cell "
+    "(coordinates are shown when available); a free pathfinder then walks you there over the "
+    "next steps, so you needn't steer every tile."
 )
 
 
@@ -270,6 +291,7 @@ class LLMButtonBrain:
         self.agent_id = agent_id
         self.use_vision = use_vision
         self.last_thought = ""       # the model's latest reasoning, for display
+        self.goto: Optional[list] = None  # destination cell the planner named this turn (or None)
         self._last_pos = None        # (x, y) at the previous decision
         self._last_buttons = None    # what we pressed last, for wall-bump feedback
         if complete_fn is not None:
@@ -301,6 +323,7 @@ class LLMButtonBrain:
             print(f"[LLMButtonBrain] model call failed ({e}); defaulting to 'a'")
             return _call("press_button", {"button": "a"}, self.agent_id)
         buttons, thought = self._parse(raw)
+        self.goto = self._parse_goto(raw)   # optional destination for the free autopilot (feature #2)
         self.last_thought = thought or raw.strip()[:160]
         self._last_pos = (obs.data.get("x"), obs.data.get("y"))
         self._last_buttons = buttons
@@ -340,3 +363,16 @@ class LLMButtonBrain:
         if not picks:  # MOVE line empty/garbled — scan the whole reply
             picks = [t for t in text.lower().replace(",", " ").split() if t in BUTTONS]
         return picks[:max_buttons] or ["a"], thought  # 'a' = safe default
+
+    @staticmethod
+    def _parse_goto(raw: str) -> Optional[list]:
+        """Optional 'GOTO: x y' (or 'x,y') line -> [x, y]; None if absent/garbled. This is the
+        planner naming a destination cell once; HybridBrain persists it and the local autopilot
+        pathfinds there for free (no per-tile LLM calls). Only read from a dedicated GOTO line so
+        coordinates mentioned in prose ('go to the door') aren't mistaken for a target."""
+        for line in raw.splitlines():
+            if line.strip().lower().startswith("goto:"):
+                nums = re.findall(r"-?\d+", line.split(":", 1)[1])
+                if len(nums) >= 2:
+                    return [int(nums[0]), int(nums[1])]
+        return None

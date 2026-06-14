@@ -10,6 +10,7 @@ import json
 
 import numpy as np
 
+from core.brains import _call
 from core.perception import PerceptMemory, Perceiver, StubPerceiver, SymbolicState
 from games.pokemon_red import memory_map as mm
 from games.pokemon_red.perceiver import OverworldPerceiver, _dominant_dir
@@ -279,3 +280,61 @@ def test_hybrid_surfaces_dead_actions_to_the_fallback():
     for _ in range(4):
         h.decide(obs, [], {})
     assert "a" in (fb.seen or [])                 # repeated no-effect 'a' became an 'avoid' hint
+
+
+# -- goto hookup (feature #2: planner names a destination, free autopilot drives there) ----
+
+def test_llm_brain_parses_optional_goto_target():
+    from core.brains import LLMButtonBrain
+    from core.contracts import Observation
+    obs = Observation(data={"screen_path": ""}, text="x", agent_id="a", t=0.0)
+    b = LLMButtonBrain("a", use_vision=False,
+                       complete_fn=lambda p, i: "THINK: head to the door\nMOVE: right right\nGOTO: 2 0")
+    b.decide(obs, [], {})
+    assert b.goto == [2, 0]                        # destination parsed only from the GOTO line
+    b2 = LLMButtonBrain("a", use_vision=False,
+                        complete_fn=lambda p, i: "THINK: go to the stairs\nMOVE: down down")
+    b2.decide(obs, [], {})
+    assert b2.goto is None                          # 'to the stairs' in prose is NOT a target
+
+
+def _pose_obs(pose, context="overworld"):
+    from core.contracts import Observation
+    return Observation(data={"context": context, "pose": {"value": list(pose)}},
+                       text="", agent_id="a", t=0.0)
+
+
+class _GotoCapturingAutopilot:
+    """Records the goto handed to it; acts only when a target is present (else 'stuck' -> wake)."""
+    def __init__(self):
+        self.last_thought, self.seen = "", []
+    def decide(self, obs, tools, context):
+        g = context.get("goto")
+        self.seen.append(g)
+        return _call("press_sequence", {"buttons": ["right", "right"]}, "a") if g else None
+
+
+def test_hybrid_adopts_planner_goto_then_drives_there_for_free():
+    from core.brains import HybridBrain, _call
+
+    class _GotoSetter:
+        last_thought = "make for the exit"
+        goto = [2, 0]
+        def decide(self, obs, tools, context):
+            return _call("press_button", {"button": "a"}, "a")
+
+    ap = _GotoCapturingAutopilot()
+    h = HybridBrain(ap, _GotoSetter())
+    h.decide(_pose_obs((0, 0)), [], {})            # autopilot stuck -> wake LLM -> adopt goto [2,0]
+    assert h.woke == 1 and h.goto == [2, 0] and ap.seen[-1] is None  # target adopted AFTER this step
+    c2 = h.decide(_pose_obs((1, 0)), [], {})       # next step: free autopilot pursues the target
+    assert ap.seen[-1] == [2, 0] and c2.args["buttons"] == ["right", "right"] and h.woke == 1
+
+
+def test_hybrid_clears_goto_on_arrival():
+    from core.brains import HybridBrain, _call
+    h = HybridBrain(_GotoCapturingAutopilot(),
+                    _StubBrain(_call("press_button", {"button": "a"}, "a")))
+    h.goto = [1, 1]
+    h.decide(_pose_obs((1, 1)), [], {})            # pose == target -> destination consumed
+    assert h.goto is None

@@ -234,6 +234,13 @@ class PokemonRedPlugin:
             lines.append(f"Unexplored/open directions from here (head toward these to make "
                          f"progress): {', '.join(sym.affordances)}.")
         lines.append(f"Tiles explored in this area so far: {sm.get('visited', 0)}.")
+        # Concrete, namable destinations: a free pathfinder can walk to any known cell. Listing the
+        # frontier coords lets the planner say 'GOTO: x y' and let the autopilot drive there.
+        frontiers = sm.get("frontiers") or []
+        if pose.get("value") is not None and frontiers:
+            sample = ", ".join(f"{f[0]} {f[1]}" for f in frontiers[:6])
+            lines.append(f"Unexplored frontier cells you can target (x y): {sample}. "
+                         f"Add 'GOTO: x y' to have a free pathfinder walk you to one.")
         return "\n".join(lines)
 
     def drain_events(self) -> list[Event]:
