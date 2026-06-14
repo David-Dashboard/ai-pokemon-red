@@ -25,6 +25,7 @@ import uuid
 from typing import Callable, Optional
 
 from core.contracts import Observation, ToolCall, ToolSpec
+from core.outcome import OutcomeMemory, action_key, state_signature
 
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 
@@ -138,17 +139,30 @@ class HybridBrain:
         self.woke = 0
         self.total = 0
         self.mode = "autopilot"
+        self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
+        self._last_sig = None
+        self._last_action = None
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         self.total += 1
+        sig = state_signature(obs.data)
+        if self._last_action is not None:  # grade the PREVIOUS action: did the situation change?
+            self.outcome.record(self._last_sig, self._last_action, effective=(sig != self._last_sig))
+        # tell whoever decides which actions have repeatedly done nothing here, so it doesn't repeat them
+        context = {**(context or {}), "avoid": self.outcome.dead_actions(sig)}
+
         if (obs.data.get("context") or "overworld") != "overworld":
-            return self._wake(obs, tools, context, "mode")
-        action = self.autopilot.decide(obs, tools, context)
-        if action is not None:
-            self.mode = "autopilot"
-            self.last_thought = getattr(self.autopilot, "last_thought", "")
-            return action
-        return self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> hand to the LLM
+            call = self._wake(obs, tools, context, "mode")
+        else:
+            call = self.autopilot.decide(obs, tools, context)
+            if call is not None:
+                self.mode = "autopilot"
+                self.last_thought = getattr(self.autopilot, "last_thought", "")
+            else:
+                call = self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> LLM
+        self._last_sig = sig
+        self._last_action = action_key(call)
+        return call
 
     def _wake(self, obs, tools, context, why: str) -> Optional[ToolCall]:
         self.mode = "llm"
@@ -266,6 +280,10 @@ class LLMButtonBrain:
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
         feedback = self._movement_feedback(obs)
+        avoid = context.get("avoid") or []      # actions that did nothing here (outcome memory)
+        if avoid:
+            feedback = (feedback + f"\nNOTE: these did NOTHING here, do NOT repeat them: "
+                        f"{', '.join(avoid)}. Try something different.").strip()
         prompt = (f"{_SYSTEM}\n\n{strategy}\n{feedback}\n\n"
                   f"Current state:\n{obs.text}\n\nYour reply:")
         image = obs.data.get("screen_path") if self.use_vision else None

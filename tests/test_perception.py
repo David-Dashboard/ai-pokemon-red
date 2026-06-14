@@ -233,3 +233,37 @@ def test_hybrid_wakes_llm_on_non_overworld_mode():
     h = HybridBrain(ap, _StubBrain(_call("press_button", {"button": "a"}, "a")))
     call = h.decide(_ctx_obs("battle"), [], {})                    # ...but mode != overworld wakes the LLM
     assert call.args.get("button") == "a" and h.woke == 1
+
+
+# -- outcome loop (feature #1: learn from no-effect actions) ------------------
+
+def test_outcome_memory_marks_repeated_no_effect_and_resets_on_effect():
+    from core.outcome import OutcomeMemory
+    om = OutcomeMemory(dead_after=2)
+    sig = ("overworld", 0, (0, 0))
+    om.record(sig, "a", effective=False); assert not om.is_dead(sig, "a")
+    om.record(sig, "a", effective=False); assert om.is_dead(sig, "a") and "a" in om.dead_actions(sig)
+    om.record(sig, "a", effective=True);  assert not om.is_dead(sig, "a")  # any effect resets the streak
+
+
+def test_state_signature_and_action_key():
+    from core.contracts import ToolCall
+    from core.outcome import action_key, state_signature
+    assert state_signature({"context": "overworld", "pose": {"value": [1, 2], "area": 0}}) == ("overworld", 0, (1, 2))
+    c = ToolCall(tool="press_sequence", args={"buttons": ["up", "up"]}, agent_id="a", call_id="1")
+    assert action_key(c) == "up+up"
+
+
+def test_hybrid_surfaces_dead_actions_to_the_fallback():
+    from core.brains import HybridBrain, _call
+
+    class _Capturing:
+        def __init__(self, call): self._c, self.last_thought, self.seen = call, "", None
+        def decide(self, obs, tools, context): self.seen = context.get("avoid"); return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb)        # autopilot always stuck -> fallback every step
+    obs = _ctx_obs("overworld")                   # fixed signature -> 'a' never changes anything
+    for _ in range(4):
+        h.decide(obs, [], {})
+    assert "a" in (fb.seen or [])                 # repeated no-effect 'a' became an 'avoid' hint
