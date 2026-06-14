@@ -41,6 +41,36 @@ def _frame_diff(a, b) -> float:
     return float(np.abs(a - b).mean())
 
 
+def _gray(frame):
+    g = np.asarray(frame)
+    return g[..., :3].mean(axis=2) if g.ndim == 3 else g
+
+
+def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
+    """Mode from pixels (overworld | menu | dialog | battle). Gen-1 UI panels are PURE white and the
+    game world almost never is, so the near-white fraction by region separates them. Measured: an
+    overworld frame is ~0% near-white everywhere; the START menu's right panel ~66%. A bottom panel =
+    a dialog textbox; bright panels both top AND bottom = a battle (HP boxes + action box). Cheap, CPU,
+    no training. Battle/dialog thresholds are structural priors to firm up once we have those frames."""
+    if frame is None:
+        return "overworld"
+    g = _gray(frame)
+    H, W = g.shape
+    w = g >= white
+    right = float(w[:, int(W * 0.6):].mean())
+    bottom = float(w[int(H * 0.66):, :].mean())
+    top = float(w[:int(H * 0.4), :].mean())
+    if max(right, bottom, top) < t:
+        return "overworld"
+    if bottom > 0.3 and top > 0.3:
+        return "battle"          # HP boxes (top) + action/text box (bottom)
+    if right > 0.35 and right >= bottom:
+        return "menu"            # right-side panel (START menu / battle action menu)
+    if bottom > 0.3:
+        return "dialog"          # bottom textbox
+    return "menu"                # some other UI box — treat as a menu so the planner is woken
+
+
 class OverworldPerceiver:
     """Frame-diff walkability + a dead-reckoned occupancy map. All state lives in PerceptMemory."""
 
@@ -57,12 +87,29 @@ class OverworldPerceiver:
         m.setdefault("cells", {})          # (x,y) -> {"visited": bool, "walls": set[str]}
         m.setdefault("prev_frame", None)
         m.setdefault("steps", 0)
-
         m.setdefault("area", 0)
+        m.setdefault("resync", False)
+        m["steps"] += 1
+
+        # Mode first: a menu/dialog/battle is NOT the overworld — hand it straight to the planner and
+        # do NOT run odometry on it (a menu cursor move isn't walking). Re-baseline when we return.
+        mode = detect_mode(frame)
+        if mode != "overworld":
+            m["prev_frame"] = np.asarray(frame).copy() if frame is not None else None
+            m["resync"] = True
+            return SymbolicState(
+                confidence=0.5, context=mode,
+                pose={"frame": "grid", "value": list(m["cursor"]), "uncertain": True, "area": m["area"]},
+                spatial_memory={"kind": "occupancy-grid", "area": m["area"]},
+                affordances=[],
+                last_action={"action": ctx.get("last_action"), "outcome": "n/a"},
+                raw_available=True, raw_ref=ctx.get("frame_path", ""))
+
         action = ctx.get("last_action")
         direction = _dominant_dir(action)
         prev = m["prev_frame"]
-        first = prev is None
+        first = prev is None or m["resync"]   # re-baseline after returning from a menu/battle
+        m["resync"] = False
         diff = _frame_diff(prev, frame)
         area_change = (not first) and (diff >= self.area_threshold)
         moved = (not first) and (diff > self.move_threshold)
@@ -93,7 +140,6 @@ class OverworldPerceiver:
                 cell["walls"].add(direction)  # bumped a wall in this direction
                 outcome = "blocked"
 
-        m["steps"] += 1
         m["prev_frame"] = np.asarray(frame).copy() if frame is not None else None
 
         # Affordances: directions from HERE that aren't known walls. Prefer those leading to an

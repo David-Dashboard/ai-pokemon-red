@@ -93,9 +93,32 @@ def test_area_change_resets_the_coordinate_frame():
     per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=100.0), PerceptMemory()
     per.perceive(_frame(0), mem, {"last_action": None})            # prime
     per.perceive(_frame(10), mem, {"last_action": "down+down"})    # diff 10 ⇒ moved within area -> (0,1)
-    s = per.perceive(_frame(255), mem, {"last_action": "down+down"})  # huge diff ⇒ AREA transition
+    s = per.perceive(_frame(200), mem, {"last_action": "down+down"})  # big diff (still overworld) ⇒ AREA transition
     assert s.last_action["outcome"] == "moved"
     assert s.pose["value"] == [0, 0] and s.pose["area"] == 1       # fresh frame, area incremented
+
+
+def test_detect_mode_separates_overworld_menu_dialog_battle():
+    from games.pokemon_red.perceiver import detect_mode
+    blank = lambda: np.full((144, 160, 3), 60, dtype=np.uint8)  # dark scene, no UI panel
+    overworld = blank()
+    menu = blank(); menu[:96, 96:] = 255          # white right panel (upper) — the START menu
+    dialog = blank(); dialog[96:, :] = 255         # white bottom textbox
+    battle = blank(); battle[:58, :] = 255; battle[96:, :] = 255  # white top (HP) + bottom (action)
+    assert detect_mode(overworld) == "overworld"
+    assert detect_mode(menu) == "menu"
+    assert detect_mode(dialog) == "dialog"
+    assert detect_mode(battle) == "battle"
+
+
+def test_perceive_hands_off_non_overworld_and_rebaselines_on_return():
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    menu = np.full((144, 160, 3), 60, dtype=np.uint8); menu[:96, 96:] = 255
+    s = per.perceive(menu, mem, {"frame_path": "f.png", "last_action": "up+up"})
+    assert s.context == "menu" and s.last_action["outcome"] == "n/a" and s.raw_ref == "f.png"
+    ow = np.full((144, 160, 3), 60, dtype=np.uint8)               # back to overworld
+    s2 = per.perceive(ow, mem, {"frame_path": "g.png", "last_action": "up+up"})
+    assert s2.context == "overworld" and s2.last_action["outcome"] == "unknown"  # re-baselined, no fake move
 
 
 def test_blocked_marks_a_wall_and_drops_that_direction():
