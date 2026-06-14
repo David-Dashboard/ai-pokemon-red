@@ -72,6 +72,14 @@ class ExploreBrain:
             self.last_thought = "bootstrap"
             return self._move("down")
         cur = (pose[0], pose[1])
+        # goto(target): if the planner set a destination, pathfind to it (free); when it's reached
+        # or unreachable from the known map, fall through to ordinary frontier exploration.
+        goto = (context or {}).get("goto")
+        if goto is not None and tuple(goto[:2]) != cur:
+            d = self._bfs_first_step(cur, cells, {tuple(goto[:2])})
+            if d:
+                self.last_thought = f"goto {tuple(goto[:2])} via {d}"
+                return self._move(d)
         d = self._unexplored_dir(cur, cells)
         if d:
             self.last_thought = f"frontier here -> {d}"

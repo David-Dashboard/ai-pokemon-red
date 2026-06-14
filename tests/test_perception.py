@@ -197,6 +197,18 @@ def test_explore_returns_none_when_no_frontier_remains():
     assert ExploreBrain("a").decide(_obs_with_map((0, 0), cells, []), [], {}) is None
 
 
+def test_explore_goto_pathfinds_to_a_named_target_cell():
+    from core.brains import ExploreBrain
+    cells = [
+        {"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left"]},   # right -> (1,0)
+        {"x": 1, "y": 0, "visited": True, "walls": ["up", "down"]},
+        {"x": 2, "y": 0, "visited": True, "walls": ["up", "down", "right"]},  # the target
+    ]
+    obs = _obs_with_map((0, 0), cells, [])                       # no frontiers; only a goto target
+    call = ExploreBrain("a").decide(obs, [], {"goto": [2, 0]})
+    assert call.tool == "press_sequence" and call.args["buttons"][0] == "right"
+
+
 # -- HybridBrain: event-driven autopilot + wake-the-LLM router ----------------
 
 class _StubBrain:
