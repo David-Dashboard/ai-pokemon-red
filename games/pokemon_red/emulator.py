@@ -82,7 +82,12 @@ class PyBoyEmulator:
             rom_path,
             window="null" if headless else "SDL2",
             sound_emulated=sound,
+            sound_volume=100 if sound else 0,
         )
+        if sound:
+            # Audio only sounds right at real-time; otherwise it plays chipmunk-fast (the agent
+            # normally runs unbounded). Trade speed for a watchable+listenable run.
+            self._pyboy.set_emulation_speed(1)
         # Let the boot/intro settle a little so the first observation is real.
         self._pyboy.tick(60, render=True)
 

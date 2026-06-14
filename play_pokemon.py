@@ -54,6 +54,9 @@ def main() -> int:
                     help="Iteration-02: plan over a pixels-derived SymbolicState (odometry + "
                          "occupancy map) instead of RAM; RAM is logged to oracle.jsonl for scoring")
     ap.add_argument("--window", action="store_true", help="show the emulator window")
+    ap.add_argument("--sound", action="store_true",
+                    help="play the game audio (implies a window; runs at real-time so it's not "
+                         "chipmunk-fast — best with --brain explore/hybrid for continuous sound)")
     ap.add_argument("--out", default="runs/pokemon_red")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--load-state", default=None,
@@ -71,8 +74,9 @@ def main() -> int:
             from games.pokemon_red.perceiver import OverworldPerceiver
             perceiver = OverworldPerceiver()
         plugin = PokemonRedPlugin(rom_path=args.rom, out_dir=args.out,
-                                  headless=not args.window, init_state=args.load_state,
-                                  perceiver=perceiver)
+                                  headless=not (args.window or args.sound),
+                                  init_state=args.load_state, perceiver=perceiver,
+                                  sound=args.sound)
     except (FileNotFoundError, ImportError) as e:
         print(f"\nSetup error:\n{e}\n", file=sys.stderr)
         return 2
