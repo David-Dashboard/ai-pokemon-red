@@ -14,13 +14,20 @@ This is **not** about beating Pokémon. Pokémon Red is the **first probe world*
 > Build a **simple, generalizable** agent that acts on the world — generalizing across games and
 > eventually reality — that is **cheap** and works from the **screen**, not privileged state.
 
-Three constraints held on purpose (they're what makes the result transfer):
+Four constraints held on purpose (they're what makes the result transfer):
 - **Generalize** — find the *smallest* increments that let the *same* agent act in a *different*
   world. Avoid Pokémon-specific hacks. (The brain, **ai-aria**, is a fully decoupled HTTP service.)
 - **No ROM / privileged state** — plan from the **screen**. RAM exists only as a **non-leaking
   scoring oracle** (`oracle.jsonl`); it never enters the agent's input.
 - **Cheap** — minimize API calls/tokens. A free local autopilot does routine work; wake the
   expensive LLM only at decisions.
+- **Learning boundary (HARD LAW — do not drift):** *across-run* learning is **harness/code updates
+  ONLY** (perception, brains, detectors) — the agent starts **blank every run** (archive + wipe before
+  each). *Within-run* learning lives in the **harness** (`core/`): the occupancy map, `OutcomeMemory`,
+  the disconfirm detector, any LLM-authored `LESSON:` — fresh per run, injected into the LLM's context
+  each wake, **discarded at run end**. aria *authors* lessons; the harness *persists + re-injects* them
+  within the run. Never use aria's durable memory as the within-run store; never let a lesson bleed
+  into the next run.
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn`.
 
