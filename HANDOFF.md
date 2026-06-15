@@ -61,38 +61,50 @@ specific to the hybrid run. The real failures:
    Pallet cells then hands off — Tier-2 #6), and an **inert learning loop** (aria wrote no `<lesson>`;
    the nudge now prompts for one).
 
-**The headline:** perception (Iter 01→02) *and* the **door-seam** are now solved; the remaining wall
-is **odometry drift / a real place-graph** + **grounded learning**.
+**Live run #2 (2026-06-15, recorded, clean-start, guarded) — SUCCESS + a new wall.** Full report:
+`reports/2026-06-15-live-run-02.md`. With the fixes, the agent **left the house, crossed Pallet Town,
+and reached Oak's Lab** (maps 38→37→0→40, 57 cells) for **~$0.23** (30 bounded wakes, vs run #1's 351 /
+~$3). The free autopilot drove 76/123 steps. Video: `runs/run2.mp4` (1:40, video+audio). The run-#1
+spatial failure is **solved on real hardware**. But it then **couldn't get the starter**: the LLM
+**hallucinated its location** (narrated "Viridian City"/"Gramps" while truly in Pallet→Oak's Lab) and
+**flailed through Oak's forced dialog**. And it wrote **no lesson** — root cause: the harness exposes no
+memory-write channel (only THINK/MOVE/GOTO is parsed), so "record a lesson" is a no-op.
+
+**The headline:** perception-geometry (Iter 02) and the door-seam (run #2) are solved. The bottleneck
+**moved again** → **semantic perception (the LLM mis-reads where it is) + scripted-event/menu
+interaction + a missing memory-write channel.** The agent can now *navigate* but can't yet *understand
+or transact* with the game's story gates.
 
 **Spend:** ~$3 this run; ~$0.66 across everything before. **Prompt caching is OFF** (`cached_tokens=0`)
 — the biggest cheap win available.
 
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
-**Tier 1 — cheap guardrails (mostly DONE):**
-1. ✅ **Progress watchdog** in `play_pokemon.py` (`--stuck-steps`, auto-80 for paid brains; reads the
-   RAM oracle, never leaked). Validated: halts a stalled run at the threshold.
-2. ✅ **Loop-breaker** — `HybridBrain` hands the LLM a replan nudge after N consecutive stuck wakes
-   (change direction + record a lesson). The seam fix below removed the original phantom-frontier
-   thrash, so explicit frontier-abandonment is largely moot.
-3. ⏳ **Enable prompt caching** on the aria/Haiku calls — STILL OPEN (aria-side config); biggest cost win.
+**DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
+*live* in run #2), the clean-start + archive tool, and the recorded paid run #2 itself.
 
-**Tier 2 — spatial memory:**
-4. ✅ **Seam fix (portal)** — a detected transition seals the way-back as a non-frontier portal,
-   killing the door oscillation. Caveat: interior *stairs* are low-diff and still slip through as a
-   silent map-merge; they didn't block traversal, so deferred — and note **fade-detection won't catch
-   stairs** (Gen-1 stairs don't fade), so reliable stair detection is harder than first assumed.
-5. ⏳ **Full place-graph** — the portal is a one-way seal; next is per-area maps that *restore* on
-   return (needed once the agent must backtrack between areas).
-6. ⏳ **Curb odometry drift** — the autopilot explores ~10 Pallet cells, then its drifted graph dead-
-   ends and it hands off to the LLM. Make `[d,d]` net exactly one tile, or re-anchor on features. This
-   is now the main **free** improvement target.
+**Now (run-#2-informed, cheapest first):**
+1. **Give the agent a memory-write channel.** Parse an optional `LESSON: <text>` line (like `GOTO:`)
+   and persist it to aria — or have aria distill `lessons.md` from its journal at episode end. Until
+   this exists, the loop-breaker's "record a lesson" is **theatre** (run #2 wrote zero lessons).
+2. **Don't wake the LLM blindly inside a forced dialog.** Detect a *stable* advancing textbox and let
+   a cheap rule mash A through it, waking the LLM only at a real **choice** (menu with options). Run #2
+   burned most of its 30 wakes flailing in Oak's dialog (24.4% wake rate, ~4× the free estimate).
+3. **Ground location/event semantics** — the real capability gap. The LLM **hallucinated** its location
+   ("Viridian City"/"Gramps" while in Pallet→Oak's Lab). Kill it with the cheapest "perception-as-a-
+   module" move that works: a small screen/event classifier, OCR of place signs, or feed the LLM the
+   *symbolic* event state instead of raw pixels.
+4. **Then re-run Pallet→starter→Route 1** (guarded). Success = obtains a starter and leaves Pallet at
+   a low wake-rate. Then the credit-gated gating-probe verdict and the first battle.
 
-**Tier 3 — paid run #2 (gated on an explicit go):** MANDATORY pre-run — `uv run python
-reset_aria_memory.py --yes` (zero accumulated experience: David's standing requirement) + caching on
-+ run via a watchdog/budget-guarded driver. Success = leaves the house, explores Pallet, ideally
-Route 1, at a **LOW wake-rate** (proves the cost model) within a bounded $/step budget. Then the
-credit-gated **gating-probe verdict** (`--brain llm`) and the first **battle**.
+**Deferred (NOT blocking):** prompt caching (aria-side; the unusual aria API path makes it its own
+investigation — not blocking at this wake volume), full place-graph + odometry drift (Tier-2; the
+autopilot hands off to the LLM at a healthy point), interior-stair detection (low-diff, didn't block
+traversal; note **fade-detection won't catch stairs** — they don't fade).
+
+**Run a clean paid iteration:** MANDATORY pre-run `uv run python reset_aria_memory.py --yes` (archives
+→ wipes; zero accumulated experience, David's standing requirement), then the guarded recorded run
+(`--max-llm-calls`, `--stuck-steps`, `--record`).
 
 ## 4. Architecture / orientation
 
