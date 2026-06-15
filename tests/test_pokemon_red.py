@@ -15,7 +15,7 @@ from core.brains import ScriptedBrain
 from core.gateway import Gateway
 from core.permissions import Allowlist
 from core.runner import run_episode
-from games.pokemon_red import POKEMON_SANDBOX
+from games.pokemon_red import POKEMON_SANDBOX, POKEMON_SYSTEM
 from games.pokemon_red import memory_map as mm
 from games.pokemon_red.plugin import PokemonRedPlugin
 
@@ -68,6 +68,18 @@ def _seed_party_mon1(emu: FakeEmulator):
     emu.mem[base + mm.OFF_LEVEL] = 12
     emu.mem[base + mm.OFF_MAX_HP] = 0x00
     emu.mem[base + mm.OFF_MAX_HP + 1] = 0x18  # 24
+
+
+# -- prompt: lesson channel un-muzzled ----------------------------------------
+
+def test_pokemon_system_unmuzzles_and_advertises_lesson():
+    # The muzzle ("EXACTLY ... and nothing else") is lifted so the model may emit a LESSON line,
+    # and the LESSON channel is advertised. THINK/MOVE (what _parse depends on) are still required.
+    assert "nothing else" not in POKEMON_SYSTEM
+    assert "LESSON:" in POKEMON_SYSTEM
+    assert "THINK:" in POKEMON_SYSTEM and "MOVE:" in POKEMON_SYSTEM
+    # It must NOT instruct aria's persistent <lesson> tag (that would cross runs).
+    assert "<lesson>" not in POKEMON_SYSTEM.lower()
 
 
 # -- memory map ---------------------------------------------------------------

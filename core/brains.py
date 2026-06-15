@@ -30,6 +30,10 @@ from core.outcome import OutcomeMemory, action_key, state_signature
 
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 
+# How many of the most recent LLM-authored lessons to keep in the per-run buffer and re-inject. A
+# small cap keeps the re-injection cheap (cost-conscious) and recent (the run's latest learning).
+_LESSON_CAP = 8
+
 
 def _call(tool: str, args: dict, agent_id: str) -> ToolCall:
     return ToolCall(tool=tool, args=args, agent_id=agent_id, call_id=f"call-{uuid.uuid4()}")
@@ -209,8 +213,10 @@ class HybridBrain:
         if named is not None:
             self.goto = named
         tail = f" goto={self.goto}" if self.goto else ""
+        lesson = getattr(self.fallback, "lesson", None)  # one-line lesson the LLM authored this wake
+        ltail = f' lesson="{lesson}"' if lesson else ""
         self.last_thought = (f"[wake:{why}] "
-                             f"{getattr(self.fallback, 'last_thought', '')}{tail}").strip()
+                             f"{getattr(self.fallback, 'last_thought', '')}{tail}{ltail}").strip()
         return call
 
     @property
@@ -263,7 +269,7 @@ def _openai_complete(
             "model": model,
             "messages": [{"role": "user", "content": content}],
             "stream": False,
-            "max_tokens": 64,   # room for a one-line THINK + the MOVE
+            "max_tokens": 128,   # room for THINK + MOVE + an optional GOTO and one-line LESSON
             "temperature": 0,
         }
         r = requests.post(f"{url}/v1/chat/completions", json=payload,
@@ -309,6 +315,12 @@ class LLMButtonBrain:
         self.system = system or _DEFAULT_SYSTEM
         self.last_thought = ""       # the model's latest reasoning, for display
         self.goto: Optional[list] = None  # destination cell the planner named this turn (or None)
+        self.lesson: Optional[str] = None  # one-line lesson the LLM authored THIS turn (or None)
+        # HARNESS-owned, per-run lesson buffer (learning-boundary law): lessons the LLM records are
+        # kept here, re-injected into the prompt on later wakes within this run, and discarded when
+        # the object dies at run end. This is NOT aria's persistent <lesson>/lessons.md — a plain
+        # LESSON: line the harness captures, so nothing bleeds into the next run.
+        self.lessons: list[str] = []
         self._last_pos = None        # (x, y) at the previous decision
         self._last_buttons = None    # what we pressed last, for wall-bump feedback
         if complete_fn is not None:
@@ -325,6 +337,10 @@ class LLMButtonBrain:
                 f"unknown LLM backend: {backend!r} (use 'ollama', 'llamacpp', or 'aria')")
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
+        # Cleared each turn so a model-call failure (early return below) can't leave the PREVIOUS
+        # turn's destination/lesson looking "current" to HybridBrain — only THIS reply may set them.
+        self.goto = None
+        self.lesson = None
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
         feedback = self._movement_feedback(obs)
         avoid = context.get("avoid") or []      # actions that did nothing here (outcome memory)
@@ -334,6 +350,9 @@ class LLMButtonBrain:
         stuck_note = context.get("stuck_note")  # loop-breaker replan nudge (HybridBrain)
         if stuck_note:
             feedback = (feedback + "\n" + stuck_note).strip()
+        if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
+            feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
+                        + "\n- ".join(self.lessons)).strip()
         prompt = (f"{self.system}\n\n{strategy}\n{feedback}\n\n"
                   f"Current state:\n{obs.text}\n\nYour reply:")
         image = obs.data.get("screen_path") if self.use_vision else None
@@ -344,6 +363,10 @@ class LLMButtonBrain:
             return _call("press_button", {"button": "a"}, self.agent_id)
         buttons, thought = self._parse(raw)
         self.goto = self._parse_goto(raw)   # optional destination for the free autopilot (feature #2)
+        self.lesson = self._parse_lesson(raw)  # optional one-line lesson -> per-run buffer (feature #3)
+        if self.lesson and self.lesson.lower() not in [s.lower() for s in self.lessons]:
+            self.lessons.append(self.lesson)   # dedup is whole-buffer + case-insensitive (not just
+            del self.lessons[:-_LESSON_CAP]     # the last entry); keep most recent, re-injection cheap
         self.last_thought = thought or raw.strip()[:160]
         self._last_pos = (obs.data.get("x"), obs.data.get("y"))
         self._last_buttons = buttons
@@ -368,8 +391,8 @@ class LLMButtonBrain:
     def _parse(raw: str, max_buttons: int = 4) -> tuple[list[str], str]:
         """Return (buttons, thought). When the model uses the THINK/MOVE format,
         buttons are taken only from the MOVE line — so direction words in the
-        reasoning ('head down to the stairs') aren't mistaken for inputs.
-        Otherwise scan the whole reply."""
+        reasoning ('head down to the stairs') aren't mistaken for inputs. With no
+        MOVE line (free-text reply) scan the reply, skipping tagged prose lines."""
         text = raw.strip()
         thought, move_src = "", None
         for line in text.splitlines():
@@ -378,10 +401,23 @@ class LLMButtonBrain:
                 thought = line.split(":", 1)[1].strip()
             elif low.startswith(("move:", "buttons:", "action:")):
                 move_src = line.split(":", 1)[1]
-        src = move_src if move_src is not None else text
-        picks = [t for t in src.lower().replace(",", " ").split() if t in BUTTONS]
-        if not picks:  # MOVE line empty/garbled — scan the whole reply
-            picks = [t for t in text.lower().replace(",", " ").split() if t in BUTTONS]
+        if move_src is not None:
+            # The model used a MOVE line: trust ONLY it. Truncate at a GOTO/LESSON directive that got
+            # concatenated onto the same line, so that line's prose ('LESSON: go down...') can't add
+            # spurious button presses. A garbled/empty MOVE falls through to the safe 'a' default
+            # below — we deliberately do NOT scan the reply's prose for buttons in this case.
+            low = move_src.lower()
+            cuts = [low.find(k) for k in ("goto:", "lesson:", "think:") if low.find(k) >= 0]
+            if cuts:
+                move_src = move_src[:min(cuts)]
+            picks = [t for t in move_src.lower().replace(",", " ").split() if t in BUTTONS]
+        else:
+            # Free-text reply (no MOVE line): scan it for buttons, but skip tagged prose lines so a
+            # direction word inside a THINK/LESSON/GOTO line isn't misread as an input.
+            prose = ("think:", "lesson:", "goto:")
+            scan = "\n".join(ln for ln in text.splitlines()
+                             if not ln.strip().lower().startswith(prose))
+            picks = [t for t in scan.lower().replace(",", " ").split() if t in BUTTONS]
         return picks[:max_buttons] or ["a"], thought  # 'a' = safe default
 
     @staticmethod
@@ -395,4 +431,18 @@ class LLMButtonBrain:
                 nums = re.findall(r"-?\d+", line.split(":", 1)[1])
                 if len(nums) >= 2:
                     return [int(nums[0]), int(nums[1])]
+        return None
+
+    @staticmethod
+    def _parse_lesson(raw: str) -> Optional[str]:
+        """Optional 'LESSON: <text>' line -> the lesson text (None if absent/empty). A plain line
+        the HARNESS captures into a per-run buffer it re-injects within the run and discards at run
+        end — deliberately NOT aria's <lesson> tag, which would persist to lessons.md across runs and
+        break the learning-boundary law. Only the first LESSON line is taken; the placeholder the
+        prompt shows ('<one short lesson>') is ignored so an un-filled template doesn't get stored."""
+        for line in raw.splitlines():
+            if line.strip().lower().startswith("lesson:"):
+                text = line.split(":", 1)[1].strip()
+                if text and not (text.startswith("<") and text.endswith(">")):
+                    return text
         return None

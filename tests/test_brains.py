@@ -45,3 +45,132 @@ def test_llm_brain_backend_selection():
     LLMButtonBrain("a", backend="aria", api_key="tok")  # bearer-authed OpenAI shape
     with pytest.raises(ValueError):
         LLMButtonBrain("a", backend="bogus")
+
+
+# -- LESSON: per-run buffer (harness-owned within-run learning) ---------------
+
+def test_llm_brain_captures_lesson_without_breaking_move():
+    reply = "THINK: blocked north\nMOVE: down down\nLESSON: the north door is sealed, go south"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    call = brain.decide(_obs(), [], {})
+    assert call.tool == "press_sequence" and call.args["buttons"] == ["down", "down"]
+    assert brain.lesson == "the north door is sealed, go south"
+    assert brain.lessons == ["the north door is sealed, go south"]
+
+
+def test_llm_brain_reinjects_lessons_on_later_decides():
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        # author a lesson only on the first call; later calls just move
+        return "MOVE: up up\nLESSON: ledges only drop south" if len(prompts) == 1 else "MOVE: up up"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    brain.decide(_obs(), [], {})          # records the lesson
+    brain.decide(_obs(), [], {})          # should see it re-injected
+    assert "ledges only drop south" not in prompts[0]   # not in the prompt that produced it
+    assert "ledges only drop south" in prompts[1]        # re-injected on the next wake
+    assert "LESSONS you recorded" in prompts[1]
+
+
+def test_llm_brain_no_lesson_leaves_buffer_empty():
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: "THINK: walk\nMOVE: left")
+    brain.decide(_obs(), [], {})
+    assert brain.lesson is None and brain.lessons == []
+
+
+def test_llm_brain_lesson_consecutive_duplicate_stored_once():
+    dup = LLMButtonBrain("a", complete_fn=lambda prompt, image: "MOVE: a\nLESSON: same")
+    dup.decide(_obs(), [], {})
+    dup.decide(_obs(), [], {})
+    assert dup.lessons == ["same"]
+
+
+def test_llm_brain_lesson_buffer_caps_to_most_recent():
+    from core.brains import _LESSON_CAP
+    n = {"i": 0}
+
+    def complete(prompt, image):
+        n["i"] += 1
+        return f"MOVE: a\nLESSON: lesson {n['i']}"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    total = _LESSON_CAP + 5
+    for _ in range(total):
+        brain.decide(_obs(), [], {})
+    assert len(brain.lessons) == _LESSON_CAP                      # capped
+    assert brain.lessons[-1] == f"lesson {total}"                 # most-recent kept
+    assert brain.lessons[0] == f"lesson {total - _LESSON_CAP + 1}"  # oldest evicted
+
+
+def test_llm_brain_lesson_direction_words_dont_leak_as_buttons():
+    # MOVE line empty/garbled -> fallback scan must NOT pull 'down' out of the LESSON/THINK prose.
+    reply = "THINK: I should go down later\nMOVE: \nLESSON: always go down at the ledge"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    call = brain.decide(_obs(), [], {})
+    assert call.tool == "press_button" and call.args["button"] == "a"   # safe default, not 'down'
+    assert brain.lesson == "always go down at the ledge"
+
+
+def test_llm_brain_ignores_unfilled_lesson_template():
+    reply = "MOVE: up\nLESSON: <one short lesson>"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    brain.decide(_obs(), [], {})
+    assert brain.lesson is None and brain.lessons == []
+
+
+def test_llm_brain_lesson_with_colon_preserved():
+    reply = "MOVE: up\nLESSON: at the fork take the left:north path"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    brain.decide(_obs(), [], {})
+    assert brain.lesson == "at the fork take the left:north path"
+
+
+def test_llm_brain_empty_lesson_line_ignored():
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: "MOVE: up\nLESSON:    ")
+    brain.decide(_obs(), [], {})
+    assert brain.lesson is None and brain.lessons == []
+
+
+def test_llm_brain_non_consecutive_duplicate_lesson_not_readded():
+    # A, B, then A again -> the buffer must not hold A twice (dedup is whole-buffer, not just last).
+    seq = iter(["MOVE: a\nLESSON: alpha", "MOVE: a\nLESSON: beta", "MOVE: a\nLESSON: ALPHA"])
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: next(seq))
+    for _ in range(3):
+        brain.decide(_obs(), [], {})
+    assert brain.lessons == ["alpha", "beta"]   # case-insensitive dedup; 'ALPHA' not re-added
+
+
+def test_llm_brain_empty_move_line_defaults_to_a_not_prose():
+    # MOVE empty + an UNTAGGED prose line with a direction word -> must NOT leak 'down' as a button.
+    reply = "THINK: blocked\nMOVE: \nthe only exit i see is down the stairs"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    call = brain.decide(_obs(), [], {})
+    assert call.tool == "press_button" and call.args["button"] == "a"
+
+
+def test_llm_brain_move_line_truncates_concatenated_directive():
+    # MOVE and a directive concatenated on one line must not add spurious presses from the prose.
+    reply = "MOVE: down LESSON: go down again for the item"
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
+    call = brain.decide(_obs(), [], {})
+    assert call.tool == "press_button" and call.args["button"] == "down"   # one 'down', not two
+
+
+def test_llm_brain_resets_goto_and_lesson_on_model_failure():
+    # A failed model call must not leave the prior turn's destination/lesson looking current.
+    calls = {"n": 0}
+
+    def complete(prompt, image):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return "MOVE: up\nGOTO: 3 4\nLESSON: remember the ledge"
+        raise RuntimeError("backend down")
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    brain.decide(_obs(), [], {})
+    assert brain.goto == [3, 4] and brain.lesson == "remember the ledge"
+    brain.decide(_obs(), [], {})              # this call raises inside complete()
+    assert brain.goto is None and brain.lesson is None   # not stale
+    assert brain.lessons == ["remember the ledge"]       # buffer keeps the earlier lesson

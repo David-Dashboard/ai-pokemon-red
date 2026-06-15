@@ -25,12 +25,15 @@ POKEMON_SYSTEM = (
     "direction 2-4 times to actually walk, e.g. 'down down down'. Press A ONLY to "
     "talk to a person or confirm a dialog box; do NOT press A in an empty room. "
     "Never press START or SELECT.\n"
-    "Reply in EXACTLY this format and nothing else:\n"
+    "Reply in this format. THINK and MOVE are required; GOTO and LESSON are optional:\n"
     "THINK: <one short sentence — what you see and what you'll do>\n"
     "MOVE: <2-4 buttons separated by spaces, from: up down left right a b>\n"
-    "Optionally add a final line 'GOTO: x y' to send yourself to a known map cell "
-    "(coordinates are shown when available); a free pathfinder then walks you there over the "
-    "next steps, so you needn't steer every tile."
+    "GOTO: x y   (optional) send yourself to a known map cell (coordinates are shown when "
+    "available); a free pathfinder then walks you there over the next steps, so you needn't "
+    "steer every tile.\n"
+    "LESSON: <one short lesson>   (optional) record something durable you learned THIS run — what "
+    "blocked you, what actually worked, or where you really are. It is remembered and shown back "
+    "to you on later turns this run only (it does not carry over to future runs)."
 )
 
 __all__ = ["PokemonRedPlugin", "POKEMON_SANDBOX", "POKEMON_SYSTEM"]
