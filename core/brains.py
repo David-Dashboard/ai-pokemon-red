@@ -168,7 +168,7 @@ class HybridBrain:
         if self.goto is not None and pose is not None and list(pose) == list(self.goto):
             self.goto = None                          # arrived — destination reached, stop steering there
         if self.goto is not None:
-            context["goto"] = self.goto               # the autopilot A*'s toward it (free), else explores
+            context["goto"] = self.goto               # the autopilot BFS-pathfinds toward it (free), else explores
 
         if (obs.data.get("context") or "overworld") != "overworld":
             call = self._wake(obs, tools, context, "mode")
