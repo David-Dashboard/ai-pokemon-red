@@ -93,10 +93,10 @@ separate aria-side investigation.
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
-*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, and **steps 1–2
-below — the harness-owned per-run `LESSON:` buffer + the disconfirm/surprise detector** (branch
-`feat/lesson-buffer`, commits `45271c4`/`cc193ca`/`7ae55ad`, local-not-pushed; 101 tests; each
-adversarially reviewed; details in `LEARNINGS.md`).
+*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, **steps 1–2
+below** (the harness-owned per-run `LESSON:` buffer + the disconfirm/surprise detector), and **step 3a
+(fail-safe dialog auto-advance)** (branch `feat/lesson-buffer`, commits `45271c4`/`cc193ca`/`7ae55ad`/
+`facd598`, local-not-pushed; 106 tests; steps 1–2 each adversarially reviewed; details in `LEARNINGS.md`).
 
 **Now (run-#2-informed, cheapest first):**
 1. ~~**Un-muzzle lessons into a HARNESS-owned per-run buffer.**~~ **DONE** (commit `45271c4`).
@@ -111,11 +111,25 @@ adversarially reviewed; details in `LEARNINGS.md`).
    a `LESSON:` → lands in step-1's buffer. It **replaced** the old inline loop-breaker and now also fires
    on the case that one missed — flailing inside a forced **dialog** (mode-wakes that change nothing, the
    run-#2 wall). World-agnostic; the "act → observe → learn" spine. Validated by tests + adversarial review.
-3. **Dialog auto-advance + a Gen-1 textbox decoder** ← **NEXT**. A cheap rule mashes A through a *stable*
-   advancing textbox (free), waking the LLM only at a real **choice** (never auto-mash a YES/NO). The decoder
-   reads the textbox region from PIXELS (not RAM) and accumulates a "text since your last decision" transcript
-   injected at the next wake — and **the same decoder grounds location/event semantics**, killing the
-   hallucination (the LLM narrated "Viridian City"/"Gramps" while in Oak's Lab). One capability, two payoffs.
+3. **Dialog auto-advance + a Gen-1 textbox decoder** — split into 3a (done) and 3b (in progress):
+   - ~~**3a. Fail-safe dialog auto-advance.**~~ **DONE** (commit `facd598`). Data-first: `eval/capture_dialog.py`
+     captured real START-menu/YES-NO/keyboard/dialog frames. Finding — a YES/NO box sits in the upper-right
+     OVER the textbox and `detect_mode` read it as "dialog", so the mode label alone is unsafe to auto-advance.
+     Fix: `detect_mode` now flags a textbox carrying an upper-right selection box (midright near-white > 0.15)
+     as "menu" (a choice → wake); plain dialog stays "dialog". `HybridBrain(advance_on_dialog=True)` (Pokémon
+     drivers) presses A through plain dialog for FREE (resets the disconfirm streak — advancing IS progress),
+     waking only at a choice/battle. Validated on 272 real frames (plain→advance, YES-NO/START menu→wake;
+     keyboard→battle=also a wake). 53/272 frames became free auto-advances.
+   - **3b. Gen-1 textbox font decoder ← NEXT (this is where I left off).** Reads the textbox text from PIXELS
+     for (i) a "text since last decision" transcript injected at the next wake, and (ii) grounding location/
+     event semantics (kills the run-#2 hallucination). **PROVEN tractable, not yet committed:** the text grid
+     is nailed (2 lines at y=112/128, 8px cells from x=8) and template-matching decodes a calibrated frame
+     PERFECTLY (264 → "give a nickname / to CHARMANDER?"). REMAINING: build a clean glyph-table asset
+     (`games/pokemon_red/gen1_font.json`) — calibrate from the dialog grid (same-source; the naming-keyboard
+     grid is an irregular ~17px pitch and risks pixel-offset mismatches), labeling the deduped charset
+     (decode emits '?' for unknown, never a wrong guess); then wire the perceiver to attach decoded text to
+     the `SymbolicState` and `HybridBrain`/`LLMButtonBrain` to accumulate+inject the transcript. Then 3a's
+     review + a step-3 adversarial pass.
 4. **Then re-run Pallet→starter→Route 1** (guarded). Success = obtains a starter and leaves Pallet at a
    low wake-rate. Then the credit-gated gating-probe verdict and the first battle.
 
