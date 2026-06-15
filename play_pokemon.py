@@ -66,8 +66,8 @@ def main() -> int:
                     help="idle frames to pause between moves (windowed/sound runs) so it's watchable; "
                          "60 ~ a 1s pause per move. The music keeps playing through the pause.")
     ap.add_argument("--record", default=None, metavar="PATH.mp4",
-                    help="record the run to an MP4 at this path (works with or without a window; "
-                         "needs imageio + imageio-ffmpeg, already in this project's deps)")
+                    help="record the run to an MP4 (video + game audio) at this path; works with or "
+                         "without a window (recording forces sound emulation and muxes it in)")
     ap.add_argument("--record-fps", type=int, default=30, help="frame rate of the recorded MP4")
     ap.add_argument("--record-scale", type=int, default=3,
                     help="integer upscale of the 160x144 frame in the MP4 (3 -> 480x432)")

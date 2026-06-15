@@ -86,24 +86,27 @@ class PyBoyEmulator:
                 "(or pip install -r requirements-pokemon.txt)"
             ) from e
 
+        # Recording always wants audio, so emulate sound whenever we record OR play live audio.
+        want_sound = sound or bool(record_path)
         self._pyboy = PyBoy(
             rom_path,
             window="null" if headless else "SDL2",
-            sound_emulated=sound,
-            sound_volume=100 if sound else 0,
+            sound_emulated=want_sound,
+            sound_volume=100 if want_sound else 0,
         )
         # Watchable real-time is OUR job, not PyBoy's: any windowed/sound run is paced by the
         # frame-by-frame governor below (see _advance). Headless agent runs stay unbounded.
         self._realtime = (not headless) if realtime is None else realtime
         self._pyboy.set_emulation_speed(0)   # unbounded; we own the wall-clock pacing
         self._next_frame_t: Optional[float] = None
-        # Optional MP4 capture of the run; recorded frame-by-frame in _advance, finalized in close().
-        # Works with or without a window (recording does not require --sound/--window).
+        # Optional MP4 capture of the run; video+audio recorded frame-by-frame in _advance, muxed in
+        # close(). Works with or without a window (recording does not require --sound/--window).
         self._recorder = None
         if record_path:
             from core.recorder import VideoRecorder
             self._recorder = VideoRecorder(record_path, fps=record_fps, scale=record_scale,
-                                           src_fps=_GB_FPS)
+                                           src_fps=_GB_FPS,
+                                           sample_rate=int(self._pyboy.sound.sample_rate))
         # Let the boot/intro settle a little so the first observation is real (unpaced, unrecorded).
         self._pyboy.tick(60, render=True)
 
@@ -121,6 +124,7 @@ class PyBoyEmulator:
             self._pyboy.tick(1, render=render or rec)   # recorder needs a fresh framebuffer
             if rec:
                 self._recorder.capture(self._pyboy.screen.ndarray)
+                self._recorder.capture_audio(self._pyboy.sound.ndarray)  # full-rate, every frame
             if self._realtime:
                 self._pace_one_frame()
 
