@@ -80,15 +80,23 @@ code): aria's `<lesson>` channel is LIVE (it parses lesson tags from every reply
 THINK/MOVE, nothing else" + `max_tokens=64`, so the model never emits one. Per the learning-boundary
 law the fix is a HARNESS-owned `LESSON:` buffer, NOT aria's persisting `lessons.md`.
 
-**The headline:** perception-geometry (Iter 02) and the door-seam (run #2) are solved. The bottleneck
-**moved again** → **semantic perception (the LLM mis-reads where it is) + scripted-event/menu
-interaction.** The agent can now *navigate* but can't yet *understand or transact* with the game's
-story gates. (The muzzled lesson channel — the third run-#2 wall — is now **fixed**: step 1 below gives
-the harness a per-run `LESSON:` buffer. It still needs a *live* paid run to show lessons actually help.)
+**Live run #3 (2026-06-16, recorded, clean-start, guarded) — SUCCESS, the run-#2 wall is BROKEN.** Full
+report: `reports/2026-06-16-live-run-03.md`, video `runs/run3.mp4`. With steps 1–3 (the `LESSON:` buffer,
+disconfirm detector, dialog auto-advance, textbox decoder), the agent **comprehended Oak's forced gate,
+chose SQUIRTLE as its starter, and reached the rival battle** (vs BULBASAUR) — maps 38→37→0→40, 87 cells,
+for **~$0.33** (40 wakes, budget-capped). **Dialog auto-advance handled 123 dialog frames for free** (the
+gate that burned run #2's whole budget), waking the LLM only at the 5 real choices; the textbox decoder
+grounded it in real on-screen text (decoded live: *"ASH received a SQUIRTLE!"* — no more location
+hallucination). It halted **mid-rival-battle** on the budget cap.
 
-**Spend:** run #1 ~$3; run #2 **~$0.23** (30 bounded wakes); ~$0.66 across the free work before.
-Prompt caching is OFF (`cached_tokens=0`) but **not blocking** at this wake volume — deferred to a
-separate aria-side investigation.
+**The headline:** perception-geometry, the door-seam, AND scripted-gate/menu transaction are now solved
+on real hardware. The bottleneck **moved again** → **battle-move decisions** (run #3 stopped inside the
+rival battle; we have no battle policy yet). The agent can navigate, read the screen, and transact gates;
+it can't yet *fight*.
+
+**Spend:** run #1 ~$3; run #2 ~$0.23; **run #3 ~$0.33** (40 wakes; 73 aria calls, 446K in / 9.8K out);
+~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
+0 before) — a bonus, still not the bottleneck at this wake volume.
 
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
@@ -132,15 +140,22 @@ only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LE
      This is the run-#2 hallucination fix — the LLM now reads the actual on-screen words instead of guessing.
      (Glyph coverage is the early-game charset; uncalibrated glyphs decode to '?' safely and the table grows
      via `calibrate_font.py`.)
-4. **Guarded, recorded PAID re-run Pallet→starter→Route 1 ← NEXT (the first credit spend).** With 1–3 in
-   place the agent should now: read the actual on-screen text (no location hallucination), auto-advance
-   Oak's forced dialog cheaply (waking only at the starter/nickname choices), and record/reuse `LESSON:`s
-   when the disconfirm detector fires. MANDATORY pre-run `reset_aria_memory.py --yes`; run guarded
-   (`--max-llm-calls`, `--stuck-steps`, `--record`). Success = obtains a starter and leaves Pallet at a low
-   wake-rate. Then the credit-gated gating-probe verdict and the first battle.
+4. ~~**Guarded, recorded PAID re-run Pallet→starter→Route 1.**~~ **DONE — SUCCESS** (run #3, 2026-06-16;
+   report `reports/2026-06-16-live-run-03.md`, video `runs/run3.mp4`). The run-#2 wall is **broken**: the
+   agent comprehended Oak's gate, **chose SQUIRTLE, and reached the rival battle** for **~$0.33** (40
+   wakes, budget-capped). Dialog auto-advance handled **123 dialog frames for free** (only 5 menu-choice
+   wakes); the textbox decoder grounded it in real on-screen text (decoded live: *"ASH received a
+   SQUIRTLE!"*). It halted **mid-rival-battle** on the budget cap. Steps 1–3 validated **live**.
 
-Steps 1–3 are all **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free vs
-the oracle, on a branch off the current PR; **no credits have been spent.** Step 4 is the first paid step.
+**NEXT — battle-move decisions (the new wall) + observability.** Run #3 stopped inside the rival battle
+because we have **no battle policy**: pick FIGHT/move/switch from the battle menu. Likely the same pattern
+(wake the LLM at the battle menu with the decoded battle text + options, cheap default). Also: extend the
+glyph table (`calibrate_font.py`) for fuller uppercase, and **log `screen_text` + `LESSON:`s to the
+oracle** so the next run's grounding/learning content is auditable (the oracle doesn't capture them yet).
+Then the credit-gated gating-probe verdict.
+
+Steps 1–3 were all **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free;
+step 4 was the first (and so far only) credit spend (~$0.33).
 
 **Deferred (NOT blocking):** prompt caching (aria-side; the unusual aria API path makes it its own
 investigation — not blocking at this wake volume), full place-graph + odometry drift (Tier-2; the
