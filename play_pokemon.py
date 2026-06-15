@@ -17,6 +17,11 @@ Examples:
     ARIA_BEARER_TOKEN=... python play_pokemon.py --rom path/to/PokemonRed.gb \
         --brain llm --backend aria --steps 200 --window
 
+    # record an MP4 of the run (works with or without a window; combine with --sound to
+    # also watch live):
+    python play_pokemon.py --rom path/to/PokemonRed.gb --brain hybrid --backend aria \
+        --perception --load-state start.state --steps 400 --record runs/play.mp4
+
 You must supply your own legally-obtained Pokémon Red ROM. None is bundled.
 """
 
@@ -60,6 +65,12 @@ def main() -> int:
     ap.add_argument("--watch-delay", type=int, default=0,
                     help="idle frames to pause between moves (windowed/sound runs) so it's watchable; "
                          "60 ~ a 1s pause per move. The music keeps playing through the pause.")
+    ap.add_argument("--record", default=None, metavar="PATH.mp4",
+                    help="record the run to an MP4 at this path (works with or without a window; "
+                         "needs imageio + imageio-ffmpeg, already in this project's deps)")
+    ap.add_argument("--record-fps", type=int, default=30, help="frame rate of the recorded MP4")
+    ap.add_argument("--record-scale", type=int, default=3,
+                    help="integer upscale of the 160x144 frame in the MP4 (3 -> 480x432)")
     ap.add_argument("--out", default="runs/pokemon_red")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--load-state", default=None,
@@ -79,7 +90,8 @@ def main() -> int:
         plugin = PokemonRedPlugin(rom_path=args.rom, out_dir=args.out,
                                   headless=not (args.window or args.sound),
                                   init_state=args.load_state, perceiver=perceiver,
-                                  sound=args.sound)
+                                  sound=args.sound, record_path=args.record,
+                                  record_fps=args.record_fps, record_scale=args.record_scale)
     except (FileNotFoundError, ImportError) as e:
         print(f"\nSetup error:\n{e}\n", file=sys.stderr)
         return 2
@@ -158,6 +170,8 @@ def main() -> int:
     if hasattr(brain, "wake_rate"):  # hybrid: how often the expensive brain was actually needed
         print(f"  llm_woke: {brain.woke}/{brain.total} steps ({100 * brain.wake_rate:.1f}%) "
               f"— autopilot handled the rest for free")
+    if args.record:
+        print(f"  recording: {args.record}")
     return 0
 
 

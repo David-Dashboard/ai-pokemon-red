@@ -43,11 +43,16 @@ class PokemonRedPlugin:
         init_state: Optional[str] = None,
         perceiver: Optional[Perceiver] = None,
         sound: bool = False,
+        record_path: Optional[str] = None,
+        record_fps: int = 30,
+        record_scale: int = 3,
     ) -> None:
         if emulator is None:
             if rom_path is None:
                 raise ValueError("provide either rom_path or an emulator instance")
-            emulator = PyBoyEmulator(rom_path, headless=headless, sound=sound)
+            emulator = PyBoyEmulator(rom_path, headless=headless, sound=sound,
+                                     record_path=record_path, record_fps=record_fps,
+                                     record_scale=record_scale)
         self.emu = emulator
         # Boot straight into real gameplay by loading a save state made past the
         # intro/name-entry (which a button-mashing brain can't reliably clear).

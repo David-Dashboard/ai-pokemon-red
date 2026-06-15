@@ -68,7 +68,8 @@ class PyBoyEmulator:
     """Live PyBoy-backed Game Boy. Wraps version drift behind a small surface."""
 
     def __init__(self, rom_path: str, headless: bool = True, sound: bool = False,
-                 realtime: Optional[bool] = None):
+                 realtime: Optional[bool] = None, record_path: Optional[str] = None,
+                 record_fps: int = 30, record_scale: int = 3):
         if not os.path.exists(rom_path):
             raise FileNotFoundError(
                 f"ROM not found: {rom_path}\n"
@@ -96,7 +97,14 @@ class PyBoyEmulator:
         self._realtime = (not headless) if realtime is None else realtime
         self._pyboy.set_emulation_speed(0)   # unbounded; we own the wall-clock pacing
         self._next_frame_t: Optional[float] = None
-        # Let the boot/intro settle a little so the first observation is real (unpaced).
+        # Optional MP4 capture of the run; recorded frame-by-frame in _advance, finalized in close().
+        # Works with or without a window (recording does not require --sound/--window).
+        self._recorder = None
+        if record_path:
+            from core.recorder import VideoRecorder
+            self._recorder = VideoRecorder(record_path, fps=record_fps, scale=record_scale,
+                                           src_fps=_GB_FPS)
+        # Let the boot/intro settle a little so the first observation is real (unpaced, unrecorded).
         self._pyboy.tick(60, render=True)
 
     def _advance(self, frames: int, render: bool) -> None:
@@ -104,12 +112,17 @@ class PyBoyEmulator:
         clock so motion is watchable AND the audio stays continuous (a bulk tick + sleep would
         starve the sound queue). Headless mode bulk-ticks as fast as possible."""
         frames = max(1, frames)
-        if not self._realtime:
+        rec = self._recorder is not None
+        # Bulk-tick only when neither pacing NOR recording needs per-frame access.
+        if not self._realtime and not rec:
             self._pyboy.tick(frames, render=render)
             return
         for _ in range(frames):
-            self._pyboy.tick(1, render=render)
-            self._pace_one_frame()
+            self._pyboy.tick(1, render=render or rec)   # recorder needs a fresh framebuffer
+            if rec:
+                self._recorder.capture(self._pyboy.screen.ndarray)
+            if self._realtime:
+                self._pace_one_frame()
 
     def _pace_one_frame(self) -> None:
         now = time.perf_counter()
@@ -162,6 +175,8 @@ class PyBoyEmulator:
         return self._pyboy.frame_count
 
     def close(self) -> None:
+        if self._recorder is not None:
+            self._recorder.close()   # finalize the MP4 before tearing down the emulator
         try:
             self._pyboy.stop(save=False)
         except Exception:

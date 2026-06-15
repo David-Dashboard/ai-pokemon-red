@@ -9,6 +9,8 @@ dependencies = [
     "pillow>=9.0",  # screenshot saving (Observation screen_path)
     "numpy>=1.21",  # PyBoy dependency / state arrays
     "requests>=2.25",  # LLMButtonBrain -> Ollama HTTP API (only for --brain llm)
+    "imageio>=2.37.3",       # MP4 recording (--record); ffmpeg below is bundled, no system install
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 # PEP 735 dependency group; `uv sync` installs it by default.
