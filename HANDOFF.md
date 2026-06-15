@@ -44,45 +44,55 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 - **MP4 recording** (`--record`, `core/recorder.py`): **video + game audio** (just fixed — was
   video-only). Works headless or windowed.
 
-**What's broken / the live result:** The first credit-funded LLM run (2026-06-15) **never left the
-starting house** and cost ~$3. Full post-mortem: `reports/2026-06-15-live-run-01-postmortem.md`.
-Root cause (data-confirmed): **interior stair-warps are low-diff (~13–29), below the area-reset
-threshold (60), so the perceiver never reset its map** — it dead-reckoned ONE drifting frame across
-two floors → a **permanent unreachable phantom frontier at (0,0)** → autopilot "stuck" every step →
-**LLM woken 351/400 (88%)**, flailing. Compounded by: **no progress watchdog in `play_pokemon.py`**,
-an **anti-loop hole** (unreachable frontier ≠ no frontier), **prompt caching off**, and an **inert
-learning loop** (aria wrote no `<lesson>`, didn't flag the goal blocked, and its recap *rationalized*
-the loop as "mapped 16+ tiles").
+**The live result + a sharper diagnosis:** The first credit-funded LLM run (2026-06-15, hybrid+aria)
+cost ~$3 and made no progress (38↔37). Post-mortem: `reports/2026-06-15-live-run-01-postmortem.md`.
+A **free oracle replay (2026-06-15)** then corrected the framing: the *free* autopilot actually
+**leaves the house and reaches Pallet Town's doorstep on its own** — "can't leave the house" was
+specific to the hybrid run. The real failures:
+1. **Seam oscillation — NOW FIXED.** On a *detected* transition the perceiver discarded the whole map
+   and reset to (0,0); the way-back then looked like the only frontier, so the autopilot **ping-ponged
+   across the door (0↔37) forever**. Fix: seal the way-back as a non-frontier **portal**
+   (`perceiver.py`). Validated free vs the oracle — it now crosses once and explores Pallet.
+2. **The LLM layer made it WORSE.** Woken 351/400 (88%) on a stuck autopilot, it just bankrolled
+   flailing. Mitigations shipped: a **progress watchdog** (`--stuck-steps`, halts on no oracle-progress)
+   and a **loop-breaker replan nudge** in `HybridBrain` (tells a stuck LLM to change direction + record
+   a lesson). The seam fix also restores the cost model — a competent autopilot wakes the LLM rarely.
+3. **Still open:** **prompt caching off** (aria-side), **odometry drift** (autopilot exhausts ~10
+   Pallet cells then hands off — Tier-2 #6), and an **inert learning loop** (aria wrote no `<lesson>`;
+   the nudge now prompts for one).
 
-**The headline:** the bottleneck **moved** from *perception* (Iter 01) to **spatial-memory
-integration across transitions + grounded progress/learning** (this run).
+**The headline:** perception (Iter 01→02) *and* the **door-seam** are now solved; the remaining wall
+is **odometry drift / a real place-graph** + **grounded learning**.
 
 **Spend:** ~$3 this run; ~$0.66 across everything before. **Prompt caching is OFF** (`cached_tokens=0`)
 — the biggest cheap win available.
 
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
-**Tier 1 — cheap guardrails (do BEFORE any further paid run; $0 to build):**
-1. Port the **progress watchdog** from `play_loop.py` into `play_pokemon.py` (halt on no global
-   progress for N steps).
-2. **Frontier-abandonment / loop-breaker:** drop a frontier that stays unreachable after K tries
-   (halt if none remain); feed "no progress for N steps" to the LLM as a *replan* signal; and **write
-   it to memory** (force a `<lesson>` / flip the goal to *blocked*) so the agent learns instead of
-   rationalizing.
-3. **Enable prompt caching** on the aria/Haiku calls (stable system+memory prefix → ~10% billing).
+**Tier 1 — cheap guardrails (mostly DONE):**
+1. ✅ **Progress watchdog** in `play_pokemon.py` (`--stuck-steps`, auto-80 for paid brains; reads the
+   RAM oracle, never leaked). Validated: halts a stalled run at the threshold.
+2. ✅ **Loop-breaker** — `HybridBrain` hands the LLM a replan nudge after N consecutive stuck wakes
+   (change direction + record a lesson). The seam fix below removed the original phantom-frontier
+   thrash, so explicit frontier-abandonment is largely moot.
+3. ⏳ **Enable prompt caching** on the aria/Haiku calls — STILL OPEN (aria-side config); biggest cost win.
 
-**Tier 2 — fix the actual cause (spatial memory):**
-4. **Reliable transition detection** — diff-threshold misses interior stairs; use a **fade-to-
-   black/white detector** (reuse the near-uniform-frame guard already in `detect_mode`) and
-   **reset/branch the coordinate frame** on a detected warp.
-5. **Place-graph, not one drifting grid** — keep a per-area map and *link* areas by the transition
-   used, so returning to a known area restores its map instead of merging it (also gives real
-   landmarks: "this frontier is the door to outside").
-6. **Curb odometry drift** — make `[d,d]` net exactly one tile, or re-anchor on features.
+**Tier 2 — spatial memory:**
+4. ✅ **Seam fix (portal)** — a detected transition seals the way-back as a non-frontier portal,
+   killing the door oscillation. Caveat: interior *stairs* are low-diff and still slip through as a
+   silent map-merge; they didn't block traversal, so deferred — and note **fade-detection won't catch
+   stairs** (Gen-1 stairs don't fade), so reliable stair detection is harder than first assumed.
+5. ⏳ **Full place-graph** — the portal is a one-way seal; next is per-area maps that *restore* on
+   return (needed once the agent must backtrack between areas).
+6. ⏳ **Curb odometry drift** — the autopilot explores ~10 Pallet cells, then its drifted graph dead-
+   ends and it hands off to the LLM. Make `[d,d]` net exactly one tile, or re-anchor on features. This
+   is now the main **free** improvement target.
 
-**Tier 3 — validate, then resume the mission:** re-run the bedroom→Pallet slice (Tier-1 guarded);
-success = leaves the house and reaches Pallet within a bounded $/step budget. Then the credit-gated
-**gating-probe verdict** (`--brain llm`) and the first **battle**.
+**Tier 3 — paid run #2 (gated on an explicit go):** MANDATORY pre-run — `uv run python
+reset_aria_memory.py --yes` (zero accumulated experience: David's standing requirement) + caching on
++ run via a watchdog/budget-guarded driver. Success = leaves the house, explores Pallet, ideally
+Route 1, at a **LOW wake-rate** (proves the cost model) within a bounded $/step budget. Then the
+credit-gated **gating-probe verdict** (`--brain llm`) and the first **battle**.
 
 ## 4. Architecture / orientation
 
@@ -119,7 +129,9 @@ uv run python -m eval.gating_probe
 
 **Live LLM run (needs aria up + credits):**
 ```powershell
-# in ai-aria: docker compose up -d aria aria-litellm   (ARIA_DATA_DIR=./pokemon-red-data)
+# 0) START CLEAN — zero accumulated experience (mandatory before each paid iteration):
+uv run python reset_aria_memory.py --yes
+# 1) in ai-aria: docker compose up -d aria aria-litellm   (ARIA_DATA_DIR=./pokemon-red-data)
 $env:ARIA_BEARER_TOKEN = ((Get-Content ..\ai-aria\.env | Where-Object { $_ -match '^BEARER_TOKEN=' }) -replace '^BEARER_TOKEN=','').Trim()
 uv run python play_loop.py --rom "roms/PokemonRed.gb"        # headless, watchdog-guarded, persistent
 ```
@@ -129,7 +141,8 @@ without its seed); the Anthropic key behind aria needs credits; **prompt caching
 
 ## 6. Repo state
 
-- Branch: **`feat/perception-module`** (pushed; **PR open** against `main`).
+- Branch: **`feat/perception-module`** (**PR open** against `main`). NOTE: the seam-fix + Tier-1
+  guardrail commits are **local only — not yet pushed** (push when David asks).
 - You supply your own legally-obtained `roms/PokemonRed.gb` (none is bundled). `start.state` (past
   the intro, in the bedroom) is generated by `make_state.py`.
 - Windows + PowerShell host (a Bash tool is also available). Files under `runs/` are gitignored.
@@ -168,6 +181,7 @@ play_pokemon.py            # single-run driver (watch/record/--brain explore|hyb
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
 eval_haiku.py              # Iteration-01 direct-API harness (uses red_system_prompt.txt)
 make_state.py              # generates start.state past the intro (untracked helper)
+reset_aria_memory.py       # wipe aria's run-generated experience to a clean seed before a paid run
 roms/PokemonRed.gb         # YOUR vanilla ROM (not bundled, gitignored)
 ```
 
