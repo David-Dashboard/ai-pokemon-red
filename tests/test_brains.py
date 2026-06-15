@@ -113,6 +113,19 @@ def test_llm_brain_lesson_direction_words_dont_leak_as_buttons():
     assert brain.lesson == "always go down at the ledge"
 
 
+def test_llm_brain_injects_missed_text_transcript_into_prompt():
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    brain.decide(_obs(), [], {"transcript": "PROF OAK: take this POKeMON"})
+    assert "since your last decision" in prompts[0]
+    assert "PROF OAK: take this POKeMON" in prompts[0]
+
+
 def test_llm_brain_ignores_unfilled_lesson_template():
     reply = "MOVE: up\nLESSON: <one short lesson>"
     brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)

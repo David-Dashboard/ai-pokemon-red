@@ -93,6 +93,31 @@ class OverworldPerceiver:
                  area_threshold: float = _AREA_THRESHOLD) -> None:
         self.move_threshold = move_threshold
         self.area_threshold = area_threshold
+        self._font = None            # lazily-loaded Gen-1 glyph table (textbox decoder)
+        self._font_loaded = False
+
+    def _read_text(self, frame) -> str:
+        """Decode the dialog textbox to text — PIXELS ONLY (no RAM/VRAM), via the static glyph asset.
+        Returns '' if the asset is absent, decoding fails, or the region holds too little recognizable
+        text (so a non-textbox screen, e.g. the START menu over the world, doesn't produce junk)."""
+        if frame is None:
+            return ""
+        if not self._font_loaded:
+            self._font_loaded = True
+            try:
+                from .textbox import FontTable
+                self._font = FontTable.load()
+            except Exception:
+                self._font = None
+        if self._font is None:
+            return ""
+        try:
+            from .textbox import decode
+            text = decode(frame, self._font)
+        except Exception:
+            return ""
+        known = sum(c not in "? \n" for c in text)
+        return text if known >= 3 else ""   # guard: ignore glyph-poor regions (not a real textbox)
 
     def perceive(self, frame, memory: PerceptMemory,
                  context: Optional[JSON] = None) -> SymbolicState:
@@ -118,6 +143,7 @@ class OverworldPerceiver:
                 spatial_memory={"kind": "occupancy-grid", "area": m["area"]},
                 affordances=[],
                 last_action={"action": ctx.get("last_action"), "outcome": "n/a"},
+                screen_text=self._read_text(frame),   # decode the dialog/menu textbox from pixels
                 raw_available=True, raw_ref=ctx.get("frame_path", ""))
 
         action = ctx.get("last_action")

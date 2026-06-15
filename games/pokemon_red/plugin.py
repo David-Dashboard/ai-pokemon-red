@@ -225,6 +225,8 @@ class PokemonRedPlugin:
         sm = sym.spatial_memory or {}
         la = sym.last_action or {}
         lines = ["Overworld exploration. Perception is approximate; a screenshot is attached."]
+        if sym.screen_text:   # text decoded from the screen (a dialog/menu box) — grounds where/what
+            lines.insert(0, f'On-screen text reads: "{sym.screen_text}"')
         if pose.get("value") is not None:
             lines.append(f"Your position (dead-reckoned, approximate): {tuple(pose['value'])}.")
         action, outcome = la.get("action"), la.get("outcome")

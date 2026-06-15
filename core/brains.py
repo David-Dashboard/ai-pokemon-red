@@ -34,6 +34,9 @@ BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 # How many of the most recent LLM-authored lessons to keep in the per-run buffer and re-inject. A
 # small cap keeps the re-injection cheap (cost-conscious) and recent (the run's latest learning).
 _LESSON_CAP = 8
+# How many recent auto-advanced dialog text chunks to carry as the "missed since last decision"
+# transcript. Capped so a long forced dialog can't bloat the next wake's prompt.
+_TRANSCRIPT_CAP = 12
 
 
 def _call(tool: str, args: dict, agent_id: str) -> ToolCall:
@@ -153,6 +156,7 @@ class HybridBrain:
         self.last_thought = ""
         self.woke = 0
         self.advanced = 0          # free dialog auto-advances (press A), not LLM wakes
+        self.transcript: list = []  # dialog text auto-advanced past since the last wake (the missed text)
         self.total = 0
         self.mode = "autopilot"
         # feature #4 (dialog auto-advance): mash the world's confirm button through a PLAIN textbox for
@@ -203,6 +207,10 @@ class HybridBrain:
                 self.mode = "advance"
                 self.advanced += 1
                 self.disconfirm.reset()
+                txt = (obs.data.get("screen_text") or "").strip()   # capture the text we're skipping past
+                if txt and (not self.transcript or self.transcript[-1] != txt):
+                    self.transcript.append(txt)
+                    del self.transcript[:-_TRANSCRIPT_CAP]
                 self.last_thought = "[auto-advance dialog]"
                 call = _call("press_button", {"button": "a"}, self.agent_id)
             else:
@@ -224,6 +232,9 @@ class HybridBrain:
         note = self.disconfirm.note()   # a persistent no-progress streak -> SURPRISE + ask for a LESSON
         if note:
             context = {**context, "surprise_note": note}
+        if self.transcript:   # hand over (and clear) the dialog text the LLM auto-advanced past
+            context = {**context, "transcript": " / ".join(self.transcript)}
+            self.transcript = []
         call = self.fallback.decide(obs, tools, context)
         # If the planner named a destination this turn, adopt it — the free autopilot pursues it on
         # the next overworld steps (no GOTO = keep any target already in flight).
@@ -368,6 +379,10 @@ class LLMButtonBrain:
         surprise = context.get("surprise_note")  # disconfirm/surprise nudge (HybridBrain detector)
         if surprise:
             feedback = (feedback + "\n" + surprise).strip()
+        transcript = context.get("transcript")   # dialog text the harness auto-advanced past for you
+        if transcript:
+            feedback = (feedback + "\nText shown since your last decision (auto-advanced): "
+                        + transcript).strip()
         if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
             feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
                         + "\n- ".join(self.lessons)).strip()

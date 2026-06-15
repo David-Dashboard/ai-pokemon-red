@@ -29,6 +29,7 @@ class SymbolicState:
     spatial_memory: Optional[JSON] = None    # what I've mapped: {kind: occupancy-grid|place-graph, ...}
     affordances: list = field(default_factory=list)  # what/where I can act from here (frontiers, options)
     last_action: Optional[JSON] = None       # {action, outcome} — did my last move change anything
+    screen_text: str = ""                    # text read off the screen (e.g. a dialog box), "" if none
     raw_available: bool = True               # a richer observation (the image) can be attached
     raw_ref: str = ""                        # path/handle to that raw observation, when present
 
@@ -40,6 +41,7 @@ class SymbolicState:
             "spatial_memory": self.spatial_memory,
             "affordances": list(self.affordances),
             "last_action": self.last_action,
+            "screen_text": self.screen_text,
             "raw_available": self.raw_available,
             "raw_ref": self.raw_ref,
         }

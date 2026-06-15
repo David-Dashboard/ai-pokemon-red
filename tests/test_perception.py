@@ -22,7 +22,7 @@ def _frame(val: int):
     return np.full((144, 160, 4), val, dtype=np.uint8)
 
 ROLE_KEYS = {"confidence", "context", "pose", "spatial_memory",
-             "affordances", "last_action", "raw_available", "raw_ref"}
+             "affordances", "last_action", "screen_text", "raw_available", "raw_ref"}
 
 
 def test_symbolicstate_is_role_named_and_json_able():
@@ -428,6 +428,28 @@ def test_hybrid_streak_survives_free_steps_and_fires_only_at_wake():
         h.decide(_pose_obs((0, 0)), [], {})                       # frozen pose: no progress on any step
     assert all(s is None for s in ap.seen)                        # free autopilot never sees a surprise note
     assert h.woke == 1 and fb.seen and "SURPRISE" in fb.seen[-1]  # streak survived 2 free steps -> fired at the wake
+
+
+def test_hybrid_accumulates_dialog_transcript_and_injects_at_next_wake():
+    """Auto-advanced dialog text is captured into a per-run transcript (deduped) and handed to the LLM
+    at the next wake (the 'text since your last decision' the user asked for), then cleared."""
+    from core.brains import HybridBrain, _call
+    from core.contracts import Observation
+
+    class _Capturing:
+        def __init__(self, call): self._c, self.last_thought, self.seen = call, "", []
+        def decide(self, obs, tools, context): self.seen.append(context.get("transcript")); return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    dlg = lambda txt: Observation(data={"context": "dialog", "screen_text": txt}, text="", agent_id="a", t=0.0)
+    menu = Observation(data={"context": "menu"}, text="", agent_id="a", t=0.0)
+    h.decide(dlg("HELLO"), [], {})        # auto-advance -> capture
+    h.decide(dlg("HELLO"), [], {})        # same text -> not duplicated
+    h.decide(dlg("WORLD"), [], {})        # capture
+    assert h.advanced == 3 and h.woke == 0
+    h.decide(menu, [], {})                # a choice wakes the LLM -> transcript injected + cleared
+    assert h.woke == 1 and fb.seen[-1] == "HELLO / WORLD" and h.transcript == []
 
 
 # -- outcome loop (feature #1: learn from no-effect actions) ------------------
