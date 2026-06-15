@@ -211,6 +211,7 @@ class PokemonRedPlugin:
                 "context": sym.context,
                 "confidence": sym.confidence,
                 "walls_here": (sym.spatial_memory or {}).get("walls_here"),
+                "screen_text": sym.screen_text,        # decoder output — auditable post-run (not an agent input)
             }
         try:
             with open(self._oracle_path, "a", encoding="utf-8") as f:
