@@ -24,10 +24,13 @@ Safe by default: prints the plan and changes NOTHING unless you pass --yes.
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
+import re
 import shutil
 import subprocess
 import sys
+import zipfile
 
 # The seed constitution (git-tracked) + the model-weight caches — everything NOT in here is
 # run-generated experience and gets wiped for a clean slate.
@@ -42,12 +45,38 @@ def _default_data_dir() -> str:
     return os.path.normpath(os.path.join(here, "..", "ai-aria", "pokemon-red-data"))
 
 
+def _default_archive_dir() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "aria_memory_archives")
+
+
+def _archive(data_dir: str, archive_dir: str) -> tuple[str, int]:
+    """Zip the agent's memory (seed + accumulated experience; NOT the bulky model-weight caches) to a
+    dated, NUMBERED archive BEFORE wiping — David wants every iteration's data preserved. The number
+    is the next free index in archive_dir. Returns (zip_path, iteration_index)."""
+    os.makedirs(archive_dir, exist_ok=True)
+    nums = [int(m.group(1)) for f in os.listdir(archive_dir)
+            if (m := re.match(r"iter-(\d+)_", f))]
+    idx = (max(nums) + 1) if nums else 1
+    path = os.path.join(archive_dir, f"iter-{idx:03d}_{datetime.date.today().isoformat()}.zip")
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for root, dirs, files in os.walk(data_dir):
+            dirs[:] = [sub for sub in dirs if sub not in KEEP_CACHES]  # skip model-weight caches
+            for f in files:
+                fp = os.path.join(root, f)
+                z.write(fp, os.path.relpath(fp, data_dir))
+    return path, idx
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Wipe aria/Red run-generated experience; keep the seed.")
     ap.add_argument("--data-dir", default=_default_data_dir(),
                     help="path to aria's pokemon-red-data dir (default: the sibling ai-aria repo)")
     ap.add_argument("--yes", action="store_true",
-                    help="actually delete (default is a dry run that only prints the plan)")
+                    help="actually archive + delete (default is a dry run that only prints the plan)")
+    ap.add_argument("--archive-dir", default=_default_archive_dir(),
+                    help="where to store the pre-wipe memory zips (default: ./aria_memory_archives)")
+    ap.add_argument("--no-archive", action="store_true",
+                    help="skip the pre-wipe archive (NOT recommended; each iteration's data is kept)")
     args = ap.parse_args(argv)
 
     d = args.data_dir
@@ -63,9 +92,16 @@ def main(argv: list[str]) -> int:
     print(f"aria memory reset  (data dir: {d})")
     print(f"  KEEP  ({len(keep)}): {', '.join(keep) or '(none)'}")
     print(f"  WIPE  ({len(wipe)}): {', '.join(wipe) or '(none)'}")
+    if not args.no_archive:
+        print(f"  ARCHIVE before wipe -> {os.path.join(args.archive_dir, 'iter-NNN_<date>.zip')} "
+              f"(memory snapshot, minus model caches)")
     if not args.yes:
-        print("\nDRY RUN - nothing deleted. Re-run with --yes to wipe and start the agent clean.")
+        print("\nDRY RUN - nothing archived or deleted. Re-run with --yes to archive + wipe.")
         return 0
+
+    if not args.no_archive:
+        zpath, idx = _archive(d, args.archive_dir)
+        print(f"archived iteration {idx} -> {zpath}  ({os.path.getsize(zpath):,} bytes)")
 
     for name in wipe:
         p = os.path.join(d, name)

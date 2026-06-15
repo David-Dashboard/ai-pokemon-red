@@ -82,6 +82,9 @@ def main() -> int:
                          "read from the RAM ORACLE — never shown to the agent) for this many steps. "
                          "0 = off; auto-enabled (80) for paid brains (llm/hybrid) so a thrash can't "
                          "burn budget like live-run #1 did.")
+    ap.add_argument("--max-llm-calls", type=int, default=0,
+                    help="budget cap: HALT after this many LLM wakes (each ~= one paid call). "
+                         "0 = off. Use on paid (--brain llm/hybrid) runs to bound spend.")
     args = ap.parse_args()
 
     agent_id = f"agent-{uuid.uuid4()}"
@@ -157,7 +160,12 @@ def main() -> int:
         if improved:
             wd["last"] = step
 
+    max_llm_calls = args.max_llm_calls
+
     def should_continue(step):
+        if max_llm_calls > 0 and getattr(brain, "woke", 0) >= max_llm_calls:
+            print(f"\n[guard] budget cap hit ({getattr(brain, 'woke', 0)} LLM calls) - HALTING.")
+            return False
         if stuck <= 0:
             return True
         if step - wd["last"] >= stuck:

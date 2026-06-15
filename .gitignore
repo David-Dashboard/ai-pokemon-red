@@ -18,6 +18,8 @@ roms/*.gba
 
 # --- Emulator save data / generated run artifacts ---
 runs/
+# per-iteration aria memory snapshots (zipped before each wipe; binary, not for the repo)
+aria_memory_archives/
 *.sav
 *.state
 *.sa1
