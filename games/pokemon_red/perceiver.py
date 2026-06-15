@@ -20,6 +20,10 @@ _DIRS = ("up", "down", "left", "right")
 _DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 _MOVE_THRESHOLD = 4.0   # mean abs pixel diff above which a move happened (tune via eval/tune_threshold.py)
 _AREA_THRESHOLD = 60.0  # diff at/above which the WHOLE screen changed => area/map transition (reset frame)
+# A small selection box in the upper-right (a YES/NO or list OVER a bottom textbox) marks a CHOICE,
+# not plain advanceable text. Measured near-white fraction in that region: plain dialog ~0.00, an empty
+# opening box ~0.08, a YES/NO box ~0.33, the START menu ~0.94 — so 0.15 cleanly flags a choice.
+_CHOICE_WHITE = 0.15
 
 
 def _dominant_dir(action: Optional[str]) -> Optional[str]:
@@ -74,7 +78,11 @@ def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
     if right > 0.35 and right >= bottom:
         return "menu"            # right-side panel (START menu / battle action menu)
     if bottom > 0.3:
-        return "dialog"          # bottom textbox
+        # A bottom textbox. If a small selection box ALSO sits in the upper-right (a YES/NO or list
+        # over the textbox), this is a CHOICE, not plain text -> label it 'menu' so the planner is
+        # woken to decide, never auto-advanced. Plain dialog is just the bottom box (midright ~0).
+        midright = float(w[int(H * 0.167):int(H * 0.556), int(W * 0.7):].mean())
+        return "menu" if midright > _CHOICE_WHITE else "dialog"   # choice-over-textbox vs plain dialog
     return "menu"                # some other UI box — treat as a menu so the planner is woken
 
 

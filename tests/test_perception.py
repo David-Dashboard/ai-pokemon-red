@@ -128,6 +128,17 @@ def test_detect_mode_separates_overworld_menu_dialog_battle():
     assert detect_mode(battle) == "battle"
 
 
+def test_detect_mode_choice_box_over_textbox_is_menu():
+    """A bottom textbox that ALSO carries a small selection box (a YES/NO) in the upper-right is a
+    CHOICE, not plain text — it must read as 'menu' (wake the LLM), so it is never auto-advanced.
+    Grounded on real frames: plain dialog scores ~0 in that region, a real YES/NO box ~0.33."""
+    from games.pokemon_red.perceiver import detect_mode
+    choice = np.full((144, 160, 3), 60, dtype=np.uint8)
+    choice[96:, :] = 255          # the bottom textbox ("give a nickname to ...?")
+    choice[32:72, 120:156] = 255  # a YES/NO selection box in the upper-right
+    assert detect_mode(choice) == "menu"
+
+
 def test_detect_mode_uniform_fade_is_not_battle():
     """Regression: a near-uniform fade/flash frame must NOT read as 'battle'. Measured on real
     pixels, an all-white starter-cutscene flash (std 0) tripped the bright-top-AND-bottom battle
@@ -277,6 +288,45 @@ def test_hybrid_wakes_llm_on_non_overworld_mode():
     h = HybridBrain(ap, _StubBrain(_call("press_button", {"button": "a"}, "a")))
     call = h.decide(_ctx_obs("battle"), [], {})                    # ...but mode != overworld wakes the LLM
     assert call.args.get("button") == "a" and h.woke == 1
+
+
+def test_hybrid_auto_advances_plain_dialog_for_free():
+    """feature #4: with auto-advance on, a PLAIN 'dialog' context presses A for free (no LLM wake)."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "x"}, "a"), "llm")  # would be obvious if woken
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    call = h.decide(_ctx_obs("dialog"), [], {})
+    assert call.tool == "press_button" and call.args["button"] == "a"   # advanced, not the LLM's 'x'
+    assert h.woke == 0 and h.advanced == 1 and h.mode == "advance"
+
+
+def test_hybrid_wakes_on_choice_even_with_auto_advance_on():
+    """A choice reads as 'menu' (not 'dialog'), so it WAKES the LLM — never auto-mashed."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "a"}, "a"), "llm")
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    h.decide(_ctx_obs("menu"), [], {})
+    assert h.woke == 1 and h.advanced == 0
+
+
+def test_hybrid_dialog_wakes_when_auto_advance_disabled():
+    """Default (off) preserves the prior behavior: a 'dialog' context wakes the LLM."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "a"}, "a"), "llm")
+    h = HybridBrain(_StubBrain(None), fb)                          # advance_on_dialog defaults False
+    h.decide(_ctx_obs("dialog"), [], {})
+    assert h.woke == 1 and h.advanced == 0
+
+
+def test_hybrid_auto_advance_does_not_accrue_a_stuck_streak():
+    """Auto-advancing a dialog is progress the signature can't see, so it must reset the no-progress
+    streak — otherwise a long dialog would fire a spurious SURPRISE on the next real wake."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "a"}, "a"), "llm")
+    h = HybridBrain(_StubBrain(None), fb, replan_after=2, advance_on_dialog=True)
+    for _ in range(5):
+        h.decide(_ctx_obs("dialog"), [], {})                      # 5 auto-advances, same signature
+    assert h.advanced == 5 and h.woke == 0 and h.disconfirm.fired is False
 
 
 def test_hybrid_injects_surprise_nudge_after_repeated_no_progress():

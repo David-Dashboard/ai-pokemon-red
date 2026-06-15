@@ -39,7 +39,8 @@ def main(argv=None) -> int:
     aid = f"agent-{uuid.uuid4()}"
     plugin = PokemonRedPlugin(rom_path=args.rom, out_dir=args.out, headless=True,
                               init_state=args.load_state, perceiver=OverworldPerceiver())
-    brain = HybridBrain(ExploreBrain(aid), ScriptedBrain(aid, seed=args.seed))  # FREE LLM stand-in
+    brain = HybridBrain(ExploreBrain(aid), ScriptedBrain(aid, seed=args.seed),  # FREE LLM stand-in
+                        advance_on_dialog=True)   # match the real Pokémon driver (dialog is auto-advanced free)
     gw = Gateway(plugin, POKEMON_SANDBOX)
 
     tally = {"mode": 0, "stuck": 0}

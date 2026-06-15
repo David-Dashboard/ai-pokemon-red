@@ -126,7 +126,7 @@ def main() -> int:
                 print("\nSetup error:\n--brain hybrid needs --perception.\n", file=sys.stderr)
                 return 2
             from core.brains import ExploreBrain, HybridBrain
-            brain = HybridBrain(ExploreBrain(agent_id), llm)
+            brain = HybridBrain(ExploreBrain(agent_id), llm, advance_on_dialog=True)
     elif args.brain == "explore":
         if not args.perception:
             print("\nSetup error:\n--brain explore needs --perception (it navigates on the "

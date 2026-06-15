@@ -146,13 +146,23 @@ class HybridBrain:
     Dozens of free moves between rare LLM calls. `wake_rate` reports how often the expensive brain
     was actually needed. The mode trigger is dormant until perception sets `context` (the CV sub-step)."""
 
-    def __init__(self, autopilot, fallback, replan_after: int = 5) -> None:
+    def __init__(self, autopilot, fallback, replan_after: int = 5,
+                 advance_on_dialog: bool = False) -> None:
         self.autopilot = autopilot
         self.fallback = fallback
         self.last_thought = ""
         self.woke = 0
+        self.advanced = 0          # free dialog auto-advances (press A), not LLM wakes
         self.total = 0
         self.mode = "autopilot"
+        # feature #4 (dialog auto-advance): mash the world's confirm button through a PLAIN textbox for
+        # free, waking the LLM only at a real choice (a 'menu'/'battle' context). Off by default so the
+        # agnostic worlds/tests are unchanged; the Pokémon drivers turn it on. Pressing the confirm
+        # button on plain text only advances/fast-forwards it (safe); the perceiver labels a textbox
+        # that carries a selection box 'menu', so a YES/NO is never auto-mashed.
+        self.advance_on_dialog = advance_on_dialog
+        self.agent_id = (getattr(autopilot, "agent_id", None)
+                         or getattr(fallback, "agent_id", None) or "agent")
         self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
         self._last_sig = None
         self._last_action = None
@@ -185,8 +195,18 @@ class HybridBrain:
         if self.goto is not None:
             context["goto"] = self.goto               # the autopilot BFS-pathfinds toward it (free), else explores
 
-        if (obs.data.get("context") or "overworld") != "overworld":
-            call = self._wake(obs, tools, context, "mode")
+        ctx_label = obs.data.get("context") or "overworld"
+        if ctx_label != "overworld":
+            if self.advance_on_dialog and ctx_label == "dialog":
+                # plain textbox: advance it for FREE (no LLM). Auto-advancing IS progress (the story
+                # moves on) even though the signature can't see it, so clear the no-progress streak.
+                self.mode = "advance"
+                self.advanced += 1
+                self.disconfirm.reset()
+                self.last_thought = "[auto-advance dialog]"
+                call = _call("press_button", {"button": "a"}, self.agent_id)
+            else:
+                call = self._wake(obs, tools, context, "mode")
         else:
             call = self.autopilot.decide(obs, tools, context)
             if call is not None:

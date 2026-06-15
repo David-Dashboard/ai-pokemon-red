@@ -40,6 +40,12 @@ class DisconfirmDetector:
         self._last_action = str(la.get("action") or "")
         self._last_outcome = str(la.get("outcome") or "")
 
+    def reset(self) -> None:
+        """Clear the no-progress streak. Use when the agent makes progress the state signature can't
+        see — e.g. auto-advancing a dialog: the story moves on though pose/area/context are unchanged,
+        so it must NOT count as being stuck."""
+        self._streak = 0
+
     @property
     def fired(self) -> bool:
         return self._streak >= self.after
