@@ -26,7 +26,11 @@ def run_episode(
     max_steps: int = 200,
     context: Optional[dict] = None,
     on_step: Optional[Callable[[int, Observation, object, list[Event]], None]] = None,
+    should_continue: Optional[Callable[[int], bool]] = None,
 ) -> dict:
+    """`should_continue(step) -> bool`: an optional halt predicate checked before each decision.
+    Return False to stop the episode early (e.g. a progress watchdog in the driver). It is world-
+    agnostic — any scoring/oracle state it consults lives in the DRIVER's closure, never here."""
     context = context or {}
     replayable = isinstance(plugin, Replayable)
 
@@ -36,6 +40,8 @@ def run_episode(
     last_data: dict = {}
 
     for step in range(max_steps):
+        if should_continue is not None and not should_continue(step):
+            break
         if replayable and plugin.terminal():  # type: ignore[attr-defined]
             break
 

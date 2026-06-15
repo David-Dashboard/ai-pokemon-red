@@ -77,6 +77,11 @@ def main() -> int:
                     help="boot from a .state saved past the intro (see human_play.py)")
     ap.add_argument("--save-state", default=None,
                     help="write the final emulator state here when the run ends")
+    ap.add_argument("--stuck-steps", type=int, default=0,
+                    help="cost guardrail: HALT if no real progress (new maps/cells/badges/levels, "
+                         "read from the RAM ORACLE — never shown to the agent) for this many steps. "
+                         "0 = off; auto-enabled (80) for paid brains (llm/hybrid) so a thrash can't "
+                         "burn budget like live-run #1 did.")
     args = ap.parse_args()
 
     agent_id = f"agent-{uuid.uuid4()}"
@@ -132,6 +137,35 @@ def main() -> int:
 
     gateway = Gateway(plugin, POKEMON_SANDBOX)
 
+    # Progress watchdog (cost guardrail). It reads the RAM ORACLE for ground-truth progress — this is
+    # control/scoring only and is NEVER fed into the agent's Observation (the no-leak wall holds).
+    stuck = args.stuck_steps
+    if stuck == 0 and args.brain in ("llm", "hybrid"):
+        stuck = 80
+        print(f"[guard] paid brain '{args.brain}': progress watchdog ON - halts after {stuck} steps "
+              f"with no progress (override with --stuck-steps).")
+    from games.pokemon_red.memory_map import read_state
+    coverage: set = set()
+    wd = {"best": None, "last": 0}
+
+    def note_progress(step):
+        st = read_state(plugin.emu.read)               # ORACLE: watchdog only, never the agent's input
+        coverage.add((st["map_id"], st["x"], st["y"]))
+        fp = (st["badges"], st["party_level_sum"], len(coverage))
+        improved = wd["best"] is None or any(a > b for a, b in zip(fp, wd["best"]))
+        wd["best"] = fp if wd["best"] is None else tuple(max(a, b) for a, b in zip(fp, wd["best"]))
+        if improved:
+            wd["last"] = step
+
+    def should_continue(step):
+        if stuck <= 0:
+            return True
+        if step - wd["last"] >= stuck:
+            print(f"\n[guard] no progress for {step - wd['last']} steps - HALTING (watchdog). "
+                  f"Likely stuck or needs a capability we haven't built yet (battle/menu).")
+            return False
+        return True
+
     def on_step(step, obs, result, events):
         data = getattr(result, "data", {})
         r = data.get("reward", 0.0)
@@ -151,13 +185,15 @@ def main() -> int:
             print(f"{head}\n        think: {safe}  -> {data.get('action', '')}")
         else:
             print(head)
+        note_progress(step)                      # update the progress watchdog (oracle-side)
         if args.watch_delay > 0:                 # idle pause between moves (real-time only)
             plugin.emu.tick(args.watch_delay)    # music keeps playing; the character waits
 
     print(f"Agent {agent_id} playing for {args.steps} steps with the {args.brain} brain...\n")
     try:
         summary = run_episode(gateway, plugin, brain, agent_id,
-                              max_steps=args.steps, on_step=on_step)
+                              max_steps=args.steps, on_step=on_step,
+                              should_continue=should_continue)
         if args.save_state:
             plugin.save_state(args.save_state)
             print(f"saved final state -> {args.save_state}")

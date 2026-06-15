@@ -130,8 +130,16 @@ class OverworldPerceiver:
             if area_change:
                 # The whole screen changed: we entered a NEW area (map transition). Start a fresh
                 # coordinate frame + map, so the old area's geometry isn't smeared into the new one.
+                # BUT seal the way back as a PORTAL: the cell behind us links to the (already-seen)
+                # previous area, so it must NOT read as an unexplored frontier — otherwise the
+                # autopilot immediately walks back through the door and ping-pongs across the seam
+                # (the live door-oscillation bug). The portal stays walkable, just isn't a frontier.
                 m["area"] += 1
-                m["cells"] = {(0, 0): {"visited": True, "walls": set()}}
+                back = {"up": "down", "down": "up", "left": "right", "right": "left"}[direction]
+                bdx, bdy = _DELTA[back]
+                m["cells"] = {(0, 0): {"visited": True, "walls": set()},
+                              (bdx, bdy): {"visited": True, "walls": set(),
+                                           "portal": m["area"] - 1}}
                 m["cursor"] = (0, 0)
                 x, y = 0, 0
                 cell = m["cells"][(0, 0)]
@@ -167,9 +175,9 @@ class OverworldPerceiver:
         grid, frontiers = [], []
         for (cx, cy), c in m["cells"].items():
             grid.append({"x": cx, "y": cy, "visited": bool(c.get("visited")),
-                         "walls": sorted(c["walls"])})
-            if not c.get("visited"):
-                continue
+                         "portal": c.get("portal"), "walls": sorted(c["walls"])})
+            if not c.get("visited") or c.get("portal") is not None:
+                continue  # unvisited, or a portal boundary back to a seen area (not a frontier)
             for d in _DIRS:
                 if d in c["walls"]:
                     continue

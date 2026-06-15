@@ -99,6 +99,22 @@ def test_area_change_resets_the_coordinate_frame():
     assert s.pose["value"] == [0, 0] and s.pose["area"] == 1       # fresh frame, area incremented
 
 
+def test_area_change_seals_a_portal_so_the_seam_isnt_a_frontier():
+    """Regression (the door-oscillation bug): crossing a DETECTED transition must not leave the
+    way-back as an unexplored frontier — else the autopilot walks straight back through the door and
+    ping-pongs across the seam. The cell behind us is sealed as a PORTAL (walkable, but not an
+    exploration target), while the arrival cell stays a frontier so the agent explores the NEW area."""
+    per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=100.0), PerceptMemory()
+    per.perceive(_frame(0), mem, {"last_action": None})            # prime
+    per.perceive(_frame(10), mem, {"last_action": "down+down"})    # move within area -> (0,1)
+    s = per.perceive(_frame(200), mem, {"last_action": "down+down"})  # big diff -> AREA transition (entered moving down)
+    assert s.pose["value"] == [0, 0] and s.pose["area"] == 1
+    cells = {(c["x"], c["y"]): c for c in s.spatial_memory["map"]}
+    assert cells[(0, -1)]["portal"] == 0 and cells[(0, -1)]["visited"]   # the way back -> previous area (id 0)
+    assert [0, -1] not in s.spatial_memory["frontiers"]                  # ...and is NOT an exploration target
+    assert [0, 0] in s.spatial_memory["frontiers"]                       # but the new area IS explored forward
+
+
 def test_detect_mode_separates_overworld_menu_dialog_battle():
     from games.pokemon_red.perceiver import detect_mode
     blank = lambda: np.full((144, 160, 3), 60, dtype=np.uint8)  # dark scene, no UI panel
@@ -263,6 +279,25 @@ def test_hybrid_wakes_llm_on_non_overworld_mode():
     assert call.args.get("button") == "a" and h.woke == 1
 
 
+def test_hybrid_injects_replan_nudge_after_repeated_stuck_wakes():
+    """Loop-breaker: once the autopilot has been stuck (no frontier) for `replan_after` consecutive
+    wakes, the LLM gets an explicit replan nudge in context instead of being woken to flail silently
+    (run #1 woke the LLM 351x with no such signal)."""
+    from core.brains import HybridBrain, _call
+
+    class _Capturing:
+        def __init__(self, call): self._c, self.last_thought, self.seen = call, "", []
+        def decide(self, obs, tools, context): self.seen.append(context.get("stuck_note")); return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, replan_after=3)          # autopilot always stuck -> wake every step
+    obs = _ctx_obs("overworld")
+    for _ in range(3):
+        h.decide(obs, [], {})
+    assert fb.seen[0] is None and fb.seen[1] is None              # early wakes: no nudge yet
+    assert fb.seen[2] and "no new progress" in fb.seen[2]         # 3rd consecutive stuck wake -> replan nudge
+
+
 # -- outcome loop (feature #1: learn from no-effect actions) ------------------
 
 def test_outcome_memory_marks_repeated_no_effect_and_resets_on_effect():
@@ -353,3 +388,28 @@ def test_hybrid_clears_goto_on_arrival():
     h.goto = [1, 1]
     h.decide(_pose_obs((1, 1)), [], {})            # pose == target -> destination consumed
     assert h.goto is None
+
+
+# -- runner: optional progress-watchdog halt hook (cost guardrail) ------------
+
+def test_run_episode_should_continue_halts_early():
+    """The runner's optional should_continue(step) predicate stops an episode before max_steps — the
+    hook a driver's progress watchdog uses (the guardrail play_pokemon.py lacked in live-run #1)."""
+    from core.brains import _call
+    from core.contracts import Observation
+    from core.runner import run_episode
+
+    class _P:
+        def observe(self, aid): return Observation(data={}, text="", agent_id=aid, t=0.0)
+        def tools(self, aid): return []
+        def drain_events(self): return []
+
+    class _G:
+        def execute(self, call): return type("R", (), {"data": {}})()
+
+    class _B:
+        def decide(self, obs, tools, ctx): return _call("press_button", {"button": "a"}, "a")
+
+    summary = run_episode(_G(), _P(), _B(), "a", max_steps=10,
+                          should_continue=lambda step: step < 3)
+    assert summary["steps"] == 3                    # halted after steps 0,1,2 (step 3 fails the predicate)

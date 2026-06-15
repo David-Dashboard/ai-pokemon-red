@@ -141,7 +141,7 @@ class HybridBrain:
     Dozens of free moves between rare LLM calls. `wake_rate` reports how often the expensive brain
     was actually needed. The mode trigger is dormant until perception sets `context` (the CV sub-step)."""
 
-    def __init__(self, autopilot, fallback) -> None:
+    def __init__(self, autopilot, fallback, replan_after: int = 5) -> None:
         self.autopilot = autopilot
         self.fallback = fallback
         self.last_thought = ""
@@ -151,6 +151,10 @@ class HybridBrain:
         self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
         self._last_sig = None
         self._last_action = None
+        # loop-breaker: after this many CONSECUTIVE stuck wakes (autopilot finds no frontier), hand
+        # the LLM an explicit replan nudge instead of waking it to flail silently (the run-#1 failure).
+        self.replan_after = replan_after
+        self._stuck_streak = 0
         # feature #2 (goto hookup): a destination the woken planner named, persisted so the FREE
         # autopilot drives there over the next overworld steps without re-waking the LLM each tile.
         self.goto: Optional[list] = None
@@ -171,13 +175,25 @@ class HybridBrain:
             context["goto"] = self.goto               # the autopilot BFS-pathfinds toward it (free), else explores
 
         if (obs.data.get("context") or "overworld") != "overworld":
+            self._stuck_streak = 0
             call = self._wake(obs, tools, context, "mode")
         else:
             call = self.autopilot.decide(obs, tools, context)
             if call is not None:
                 self.mode = "autopilot"
                 self.last_thought = getattr(self.autopilot, "last_thought", "")
+                self._stuck_streak = 0
             else:
+                # autopilot exhausted (no reachable frontier). Count consecutive stuck wakes; once it's
+                # clearly spinning, give the LLM an explicit REPLAN nudge (and ask for a lesson) rather
+                # than waking it to flail in silence — run #1 woke it 351x with no such signal.
+                self._stuck_streak += 1
+                if self._stuck_streak >= self.replan_after:
+                    context["stuck_note"] = (
+                        f"You have made no new progress for {self._stuck_streak} decisions and the "
+                        f"local explorer is blocked here. Do NOT repeat recent moves — choose a "
+                        f"clearly different direction to break out, and record a one-line lesson "
+                        f"about what blocked you.")
                 call = self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> LLM
         self._last_sig = sig
         self._last_action = action_key(call)
@@ -315,6 +331,9 @@ class LLMButtonBrain:
         if avoid:
             feedback = (feedback + f"\nNOTE: these did NOTHING here, do NOT repeat them: "
                         f"{', '.join(avoid)}. Try something different.").strip()
+        stuck_note = context.get("stuck_note")  # loop-breaker replan nudge (HybridBrain)
+        if stuck_note:
+            feedback = (feedback + "\n" + stuck_note).strip()
         prompt = (f"{self.system}\n\n{strategy}\n{feedback}\n\n"
                   f"Current state:\n{obs.text}\n\nYour reply:")
         image = obs.data.get("screen_path") if self.use_vision else None
