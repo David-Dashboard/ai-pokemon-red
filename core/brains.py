@@ -287,9 +287,14 @@ class LLMButtonBrain:
         complete_fn: Optional[Callable[[str, Optional[str]], str]] = None,
         backend: str = "ollama",
         api_key: Optional[str] = None,
+        system: Optional[str] = None,
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
+        # The system prompt is injectable so the SAME brain serves a different world (e.g. the
+        # GateWorld gating probe uses a neutral, world-agnostic prompt — the leak control). Defaults
+        # to the Pokémon exploration prompt for backward compatibility.
+        self.system = system or _SYSTEM
         self.last_thought = ""       # the model's latest reasoning, for display
         self.goto: Optional[list] = None  # destination cell the planner named this turn (or None)
         self._last_pos = None        # (x, y) at the previous decision
@@ -314,7 +319,7 @@ class LLMButtonBrain:
         if avoid:
             feedback = (feedback + f"\nNOTE: these did NOTHING here, do NOT repeat them: "
                         f"{', '.join(avoid)}. Try something different.").strip()
-        prompt = (f"{_SYSTEM}\n\n{strategy}\n{feedback}\n\n"
+        prompt = (f"{self.system}\n\n{strategy}\n{feedback}\n\n"
                   f"Current state:\n{obs.text}\n\nYour reply:")
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
