@@ -112,6 +112,21 @@ def test_detect_mode_separates_overworld_menu_dialog_battle():
     assert detect_mode(battle) == "battle"
 
 
+def test_detect_mode_uniform_fade_is_not_battle():
+    """Regression: a near-uniform fade/flash frame must NOT read as 'battle'. Measured on real
+    pixels, an all-white starter-cutscene flash (std 0) tripped the bright-top-AND-bottom battle
+    rule; real battle frames have std > 65 (dark sprites on white), so the uniformity guard
+    separates them. Both all-white and all-black fades fall back to overworld (a transient blank)."""
+    from games.pokemon_red.perceiver import detect_mode
+    assert detect_mode(np.full((144, 160, 3), 255, dtype=np.uint8)) == "overworld"  # white flash
+    assert detect_mode(np.full((144, 160, 3), 0, dtype=np.uint8)) == "overworld"    # black fade
+    # a battle-like frame (white bg + a dark sprite block => high contrast) still reads as battle
+    batt = np.full((144, 160, 3), 255, dtype=np.uint8)
+    batt[20:50, 90:140] = 30   # enemy sprite patch -> std well above the guard
+    batt[60:96, 10:60] = 30    # player sprite patch
+    assert detect_mode(batt) == "battle"
+
+
 def test_perceive_hands_off_non_overworld_and_rebaselines_on_return():
     per, mem = OverworldPerceiver(), PerceptMemory()
     menu = np.full((144, 160, 3), 60, dtype=np.uint8); menu[:96, 96:] = 255

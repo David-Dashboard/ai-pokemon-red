@@ -55,6 +55,13 @@ def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
     if frame is None:
         return "overworld"
     g = _gray(frame)
+    # A near-uniform frame (std ~ 0) is a fade/flash TRANSITION, not a UI panel. Measured: white and
+    # black fades have std 0.0, while real battle/menu/dialog frames have std > 65 (dark sprites/text
+    # on the white). Without this, an all-white flash trips the bright-top-AND-bottom 'battle' rule
+    # (a false positive seen during the starter cutscene). Treat it as overworld — it's a one-frame
+    # blank the odometry/area-change path already tolerates, and the next frame resolves the state.
+    if float(g.std()) < 6.0:
+        return "overworld"
     H, W = g.shape
     w = g >= white
     right = float(w[:, int(W * 0.6):].mean())
