@@ -93,32 +93,34 @@ separate aria-side investigation.
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
-*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, and **step 1
-below — un-muzzled lessons into a harness-owned per-run buffer** (branch `feat/lesson-buffer`, commit
-`45271c4`, local-not-pushed; 90 tests; adversarially reviewed; details in `LEARNINGS.md`).
+*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, and **steps 1–2
+below — the harness-owned per-run `LESSON:` buffer + the disconfirm/surprise detector** (branch
+`feat/lesson-buffer`, commits `45271c4`/`cc193ca`/`7ae55ad`, local-not-pushed; 101 tests; each
+adversarially reviewed; details in `LEARNINGS.md`).
 
 **Now (run-#2-informed, cheapest first):**
 1. ~~**Un-muzzle lessons into a HARNESS-owned per-run buffer.**~~ **DONE** (commit `45271c4`).
    `POKEMON_SYSTEM` drops the "nothing else" muzzle + advertises an optional `LESSON:` line (a plain
    line aria passes through — NOT the `<lesson>` tag, which persists across runs); `max_tokens` 64→128;
    `LLMButtonBrain` parses it (`_parse_lesson`) into a per-run buffer (`self.lessons`, cap 8, dedup),
-   re-injects it each wake, discards it at run end. Free; validated by 90 tests + an adversarial-review
+   re-injects it each wake, discards it at run end. Free; validated by tests + an adversarial-review
    workflow (which also caught a spurious-button parse leak + a stale-`goto`/`lesson`-on-failure bug).
-2. **Disconfirm / surprise detector** (unifies "stuck" #2 + prediction-error #4) ← **NEXT**. On a HARNESS-detected
-   prediction error — `OutcomeMemory` dead action / watchdog no-progress / perceiver `blocked` — inject a
-   `SURPRISE: expected X, got Y` note and ask the LLM for a `LESSON:` (lands in step-1's buffer).
-   Highest-signal, world-agnostic — the "act → observe outcome → learn" spine.
-3. **Dialog auto-advance + a Gen-1 textbox decoder.** A cheap rule mashes A through a *stable* advancing
-   textbox (free), waking the LLM only at a real **choice** (never auto-mash a YES/NO). The decoder reads
-   the textbox region from PIXELS (not RAM) and accumulates a "text since your last decision" transcript
+2. ~~**Disconfirm / surprise detector**~~ **DONE** (commit `7ae55ad`). New `core/disconfirm.py`
+   `DisconfirmDetector` (harness-owned): counts consecutive no-progress decisions and, at the threshold,
+   injects one `SURPRISE: …` note (with the perceiver's `blocked`/`changed-nothing` detail) that asks for
+   a `LESSON:` → lands in step-1's buffer. It **replaced** the old inline loop-breaker and now also fires
+   on the case that one missed — flailing inside a forced **dialog** (mode-wakes that change nothing, the
+   run-#2 wall). World-agnostic; the "act → observe → learn" spine. Validated by tests + adversarial review.
+3. **Dialog auto-advance + a Gen-1 textbox decoder** ← **NEXT**. A cheap rule mashes A through a *stable*
+   advancing textbox (free), waking the LLM only at a real **choice** (never auto-mash a YES/NO). The decoder
+   reads the textbox region from PIXELS (not RAM) and accumulates a "text since your last decision" transcript
    injected at the next wake — and **the same decoder grounds location/event semantics**, killing the
    hallucination (the LLM narrated "Viridian City"/"Gramps" while in Oak's Lab). One capability, two payoffs.
 4. **Then re-run Pallet→starter→Route 1** (guarded). Success = obtains a starter and leaves Pallet at a
    low wake-rate. Then the credit-gated gating-probe verdict and the first battle.
 
 All of 1–3 are **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free vs
-the oracle, on a branch off the current PR; no credits spent until the guarded re-run (4). Build 1 first
-(the others need somewhere for the lesson to land + the muzzle lifted).
+the oracle, on a branch off the current PR; no credits spent until the guarded re-run (4).
 
 **Deferred (NOT blocking):** prompt caching (aria-side; the unusual aria API path makes it its own
 investigation — not blocking at this wake volume), full place-graph + odometry drift (Tier-2; the
