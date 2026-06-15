@@ -74,16 +74,20 @@ and reached Oak's Lab** (maps 38→37→0→40, 57 cells) for **~$0.23** (30 bou
 ~$3). The free autopilot drove 76/123 steps. Video: `runs/run2.mp4` (1:40, video+audio). The run-#1
 spatial failure is **solved on real hardware**. But it then **couldn't get the starter**: the LLM
 **hallucinated its location** (narrated "Viridian City"/"Gramps" while truly in Pallet→Oak's Lab) and
-**flailed through Oak's forced dialog**. And it wrote **no lesson** — root cause: the harness exposes no
-memory-write channel (only THINK/MOVE/GOTO is parsed), so "record a lesson" is a no-op.
+**flailed through Oak's forced dialog**. And it wrote **no lesson** — root cause (grounded in aria's
+code): aria's `<lesson>` channel is LIVE (it parses lesson tags from every reply → `lessons.md`,
+`aria/.../memory.py:245`), but our prompt **muzzles** it — `POKEMON_SYSTEM` says "reply EXACTLY
+THINK/MOVE, nothing else" + `max_tokens=64`, so the model never emits one. Per the learning-boundary
+law the fix is a HARNESS-owned `LESSON:` buffer, NOT aria's persisting `lessons.md`.
 
 **The headline:** perception-geometry (Iter 02) and the door-seam (run #2) are solved. The bottleneck
 **moved again** → **semantic perception (the LLM mis-reads where it is) + scripted-event/menu
-interaction + a missing memory-write channel.** The agent can now *navigate* but can't yet *understand
+interaction + a muzzled lesson channel.** The agent can now *navigate* but can't yet *understand
 or transact* with the game's story gates.
 
-**Spend:** ~$3 this run; ~$0.66 across everything before. **Prompt caching is OFF** (`cached_tokens=0`)
-— the biggest cheap win available.
+**Spend:** run #1 ~$3; run #2 **~$0.23** (30 bounded wakes); ~$0.66 across the free work before.
+Prompt caching is OFF (`cached_tokens=0`) but **not blocking** at this wake volume — deferred to a
+separate aria-side investigation.
 
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
@@ -91,9 +95,12 @@ or transact* with the game's story gates.
 *live* in run #2), the clean-start + archive tool, and the recorded paid run #2 itself.
 
 **Now (run-#2-informed, cheapest first):**
-1. **Give the agent a memory-write channel.** Parse an optional `LESSON: <text>` line (like `GOTO:`)
-   and persist it to aria — or have aria distill `lessons.md` from its journal at episode end. Until
-   this exists, the loop-breaker's "record a lesson" is **theatre** (run #2 wrote zero lessons).
+1. **Un-muzzle lessons into a HARNESS-owned per-run buffer.** aria's `<lesson>` channel is already
+   live but our `POKEMON_SYSTEM` ("nothing else") + `max_tokens=64` suppress it. Add an optional
+   `LESSON: <text>` line (a plain line aria passes through — NOT the `<lesson>` tag, which persists to
+   `lessons.md` across runs and would break the learning-boundary law), lift the muzzle + raise the
+   token cap, and have the *harness* capture it into a per-run buffer it re-injects within the run and
+   discards at run end. Until this exists, the loop-breaker's "record a lesson" is **theatre**.
 2. **Don't wake the LLM blindly inside a forced dialog.** Detect a *stable* advancing textbox and let
    a cheap rule mash A through it, waking the LLM only at a real **choice** (menu with options). Run #2
    burned most of its 30 wakes flailing in Oak's dialog (24.4% wake rate, ~4× the free estimate).
