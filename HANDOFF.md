@@ -93,10 +93,12 @@ separate aria-side investigation.
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
-*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, **steps 1–2
-below** (the harness-owned per-run `LESSON:` buffer + the disconfirm/surprise detector), and **step 3a
-(fail-safe dialog auto-advance)** (branch `feat/lesson-buffer`, commits `45271c4`/`cc193ca`/`7ae55ad`/
-`facd598`, local-not-pushed; 106 tests; steps 1–2 each adversarially reviewed; details in `LEARNINGS.md`).
+*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, and **the entire
+harness-only learning/dialog build — steps 1, 2, 3a, 3b** (the per-run `LESSON:` buffer, the
+disconfirm/surprise detector, fail-safe dialog auto-advance, and the Gen-1 textbox decoder + on-screen
+grounding + missed-text transcript). Branch `feat/lesson-buffer`, **local-not-pushed**, 9 commits
+(`45271c4`→`a3e6dcd`), **119 tests**, each step adversarially reviewed (the step-3 review found no bugs,
+only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LEARNINGS.md`.
 
 **Now (run-#2-informed, cheapest first):**
 1. ~~**Un-muzzle lessons into a HARNESS-owned per-run buffer.**~~ **DONE** (commit `45271c4`).
@@ -120,21 +122,25 @@ below** (the harness-owned per-run `LESSON:` buffer + the disconfirm/surprise de
      drivers) presses A through plain dialog for FREE (resets the disconfirm streak — advancing IS progress),
      waking only at a choice/battle. Validated on 272 real frames (plain→advance, YES-NO/START menu→wake;
      keyboard→battle=also a wake). 53/272 frames became free auto-advances.
-   - **3b. Gen-1 textbox font decoder ← NEXT (this is where I left off).** Reads the textbox text from PIXELS
-     for (i) a "text since last decision" transcript injected at the next wake, and (ii) grounding location/
-     event semantics (kills the run-#2 hallucination). **PROVEN tractable, not yet committed:** the text grid
-     is nailed (2 lines at y=112/128, 8px cells from x=8) and template-matching decodes a calibrated frame
-     PERFECTLY (264 → "give a nickname / to CHARMANDER?"). REMAINING: build a clean glyph-table asset
-     (`games/pokemon_red/gen1_font.json`) — calibrate from the dialog grid (same-source; the naming-keyboard
-     grid is an irregular ~17px pitch and risks pixel-offset mismatches), labeling the deduped charset
-     (decode emits '?' for unknown, never a wrong guess); then wire the perceiver to attach decoded text to
-     the `SymbolicState` and `HybridBrain`/`LLMButtonBrain` to accumulate+inject the transcript. Then 3a's
-     review + a step-3 adversarial pass.
-4. **Then re-run Pallet→starter→Route 1** (guarded). Success = obtains a starter and leaves Pallet at a
-   low wake-rate. Then the credit-gated gating-probe verdict and the first battle.
+   - ~~**3b. Gen-1 textbox font decoder.**~~ **DONE** (commit `279dd9e`, hardened `a3e6dcd`).
+     `games/pokemon_red/textbox.py` slices the 2×18 8×8 text grid (lines y=112/128, x0=8) and
+     template-matches each cell against `gen1_font.json` (42 glyphs, calibrated from pixels by
+     `eval/calibrate_font.py`; unknown→'?', the ▼ arrow→dropped). The perceiver attaches the decoded text
+     as `SymbolicState.screen_text` (with a quality guard so non-textbox screens yield ""); the plugin
+     surfaces it in `obs.text`; `HybridBrain` accumulates the auto-advanced text into a per-run transcript
+     and injects it at the next wake. Decodes all 6 calibration frames AND a held-out frame at **100%**.
+     This is the run-#2 hallucination fix — the LLM now reads the actual on-screen words instead of guessing.
+     (Glyph coverage is the early-game charset; uncalibrated glyphs decode to '?' safely and the table grows
+     via `calibrate_font.py`.)
+4. **Guarded, recorded PAID re-run Pallet→starter→Route 1 ← NEXT (the first credit spend).** With 1–3 in
+   place the agent should now: read the actual on-screen text (no location hallucination), auto-advance
+   Oak's forced dialog cheaply (waking only at the starter/nickname choices), and record/reuse `LESSON:`s
+   when the disconfirm detector fires. MANDATORY pre-run `reset_aria_memory.py --yes`; run guarded
+   (`--max-llm-calls`, `--stuck-steps`, `--record`). Success = obtains a starter and leaves Pallet at a low
+   wake-rate. Then the credit-gated gating-probe verdict and the first battle.
 
-All of 1–3 are **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free vs
-the oracle, on a branch off the current PR; no credits spent until the guarded re-run (4).
+Steps 1–3 are all **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free vs
+the oracle, on a branch off the current PR; **no credits have been spent.** Step 4 is the first paid step.
 
 **Deferred (NOT blocking):** prompt caching (aria-side; the unusual aria API path makes it its own
 investigation — not blocking at this wake volume), full place-graph + odometry drift (Tier-2; the
