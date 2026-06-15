@@ -13,10 +13,16 @@ legally-obtained Pokémon Red ROM — none is, or will be, bundled here.
 from __future__ import annotations
 
 import os
-from typing import Protocol
+import time
+from typing import Optional, Protocol
 
 # The seven inputs a Game Boy exposes (no L/R shoulders on the original).
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
+
+# The original Game Boy runs at ~59.73 Hz. We pace to this ourselves (see the governor in
+# PyBoyEmulator) instead of trusting PyBoy's set_emulation_speed, which we measured to NOT throttle
+# across window backends (a null window's tick(120) returned in 16 ms, not ~2 s).
+_GB_FPS = 59.7275
 
 
 def ensure_sdl_dll_path() -> None:
@@ -61,7 +67,8 @@ class Emulator(Protocol):
 class PyBoyEmulator:
     """Live PyBoy-backed Game Boy. Wraps version drift behind a small surface."""
 
-    def __init__(self, rom_path: str, headless: bool = True, sound: bool = False):
+    def __init__(self, rom_path: str, headless: bool = True, sound: bool = False,
+                 realtime: Optional[bool] = None):
         if not os.path.exists(rom_path):
             raise FileNotFoundError(
                 f"ROM not found: {rom_path}\n"
@@ -84,12 +91,38 @@ class PyBoyEmulator:
             sound_emulated=sound,
             sound_volume=100 if sound else 0,
         )
-        if not headless:
-            # Any windowed/sound run plays at real-time so it's watchable (and audio isn't
-            # chipmunk-fast). Headless agent runs stay unbounded (as fast as possible).
-            self._pyboy.set_emulation_speed(1)
-        # Let the boot/intro settle a little so the first observation is real.
+        # Watchable real-time is OUR job, not PyBoy's: any windowed/sound run is paced by the
+        # frame-by-frame governor below (see _advance). Headless agent runs stay unbounded.
+        self._realtime = (not headless) if realtime is None else realtime
+        self._pyboy.set_emulation_speed(0)   # unbounded; we own the wall-clock pacing
+        self._next_frame_t: Optional[float] = None
+        # Let the boot/intro settle a little so the first observation is real (unpaced).
         self._pyboy.tick(60, render=True)
+
+    def _advance(self, frames: int, render: bool) -> None:
+        """Emulate `frames`. In real-time mode, step ONE frame at a time and sleep to the wall
+        clock so motion is watchable AND the audio stays continuous (a bulk tick + sleep would
+        starve the sound queue). Headless mode bulk-ticks as fast as possible."""
+        frames = max(1, frames)
+        if not self._realtime:
+            self._pyboy.tick(frames, render=render)
+            return
+        for _ in range(frames):
+            self._pyboy.tick(1, render=render)
+            self._pace_one_frame()
+
+    def _pace_one_frame(self) -> None:
+        now = time.perf_counter()
+        if self._next_frame_t is None:
+            self._next_frame_t = now
+        self._next_frame_t += 1.0 / _GB_FPS
+        delay = self._next_frame_t - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
+        elif delay < -0.25:
+            # Fell well behind (e.g. a slow LLM decision between frames) — re-anchor instead of
+            # fast-forwarding to "catch up", which would look like a speed-up.
+            self._next_frame_t = time.perf_counter()
 
     def press(self, button: str, hold_frames: int = 8, settle_frames: int = 16) -> None:
         b = button.lower()
@@ -97,12 +130,12 @@ class PyBoyEmulator:
             raise ValueError(f"unknown button: {button}")
         # PyBoy 2.x: button(name, delay) presses then releases over `delay` frames.
         self._pyboy.button(b, delay=hold_frames)
-        self._pyboy.tick(hold_frames, render=False)
+        self._advance(hold_frames, render=False)
         # Let menus open / text scroll / the character finish a step.
-        self._pyboy.tick(settle_frames, render=True)
+        self._advance(settle_frames, render=True)
 
     def tick(self, frames: int) -> None:
-        self._pyboy.tick(max(1, frames), render=True)
+        self._advance(max(1, frames), render=True)
 
     def read(self, addr: int) -> int:
         return self._pyboy.memory[addr]
