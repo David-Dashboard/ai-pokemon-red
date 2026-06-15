@@ -100,7 +100,32 @@ Three failures compounded, none of them the LLM's "intelligence":
 Net: 2.63M input tokens, ~$3, for a run that a single watchdog or a single "give up on an
 unreachable frontier" check would have ended in pennies.
 
-## 6. Conclusions
+## 6. The agent's-eye view — what aria's memory recorded (and didn't)
+
+Reading Red's own memory (`ai-aria/pokemon-red-data/`) layers a *cognitive* failure on top of the
+mechanical one, and shows the learn-from-mistakes loop produced **nothing**:
+
+- **The goal was in context the whole time — and ignored.** `goals.md` (injected every turn) states
+  the active objective verbatim: *"leave Pallet Town and reach Pewter City. Get the starter from
+  Professor Oak…"* Yet across 351 stuck turns the reasoning never invoked it; it collapsed to
+  "explore toward frontier (0,0)," even after *seeing* the target ("I see Professor Oak's lab
+  structure above," steps 97–105). A goal in the prompt is necessary but not sufficient — with a
+  broken map and no progress monitor, it stays inert.
+- **Zero durable learning from 351 failures.** `core_memory.md`, `lessons.md`, and the semantic
+  store `memstore.db` were **not written during the run** (their timestamps predate it): **no
+  `<lesson>`** ("don't keep targeting an unreachable frontier"), no "I'm looping," no flip of the
+  goal to *blocked*. This is the **Iteration-01 finding repeated** ("0 lesson writes") — now over a
+  far longer, costlier failure.
+- **Memory laundered the loop into a success story.** The one artifact it *did* write — the rolling
+  recap `earlier_today.json` — reads: *"systematically mapped 16+ tiles… using pathfinder GOTO
+  targeting (0,0)… to systematically expand the map."* A confident, coherent narrative of
+  **progress that never happened.** Iteration 01's lesson generalizes: "faithful memory amplifies
+  bad perception" → here **faithful memory launders a stuck loop into achievement**, because the
+  memory system tracks *activity*, not *grounded progress*.
+- **All the seeded strategy went unused.** `core_memory.md` holds the full type chart, gym order,
+  and "Bulbasaur is easiest for Brock" — none of it reachable while the agent can't leave the bedroom.
+
+## 7. Conclusions
 
 1. **Perception (per-frame) is no longer the bottleneck — spatial memory is.** We fixed Iteration
    01's confabulation; this run cleanly exposes the next wall: a drifting, never-resetting map.
@@ -111,17 +136,23 @@ unreachable frontier" check would have ended in pennies.
    detected "I am not making progress" — because drift made every step's `(situation)` look novel, so
    `OutcomeMemory` never flagged a dead action. Progress must be tracked *globally*, not per-tile.
 4. **Cost guardrails must be on by default.** A watchdog + caching are not optional for paid runs.
-5. **Good news to bank:** instantaneous perception 399/399, modes 100% correct, no confabulation, 0
-   API errors, recording works, and the `goto` feature was exercised (the LLM emitted `GOTO` every
-   turn — the plumbing is live; it was just pointed at an impossible target).
+5. **The learning loop is inert without grounded progress (§6).** The agent knew the goal, failed
+   351 times, and recorded no lesson and no blocked-status — you can't learn from a mistake you never
+   register as one, and memory faithfully *rationalized* the loop. "Progress" and "stuck" must be
+   **grounded signals**, not left to the self-narrative.
+6. **Good news to bank:** instantaneous perception 399/399, modes 100% correct, no confabulation, 0
+   API errors, recording works (now with audio), and the `goto` feature was exercised (the LLM
+   emitted `GOTO` every turn — the plumbing is live; it was just pointed at an impossible target).
 
-## 7. Next steps (prioritized: stop the bleeding → fix the cause)
+## 8. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **Tier 1 — cheap guardrails (do first; would have saved this $3):**
 1. **Port the progress watchdog into `play_pokemon.py`** (halt on no global progress for N steps).
 2. **Frontier-abandonment / loop-breaker:** if the autopilot is stuck on the *same* unreachable
    frontier K times, drop that frontier (and if none remain, halt) — and feed "no progress for N
-   steps" into the wake/escalation logic so the LLM is asked to *replan*, not micro-navigate.
+   steps" into the wake/escalation logic so the LLM is asked to *replan*, not micro-navigate. Also
+   **write that to memory** (force a `<lesson>` / flip the goal to *blocked*) — §6 shows the agent
+   currently records nothing when stuck, so it rationalizes loops as progress instead of learning.
 3. **Enable prompt caching** on the aria/Haiku calls — the single biggest cost win.
 
 **Tier 2 — fix the actual cause (spatial memory):**
