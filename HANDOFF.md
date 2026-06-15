@@ -101,15 +101,21 @@ separate aria-side investigation.
    `lessons.md` across runs and would break the learning-boundary law), lift the muzzle + raise the
    token cap, and have the *harness* capture it into a per-run buffer it re-injects within the run and
    discards at run end. Until this exists, the loop-breaker's "record a lesson" is **theatre**.
-2. **Don't wake the LLM blindly inside a forced dialog.** Detect a *stable* advancing textbox and let
-   a cheap rule mash A through it, waking the LLM only at a real **choice** (menu with options). Run #2
-   burned most of its 30 wakes flailing in Oak's dialog (24.4% wake rate, ~4× the free estimate).
-3. **Ground location/event semantics** — the real capability gap. The LLM **hallucinated** its location
-   ("Viridian City"/"Gramps" while in Pallet→Oak's Lab). Kill it with the cheapest "perception-as-a-
-   module" move that works: a small screen/event classifier, OCR of place signs, or feed the LLM the
-   *symbolic* event state instead of raw pixels.
-4. **Then re-run Pallet→starter→Route 1** (guarded). Success = obtains a starter and leaves Pallet at
-   a low wake-rate. Then the credit-gated gating-probe verdict and the first battle.
+2. **Disconfirm / surprise detector** (unifies "stuck" #2 + prediction-error #4). On a HARNESS-detected
+   prediction error — `OutcomeMemory` dead action / watchdog no-progress / perceiver `blocked` — inject a
+   `SURPRISE: expected X, got Y` note and ask the LLM for a `LESSON:` (lands in step-1's buffer).
+   Highest-signal, world-agnostic — the "act → observe outcome → learn" spine.
+3. **Dialog auto-advance + a Gen-1 textbox decoder.** A cheap rule mashes A through a *stable* advancing
+   textbox (free), waking the LLM only at a real **choice** (never auto-mash a YES/NO). The decoder reads
+   the textbox region from PIXELS (not RAM) and accumulates a "text since your last decision" transcript
+   injected at the next wake — and **the same decoder grounds location/event semantics**, killing the
+   hallucination (the LLM narrated "Viridian City"/"Gramps" while in Oak's Lab). One capability, two payoffs.
+4. **Then re-run Pallet→starter→Route 1** (guarded). Success = obtains a starter and leaves Pallet at a
+   low wake-rate. Then the credit-gated gating-probe verdict and the first battle.
+
+All of 1–3 are **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free vs
+the oracle, on a branch off the current PR; no credits spent until the guarded re-run (4). Build 1 first
+(the others need somewhere for the lesson to land + the muzzle lifted).
 
 **Deferred (NOT blocking):** prompt caching (aria-side; the unusual aria API path makes it its own
 investigation — not blocking at this wake volume), full place-graph + odometry drift (Tier-2; the
