@@ -14,9 +14,8 @@ import uuid
 from core.contracts import GamePlugin, ToolCall
 from core.brains import ExploreBrain, HybridBrain
 from core.gateway import Gateway
-from core.permissions import GATEWORLD_SANDBOX
 from core.runner import run_episode
-from games.gateworld import FAMILIAR, GateWorld, NOVEL, ScriptedReasoner
+from games.gateworld import FAMILIAR, GATEWORLD_SANDBOX, GateWorld, NOVEL, ScriptedReasoner
 
 
 def _press(world: GateWorld, button: str):

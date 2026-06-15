@@ -13,8 +13,9 @@ import pytest
 
 from core.brains import ScriptedBrain
 from core.gateway import Gateway
-from core.permissions import Allowlist, POKEMON_SANDBOX
+from core.permissions import Allowlist
 from core.runner import run_episode
+from games.pokemon_red import POKEMON_SANDBOX
 from games.pokemon_red import memory_map as mm
 from games.pokemon_red.plugin import PokemonRedPlugin
 

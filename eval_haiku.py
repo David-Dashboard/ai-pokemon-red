@@ -21,8 +21,8 @@ import requests
 
 from core.brains import LLMButtonBrain
 from core.gateway import Gateway
-from core.permissions import POKEMON_SANDBOX
 from core.runner import run_episode
+from games.pokemon_red import POKEMON_SANDBOX
 
 ROM = sys.argv[1] if len(sys.argv) > 1 else "roms/Pokemon Red Version (Colorization).gb"
 STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 18

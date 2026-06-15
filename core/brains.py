@@ -258,20 +258,16 @@ def _openai_complete(
     return complete
 
 
-_SYSTEM = (
-    "You are playing Pokémon Red (top-down view). You control the small trainer "
-    "sprite. Your job right now is to EXPLORE — walk to doors, stairs, and exits to "
-    "reach new areas.\n"
-    "Move with the d-pad. A single tap only TURNS you to face that way, so send a "
-    "direction 2-4 times to actually walk, e.g. 'down down down'. Press A ONLY to "
-    "talk to a person or confirm a dialog box; do NOT press A in an empty room. "
-    "Never press START or SELECT.\n"
+# World-agnostic default. core/ knows nothing about any specific game; a world that wants a
+# tailored prompt (Pokémon's turn-then-move + GOTO advice, the gating probe's neutral framing)
+# injects its own via LLMButtonBrain(system=...). Only the THINK/MOVE contract is fixed, because
+# _parse depends on it.
+_DEFAULT_SYSTEM = (
+    "You are an agent acting in a world through button presses. Choose the next input(s) from the "
+    "observation below.\n"
     "Reply in EXACTLY this format and nothing else:\n"
     "THINK: <one short sentence — what you see and what you'll do>\n"
-    "MOVE: <2-4 buttons separated by spaces, from: up down left right a b>\n"
-    "Optionally add a final line 'GOTO: x y' to send yourself to a known map cell "
-    "(coordinates are shown when available); a free pathfinder then walks you there over the "
-    "next steps, so you needn't steer every tile."
+    "MOVE: <1-4 buttons separated by spaces, from: up down left right a b>"
 )
 
 
@@ -291,10 +287,10 @@ class LLMButtonBrain:
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
-        # The system prompt is injectable so the SAME brain serves a different world (e.g. the
-        # GateWorld gating probe uses a neutral, world-agnostic prompt — the leak control). Defaults
-        # to the Pokémon exploration prompt for backward compatibility.
-        self.system = system or _SYSTEM
+        # The system prompt is injectable so the SAME brain serves any world: Pokémon passes its
+        # POKEMON_SYSTEM, the gating probe passes a neutral framing (the leak control). core/ ships
+        # only a world-agnostic default — it knows about no specific game.
+        self.system = system or _DEFAULT_SYSTEM
         self.last_thought = ""       # the model's latest reasoning, for display
         self.goto: Optional[list] = None  # destination cell the planner named this turn (or None)
         self._last_pos = None        # (x, y) at the previous decision

@@ -40,9 +40,5 @@ class Allowlist:
         return False, f"tool '{call.tool}' is not in the sandbox allowlist"
 
 
-# The default for the Pokémon demo: exactly the sandboxed in-game inputs.
-POKEMON_SANDBOX = Allowlist({"press_button", "press_sequence", "wait"})
-
-# The GateWorld gating probe speaks the same button contract (a pure synthetic sandbox), so the same
-# allowlist shape applies — named alias for clarity at call sites.
-GATEWORLD_SANDBOX = Allowlist({"press_button", "press_sequence", "wait"})
+# Per-world sandbox INSTANCES live with their worlds, not here — core/ stays game-agnostic.
+# See games/pokemon_red.POKEMON_SANDBOX and games/gateworld.GATEWORLD_SANDBOX.

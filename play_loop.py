@@ -21,8 +21,8 @@ import uuid
 
 from core.brains import ExploreBrain, HybridBrain, LLMButtonBrain
 from core.gateway import Gateway
-from core.permissions import POKEMON_SANDBOX
 from core.runner import run_episode
+from games.pokemon_red import POKEMON_SANDBOX, POKEMON_SYSTEM
 
 
 def main() -> int:
@@ -48,7 +48,7 @@ def main() -> int:
     plugin = PokemonRedPlugin(rom_path=args.rom, out_dir="runs/loop", headless=True,
                               init_state=init, perceiver=OverworldPerceiver())
     llm = LLMButtonBrain(aid, model=args.model, url=args.url, backend="aria",
-                         api_key=args.token, use_vision=True)
+                         api_key=args.token, use_vision=True, system=POKEMON_SYSTEM)
     brain = HybridBrain(ExploreBrain(aid), llm)   # free autopilot + wake the LLM only at decisions
     gw = Gateway(plugin, POKEMON_SANDBOX)
 

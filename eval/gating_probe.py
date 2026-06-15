@@ -28,9 +28,8 @@ import uuid
 
 from core.brains import ExploreBrain, HybridBrain, LLMButtonBrain
 from core.gateway import Gateway
-from core.permissions import GATEWORLD_SANDBOX
 from core.runner import run_episode
-from games.gateworld import FAMILIAR, GateWorld, NOVEL, ScriptedReasoner
+from games.gateworld import FAMILIAR, GATEWORLD_SANDBOX, GateWorld, NOVEL, ScriptedReasoner
 
 # World-agnostic: NO mention of Pokémon, NO "key", and NO hint binding the specific object to the
 # specific gate. The one generic dynamics note ("may need to carry an object past an obstacle") is

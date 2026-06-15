@@ -28,8 +28,8 @@ import sys
 import uuid
 
 from core.gateway import Gateway
-from core.permissions import POKEMON_SANDBOX
 from core.runner import run_episode
+from games.pokemon_red import POKEMON_SANDBOX, POKEMON_SYSTEM
 
 
 def main() -> int:
@@ -98,7 +98,7 @@ def main() -> int:
             return 2
         llm = LLMButtonBrain(agent_id, model=model, url=url,
                              backend=args.backend, use_vision=not args.no_vision,
-                             api_key=args.llm_token)
+                             api_key=args.llm_token, system=POKEMON_SYSTEM)
         if args.brain == "llm":
             brain = llm
         else:  # hybrid = free autopilot + wake the LLM only at decisions
