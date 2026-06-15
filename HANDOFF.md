@@ -82,8 +82,9 @@ law the fix is a HARNESS-owned `LESSON:` buffer, NOT aria's persisting `lessons.
 
 **The headline:** perception-geometry (Iter 02) and the door-seam (run #2) are solved. The bottleneck
 **moved again** → **semantic perception (the LLM mis-reads where it is) + scripted-event/menu
-interaction + a muzzled lesson channel.** The agent can now *navigate* but can't yet *understand
-or transact* with the game's story gates.
+interaction.** The agent can now *navigate* but can't yet *understand or transact* with the game's
+story gates. (The muzzled lesson channel — the third run-#2 wall — is now **fixed**: step 1 below gives
+the harness a per-run `LESSON:` buffer. It still needs a *live* paid run to show lessons actually help.)
 
 **Spend:** run #1 ~$3; run #2 **~$0.23** (30 bounded wakes); ~$0.66 across the free work before.
 Prompt caching is OFF (`cached_tokens=0`) but **not blocking** at this wake volume — deferred to a
@@ -92,16 +93,18 @@ separate aria-side investigation.
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
-*live* in run #2), the clean-start + archive tool, and the recorded paid run #2 itself.
+*live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, and **step 1
+below — un-muzzled lessons into a harness-owned per-run buffer** (branch `feat/lesson-buffer`, commit
+`45271c4`, local-not-pushed; 90 tests; adversarially reviewed; details in `LEARNINGS.md`).
 
 **Now (run-#2-informed, cheapest first):**
-1. **Un-muzzle lessons into a HARNESS-owned per-run buffer.** aria's `<lesson>` channel is already
-   live but our `POKEMON_SYSTEM` ("nothing else") + `max_tokens=64` suppress it. Add an optional
-   `LESSON: <text>` line (a plain line aria passes through — NOT the `<lesson>` tag, which persists to
-   `lessons.md` across runs and would break the learning-boundary law), lift the muzzle + raise the
-   token cap, and have the *harness* capture it into a per-run buffer it re-injects within the run and
-   discards at run end. Until this exists, the loop-breaker's "record a lesson" is **theatre**.
-2. **Disconfirm / surprise detector** (unifies "stuck" #2 + prediction-error #4). On a HARNESS-detected
+1. ~~**Un-muzzle lessons into a HARNESS-owned per-run buffer.**~~ **DONE** (commit `45271c4`).
+   `POKEMON_SYSTEM` drops the "nothing else" muzzle + advertises an optional `LESSON:` line (a plain
+   line aria passes through — NOT the `<lesson>` tag, which persists across runs); `max_tokens` 64→128;
+   `LLMButtonBrain` parses it (`_parse_lesson`) into a per-run buffer (`self.lessons`, cap 8, dedup),
+   re-injects it each wake, discards it at run end. Free; validated by 90 tests + an adversarial-review
+   workflow (which also caught a spurious-button parse leak + a stale-`goto`/`lesson`-on-failure bug).
+2. **Disconfirm / surprise detector** (unifies "stuck" #2 + prediction-error #4) ← **NEXT**. On a HARNESS-detected
    prediction error — `OutcomeMemory` dead action / watchdog no-progress / perceiver `blocked` — inject a
    `SURPRISE: expected X, got Y` note and ask the LLM for a `LESSON:` (lands in step-1's buffer).
    Highest-signal, world-agnostic — the "act → observe outcome → learn" spine.
