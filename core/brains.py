@@ -208,6 +208,8 @@ class HybridBrain:
                 self.advanced += 1
                 self.disconfirm.reset()
                 txt = (obs.data.get("screen_text") or "").strip()   # capture the text we're skipping past
+                # consecutive-dedup is deliberate: advancing dialog never shows the SAME text twice in a
+                # row, so only the immediately-previous line can repeat (a held frame between A-presses).
                 if txt and (not self.transcript or self.transcript[-1] != txt):
                     self.transcript.append(txt)
                     del self.transcript[:-_TRANSCRIPT_CAP]

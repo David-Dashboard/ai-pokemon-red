@@ -139,6 +139,16 @@ def test_detect_mode_choice_box_over_textbox_is_menu():
     assert detect_mode(choice) == "menu"
 
 
+def test_detect_mode_choice_box_low_above_textbox_still_menu():
+    # A choice box sitting LOW (rows ~78-88, just above the textbox) must still read 'menu' — the
+    # region reaches down to ~row 89 so such a box isn't missed and then auto-advanced as a choice.
+    from games.pokemon_red.perceiver import detect_mode
+    low = np.full((144, 160, 3), 60, dtype=np.uint8)
+    low[96:, :] = 255
+    low[52:88, 120:156] = 255     # a normal-height selection box, positioned low (ends just above textbox)
+    assert detect_mode(low) == "menu"
+
+
 def test_detect_mode_uniform_fade_is_not_battle():
     """Regression: a near-uniform fade/flash frame must NOT read as 'battle'. Measured on real
     pixels, an all-white starter-cutscene flash (std 0) tripped the bright-top-AND-bottom battle
@@ -452,6 +462,18 @@ def test_hybrid_accumulates_dialog_transcript_and_injects_at_next_wake():
     assert h.woke == 1 and fb.seen[-1] == "HELLO / WORLD" and h.transcript == []
 
 
+def test_hybrid_transcript_caps_to_most_recent():
+    from core.brains import HybridBrain, _TRANSCRIPT_CAP, _call
+    from core.contracts import Observation
+    h = HybridBrain(_StubBrain(None), _StubBrain(_call("press_button", {"button": "a"}, "a")),
+                    advance_on_dialog=True)
+    for i in range(_TRANSCRIPT_CAP + 5):
+        obs = Observation(data={"context": "dialog", "screen_text": f"line{i}"}, text="", agent_id="a", t=0.0)
+        h.decide(obs, [], {})
+    assert len(h.transcript) == _TRANSCRIPT_CAP                      # capped
+    assert h.transcript[-1] == f"line{_TRANSCRIPT_CAP + 4}"          # most-recent kept
+
+
 # -- outcome loop (feature #1: learn from no-effect actions) ------------------
 
 def test_outcome_memory_marks_repeated_no_effect_and_resets_on_effect():
@@ -461,6 +483,31 @@ def test_outcome_memory_marks_repeated_no_effect_and_resets_on_effect():
     om.record(sig, "a", effective=False); assert not om.is_dead(sig, "a")
     om.record(sig, "a", effective=False); assert om.is_dead(sig, "a") and "a" in om.dead_actions(sig)
     om.record(sig, "a", effective=True);  assert not om.is_dead(sig, "a")  # any effect resets the streak
+
+
+def test_state_signature_ignores_screen_text():
+    # on-screen text must NOT be part of the 'situation' key — else every changing dialog frame would
+    # look like a new situation / churn the outcome+disconfirm memories.
+    from core.outcome import state_signature
+    base = {"context": "dialog", "pose": {"value": [1, 1], "area": 0}}
+    assert state_signature({**base, "screen_text": "HELLO"}) == state_signature({**base, "screen_text": "WORLD"})
+
+
+def test_perceiver_read_text_rejects_glyph_poor_region():
+    # the quality guard: a region with <3 recognizable chars (e.g. a non-textbox screen) -> "" not junk.
+    per = OverworldPerceiver()
+    f = np.full((144, 160, 3), 255, dtype=np.uint8)      # white (textbox bg)
+    f[112:120, 8:16] = 20                                 # one solid-dark cell -> '?' (no real glyph)
+    f[112:120, 16:24] = 20                                # another -> '?'
+    assert per._read_text(f) == ""
+
+
+def test_perceive_overworld_leaves_screen_text_empty():
+    per = OverworldPerceiver()
+    mem = PerceptMemory()
+    per.perceive(_frame(0), mem, {"last_action": None})
+    s = per.perceive(_frame(60), mem, {"last_action": "down+down"})   # plain dark scene -> overworld
+    assert s.context == "overworld" and s.screen_text == ""
 
 
 def test_state_signature_and_action_key():

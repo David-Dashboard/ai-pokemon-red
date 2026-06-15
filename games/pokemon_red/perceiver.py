@@ -78,10 +78,15 @@ def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
     if right > 0.35 and right >= bottom:
         return "menu"            # right-side panel (START menu / battle action menu)
     if bottom > 0.3:
-        # A bottom textbox. If a small selection box ALSO sits in the upper-right (a YES/NO or list
-        # over the textbox), this is a CHOICE, not plain text -> label it 'menu' so the planner is
+        # A bottom textbox. If a small selection box ALSO sits in the upper-right ABOVE the textbox (a
+        # YES/NO, list, etc.), this is a CHOICE, not plain text -> label it 'menu' so the planner is
         # woken to decide, never auto-advanced. Plain dialog is just the bottom box (midright ~0).
-        midright = float(w[int(H * 0.167):int(H * 0.556), int(W * 0.7):].mean())
+        # The region spans the upper-right down to just above the textbox (rows ~24..89; the box starts
+        # ~row 96, so its white interior never bleeds in — plain dialog stays 0.0 across captured frames,
+        # incl. bright Pallet scenes). It only needs to catch a choice box drawn OVER a textbox; a
+        # full-screen/right-panel menu (START, shop, battle action box) is already caught by the
+        # right>0.35 rule above, and a battle by the battle rule, so this stays the narrow safety net.
+        midright = float(w[int(H * 0.167):int(H * 0.62), int(W * 0.7):].mean())
         return "menu" if midright > _CHOICE_WHITE else "dialog"   # choice-over-textbox vs plain dialog
     return "menu"                # some other UI box — treat as a menu so the planner is woken
 

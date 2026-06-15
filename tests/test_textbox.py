@@ -59,6 +59,17 @@ def test_two_lines_join_with_newline():
     assert tb.decode(f, _table(a, 0, "A")) == "A\nA"
 
 
+def test_glyph_mapped_to_empty_string_is_dropped():
+    # the blinking ▼ arrow is calibrated to "" so it vanishes from the text (not rendered as '?').
+    arrow = np.zeros((8, 8), dtype=np.uint8)
+    arrow[1:7, 3:5] = 1
+    f = _frame_with(GLYPH_A, 0, 0)
+    x1 = tb.X0 + tb.CELL
+    f[tb.LINES[0][0]:tb.LINES[0][0] + 8, x1:x1 + 8][arrow.astype(bool)] = 0   # arrow in line0 col1
+    table = tb.FontTable([(tb.pack(GLYPH_A), "A"), (tb.pack(arrow), "")])
+    assert tb.decode(f, table) == "A"   # 'A' then "" (dropped)
+
+
 def test_font_table_roundtrips_via_json(tmp_path):
     p = tmp_path / "f.json"
     key = tb.pack(GLYPH_A)
