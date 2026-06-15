@@ -279,15 +279,16 @@ def test_hybrid_wakes_llm_on_non_overworld_mode():
     assert call.args.get("button") == "a" and h.woke == 1
 
 
-def test_hybrid_injects_replan_nudge_after_repeated_stuck_wakes():
-    """Loop-breaker: once the autopilot has been stuck (no frontier) for `replan_after` consecutive
-    wakes, the LLM gets an explicit replan nudge in context instead of being woken to flail silently
-    (run #1 woke the LLM 351x with no such signal)."""
+def test_hybrid_injects_surprise_nudge_after_repeated_no_progress():
+    """Disconfirm detector: once the agent has made no observable progress for `replan_after`
+    consecutive decisions (here the autopilot is always stuck -> waking every step with a fixed
+    signature), the LLM gets a SURPRISE note in context asking for a lesson, instead of being woken
+    to flail silently (run #1 woke the LLM 351x with no such signal)."""
     from core.brains import HybridBrain, _call
 
     class _Capturing:
         def __init__(self, call): self._c, self.last_thought, self.seen = call, "", []
-        def decide(self, obs, tools, context): self.seen.append(context.get("stuck_note")); return self._c
+        def decide(self, obs, tools, context): self.seen.append(context.get("surprise_note")); return self._c
 
     fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
     h = HybridBrain(_StubBrain(None), fb, replan_after=3)          # autopilot always stuck -> wake every step
@@ -295,7 +296,88 @@ def test_hybrid_injects_replan_nudge_after_repeated_stuck_wakes():
     for _ in range(3):
         h.decide(obs, [], {})
     assert fb.seen[0] is None and fb.seen[1] is None              # early wakes: no nudge yet
-    assert fb.seen[2] and "no new progress" in fb.seen[2]         # 3rd consecutive stuck wake -> replan nudge
+    assert fb.seen[2] and "SURPRISE" in fb.seen[2] and "LESSON" in fb.seen[2]  # 3rd -> surprise + ask for a lesson
+
+
+def test_hybrid_surprise_fires_during_dialog_flail():
+    """The NEW capability over the old loop-breaker: a mode-wake (dialog/menu) with no situation
+    change also grows the no-progress streak, so flailing inside a forced dialog (the run-#2 wall)
+    eventually raises a SURPRISE — even though the autopilot never reports 'stuck' here."""
+    from core.brains import HybridBrain, _call
+
+    class _Capturing:
+        def __init__(self, call): self._c, self.last_thought, self.seen = call, "", []
+        def decide(self, obs, tools, context): self.seen.append(context.get("surprise_note")); return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    ap = _StubBrain(_call("press_button", {"button": "up"}, "a"))  # autopilot WOULD act, but mode wakes
+    h = HybridBrain(ap, fb, replan_after=2)
+    for _ in range(2):
+        h.decide(_ctx_obs("dialog"), [], {})       # stuck in dialog: same signature each step
+    assert h.woke == 2 and fb.seen[0] is None
+    assert fb.seen[1] and "SURPRISE" in fb.seen[1]
+
+
+def test_hybrid_surprise_to_lesson_closes_the_loop():
+    """Steps 1+2 together: a SURPRISE nudge prompts the LLM for a LESSON, which the harness captures
+    into its per-run buffer — the 'act -> observe -> learn' loop closing with no aria/persistence."""
+    from core.brains import HybridBrain, LLMButtonBrain
+    from core.contracts import Observation
+
+    def complete(prompt, image):
+        return "MOVE: a\nLESSON: this door is locked, find another way" if "SURPRISE" in prompt else "MOVE: a"
+
+    fb = LLMButtonBrain("a", use_vision=False, complete_fn=complete)
+    h = HybridBrain(_StubBrain(None), fb, replan_after=2)          # always stuck -> wake every step
+    obs = Observation(data={"context": "overworld"}, text="stuck here", agent_id="a", t=0.0)
+    for _ in range(2):
+        h.decide(obs, [], {})
+    assert fb.lessons == ["this door is locked, find another way"]  # surprise -> lesson -> buffered
+
+
+def test_hybrid_surprise_resets_on_real_progress():
+    """A genuine progress step (the observed signature changes) resets the no-progress streak, so a
+    short stuck spell afterwards does NOT fire a premature SURPRISE (no false alarms while exploring)."""
+    from core.brains import HybridBrain, _call
+
+    class _Capturing:
+        def __init__(self, call): self._c, self.last_thought, self.seen = call, "", []
+        def decide(self, obs, tools, context): self.seen.append(context.get("surprise_note")); return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, replan_after=2)          # always stuck -> wake every step
+    for p in [(0, 0), (0, 1), (0, 1), (0, 1)]:                     # progress at step 2, then frozen
+        h.decide(_pose_obs(p), [], {})
+    assert fb.seen[0] is None and fb.seen[1] is None and fb.seen[2] is None  # step-2 progress reset the streak
+    assert fb.seen[3] and "SURPRISE" in fb.seen[3]                 # fires only after 2 no-progress steps post-reset
+
+
+def test_hybrid_streak_survives_free_steps_and_fires_only_at_wake():
+    """The no-progress streak accumulates across FREE autopilot steps (no wake), and the SURPRISE is
+    injected ONLY at an actual wake — never into the free autopilot's own context."""
+    from core.brains import HybridBrain, _call
+
+    class _ActsThenStuck:                                          # acts (free) `acts` times, then stuck
+        def __init__(self, acts, call):
+            self._left, self._c, self.last_thought, self.seen = acts, call, "", []
+        def decide(self, obs, tools, context):
+            self.seen.append(context.get("surprise_note"))
+            if self._left > 0:
+                self._left -= 1
+                return self._c
+            return None
+
+    class _Capturing:
+        def __init__(self, call): self._c, self.last_thought, self.seen = call, "", []
+        def decide(self, obs, tools, context): self.seen.append(context.get("surprise_note")); return self._c
+
+    ap = _ActsThenStuck(2, _call("press_sequence", {"buttons": ["up", "up"]}, "a"))
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(ap, fb, replan_after=2)
+    for _ in range(3):
+        h.decide(_pose_obs((0, 0)), [], {})                       # frozen pose: no progress on any step
+    assert all(s is None for s in ap.seen)                        # free autopilot never sees a surprise note
+    assert h.woke == 1 and fb.seen and "SURPRISE" in fb.seen[-1]  # streak survived 2 free steps -> fired at the wake
 
 
 # -- outcome loop (feature #1: learn from no-effect actions) ------------------

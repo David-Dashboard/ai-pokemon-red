@@ -26,6 +26,7 @@ import uuid
 from typing import Callable, Optional
 
 from core.contracts import Observation, ToolCall, ToolSpec
+from core.disconfirm import DisconfirmDetector
 from core.outcome import OutcomeMemory, action_key, state_signature
 
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
@@ -155,10 +156,12 @@ class HybridBrain:
         self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
         self._last_sig = None
         self._last_action = None
-        # loop-breaker: after this many CONSECUTIVE stuck wakes (autopilot finds no frontier), hand
-        # the LLM an explicit replan nudge instead of waking it to flail silently (the run-#1 failure).
+        # feature #3: the disconfirm/surprise detector — when the agent makes no observable progress
+        # for `replan_after` decisions (autopilot out of frontier, OR the LLM flailing in a dialog),
+        # hand it a SURPRISE note that asks for a LESSON, instead of waking it to flail in silence
+        # (the run-#1/#2 failure). Harness-owned, fresh per run, discarded at run end.
         self.replan_after = replan_after
-        self._stuck_streak = 0
+        self.disconfirm = DisconfirmDetector(after=replan_after)
         # feature #2 (goto hookup): a destination the woken planner named, persisted so the FREE
         # autopilot drives there over the next overworld steps without re-waking the LLM each tile.
         self.goto: Optional[list] = None
@@ -166,8 +169,12 @@ class HybridBrain:
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         self.total += 1
         sig = state_signature(obs.data)
+        progressed = self._last_sig is not None and sig != self._last_sig
         if self._last_action is not None:  # grade the PREVIOUS action: did the situation change?
-            self.outcome.record(self._last_sig, self._last_action, effective=(sig != self._last_sig))
+            self.outcome.record(self._last_sig, self._last_action, effective=progressed)
+        # feed the disconfirm detector the same did-anything-change signal + the perceiver's last_action
+        # outcome ('blocked' etc.), so a persistent no-progress streak can raise a SURPRISE at the wake.
+        self.disconfirm.record(progressed, obs.data.get("last_action"))
         # tell whoever decides which actions have repeatedly done nothing here, so it doesn't repeat them
         context = {**(context or {}), "avoid": self.outcome.dead_actions(sig)}
 
@@ -179,25 +186,13 @@ class HybridBrain:
             context["goto"] = self.goto               # the autopilot BFS-pathfinds toward it (free), else explores
 
         if (obs.data.get("context") or "overworld") != "overworld":
-            self._stuck_streak = 0
             call = self._wake(obs, tools, context, "mode")
         else:
             call = self.autopilot.decide(obs, tools, context)
             if call is not None:
                 self.mode = "autopilot"
                 self.last_thought = getattr(self.autopilot, "last_thought", "")
-                self._stuck_streak = 0
             else:
-                # autopilot exhausted (no reachable frontier). Count consecutive stuck wakes; once it's
-                # clearly spinning, give the LLM an explicit REPLAN nudge (and ask for a lesson) rather
-                # than waking it to flail in silence — run #1 woke it 351x with no such signal.
-                self._stuck_streak += 1
-                if self._stuck_streak >= self.replan_after:
-                    context["stuck_note"] = (
-                        f"You have made no new progress for {self._stuck_streak} decisions and the "
-                        f"local explorer is blocked here. Do NOT repeat recent moves — choose a "
-                        f"clearly different direction to break out, and record a one-line lesson "
-                        f"about what blocked you.")
                 call = self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> LLM
         self._last_sig = sig
         self._last_action = action_key(call)
@@ -206,6 +201,9 @@ class HybridBrain:
     def _wake(self, obs, tools, context, why: str) -> Optional[ToolCall]:
         self.mode = "llm"
         self.woke += 1
+        note = self.disconfirm.note()   # a persistent no-progress streak -> SURPRISE + ask for a LESSON
+        if note:
+            context = {**context, "surprise_note": note}
         call = self.fallback.decide(obs, tools, context)
         # If the planner named a destination this turn, adopt it — the free autopilot pursues it on
         # the next overworld steps (no GOTO = keep any target already in flight).
@@ -347,9 +345,9 @@ class LLMButtonBrain:
         if avoid:
             feedback = (feedback + f"\nNOTE: these did NOTHING here, do NOT repeat them: "
                         f"{', '.join(avoid)}. Try something different.").strip()
-        stuck_note = context.get("stuck_note")  # loop-breaker replan nudge (HybridBrain)
-        if stuck_note:
-            feedback = (feedback + "\n" + stuck_note).strip()
+        surprise = context.get("surprise_note")  # disconfirm/surprise nudge (HybridBrain detector)
+        if surprise:
+            feedback = (feedback + "\n" + surprise).strip()
         if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
             feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
                         + "\n- ".join(self.lessons)).strip()
