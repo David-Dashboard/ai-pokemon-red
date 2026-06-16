@@ -154,23 +154,22 @@ no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Detai
 
 **Phase A — "fight and keep playing" (the next iteration; same pattern as steps 1–3: harness-only, free +
 reviewed, then ONE guarded paid re-run that should get *through* the rival battle):**
-1. **ROM font extraction = decoder full coverage (cheap first step / enabler).** The decoder is NOT
-   unreliable — it's *under-calibrated*: a glyph that IS in `gen1_font.json` decodes **100% exactly** (a
-   fixed 8×8 tile font), and `?` is an honest "uncalibrated glyph" (mostly uppercase), never a wrong guess.
-   The clean full-coverage fix is to **extract the whole Gen-1 font from the ROM/disassembly as a one-time
-   build asset** (all ~100 glyphs, 0 `?`, no per-frame calibration; still pixel-only at *runtime* — the ROM
-   is used at *build* time like a font file). NOT off-the-shelf OCR: Gen-1 text is a tiny FIXED bitmap font
-   where template-match is exact/instant/CPU-only/zero-dep, and Tesseract/cloud OCR is *worse* (built for
-   anti-aliased photographic text; needs upscaling, still errs on 8px glyphs) + adds cost/latency/deps.
-   (OCR is only worth considering later, for cross-*game* generalization where per-font calibration is the
-   burden.) Battle text (move names, HP) is uppercase, so this unblocks (2).
-2. **Battle-move policy.** Run #3 halted inside the rival battle — no policy to pick FIGHT/move/switch.
-   Same pattern: wake the LLM at the battle menu with the decoded move list + options + a cheap default;
-   never auto-mash.
-3. **Belief-update nudge (agnostic-feature #4) — fold in here (cheap; reuses the `SURPRISE:` channel).**
-   Run #3's journal: aria narrated *"Bulbasaur received"* while it truly got **Squirtle**, ignoring the
-   decoded *"Got Squirtle!"*. Add a harness trigger that fires `SURPRISE: the screen says X, you said Y`
-   when aria's stated belief contradicts `screen_text` — so an observation can *overturn a prior decision*.
+1. **Battle-move policy ← start here.** Run #3 halted inside the rival battle — no policy to pick
+   FIGHT/move/switch. Wake the LLM at the battle menu with the screenshot + the (partial) decoded move
+   text + **positional** menu nav (4 fixed slots) + a cheap default; never auto-mash. The LLM already has
+   vision, so it does NOT need full glyph coverage to navigate — see the font note (3).
+2. **Belief-update nudge (agnostic-feature #4) — cheap; reuses the `SURPRISE:` channel.** Run #3's journal:
+   aria narrated *"Bulbasaur received"* while it truly got **Squirtle**, ignoring the decoded *"Got
+   Squirtle!"*. Add a harness trigger that fires `SURPRISE: the screen says X, you said Y` when aria's
+   stated belief contradicts `screen_text` — so an observation can *overturn a prior decision*.
+3. **Font coverage — CONDITIONAL, and NOT via ROM extraction (decided 2026-06-16).** The decoder isn't
+   unreliable, it's *under-calibrated*: an in-table glyph decodes **100% exactly** (fixed 8×8 tile font),
+   uncalibrated ones → an honest `?` (mostly uppercase), never a wrong guess. **We are NOT doing ROM font
+   extraction** — even at build time it uses the game file, which bends the "no ROM / plan from the
+   screen" north star, and the battle policy doesn't strictly need it (vision + positional nav). IF
+   move-reading proves unreliable, complete the table via **PURE pixel-calibration** (`calibrate_font.py`,
+   on-screen captures only). ROM extraction stays a last resort, only with David's explicit OK. (Not
+   off-the-shelf OCR either — worse on 8px bitmap fonts + adds deps; reconsider only for a *new game*.)
 
 **Phase B — place-graph + fade-based transition detection (the repeated-walk fix; bigger Tier-2 rework,
 NOT blocking — do after Phase A unless movement polish is the priority).** Diagnosis (run-#3 oracle):
