@@ -25,6 +25,38 @@ BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 _GB_FPS = 59.7275
 
 
+def advance_until_static(next_frame, *, max_frames: int = 240, window: int = 24,
+                         eps: float = 2.0) -> tuple[bool, int]:
+    """Pull frames from ``next_frame()`` (each call advances the world one frame and returns the
+    current screen as an ndarray, or None) until the screen holds STILL — ``window`` consecutive
+    frame-diffs below ``eps`` — or ``max_frames`` are pulled. Returns ``(settled, frames_pulled)``.
+
+    "Static" means the game is waiting for input (a menu, or a finished text box). A blinking cursor
+    toggles a single ~8x8 tile (mean diff ~0.7 over the screen) which stays under ``eps`` and so does
+    NOT reset the streak; only real animation / text-scroll (diff >> eps) does. This lets a battle
+    animation finish before the agent observes, so it sees a stable decision screen instead of a
+    mid-animation frame (run #3 burned ~40 LLM wakes on intermediate battle frames). Pure (no PyBoy)
+    so the stopping logic is unit-testable with synthetic frames."""
+    import numpy as np
+
+    prev = None
+    stable = 0
+    pulled = 0
+    for _ in range(max(1, max_frames)):
+        cur = next_frame()
+        pulled += 1
+        if cur is not None and prev is not None:
+            d = float(np.abs(np.asarray(cur, dtype=np.int16) - prev).mean())
+            if d < eps:
+                stable += 1
+                if stable >= window:
+                    return True, pulled
+            else:
+                stable = 0
+        prev = None if cur is None else np.asarray(cur, dtype=np.int16)
+    return False, pulled
+
+
 def ensure_sdl_dll_path() -> None:
     """Best-effort fallback for PySDL2's DLL discovery.
 
@@ -54,6 +86,7 @@ class Emulator(Protocol):
 
     def press(self, button: str, hold_frames: int = 8, settle_frames: int = 16) -> None: ...
     def tick(self, frames: int) -> None: ...
+    def settle(self, max_frames: int = 240) -> bool: ...
     def read(self, addr: int) -> int: ...
     def save_screen(self, path: str) -> None: ...
     def screen_ndarray(self): ...   # current frame as an (H, W, C) uint8 array — for pixel perception
@@ -153,6 +186,17 @@ class PyBoyEmulator:
 
     def tick(self, frames: int) -> None:
         self._advance(max(1, frames), render=True)
+
+    def settle(self, max_frames: int = 240, window: int = 24, eps: float = 2.0) -> bool:
+        """Advance until the screen stops changing (waiting for input) or ``max_frames`` elapse.
+        Each pulled frame still routes through ``_advance`` so recording and real-time pacing are
+        preserved. Returns True if the screen settled. Used to let a battle animation finish before
+        the agent observes — see ``advance_until_static``."""
+        def nxt():
+            self._advance(1, render=True)
+            return self._pyboy.screen.ndarray
+        settled, _ = advance_until_static(nxt, max_frames=max_frames, window=window, eps=eps)
+        return settled
 
     def read(self, addr: int) -> int:
         return self._pyboy.memory[addr]

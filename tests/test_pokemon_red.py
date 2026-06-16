@@ -27,12 +27,17 @@ class FakeEmulator:
         self.mem: dict[int, int] = {}
         self._frame = 0
         self._screen = None  # set to an ndarray to drive the perception path
+        self.settles = 0     # count of settle() calls (battle-pacing wiring assertion)
 
     def press(self, button, hold_frames=8, settle_frames=16):
         self._frame += hold_frames + settle_frames
 
     def tick(self, frames):
         self._frame += frames
+
+    def settle(self, max_frames=240):
+        self.settles += 1
+        return True
 
     def read(self, addr):
         return self.mem.get(addr, 0)
@@ -80,6 +85,114 @@ def test_pokemon_system_unmuzzles_and_advertises_lesson():
     assert "THINK:" in POKEMON_SYSTEM and "MOVE:" in POKEMON_SYSTEM
     # It must NOT instruct aria's persistent <lesson> tag (that would cross runs).
     assert "<lesson>" not in POKEMON_SYSTEM.lower()
+
+
+def test_pokemon_system_has_battle_guidance():
+    # Phase A: the prompt must teach battle navigation (FIGHT menu, positional nav, a default move),
+    # so the LLM can act once it's woken at a settled battle screen.
+    low = POKEMON_SYSTEM.lower()
+    assert "battle" in low
+    assert "fight" in low                      # names the action-menu option to attack with
+    assert "first move" in low                 # the cheap default, never auto-mash
+
+
+# -- battle pacing: settle a battle animation before observing -----------------
+
+def _battle_frame():
+    import numpy as np
+    f = np.full((144, 160, 3), 60, dtype=np.uint8)
+    f[:58, :] = 255      # white HP boxes (top)
+    f[96:, :] = 255      # white action/text box (bottom)
+    return f
+
+
+def test_advance_until_static_settles_when_animation_stops():
+    import numpy as np
+    from games.pokemon_red.emulator import advance_until_static
+    a = np.zeros((4, 4, 3), dtype=np.uint8)
+    b = np.full((4, 4, 3), 200, dtype=np.uint8)
+    seq = [a, b, a, b] + [a] * 30            # animating, then static
+    it = iter(seq)
+    settled, pulled = advance_until_static(lambda: next(it, seq[-1]),
+                                           max_frames=200, window=10, eps=2.0)
+    assert settled is True
+    assert pulled < 200                       # stopped early once it went static
+
+
+def test_advance_until_static_caps_when_never_static():
+    import numpy as np
+    from games.pokemon_red.emulator import advance_until_static
+    flip = [np.zeros((4, 4, 3), np.uint8), np.full((4, 4, 3), 200, np.uint8)]
+    n = {"i": 0}
+    def nxt():
+        n["i"] += 1
+        return flip[n["i"] % 2]               # perpetual animation
+    settled, pulled = advance_until_static(nxt, max_frames=50, window=10, eps=2.0)
+    assert settled is False and pulled == 50
+
+
+def test_advance_until_static_tolerates_cursor_blink():
+    # A blinking cursor (one tiny tile toggling) must NOT reset the streak — the screen is still
+    # "waiting for input". Simulate a sub-eps periodic flicker on an otherwise static screen.
+    import numpy as np
+    from games.pokemon_red.emulator import advance_until_static
+    base = np.full((144, 160, 3), 100, dtype=np.uint8)
+    blink = base.copy(); blink[112:120, 8:16] = 130   # one 8x8 tile, small delta
+    seq = [base, blink, base, blink, base, base, base, base, base, base, base, base]
+    it = iter(seq)
+    settled, _ = advance_until_static(lambda: next(it, base), max_frames=100, window=8, eps=2.0)
+    assert settled is True
+
+
+def test_advance_until_static_eps_is_strict_not_inclusive():
+    # A diff exactly == eps must NOT count as static (the code uses `< eps`). Guards against a future
+    # `<=` typo that would read a constant eps-sized animation as "settled".
+    import numpy as np
+    from games.pokemon_red.emulator import advance_until_static
+    a = np.zeros((4, 4, 3), dtype=np.uint8)
+    b = np.full((4, 4, 3), 2, dtype=np.uint8)        # mean abs diff a<->b == 2.0 == eps
+    it = iter([a, b] * 40)
+    settled, pulled = advance_until_static(lambda: next(it, a), max_frames=40, window=8, eps=2.0)
+    assert settled is False and pulled == 40          # never settles: each diff == eps, not < eps
+
+
+def test_advance_until_static_none_frame_does_not_break_streak():
+    # A None frame (emulator returned nothing this tick) skips that diff without resetting the streak
+    # and without crashing — the static run resumes across the gap.
+    import numpy as np
+    from games.pokemon_red.emulator import advance_until_static
+    s = np.full((4, 4, 3), 100, dtype=np.uint8)
+    seq = [s, s, s, None, s, s, s, s, s, s]           # static, with one None hole partway
+    it = iter(seq)
+    settled, _ = advance_until_static(lambda: next(it, s), max_frames=50, window=6, eps=2.0)
+    assert settled is True
+
+
+def test_advance_until_static_requires_a_full_window():
+    # Exactly `window` sub-eps diffs are needed; the first pulled frame has no predecessor to diff,
+    # so settling happens on pull window+1. Pins the `>= window` threshold against an off-by-one.
+    import numpy as np
+    from games.pokemon_red.emulator import advance_until_static
+    base = np.full((8, 8, 3), 70, dtype=np.uint8)
+    it = iter([base] * 50)
+    settled, pulled = advance_until_static(lambda: next(it, base), max_frames=50, window=5, eps=2.0)
+    assert settled is True and pulled == 6            # 1 priming pull + 5 stable diffs
+
+
+def test_battle_screen_settles_before_observe(tmp_path):
+    # In battle, an action must trigger emulator.settle() so the agent observes a stable screen.
+    p, emu = _plugin(tmp_path)
+    emu._screen = _battle_frame()
+    p.handle(_tc("press_button", {"button": "a"}))
+    assert emu.settles == 1
+
+
+def test_overworld_action_does_not_settle(tmp_path):
+    # Outside battle, settling would needlessly slow the free autopilot — it must NOT fire.
+    p, emu = _plugin(tmp_path)
+    emu._screen = None                         # default zeros frame -> detect_mode == overworld
+    p.handle(_tc("press_button", {"button": "down"}))
+    assert emu.settles == 0
 
 
 # -- memory map ---------------------------------------------------------------

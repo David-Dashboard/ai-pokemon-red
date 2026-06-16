@@ -184,11 +184,22 @@ class HybridBrain:
         self.total += 1
         sig = state_signature(obs.data)
         progressed = self._last_sig is not None and sig != self._last_sig
-        if self._last_action is not None:  # grade the PREVIOUS action: did the situation change?
-            self.outcome.record(self._last_sig, self._last_action, effective=progressed)
-        # feed the disconfirm detector the same did-anything-change signal + the perceiver's last_action
-        # outcome ('blocked' etc.), so a persistent no-progress streak can raise a SURPRISE at the wake.
-        self.disconfirm.record(progressed, obs.data.get("last_action"))
+        ctx_label = obs.data.get("context") or "overworld"
+        # In a BATTLE the pose-based signature is frozen (the menu cursor isn't the world map), so every
+        # turn looks like "no progress" even while the fight advances. Tallying that would mark the
+        # confirm button (A — the primary battle action: advance text, pick FIGHT, choose a move) as a
+        # dead/"avoid" action AND fire a spurious SURPRISE every few turns. So, like an auto-advanced
+        # dialog, treat battle progress as invisible to this signature: don't tally it, keep the
+        # no-progress streak clear. (Battle screens read as context=='battle' — incl. the action/move
+        # menus — so this also covers them.)
+        if ctx_label == "battle":
+            self.disconfirm.reset()
+        else:
+            if self._last_action is not None:  # grade the PREVIOUS action: did the situation change?
+                self.outcome.record(self._last_sig, self._last_action, effective=progressed)
+            # feed the disconfirm detector the same did-anything-change signal + the perceiver's
+            # last_action outcome ('blocked' etc.), so a persistent no-progress streak raises a SURPRISE.
+            self.disconfirm.record(progressed, obs.data.get("last_action"))
         # tell whoever decides which actions have repeatedly done nothing here, so it doesn't repeat them
         context = {**(context or {}), "avoid": self.outcome.dead_actions(sig)}
 
@@ -199,7 +210,6 @@ class HybridBrain:
         if self.goto is not None:
             context["goto"] = self.goto               # the autopilot BFS-pathfinds toward it (free), else explores
 
-        ctx_label = obs.data.get("context") or "overworld"
         if ctx_label != "overworld":
             if self.advance_on_dialog and ctx_label == "dialog":
                 # plain textbox: advance it for FREE (no LLM). Auto-advancing IS progress (the story
@@ -385,6 +395,15 @@ class LLMButtonBrain:
         if transcript:
             feedback = (feedback + "\nText shown since your last decision (auto-advanced): "
                         + transcript).strip()
+        # Belief-update re-grounding (agnostic-feature #4): when the screen carries decoded text, tell
+        # the agent to trust the CURRENT screen over anything it assumed earlier — the run-#3 confab
+        # was narrating "Bulbasaur received" while the screen said Squirtle. A harness-side text-match
+        # can't do this (the decoder mangles the uppercase names it would need to compare), but the
+        # model's own vision reads them — so we nudge it to let the observation overturn a prior belief.
+        if (obs.data.get("screen_text") or "").strip():
+            feedback = (feedback + "\nTRUST THE SCREEN: believe what the image and the on-screen text "
+                        "show RIGHT NOW over anything you assumed or said earlier; if they conflict, "
+                        "the screen is correct — say so and update your plan.").strip()
         if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
             feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
                         + "\n- ".join(self.lessons)).strip()

@@ -319,6 +319,30 @@ def test_hybrid_wakes_on_choice_even_with_auto_advance_on():
     assert h.woke == 1 and h.advanced == 0
 
 
+def test_hybrid_battle_does_not_mark_confirm_dead_or_fire_surprise():
+    """In battle the pose signature is frozen, but pressing A repeatedly (advance text / pick FIGHT /
+    choose a move) must NOT be flagged as a dead 'avoid' action, and must NOT raise a spurious
+    SURPRISE — battle progress is invisible to the signature, like an auto-advanced dialog. (Contrast
+    test_hybrid_surfaces_dead_actions_to_the_fallback, where a frozen OVERWORLD signature does.)"""
+    from core.brains import HybridBrain, _call
+
+    class _Capturing:
+        def __init__(self, call):
+            self._c, self.last_thought, self.avoids, self.surprises = call, "", [], []
+        def decide(self, obs, tools, context):
+            self.avoids.append(context.get("avoid"))
+            self.surprises.append(context.get("surprise_note"))
+            return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, replan_after=2)   # low threshold so a bug would fire fast
+    for _ in range(6):
+        h.decide(_ctx_obs("battle"), [], {})
+    assert h.woke == 6
+    assert all("a" not in (av or []) for av in fb.avoids)   # confirm button never marked dead in battle
+    assert all(s is None for s in fb.surprises)             # no spurious 'stuck' nudge during battle
+
+
 def test_hybrid_dialog_wakes_when_auto_advance_disabled():
     """Default (off) preserves the prior behavior: a 'dialog' context wakes the LLM."""
     from core.brains import HybridBrain, _call

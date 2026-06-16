@@ -266,7 +266,21 @@ class PokemonRedPlugin:
             self.emu.press(b.lower(), hold_frames=max(1, min(int(hold), 120)))
         return self._post_action(call, action="+".join(str(b) for b in buttons))
 
+    def _settle_if_battle(self) -> None:
+        """If the action left us mid-BATTLE-animation, let it finish before the agent observes, so
+        the next observation is a stable decision screen (text box / action menu / move list), not a
+        mid-animation frame. Without this, run #3 woke the LLM ~40x on intermediate battle frames and
+        never reached the menu. The battle check is from PIXELS (detect_mode) — RAM is never consulted
+        for it, so the no-leak posture holds (pacing, like perception, acts from the screen)."""
+        try:
+            from .perceiver import detect_mode
+            if detect_mode(self.emu.screen_ndarray()) == "battle":
+                self.emu.settle()
+        except Exception:
+            pass
+
     def _post_action(self, call: ToolCall, action: str) -> ToolResult:
+        self._settle_if_battle()    # let a battle animation finish before we read/observe
         self._last_action = action  # remembered so the next observe() can do odometry
         state = read_state(self.emu.read)
         reward, breakdown = self._reward.update(state)

@@ -126,6 +126,68 @@ def test_llm_brain_injects_missed_text_transcript_into_prompt():
     assert "PROF OAK: take this POKeMON" in prompts[0]
 
 
+def test_llm_brain_regrounds_belief_when_screen_text_present():
+    # belief-update (feature #4): a wake carrying decoded on-screen text gets a 'trust the screen'
+    # nudge so a fresh observation can overturn a stale belief (the run-#3 Bulbasaur/Squirtle confab).
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    obs = Observation(data={"screen_path": "", "screen_text": "ASH received a SQUIRTLE!"},
+                      text="state", agent_id="a", t=0.0)
+    brain.decide(obs, [], {})
+    assert "TRUST THE SCREEN" in prompts[0]
+
+
+def test_llm_brain_no_regrounding_without_screen_text():
+    # No decoded text -> no nudge (keeps plain overworld wakes lean; cost-conscious).
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a"
+
+    LLMButtonBrain("a", complete_fn=complete).decide(_obs(), [], {})
+    assert "TRUST THE SCREEN" not in prompts[0]
+
+
+def test_llm_brain_no_regrounding_on_whitespace_only_screen_text():
+    # Whitespace-only screen_text must NOT trigger the nudge (guarded by .strip()) — a blank textbox
+    # shouldn't bloat every wake.
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a"
+
+    obs = Observation(data={"screen_path": "", "screen_text": "   "}, text="s", agent_id="a", t=0.0)
+    LLMButtonBrain("a", complete_fn=complete).decide(obs, [], {})
+    assert "TRUST THE SCREEN" not in prompts[0]
+
+
+def test_llm_brain_regrounding_coexists_with_transcript_and_lessons():
+    # The nudge is APPENDED, not substituted: a wake carrying a transcript + a prior lesson + screen_text
+    # must surface all three. Guards against a refactor that overwrites feedback instead of extending it.
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a\nLESSON: ledges drop south" if len(prompts) == 1 else "MOVE: a"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    brain.decide(_obs(), [], {})                       # seed a lesson into the per-run buffer
+    obs = Observation(data={"screen_path": "", "screen_text": "ASH got a SQUIRTLE"},
+                      text="s", agent_id="a", t=0.0)
+    brain.decide(obs, [], {"transcript": "PROF OAK: hello"})
+    p = prompts[1]
+    assert "TRUST THE SCREEN" in p                      # the nudge
+    assert "PROF OAK: hello" in p                       # the transcript
+    assert "ledges drop south" in p                     # the re-injected lesson
+
+
 def test_llm_brain_ignores_unfilled_lesson_template():
     reply = "MOVE: up\nLESSON: <one short lesson>"
     brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
