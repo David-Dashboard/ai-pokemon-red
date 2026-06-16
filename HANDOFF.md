@@ -33,7 +33,7 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-16)
 
-**What works (built + tested, 119 tests pass, no ROM/PyBoy needed for tests):**
+**What works (built + tested, 133 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
   role-named `SymbolicState`; odometry + occupancy map; `detect_mode` (overworld/menu/dialog/battle).
   **Validated on real pixels:** per-step walkability 99.3% (tuned), modes incl. a **real battle 8/8**,
@@ -100,6 +100,49 @@ observation overturn a prior decision (agnostic-feature #4).
 ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
 0 before) — a bonus, still not the bottleneck at this wake volume.
 
+**Phase A items 1+2 (2026-06-16, this session) — battle-move policy + belief re-grounding BUILT (harness-only,
+free-validated, NOT yet committed; 133 tests, +14).** The next iteration's harness work is done and ready for a
+guarded paid re-run:
+- **Battle settle (the real fix for "woke 40× and never reached the menu").** Battle animations run 100+
+  frames, so the fixed 16-frame `press` settle was landing observations *mid-animation*. New
+  `advance_until_static` + `PyBoyEmulator.settle` (`emulator.py`) advance until the screen holds STILL
+  (a `window`=24 streak of sub-`eps`=2.0 frame-diffs; tolerates a blinking cursor's ~0.7 diff); the plugin
+  calls it after any action **only when `detect_mode=="battle"`** (`_settle_if_battle` — a **pixels-only**
+  gate, no RAM, so the no-leak posture holds). Validated **live but free** (no brain) via
+  `eval/verify_battle_settle.py`: every settle returned True, the ~116-frame send-out animation collapsed
+  into ONE observation, and it reached the **action menu + move-select in ~10 settled observations** (vs
+  run #3's 40 wakes that never got there).
+- **Battle-signature fix.** In battle the pose-based `state_signature` is frozen (the menu cursor isn't the
+  world map), so `OutcomeMemory` was about to mark **A** ("attack/confirm") a dead/"avoid" action and the
+  disconfirm detector fired a spurious `SURPRISE:` every few turns. `HybridBrain` now **skips the tally and
+  clears the streak when `context=="battle"`** (like an auto-advanced dialog — battle progress is invisible
+  to a pose signature). `screen_text` stays out of the signature (a test forbids it; dialog-flail detection
+  depends on a constant sig).
+- **Battle guidance** added to `POKEMON_SYSTEM`: FIGHT/PKMN/ITEM/RUN **positional** nav (d-pad + A), A
+  advances battle text, "your first move is a fine default if unsure," can't RUN a trainer battle.
+- **Belief-update nudge (agnostic-feature #4) — implemented as vision RE-GROUNDING, not the sketched lexical
+  trigger.** When the wake carries decoded `screen_text`, `LLMButtonBrain` appends a `TRUST THE SCREEN` line
+  so a fresh observation can overturn a stale belief (the run-#3 Bulbasaur/Squirtle confab). The original
+  sketch (a harness `SURPRISE: screen says X, you said Y`) is **structurally doomed** — the decoder mangles
+  the uppercase Pokémon names it would need to compare (`SQUIRTLE`→`?O??RT?E`) — but the **model's own vision
+  reads them**, so we nudge it to trust the screen instead of building a text-matcher that can't see.
+- **New eval scripts (untracked):** `eval/verify_battle_settle.py` (validates the production settle on a real
+  battle), `eval/capture_battle.py` (reaches the rival battle, captures FIGHT-menu + move-select frames),
+  `eval/inspect_battle.py` (detect_mode + decoder + region dump over battle frames).
+- **Adversarial review is now COMPLETE — 0 confirmed bugs.** The first pass (5 dimensions) returned 0
+  confirmed issues but lost 2 dimensions to session limits; both were **re-run** and came back clean:
+  **signature-fix** found no bugs (the `ctx_label` move is behavior-preserving; battle→overworld exit is
+  benign; `detect_mode=='battle'` empirically covers all 46 captured battle sub-screens incl. action-menu
+  + move-select, and 0/348 non-battle frames mislabel as battle) with one *intended-tradeoff* note (in-battle
+  SURPRISE is fully suppressed — the watchdog/budget are the real battle safety net). **test-coverage**
+  verified (by actual revert) that all 4 change-parts are pinned by a revert-failing test, and flagged a few
+  cheap gaps; I closed them with **+5 hardening tests** (133 total): `advance_until_static` boundaries
+  (`diff==eps` strict, a None frame mid-stream, exact-window) + the belief-nudge edge cases (whitespace-only
+  → no nudge; coexists with transcript + lessons).
+- **Next: the guarded paid run #4** — bar = get *through* the rival battle. Mandatory `reset_aria_memory.py
+  --yes` first. (Setup note: confirm `--stuck-steps` is generous enough that a multi-turn battle — which
+  shows no map/badge oracle-progress — doesn't trip the watchdog before the fight ends.)
+
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
@@ -108,7 +151,7 @@ harness-only learning/dialog build — steps 1, 2, 3a, 3b** (the per-run `LESSON
 disconfirm/surprise detector, fail-safe dialog auto-advance, and the Gen-1 textbox decoder + on-screen
 grounding + missed-text transcript). Branch `feat/lesson-buffer`, **PUSHED to origin** through commit
 `8233a82` (PR not yet opened — `gh` isn't installed; one-click URL on the GitHub branch page; recommended
-base `feat/perception-module`), **119 tests**, each step adversarially reviewed (the step-3 review found
+base `feat/perception-module`), **133 tests**, each step adversarially reviewed (the step-3 review found
 no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LEARNINGS.md`.
 
 **Now (run-#2-informed, cheapest first):**
@@ -152,16 +195,22 @@ no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Detai
 
 **NEXT — phased (run-#3 + this-session-informed):**
 
-**Phase A — "fight and keep playing" (the next iteration; same pattern as steps 1–3: harness-only, free +
-reviewed, then ONE guarded paid re-run that should get *through* the rival battle):**
-1. **Battle-move policy ← start here.** Run #3 halted inside the rival battle — no policy to pick
-   FIGHT/move/switch. Wake the LLM at the battle menu with the screenshot + the (partial) decoded move
-   text + **positional** menu nav (4 fixed slots) + a cheap default; never auto-mash. The LLM already has
-   vision, so it does NOT need full glyph coverage to navigate — see the font note (3).
-2. **Belief-update nudge (agnostic-feature #4) — cheap; reuses the `SURPRISE:` channel.** Run #3's journal:
-   aria narrated *"Bulbasaur received"* while it truly got **Squirtle**, ignoring the decoded *"Got
-   Squirtle!"*. Add a harness trigger that fires `SURPRISE: the screen says X, you said Y` when aria's
-   stated belief contradicts `screen_text` — so an observation can *overturn a prior decision*.
+**Phase A — "fight and keep playing" (same pattern as steps 1–3: harness-only, free + reviewed, then ONE
+guarded paid re-run that should get *through* the rival battle):**
+1. ~~**Battle-move policy.**~~ **DONE (this session, free-validated; uncommitted).** Two parts: (a) a
+   **battle settle** so the agent observes a *stable* decision screen instead of a mid-animation frame
+   (`advance_until_static`/`PyBoyEmulator.settle`, gated by `detect_mode=="battle"` — pixels only;
+   `eval/verify_battle_settle.py` reached the FIGHT menu in ~10 settled observations vs run #3's 40 that
+   never did); (b) **battle guidance** in `POKEMON_SYSTEM` (FIGHT/PKMN/ITEM/RUN positional nav + first-move
+   default) and a **signature fix** so `OutcomeMemory`/disconfirm don't mark **A** dead or false-fire
+   `SURPRISE:` while the pose-signature is frozen in battle. The LLM has vision, so it navigates the menu
+   without full glyph coverage. See §2 for detail.
+2. ~~**Belief-update nudge (agnostic-feature #4).**~~ **DONE (this session; uncommitted) — as vision
+   RE-GROUNDING, not the sketched lexical trigger.** When the wake carries decoded `screen_text`,
+   `LLMButtonBrain` appends a `TRUST THE SCREEN` line so a fresh observation can overturn a prior belief
+   (the Bulbasaur/Squirtle confab). The originally-sketched harness `SURPRISE: screen says X, you said Y`
+   is doomed — the decoder mangles the uppercase names it would compare — but the model's own vision reads
+   them, so we nudge it to trust the screen. See §2.
 3. **Font coverage — CONDITIONAL, and NOT via ROM extraction (decided 2026-06-16).** The decoder isn't
    unreliable, it's *under-calibrated*: an in-table glyph decodes **100% exactly** (fixed 8×8 tile font),
    uncalibrated ones → an honest `?` (mostly uppercase), never a wrong guess. **We are NOT doing ROM font
@@ -221,7 +270,7 @@ place-graph is now **Phase B** above, not merely deferred.) Also still open: ext
 ## 5. How to run
 
 ```bash
-uv run pytest -q                 # 119 tests, no ROM/PyBoy needed
+uv run pytest -q                 # 133 tests, no ROM/PyBoy needed
 
 # watch the free autopilot (real-time + sound), record video+audio:
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain explore --perception \
@@ -251,7 +300,11 @@ Anthropic key behind aria needs credits; prompt caching was off but **partly eng
 ## 6. Repo state
 
 - **Working branch: `feat/lesson-buffer`** (the harness-only learning/dialog build + run #3) — **pushed
-  to origin** through `ed65f92`, working tree clean. It stacks on `feat/perception-module` (the earlier
+  to origin** through `379d90b` (docs). The **working tree is NOT clean**: it carries the uncommitted
+  **Phase A** work — battle settle + signature fix (`core/brains.py`, `games/pokemon_red/emulator.py`,
+  `plugin.py`), battle guidance (`__init__.py`), the belief-update nudge (`brains.py`), their tests
+  (+14 → 133), and 3 untracked eval scripts (`verify_battle_settle.py`, `capture_battle.py`,
+  `inspect_battle.py`). Not committed (commit only when asked). It stacks on `feat/perception-module` (the earlier
   **PR open** against `main`, at `8e0a24a`). **No PR opened for `feat/lesson-buffer` yet** — `gh` isn't
   installed here; open it via the GitHub branch page (recommended base `feat/perception-module` so the
   diff is just steps 1–3 + run #3), or fast-forward `feat/perception-module` to fold it into the open PR.
@@ -291,8 +344,11 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   capture_modes.py         #   script the opening into real battle/dialog frames + grade detect_mode
   capture_dialog.py        #   capture real dialog/menu/CHOICE frames (+features) for the dialog/decoder work
   calibrate_font.py        #   build games/pokemon_red/gen1_font.json from pixels (read text off frames)
+  verify_battle_settle.py  #   validate the production PyBoyEmulator.settle on a REAL battle (Phase A)
+  capture_battle.py        #   reach the rival battle; capture FIGHT-menu + move-select frames (Phase A)
+  inspect_battle.py        #   dump detect_mode + decoder + region features over battle frames (Phase A)
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
-tests/                     # 119 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
+tests/                     # 133 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
