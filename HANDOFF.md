@@ -90,9 +90,11 @@ grounded it in real on-screen text (decoded live: *"ASH received a SQUIRTLE!"* �
 hallucination). It halted **mid-rival-battle** on the budget cap.
 
 **The headline:** perception-geometry, the door-seam, AND scripted-gate/menu transaction are now solved
-on real hardware. The bottleneck **moved again** → **battle-move decisions** (run #3 stopped inside the
-rival battle; we have no battle policy yet). The agent can navigate, read the screen, and transact gates;
-it can't yet *fight*.
+on real hardware. The bottleneck **moved again** → **(1) battle-move decisions** (run #3 stopped inside
+the rival battle; no battle policy yet) and **(2) a belief-update gap** — aria narrated *"Bulbasaur
+received"* while it truly got **Squirtle**, ignoring the decoded *"Got Squirtle!"* on screen. The agent
+can navigate, read the screen, and transact gates; it can't yet *fight*, and it doesn't yet let a fresh
+observation overturn a prior decision (agnostic-feature #4).
 
 **Spend:** run #1 ~$3; run #2 ~$0.23; **run #3 ~$0.33** (40 wakes; 73 aria calls, 446K in / 9.8K out);
 ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
@@ -147,12 +149,23 @@ only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LE
    wakes); the textbox decoder grounded it in real on-screen text (decoded live: *"ASH received a
    SQUIRTLE!"*). It halted **mid-rival-battle** on the budget cap. Steps 1–3 validated **live**.
 
-**NEXT — battle-move decisions (the new wall) + observability.** Run #3 stopped inside the rival battle
-because we have **no battle policy**: pick FIGHT/move/switch from the battle menu. Likely the same pattern
-(wake the LLM at the battle menu with the decoded battle text + options, cheap default). Also: extend the
-glyph table (`calibrate_font.py`) for fuller uppercase, and **log `screen_text` + `LESSON:`s to the
-oracle** so the next run's grounding/learning content is auditable (the oracle doesn't capture them yet).
-Then the credit-gated gating-probe verdict.
+**NEXT — two walls run #3 revealed (battle moves + belief-update), then the gating probe:**
+1. **Battle-move decisions.** Run #3 stopped inside the rival battle — we have **no battle policy** (pick
+   FIGHT/move/switch from the battle menu). Likely the same pattern: wake the LLM at the battle menu with
+   the decoded battle text + options + a cheap default.
+2. **Belief-update gap (observation-grounded belief check, agnostic-feature #4) — the deeper one.** Run
+   #3's journal shows aria narrated *"Bulbasaur received"* while it truly got **Squirtle**; even though the
+   decoder fed it *"Got Squirtle!"*, it kept its prior intention and mis-attributed the evidence. The
+   decoder fixed *reading the screen* but not *letting an observation overturn a prior decision*. Needs a
+   harness nudge that surfaces the contradiction (e.g. a `SURPRISE:`-style "the screen says X, you said Y").
+3. Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
+
+**Confirmed by the run-#3 memory audit (free):** the harness `LESSON:` buffer (step 1) **engaged live** —
+the model emitted `LESSON:` 56× / `<lesson>` 0×, and prompts show the re-injection + the decoded
+transcript. aria's reflection wrote to its durable `lessons.md`/`core_memory.md` during the run, but the
+committed seed is clean and `reset` reverts them → **no cross-run leak** (the law holds; reset is
+mandatory). **DONE:** `screen_text` is now logged to the oracle (`e546011`) for post-run auditing.
+Still open: extend the glyph table's uppercase via `calibrate_font.py`.
 
 Steps 1–3 were all **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free;
 step 4 was the first (and so far only) credit spend (~$0.33).
