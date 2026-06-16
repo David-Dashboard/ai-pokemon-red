@@ -106,9 +106,10 @@ observation overturn a prior decision (agnostic-feature #4).
 *live* in run #2), the clean-start + archive tool, the recorded paid run #2 itself, and **the entire
 harness-only learning/dialog build — steps 1, 2, 3a, 3b** (the per-run `LESSON:` buffer, the
 disconfirm/surprise detector, fail-safe dialog auto-advance, and the Gen-1 textbox decoder + on-screen
-grounding + missed-text transcript). Branch `feat/lesson-buffer`, **local-not-pushed**, 9 commits
-(`45271c4`→`a3e6dcd`), **119 tests**, each step adversarially reviewed (the step-3 review found no bugs,
-only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LEARNINGS.md`.
+grounding + missed-text transcript). Branch `feat/lesson-buffer`, **PUSHED to origin** through commit
+`8233a82` (PR not yet opened — `gh` isn't installed; one-click URL on the GitHub branch page; recommended
+base `feat/perception-module`), **119 tests**, each step adversarially reviewed (the step-3 review found
+no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LEARNINGS.md`.
 
 **Now (run-#2-informed, cheapest first):**
 1. ~~**Un-muzzle lessons into a HARNESS-owned per-run buffer.**~~ **DONE** (commit `45271c4`).
@@ -149,31 +150,54 @@ only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LE
    wakes); the textbox decoder grounded it in real on-screen text (decoded live: *"ASH received a
    SQUIRTLE!"*). It halted **mid-rival-battle** on the budget cap. Steps 1–3 validated **live**.
 
-**NEXT — two walls run #3 revealed (battle moves + belief-update), then the gating probe:**
-1. **Battle-move decisions.** Run #3 stopped inside the rival battle — we have **no battle policy** (pick
-   FIGHT/move/switch from the battle menu). Likely the same pattern: wake the LLM at the battle menu with
-   the decoded battle text + options + a cheap default.
-2. **Belief-update gap (observation-grounded belief check, agnostic-feature #4) — the deeper one.** Run
-   #3's journal shows aria narrated *"Bulbasaur received"* while it truly got **Squirtle**; even though the
-   decoder fed it *"Got Squirtle!"*, it kept its prior intention and mis-attributed the evidence. The
-   decoder fixed *reading the screen* but not *letting an observation overturn a prior decision*. Needs a
-   harness nudge that surfaces the contradiction (e.g. a `SURPRISE:`-style "the screen says X, you said Y").
-3. Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
+**NEXT — phased (run-#3 + this-session-informed):**
+
+**Phase A — "fight and keep playing" (the next iteration; same pattern as steps 1–3: harness-only, free +
+reviewed, then ONE guarded paid re-run that should get *through* the rival battle):**
+1. **ROM font extraction = decoder full coverage (cheap first step / enabler).** The decoder is NOT
+   unreliable — it's *under-calibrated*: a glyph that IS in `gen1_font.json` decodes **100% exactly** (a
+   fixed 8×8 tile font), and `?` is an honest "uncalibrated glyph" (mostly uppercase), never a wrong guess.
+   The clean full-coverage fix is to **extract the whole Gen-1 font from the ROM/disassembly as a one-time
+   build asset** (all ~100 glyphs, 0 `?`, no per-frame calibration; still pixel-only at *runtime* — the ROM
+   is used at *build* time like a font file). NOT off-the-shelf OCR: Gen-1 text is a tiny FIXED bitmap font
+   where template-match is exact/instant/CPU-only/zero-dep, and Tesseract/cloud OCR is *worse* (built for
+   anti-aliased photographic text; needs upscaling, still errs on 8px glyphs) + adds cost/latency/deps.
+   (OCR is only worth considering later, for cross-*game* generalization where per-font calibration is the
+   burden.) Battle text (move names, HP) is uppercase, so this unblocks (2).
+2. **Battle-move policy.** Run #3 halted inside the rival battle — no policy to pick FIGHT/move/switch.
+   Same pattern: wake the LLM at the battle menu with the decoded move list + options + a cheap default;
+   never auto-mash.
+3. **Belief-update nudge (agnostic-feature #4) — fold in here (cheap; reuses the `SURPRISE:` channel).**
+   Run #3's journal: aria narrated *"Bulbasaur received"* while it truly got **Squirtle**, ignoring the
+   decoded *"Got Squirtle!"*. Add a harness trigger that fires `SURPRISE: the screen says X, you said Y`
+   when aria's stated belief contradicts `screen_text` — so an observation can *overturn a prior decision*.
+
+**Phase B — place-graph + fade-based transition detection (the repeated-walk fix; bigger Tier-2 rework,
+NOT blocking — do after Phase A unless movement polish is the priority).** Diagnosis (run-#3 oracle):
+genuine oscillation is now RARE (**2** A→B→A events — the seam/portal fix mostly killed run-#1 looping);
+the scary revisit counts (a tile ×59/×54) are the agent **standing still through ~123 dialog + 16 battle
+frames** (x,y fixed), NOT re-walking; the *real* residual re-treading (a Pallet tile ×29) is **dead-
+reckoning drift** — one tile/move, geometry squashes, so the occupancy map's visited/frontier model goes
+imperfect AND the pose-only `state_signature` blunts the disconfirm loop-breaker. Fix: a drift-robust
+**topological place-graph** (nodes = places, edges = transitions) + fade-based transition detection so
+maps reset correctly, instead of dead-reckoned coordinates.
+
+Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
 
 **Confirmed by the run-#3 memory audit (free):** the harness `LESSON:` buffer (step 1) **engaged live** —
 the model emitted `LESSON:` 56× / `<lesson>` 0×, and prompts show the re-injection + the decoded
 transcript. aria's reflection wrote to its durable `lessons.md`/`core_memory.md` during the run, but the
 committed seed is clean and `reset` reverts them → **no cross-run leak** (the law holds; reset is
 mandatory). **DONE:** `screen_text` is now logged to the oracle (`e546011`) for post-run auditing.
-Still open: extend the glyph table's uppercase via `calibrate_font.py`.
 
 Steps 1–3 were all **harness-only** (`core/` + `games/pokemon_red/`) — no aria changes — validated free;
-step 4 was the first (and so far only) credit spend (~$0.33).
+step 4 (run #3) was the first (and so far only) credit spend (~$0.33).
 
 **Deferred (NOT blocking):** prompt caching (aria-side; the unusual aria API path makes it its own
-investigation — not blocking at this wake volume), full place-graph + odometry drift (Tier-2; the
-autopilot hands off to the LLM at a healthy point), interior-stair detection (low-diff, didn't block
-traversal; note **fade-detection won't catch stairs** — they don't fade).
+investigation — partly self-engaged in run #3, 96K cached), interior-stair detection (low-diff, didn't
+block traversal; note **fade-detection won't catch stairs** — they don't fade). (Odometry drift / the
+place-graph is now **Phase B** above, not merely deferred.) Also still open: extend the glyph table via
+`calibrate_font.py` if not doing the ROM extraction.
 
 **Run a clean paid iteration:** MANDATORY pre-run `uv run python reset_aria_memory.py --yes` (archives
 → wipes; zero accumulated experience, David's standing requirement), then the guarded recorded run
