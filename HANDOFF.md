@@ -101,8 +101,8 @@ observation overturn a prior decision (agnostic-feature #4).
 0 before) — a bonus, still not the bottleneck at this wake volume.
 
 **Phase A items 1+2 (2026-06-16, this session) — battle-move policy + belief re-grounding BUILT (harness-only,
-free-validated, NOT yet committed; 133 tests, +14).** The next iteration's harness work is done and ready for a
-guarded paid re-run:
+free-validated; 133 tests, +14; committed `99e4c22` + docs on `feat/lesson-buffer`, NOT pushed).** The next
+iteration's harness work is done and ready for a guarded paid re-run:
 - **Battle settle (the real fix for "woke 40× and never reached the menu").** Battle animations run 100+
   frames, so the fixed 16-frame `press` settle was landing observations *mid-animation*. New
   `advance_until_static` + `PyBoyEmulator.settle` (`emulator.py`) advance until the screen holds STILL
@@ -300,11 +300,10 @@ Anthropic key behind aria needs credits; prompt caching was off but **partly eng
 ## 6. Repo state
 
 - **Working branch: `feat/lesson-buffer`** (the harness-only learning/dialog build + run #3) — **pushed
-  to origin** through `379d90b` (docs). The **working tree is NOT clean**: it carries the uncommitted
-  **Phase A** work — battle settle + signature fix (`core/brains.py`, `games/pokemon_red/emulator.py`,
-  `plugin.py`), battle guidance (`__init__.py`), the belief-update nudge (`brains.py`), their tests
-  (+14 → 133), and 3 untracked eval scripts (`verify_battle_settle.py`, `capture_battle.py`,
-  `inspect_battle.py`). Not committed (commit only when asked). It stacks on `feat/perception-module` (the earlier
+  to origin** through `379d90b` (docs). **Phase A is now COMMITTED but NOT pushed** — `99e4c22`
+  (battle settle + signature fix + battle guidance + belief-update nudge + tests + the 3 eval scripts) and
+  `fd86bf5` (these docs), so the branch is **ahead of origin by 2**. Working tree is clean except the
+  untracked `make_state.py` helper. It stacks on `feat/perception-module` (the earlier
   **PR open** against `main`, at `8e0a24a`). **No PR opened for `feat/lesson-buffer` yet** — `gh` isn't
   installed here; open it via the GitHub branch page (recommended base `feat/perception-module` so the
   diff is just steps 1–3 + run #3), or fast-forward `feat/perception-module` to fold it into the open PR.
