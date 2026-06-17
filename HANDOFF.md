@@ -33,7 +33,7 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-16)
 
-**What works (built + tested, 133 tests pass, no ROM/PyBoy needed for tests):**
+**What works (built + tested, 139 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
   role-named `SymbolicState`; odometry + occupancy map; `detect_mode` (overworld/menu/dialog/battle).
   **Validated on real pixels:** per-step walkability 99.3% (tuned), modes incl. a **real battle 8/8**,
@@ -97,11 +97,12 @@ can navigate, read the screen, and transact gates; it can't yet *fight*, and it 
 observation overturn a prior decision (agnostic-feature #4).
 
 **Spend:** run #1 ~$3; run #2 ~$0.23; **run #3 ~$0.33** (40 wakes; 73 aria calls, 446K in / 9.8K out);
-~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
+**run #4 ~$0.11** (14 wakes; watchdog-halted in Pallet, never reached the lab); **run #5 ~$0.83** (100 wakes,
+budget-capped; reached the lab but ~55 wakes hit aria's 400 ceiling); ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
 0 before) — a bonus, still not the bottleneck at this wake volume.
 
 **Phase A items 1+2 (2026-06-16, this session) — battle-move policy + belief re-grounding BUILT (harness-only,
-free-validated; 133 tests, +14; committed `99e4c22` + docs on `feat/lesson-buffer`, NOT pushed).** The next
+free-validated; 139 tests, +14; committed `99e4c22` + docs on `feat/lesson-buffer`, NOT pushed).** The next
 iteration's harness work is done and ready for a guarded paid re-run:
 - **Battle settle (the real fix for "woke 40× and never reached the menu").** Battle animations run 100+
   frames, so the fixed 16-frame `press` settle was landing observations *mid-animation*. New
@@ -143,6 +144,47 @@ iteration's harness work is done and ready for a guarded paid re-run:
   --yes` first. (Setup note: confirm `--stuck-steps` is generous enough that a multi-turn battle — which
   shows no map/badge oracle-progress — doesn't trip the watchdog before the fight ends.)
 
+**Live run #4 (2026-06-17, recorded, clean-start, guarded) — navigation blocked the battle test; PIVOTING TO
+PHASE B.** With Phase A committed, the bar was getting *through* the rival battle. Instead the agent **never
+got the starter**: oracle trajectory `38→37→0→39` — it entered **map 39 (the rival's house), not map 40
+(Oak's lab)**, wandered Pallet Town (270/398 steps), and the **watchdog halted it** (no progress for 120
+steps). 14 wakes / 398 steps (3.5%), **~$0.11** — the guardrails worked exactly right (a stuck run stopped
+cheaply, nowhere near the $0.83 cap). **The Phase A battle policy is unexercised, not refuted** — the failure
+is entirely upstream at the **unreliable lab-entrance navigation** (run #2 failed here too; run #3 reaching the
+battle was partly luck). Not a Phase A regression (settle is battle-only + pinned by a test; the signature
+else-branch is unchanged; the always-on `TRUST THE SCREEN` nudge fires on `screen_text`, ~empty in plain
+overworld). Root cause is the **dead-reckoning drift** the place-graph (Phase B) is meant to fix. **Decision:
+do Phase B before re-testing the battle**, and when we do re-test, **isolate it with a pre-positioned
+rival-battle `.state` fixture** (RAM sets up the fixture; the agent still acts from pixels) so flaky overworld
+nav doesn't gate it. Video `runs/run4.mp4`; oracle `runs/run4/`; pre-wipe archive `iter-003_2026-06-17.zip`.
+
+**Phase B (2026-06-17) — navigation rebuilt + VALIDATED live; the run-#4 wall is broken (uncommitted, 139 tests).**
+The frame-diff area detector was missing 8/10 warps and lumping distinct maps into one corrupt occupancy
+area (run #4's lab-entrance failure). Phase B replaced it:
+- **Transition = ego-motion vs scene-cut (translation), with a fade backstop.** Within a map the camera
+  scrolls a centered player, so consecutive frames align under some integer-tile shift (`_best_shift`); a
+  warp aligns under none. Measured: same-map best-shift diff p90 ≈ 5.4, warps 55–77 — and it catches interior
+  **stairs** (the fade misses those). The **fade** (`_is_fade`, std<6, watched intra-press → `context["transition"]`)
+  is kept for the post-menu case translation can't see. Plus a `detect_mode` fix so a bright outdoor scene
+  isn't mislabeled "menu" (that false-positive masked warps via a spurious resync).
+- **Topological place-graph:** a warp crosses to a persistent PLACE; `_transit` reuses a KNOWN place
+  (restoring its map) via a direction-independent door edge, else mints a new one — so a building round-trip
+  returns to the same Pallet map. BOTH door cells are sealed (the autopilot can't ping-pong the doorway).
+- **Odometry capped at 1 tile (drift fix DEFERRED).** The shift gives true distance, but feeding it raw
+  broke the ExploreBrain's `[d,d]`=net-one-tile motion contract (overshoot/oscillate — caught by the
+  closed-loop test). So the shift drives robust moved-vs-blocked detection but the cursor still advances one
+  tile; the full measured-distance drift fix awaits a controller that understands variable steps.
+- **Validated:** unit (139 tests) + real-data replay + a free autopilot closed-loop run (`38→37→0`, 0 lumping,
+  0 ping-pong). New evals: `inspect_warp`, `inspect_translation`, `replay_perceiver`.
+
+**Live run #5 (2026-06-17, recorded, guarded) — Phase B nav VALIDATED live; lab completion blocked by an aria
+ceiling.** The clean map got the agent to **map 40 (Oak's lab)** — `38→37→0→40` — **past run #4's Pallet wall**;
+perception held (0 ping-pong, 1 minor lump). But aria/litellm threw **`400 BadRequestError` on 55/100 wakes**
+from ~wake 45 (in the lab), so it couldn't finish Oak's dialog → no starter → budget-cap halt (~$0.83). NOT
+the harness (transcript capped+reset); it's **aria-side context growth** crossing Anthropic's input limit
+around ~40-45 wakes — now a hard ceiling on long runs (the aria caching/API investigation). Video `runs/run5.mp4`,
+oracle `runs/run5/`, archive iter-004.
+
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
 **DONE:** Tier-1 guardrails (watchdog + budget cap + loop-breaker), the seam/portal fix (validated
@@ -151,7 +193,7 @@ harness-only learning/dialog build — steps 1, 2, 3a, 3b** (the per-run `LESSON
 disconfirm/surprise detector, fail-safe dialog auto-advance, and the Gen-1 textbox decoder + on-screen
 grounding + missed-text transcript). Branch `feat/lesson-buffer`, **PUSHED to origin** through commit
 `8233a82` (PR not yet opened — `gh` isn't installed; one-click URL on the GitHub branch page; recommended
-base `feat/perception-module`), **133 tests**, each step adversarially reviewed (the step-3 review found
+base `feat/perception-module`), **139 tests**, each step adversarially reviewed (the step-3 review found
 no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LEARNINGS.md`.
 
 **Now (run-#2-informed, cheapest first):**
@@ -193,11 +235,15 @@ no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Detai
    wakes); the textbox decoder grounded it in real on-screen text (decoded live: *"ASH received a
    SQUIRTLE!"*). It halted **mid-rival-battle** on the budget cap. Steps 1–3 validated **live**.
 
-**NEXT — phased (run-#3 + this-session-informed):**
+**NEXT — phased (run-#3 + run-#4-informed). ORDER CHANGED 2026-06-17: Phase B (navigation) comes BEFORE the
+Phase A battle re-test** — run #4 showed the agent can't reliably even *reach* the battle (it stuck at the lab
+entrance), so reaching it is the precondition for testing how it fights. Phase A code is built + committed +
+reviewed; its **live re-test is DEFERRED** until Phase B lands (or do it now via an isolated rival-battle
+`.state` fixture — see run #4 in §2).**
 
-**Phase A — "fight and keep playing" (same pattern as steps 1–3: harness-only, free + reviewed, then ONE
-guarded paid re-run that should get *through* the rival battle):**
-1. ~~**Battle-move policy.**~~ **DONE (this session, free-validated; uncommitted).** Two parts: (a) a
+**Phase A — "fight and keep playing" (harness-only; BUILT + COMMITTED `99e4c22`, reviewed clean; live re-test
+deferred behind Phase B or an isolated battle-state fixture):**
+1. ~~**Battle-move policy.**~~ **DONE (built + committed `99e4c22`, free-validated; live-untested).** Two parts: (a) a
    **battle settle** so the agent observes a *stable* decision screen instead of a mid-animation frame
    (`advance_until_static`/`PyBoyEmulator.settle`, gated by `detect_mode=="battle"` — pixels only;
    `eval/verify_battle_settle.py` reached the FIGHT menu in ~10 settled observations vs run #3's 40 that
@@ -220,15 +266,23 @@ guarded paid re-run that should get *through* the rival battle):**
    on-screen captures only). ROM extraction stays a last resort, only with David's explicit OK. (Not
    off-the-shelf OCR either — worse on 8px bitmap fonts + adds deps; reconsider only for a *new game*.)
 
-**Phase B — place-graph + fade-based transition detection (the repeated-walk fix; bigger Tier-2 rework,
-NOT blocking — do after Phase A unless movement polish is the priority).** Diagnosis (run-#3 oracle):
-genuine oscillation is now RARE (**2** A→B→A events — the seam/portal fix mostly killed run-#1 looping);
-the scary revisit counts (a tile ×59/×54) are the agent **standing still through ~123 dialog + 16 battle
-frames** (x,y fixed), NOT re-walking; the *real* residual re-treading (a Pallet tile ×29) is **dead-
-reckoning drift** — one tile/move, geometry squashes, so the occupancy map's visited/frontier model goes
-imperfect AND the pose-only `state_signature` blunts the disconfirm loop-breaker. Fix: a drift-robust
-**topological place-graph** (nodes = places, edges = transitions) + fade-based transition detection so
-maps reset correctly, instead of dead-reckoned coordinates.
+~~**Phase B — place-graph + fade-based transition detection.**~~ **DONE (2026-06-17) + validated live (run #5
+reached the lab). See the Phase B block in §2 for the full build.** It replaced the brittle frame-diff area
+detector (which missed 8/10 warps and lumped maps) with translation-based scene-cut detection + a fade
+backstop + a topological place-graph. The run-#4 lab-entrance corruption is fixed. **Caveat / deferred:** the
+*measured-distance* odometry (the complete dead-reckoning drift fix) is **capped at 1 tile** for now — feeding
+the true distance broke the ExploreBrain's `[d,d]`=net-one-tile contract; the full fix needs a controller that
+understands variable step sizes.
+
+**NEW blockers / next (run-#5-informed):**
+1. **Battle policy re-test — via an isolated rival-battle `.state` fixture (IN PROGRESS).** Run #5 reached the
+   lab but aria's ~45-wake 400 ceiling blocked completion, so the battle stayed untested. Build a
+   rival-battle `.state` (RAM sets up the fixture; the agent acts from pixels) and run the hybrid brain from
+   it in a SHORT run (< ~40 wakes, under aria's ceiling) — directly tests Phase A's battle policy without the
+   long flaky nav OR the aria limit.
+2. **aria context ceiling (aria-side).** aria 400s around ~40-45 wakes (its conversation + per-wake images
+   exceed Anthropic's input limit). Caps any long run. Part of the aria prompt-caching/API investigation;
+   mitigations: shorter guarded runs, aria-side context trimming/caching.
 
 Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
 
@@ -270,7 +324,7 @@ place-graph is now **Phase B** above, not merely deferred.) Also still open: ext
 ## 5. How to run
 
 ```bash
-uv run pytest -q                 # 133 tests, no ROM/PyBoy needed
+uv run pytest -q                 # 139 tests, no ROM/PyBoy needed
 
 # watch the free autopilot (real-time + sound), record video+audio:
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain explore --perception \
@@ -346,8 +400,11 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   verify_battle_settle.py  #   validate the production PyBoyEmulator.settle on a REAL battle (Phase A)
   capture_battle.py        #   reach the rival battle; capture FIGHT-menu + move-select frames (Phase A)
   inspect_battle.py        #   dump detect_mode + decoder + region features over battle frames (Phase A)
+  inspect_warp.py          #   does a map warp emit a fade? per-frame std through a press (Phase B B0)
+  inspect_translation.py   #   best-shift overlap diff: same-map vs transition separation (Phase B)
+  replay_perceiver.py      #   replay a run's frames through the perceiver; check for map-lumping (Phase B)
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
-tests/                     # 133 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
+tests/                     # 139 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
