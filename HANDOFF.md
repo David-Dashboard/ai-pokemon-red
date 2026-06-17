@@ -98,7 +98,8 @@ observation overturn a prior decision (agnostic-feature #4).
 
 **Spend:** run #1 ~$3; run #2 ~$0.23; **run #3 ~$0.33** (40 wakes; 73 aria calls, 446K in / 9.8K out);
 **run #4 ~$0.11** (14 wakes; watchdog-halted in Pallet, never reached the lab); **run #5 ~$0.83** (100 wakes,
-budget-capped; reached the lab but ~55 wakes hit aria's 400 ceiling); ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
+budget-capped; reached the lab, then the last ~55 wakes 400'd as the Anthropic credits ran out); **run #6 $0**
+(all 30 wakes 400'd — zero credit balance); ~$0.66 across the free work before. **aria is now OUT OF CREDITS.** Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
 0 before) — a bonus, still not the bottleneck at this wake volume.
 
 **Phase A items 1+2 (2026-06-16, this session) — battle-move policy + belief re-grounding BUILT (harness-only,
@@ -177,13 +178,16 @@ area (run #4's lab-entrance failure). Phase B replaced it:
 - **Validated:** unit (139 tests) + real-data replay + a free autopilot closed-loop run (`38→37→0`, 0 lumping,
   0 ping-pong). New evals: `inspect_warp`, `inspect_translation`, `replay_perceiver`.
 
-**Live run #5 (2026-06-17, recorded, guarded) — Phase B nav VALIDATED live; lab completion blocked by an aria
-ceiling.** The clean map got the agent to **map 40 (Oak's lab)** — `38→37→0→40` — **past run #4's Pallet wall**;
-perception held (0 ping-pong, 1 minor lump). But aria/litellm threw **`400 BadRequestError` on 55/100 wakes**
-from ~wake 45 (in the lab), so it couldn't finish Oak's dialog → no starter → budget-cap halt (~$0.83). NOT
-the harness (transcript capped+reset); it's **aria-side context growth** crossing Anthropic's input limit
-around ~40-45 wakes — now a hard ceiling on long runs (the aria caching/API investigation). Video `runs/run5.mp4`,
-oracle `runs/run5/`, archive iter-004.
+**Live run #5 (2026-06-17, recorded, guarded) — Phase B nav VALIDATED live; lab completion blocked because
+aria RAN OUT OF ANTHROPIC CREDITS mid-run.** The clean map got the agent to **map 40 (Oak's lab)** —
+`38→37→0→40` — **past run #4's Pallet wall**; perception held (0 ping-pong, 1 minor lump). It worked for ~45
+wakes (reaching the lab), then aria/litellm 400'd the remaining ~55 wakes. **The error is a billing one** (from
+the litellm container log): *"Your credit balance is too low to access the Anthropic API."* — NOT a context
+limit, NOT the harness (transcript is capped+reset). The credits simply ran dry ~45 wakes in, so the agent
+couldn't finish Oak's dialog → budget-cap halt (~$0.83 of the run was the last of the balance). **Run #6
+(isolated battle test from `rival_battle.state`) then 400'd on ALL 30 wakes from the first** — zero balance
+left — confirming the cause. **Blocker: David must top up the Anthropic account behind aria** before any
+further paid run (incl. the battle test). Video `runs/run5.mp4`, oracle `runs/run5/`, archives iter-004/005.
 
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
@@ -274,15 +278,16 @@ backstop + a topological place-graph. The run-#4 lab-entrance corruption is fixe
 the true distance broke the ExploreBrain's `[d,d]`=net-one-tile contract; the full fix needs a controller that
 understands variable step sizes.
 
-**NEW blockers / next (run-#5-informed):**
-1. **Battle policy re-test — via an isolated rival-battle `.state` fixture (IN PROGRESS).** Run #5 reached the
-   lab but aria's ~45-wake 400 ceiling blocked completion, so the battle stayed untested. Build a
-   rival-battle `.state` (RAM sets up the fixture; the agent acts from pixels) and run the hybrid brain from
-   it in a SHORT run (< ~40 wakes, under aria's ceiling) — directly tests Phase A's battle policy without the
-   long flaky nav OR the aria limit.
-2. **aria context ceiling (aria-side).** aria 400s around ~40-45 wakes (its conversation + per-wake images
-   exceed Anthropic's input limit). Caps any long run. Part of the aria prompt-caching/API investigation;
-   mitigations: shorter guarded runs, aria-side context trimming/caching.
+**NEW blockers / next (run-#5/#6-informed):**
+1. **OUT OF ANTHROPIC CREDITS (hard blocker — David must top up).** aria's litellm log shows the 400 is
+   *"Your credit balance is too low to access the Anthropic API."* The credits ran dry ~45 wakes into run #5,
+   and run #6 400'd on every wake. **No paid run can proceed until the Anthropic account behind aria has
+   credits.** (Free/local work — perception, autopilot, evals, tests — is unaffected.)
+2. **Battle policy re-test — fixture is READY, waiting on credits.** `rival_battle.state` is built and verified
+   (parked at the rival battle: in_battle, map 40, starter in party, `detect_mode=="battle"`). Once credits are
+   back, a SHORT run `play_pokemon.py … --load-state rival_battle.state --max-llm-calls 30` tests Phase A's
+   battle policy directly — no long nav needed. (Run #6 attempted this but 400'd on credits, so the policy is
+   still UNTESTED live.)
 
 Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
 
