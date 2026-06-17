@@ -186,8 +186,9 @@ the litellm container log): *"Your credit balance is too low to access the Anthr
 limit, NOT the harness (transcript is capped+reset). The credits simply ran dry ~45 wakes in, so the agent
 couldn't finish Oak's dialog → budget-cap halt (~$0.83 of the run was the last of the balance). **Run #6
 (isolated battle test from `rival_battle.state`) then 400'd on ALL 30 wakes from the first** — zero balance
-left — confirming the cause. **Blocker: David must top up the Anthropic account behind aria** before any
-further paid run (incl. the battle test). Video `runs/run5.mp4`, oracle `runs/run5/`, archives iter-004/005.
+left — confirming the cause. Credits were **later restored** (verified with a probe); the retry **run #6b**
+then ran clean and validated the battle MECHANICS — see the battle-policy section in §3. Video `runs/run5.mp4`,
+oracle `runs/run5/`, archives iter-004/005.
 
 ## 3. Next steps (prioritized: stop the bleeding → fix the cause)
 
@@ -278,16 +279,24 @@ backstop + a topological place-graph. The run-#4 lab-entrance corruption is fixe
 the true distance broke the ExploreBrain's `[d,d]`=net-one-tile contract; the full fix needs a controller that
 understands variable step sizes.
 
-**NEW blockers / next (run-#5/#6-informed):**
-1. **OUT OF ANTHROPIC CREDITS (hard blocker — David must top up).** aria's litellm log shows the 400 is
-   *"Your credit balance is too low to access the Anthropic API."* The credits ran dry ~45 wakes into run #5,
-   and run #6 400'd on every wake. **No paid run can proceed until the Anthropic account behind aria has
-   credits.** (Free/local work — perception, autopilot, evals, tests — is unaffected.)
-2. **Battle policy re-test — fixture is READY, waiting on credits.** `rival_battle.state` is built and verified
-   (parked at the rival battle: in_battle, map 40, starter in party, `detect_mode=="battle"`). Once credits are
-   back, a SHORT run `play_pokemon.py … --load-state rival_battle.state --max-llm-calls 30` tests Phase A's
-   battle policy directly — no long nav needed. (Run #6 attempted this but 400'd on credits, so the policy is
-   still UNTESTED live.)
+**Battle policy — MECHANICALLY VALIDATED live (run #6b, 2026-06-17, after credits were restored).** From the
+`rival_battle.state` fixture (agent starts AT the rival battle), the reach+settle+act machinery worked: 0
+errors, the agent stayed in the fight every turn on stable battle screens and recognized "Gary wants to
+fight → FIGHT" — the first live proof of Phase A item 1 (runs #3–5 never got a testable battle). **But it did
+NOT win** (in_battle stayed 2 all 30 wakes) — the bottleneck MOVED to two new constraints:
+1. **Move selection — it mashed `A` every turn.** Mashing A alternated SCRATCH (attack) and GROWL (a
+   non-damaging stat move), so half its turns did no damage, at a type disadvantage (it has CHARMANDER vs
+   Gary's SQUIRTLE). *"First move is a fine default" does NOT guarantee an ATTACKING move* — the policy needs
+   to deliberately pick a damaging move, not just press A.
+2. **Confabulation / belief-update gap (agnostic-feature #4) STILL OPEN.** The agent narrated having Bulbasaur
+   and "defeating Squirtle" while the decoded screen (`Go! CHARMANDER!`, `Enemy SQUIRTLE`) + RAM say it has
+   Charmander and the fight is ongoing. The `TRUST THE SCREEN` nudge was injected but did NOT override the
+   confab — too weak.
+
+**Next (battle-policy iteration, run-#6b-informed):** strengthen the prompt to pick a damaging move (not
+mash A) + sharpen the belief-update nudge so a fresh observation overrides a stale belief; re-test from the
+fixture (cheap, under any credit ceiling). *aria credit note:* the credits ran dry mid-run #5 and were
+restored before run #6b (verified with a probe) — a recurring external dependency to watch.
 
 Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
 
