@@ -3,10 +3,19 @@ occupancy map. Near vision-free — it uses a frame-diff ("did my move change th
 plus dead-reckoning to remember where it has been and which directions are walls or
 unexplored. That memory is the cure for the Iteration-01 "loop in one room" failure.
 
-RAM is never touched (it's the scoring oracle). Coarse by design: one decision advances the
-dead-reckoned cursor by one tile in the action's dominant direction, so the map's geometry is
-squashed and drifts — fine for "don't loop / head to unexplored", and the oracle measures the
-drift. Single-area for now (area-transition detection is deferred to a later step).
+RAM is never touched (it's the scoring oracle). Phase B upgraded the odometry/area model:
+- **Translation-based move detection:** the best integer-tile shift that aligns consecutive frames
+  (``_best_shift``) gives a robust moved-vs-blocked signal (a real scroll vs a turn into a wall). The
+  cursor still advances ONE tile per action — the ExploreBrain controller treats ``[d,d]`` as a net
+  one-tile step, and recording the true 1-or-2 tiles makes it overshoot/oscillate. (The full
+  measured-distance odometry — the complete dead-reckoning drift fix — waits on a controller that
+  understands variable step sizes; the shift magnitude is already computed for when it lands.)
+- **Topological place-graph:** a map WARP is detected as a scene cut (no translation aligns the
+  frames) OR a fade (the emulator's pixels-only flag, robust right after a menu). On a warp the
+  perceiver crosses to another PLACE, reusing a KNOWN place (restoring its accumulated map) via a
+  direction-independent door edge, else minting a new one — so a building round-trip returns to the
+  same map instead of re-exploring it (the run-#4 lab-entrance fix). Stairs (which don't fade) are
+  caught by the translation signal.
 """
 from __future__ import annotations
 
@@ -18,8 +27,14 @@ from core.perception import JSON, PerceptMemory, SymbolicState
 
 _DIRS = ("up", "down", "left", "right")
 _DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
-_MOVE_THRESHOLD = 4.0   # mean abs pixel diff above which a move happened (tune via eval/tune_threshold.py)
-_AREA_THRESHOLD = 60.0  # diff at/above which the WHOLE screen changed => area/map transition (reset frame)
+_BACK = {"up": "down", "down": "up", "left": "right", "right": "left"}
+_MOVE_THRESHOLD = 4.0   # (legacy) mean abs pixel diff above which a move happened
+_AREA_THRESHOLD = 30.0  # best-SHIFT residual above which NO translation aligns the frames => a warp.
+                        # Measured (eval/inspect_translation): same-map best-shift diff p90~5; real
+                        # warps 55-77 (incl. stairs); a frame right after a warp can spike, so we
+                        # re-baseline one frame after every transition.
+_TILE_PX = 16           # overworld tile = 16x16 px; the camera scrolls in whole-tile steps
+_SHIFT_RANGE = 64       # search +/- this many px (4 tiles) for the translation that aligns two frames
 # A small selection box in the upper-right (a YES/NO or list OVER a bottom textbox) marks a CHOICE,
 # not plain advanceable text. Measured near-white fraction in that region: plain dialog ~0.00, an empty
 # opening box ~0.08, a YES/NO box ~0.33, the START menu ~0.94 — so 0.15 cleanly flags a choice.
@@ -48,6 +63,34 @@ def _frame_diff(a, b) -> float:
 def _gray(frame):
     g = np.asarray(frame)
     return g[..., :3].mean(axis=2) if g.ndim == 3 else g
+
+
+def _best_shift(a, b):
+    """Find the integer-tile translation that best aligns frame `b` back onto frame `a`, returning
+    (best_diff, (dx, dy)). Within a map the camera scrolls under a centered player, so frame N+1 is
+    frame N shifted by the move — SOME shift makes the overlap match (low best_diff). Across a warp the
+    whole scene cuts and NO shift aligns it (high best_diff). The winning shift's magnitude is also the
+    distance actually scrolled, so |shift| / tile = the true tiles moved (real odometry, not a fixed
+    one-tile guess). Pixels only — no RAM."""
+    H, W = a.shape
+    best_score, best_d, bsx, bsy = 1e9, 255.0, 0, 0
+    for dy in range(-_SHIFT_RANGE, _SHIFT_RANGE + 1, _TILE_PX):
+        for dx in range(-_SHIFT_RANGE, _SHIFT_RANGE + 1, _TILE_PX):
+            ay0, ay1 = max(0, dy), min(H, H + dy)
+            ax0, ax1 = max(0, dx), min(W, W + dx)
+            by0, by1 = max(0, -dy), min(H, H - dy)
+            bx0, bx1 = max(0, -dx), min(W, W - dx)
+            oa, ob = a[ay0:ay1, ax0:ax1], b[by0:by1, bx0:bx1]
+            if oa.size < 0.4 * H * W:           # require a meaningful overlap
+                continue
+            d = float(np.abs(oa - ob).mean())
+            # Tie-break toward the SMALLEST shift (a tiny magnitude penalty): on a flat/periodic patch
+            # many shifts tie on diff, and the true ego-motion is the minimal one (identical frames =>
+            # zero shift => "blocked", not a phantom corner jump).
+            score = d + 1e-3 * (abs(dx) + abs(dy))
+            if score < best_score:
+                best_score, best_d, bsx, bsy = score, d, dx, dy
+    return best_d, (bsx, bsy)
 
 
 def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
@@ -88,7 +131,11 @@ def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
         # right>0.35 rule above, and a battle by the battle rule, so this stays the narrow safety net.
         midright = float(w[int(H * 0.167):int(H * 0.62), int(W * 0.7):].mean())
         return "menu" if midright > _CHOICE_WHITE else "dialog"   # choice-over-textbox vs plain dialog
-    return "menu"                # some other UI box — treat as a menu so the planner is woken
+    # No region is a CLEAR UI panel (battle/dialog need bottom>0.3; a menu needs right>0.35). A region
+    # merely in the 0.15-0.3 band is a bright OUTDOOR scene (Pallet's white roofs/paths push the bottom
+    # to ~0.16), not a menu — calling it 'menu' was the run-#4 false-positive that triggered a resync
+    # and masked the next map warp. Default to overworld.
+    return "overworld"
 
 
 class OverworldPerceiver:
@@ -129,12 +176,15 @@ class OverworldPerceiver:
         ctx = context or {}
         m = memory.data
         m.setdefault("cursor", (0, 0))
-        m.setdefault("cells", {})          # (x,y) -> {"visited": bool, "walls": set[str]}
+        m.setdefault("places", {0: {}})    # place_id -> occupancy map {(x,y): {"visited","walls",...}}
+        m.setdefault("place", 0)           # the place (map/room) we're in now
+        m.setdefault("edges", {})          # (place, exit_cell, dir) -> (dest_place, entry_cell): warps
+        m.setdefault("next_place", 1)      # id to assign the next NEW place
         m.setdefault("prev_frame", None)
         m.setdefault("steps", 0)
-        m.setdefault("area", 0)
         m.setdefault("resync", False)
         m["steps"] += 1
+        cells = m["places"].setdefault(m["place"], {})   # the CURRENT place's map
 
         # Mode first: a menu/dialog/battle is NOT the overworld — hand it straight to the planner and
         # do NOT run odometry on it (a menu cursor move isn't walking). Re-baseline when we return.
@@ -144,8 +194,8 @@ class OverworldPerceiver:
             m["resync"] = True
             return SymbolicState(
                 confidence=0.5, context=mode,
-                pose={"frame": "grid", "value": list(m["cursor"]), "uncertain": True, "area": m["area"]},
-                spatial_memory={"kind": "occupancy-grid", "area": m["area"]},
+                pose={"frame": "grid", "value": list(m["cursor"]), "uncertain": True, "area": m["place"]},
+                spatial_memory={"kind": "occupancy-grid", "area": m["place"]},
                 affordances=[],
                 last_action={"action": ctx.get("last_action"), "outcome": "n/a"},
                 screen_text=self._read_text(frame),   # decode the dialog/menu textbox from pixels
@@ -154,45 +204,62 @@ class OverworldPerceiver:
         action = ctx.get("last_action")
         direction = _dominant_dir(action)
         prev = m["prev_frame"]
-        first = prev is None or m["resync"]   # re-baseline after returning from a menu/battle
+        first = prev is None or m["resync"]   # re-baseline after a menu/battle/transition
         m["resync"] = False
-        diff = _frame_diff(prev, frame)
-        area_change = (not first) and (diff >= self.area_threshold)
-        moved = (not first) and (diff > self.move_threshold)
+
+        # Ego-motion vs scene-cut, from PIXELS: the best translation that aligns prev->frame. A low
+        # residual means a shift aligns them (same map, the camera scrolled); a high residual means no
+        # shift does (a warp). The shift's magnitude is the distance ACTUALLY scrolled -> true odometry.
+        shift_diff, (sdx, sdy) = 255.0, (0, 0)
+        if not first and prev is not None and frame is not None:
+            shift_diff, (sdx, sdy) = _best_shift(_gray(prev), _gray(frame))
+
+        # A WARP: a FADE (emulator flag — robust even right after a menu, run #4's dominant miss) OR no
+        # translation aligns the frames (a scene cut — this also catches interior STAIRS, which don't
+        # fade). Needs a direction (you walked into the warp).
+        transitioned = direction is not None and (
+            bool(ctx.get("transition")) or ((not first) and shift_diff > self.area_threshold))
 
         x, y = m["cursor"]
-        cell = m["cells"].setdefault((x, y), {"visited": True, "walls": set()})
+        cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
         cell["visited"] = True
 
-        outcome = "unknown"
-        if not first and direction:
-            if area_change:
-                # The whole screen changed: we entered a NEW area (map transition). Start a fresh
-                # coordinate frame + map, so the old area's geometry isn't smeared into the new one.
-                # BUT seal the way back as a PORTAL: the cell behind us links to the (already-seen)
-                # previous area, so it must NOT read as an unexplored frontier — otherwise the
-                # autopilot immediately walks back through the door and ping-pongs across the seam
-                # (the live door-oscillation bug). The portal stays walkable, just isn't a frontier.
-                m["area"] += 1
-                back = {"up": "down", "down": "up", "left": "right", "right": "left"}[direction]
-                bdx, bdy = _DELTA[back]
-                m["cells"] = {(0, 0): {"visited": True, "walls": set()},
-                              (bdx, bdy): {"visited": True, "walls": set(),
-                                           "portal": m["area"] - 1}}
-                m["cursor"] = (0, 0)
-                x, y = 0, 0
-                cell = m["cells"][(0, 0)]
-                outcome = "moved"
-            elif moved:
+        outcome, tiles = "unknown", 0
+        if transitioned:
+            # Cross to another PLACE. Reuse the KNOWN destination (restoring its accumulated map) if
+            # we've taken this door before, else mint a NEW place — so a building round-trip returns to
+            # the same Pallet map (incl. the lab door we already found) instead of re-exploring it.
+            self._transit(m, (x, y), direction)
+            cells = m["places"][m["place"]]
+            x, y = m["cursor"]
+            cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
+            cell["visited"] = True
+            # Re-baseline the next frame's TRANSLATION check (not the fade): the frame right after a warp
+            # is the arrival, and a normal move from it can score a high best-shift residual -> a spurious
+            # transition that, at the entry cell, hits the reverse edge and lumps the two maps. Suppress
+            # just the translation path for one frame; a genuine door RETURN still fires via the fade
+            # flag. (Both doors are sealed in _transit, so the autopilot won't choose to re-cross anyway.)
+            m["resync"] = True
+            outcome = "moved"
+        elif not first and direction:
+            # Did we actually move? The best-shift magnitude along the action axis is a robust
+            # moved-vs-blocked signal (a real scroll vs a turn-into-a-wall). We advance the cursor by
+            # exactly ONE tile, NOT the measured count: the ExploreBrain controller treats [d,d] as a
+            # net one-tile step, and recording the true 1-or-2 tiles makes it overshoot and oscillate
+            # (it got stuck in the bedroom). Capping preserves that contract; the full measured-distance
+            # odometry (the complete drift fix) waits on a controller that understands variable steps.
+            axis_px = abs(sdy) if direction in ("up", "down") else abs(sdx)
+            if axis_px < _TILE_PX / 2:         # negligible scroll -> we walked into a wall
+                cell["walls"].add(direction)
+                outcome = "blocked"
+            else:
+                tiles = 1
                 dx, dy = _DELTA[direction]
                 x, y = x + dx, y + dy
                 m["cursor"] = (x, y)
-                m["cells"].setdefault((x, y), {"visited": True, "walls": set()})["visited"] = True
-                cell = m["cells"][(x, y)]
+                cells.setdefault((x, y), {"visited": True, "walls": set()})["visited"] = True
+                cell = cells[(x, y)]
                 outcome = "moved"
-            else:
-                cell["walls"].add(direction)  # bumped a wall in this direction
-                outcome = "blocked"
 
         m["prev_frame"] = np.asarray(frame).copy() if frame is not None else None
 
@@ -204,24 +271,24 @@ class OverworldPerceiver:
                 continue
             open_all.append(d)
             dx, dy = _DELTA[d]
-            nbr = m["cells"].get((x + dx, y + dy))
+            nbr = cells.get((x + dx, y + dy))
             if nbr is None or not nbr.get("visited"):
                 open_unexplored.append(d)
 
-        visited_n = sum(1 for c in m["cells"].values() if c.get("visited"))
+        visited_n = sum(1 for c in cells.values() if c.get("visited"))
         # Full map + frontier cells, so a LOCAL controller can pathfind without the LLM. A frontier
         # is a visited cell with a non-wall direction into an unvisited (unknown) cell.
         grid, frontiers = [], []
-        for (cx, cy), c in m["cells"].items():
+        for (cx, cy), c in cells.items():
             grid.append({"x": cx, "y": cy, "visited": bool(c.get("visited")),
                          "portal": c.get("portal"), "walls": sorted(c["walls"])})
             if not c.get("visited") or c.get("portal") is not None:
-                continue  # unvisited, or a portal boundary back to a seen area (not a frontier)
+                continue  # unvisited, or a portal boundary back to a seen place (not a frontier)
             for d in _DIRS:
                 if d in c["walls"]:
                     continue
                 ddx, ddy = _DELTA[d]
-                nbr = m["cells"].get((cx + ddx, cy + ddy))
+                nbr = cells.get((cx + ddx, cy + ddy))
                 if nbr is None or not nbr.get("visited"):
                     frontiers.append([cx, cy])
                     break
@@ -229,12 +296,47 @@ class OverworldPerceiver:
         return SymbolicState(
             confidence=0.4,  # Step 2: keep the image attached; text-only is earned later
             context="overworld",
-            pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": m["area"]},
-            spatial_memory={"kind": "occupancy-grid", "area": m["area"], "visited": visited_n,
+            pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": m["place"]},
+            spatial_memory={"kind": "occupancy-grid", "area": m["place"], "visited": visited_n,
                             "walls_here": sorted(cell["walls"]),
-                            "map": grid, "frontiers": frontiers},
+                            "map": grid, "frontiers": frontiers,
+                            "places_known": len(m["places"])},
             affordances=open_unexplored or open_all,
-            last_action={"action": action, "outcome": outcome, "diff": round(diff, 2)},
+            last_action={"action": action, "outcome": outcome,
+                         "diff": round(shift_diff, 2), "tiles": tiles},
             raw_available=True,
             raw_ref=ctx.get("frame_path", ""),
         )
+
+    @staticmethod
+    def _transit(m: dict, exit_cell: tuple, direction: str) -> None:
+        """Cross a warp from the current place via the door at `exit_cell`. If we've taken this door
+        before, return to that KNOWN place at its recorded entry (restoring its accumulated map); else
+        mint a NEW place. Doors are keyed by CELL, not direction (you enter a building walking one way
+        but leave the doormat walking another), with a reverse edge so the round-trip is symmetric.
+
+        To stop the autopilot ping-ponging the doorway, BOTH ends of the door are sealed as PORTALs
+        (walkable, never an exploration frontier): the source cell we left from, AND the cell just
+        BEHIND the arrival (the way back out) — while the arrival cell ITSELF stays explorable so the
+        new place still has a frontier to explore forward (sealing the arrival would strand the
+        frontier-only autopilot)."""
+        src = m["place"]
+        key = (src, exit_cell)
+        if key in m["edges"]:
+            dest, entry = m["edges"][key]
+        else:
+            dest = m["next_place"]
+            m["next_place"] += 1
+            entry = (0, 0)
+            m["edges"][key] = (dest, entry)
+            m["edges"][(dest, entry)] = (src, exit_cell)   # reverse edge (keyed by cell, not direction)
+            m["places"].setdefault(dest, {})
+        dcells = m["places"].setdefault(dest, {})
+        dcells.setdefault(entry, {"visited": True, "walls": set()})["visited"] = True   # arrival: explorable
+        m["places"].setdefault(src, {}).setdefault(           # seal the door on the source side
+            exit_cell, {"visited": True, "walls": set()})["portal"] = dest
+        bdx, bdy = _DELTA[_BACK[direction]]                   # the cell behind the arrival = the way back
+        back = (entry[0] + bdx, entry[1] + bdy)
+        dcells.setdefault(back, {"visited": True, "walls": set()})["portal"] = src
+        m["place"] = dest
+        m["cursor"] = entry

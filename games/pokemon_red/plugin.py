@@ -73,6 +73,7 @@ class PokemonRedPlugin:
         self._percept_memory = PerceptMemory() if perceiver is not None else None
         self._oracle_path = os.path.join(self.out_dir, "oracle.jsonl")
         self._last_action: Optional[str] = None  # fed to the perceiver for odometry
+        self._last_transition = False             # did the last press cross a map-warp fade? (pixels)
 
     # -- GamePlugin surface --------------------------------------------------
 
@@ -166,8 +167,10 @@ class PokemonRedPlugin:
                 pixels = self.emu.screen_ndarray()
             except Exception:
                 pixels = None
-            context = {"frame_path": screen_path, "last_action": self._last_action}
+            context = {"frame_path": screen_path, "last_action": self._last_action,
+                       "transition": self._last_transition}
             sym = self.perceiver.perceive(pixels, self._percept_memory, context)
+            self._last_transition = False   # consume-once: only the post-warp observe sees it
             self._log_oracle(state, screen_path, sym)
             data = sym.to_dict()
             data["step"] = self._obs_count
@@ -282,6 +285,9 @@ class PokemonRedPlugin:
     def _post_action(self, call: ToolCall, action: str) -> ToolResult:
         self._settle_if_battle()    # let a battle animation finish before we read/observe
         self._last_action = action  # remembered so the next observe() can do odometry
+        # Did that press cross a map-warp fade? A pixels-only signal (no RAM) the next observe() hands
+        # to the perceiver so it resets its dead-reckoning frame on a real warp (the run-#4 fix).
+        self._last_transition = bool(getattr(self.emu, "faded", lambda: False)())
         state = read_state(self.emu.read)
         reward, breakdown = self._reward.update(state)
         now = time.time()

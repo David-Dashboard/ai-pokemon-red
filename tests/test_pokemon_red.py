@@ -28,6 +28,7 @@ class FakeEmulator:
         self._frame = 0
         self._screen = None  # set to an ndarray to drive the perception path
         self.settles = 0     # count of settle() calls (battle-pacing wiring assertion)
+        self._faded = False  # set True to simulate a press that crossed a map-warp fade
 
     def press(self, button, hold_frames=8, settle_frames=16):
         self._frame += hold_frames + settle_frames
@@ -38,6 +39,9 @@ class FakeEmulator:
     def settle(self, max_frames=240):
         self.settles += 1
         return True
+
+    def faded(self):
+        return self._faded
 
     def read(self, addr):
         return self.mem.get(addr, 0)

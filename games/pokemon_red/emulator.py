@@ -23,6 +23,18 @@ BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 # PyBoyEmulator) instead of trusting PyBoy's set_emulation_speed, which we measured to NOT throttle
 # across window backends (a null window's tick(120) returned in 16 ms, not ~2 s).
 _GB_FPS = 59.7275
+# A frame this uniform (std below it) is a FADE — Gen-1 fades the screen to black/white during a map
+# WARP. Measured (eval/inspect_warp): a building-door warp hits std 0.0 for ~18 frames; overworld/menu
+# frames are std > 50; interior STAIRS do NOT fade (they dip to ~52), so fade only flags door warps.
+_FADE_STD = 6.0
+
+
+def _is_fade(frame) -> bool:
+    """Near-uniform frame (std < _FADE_STD)? Pixels only — the map-warp fade signal, no RAM."""
+    import numpy as np
+    g = np.asarray(frame)
+    g = g[..., :3].mean(axis=2) if g.ndim == 3 else g
+    return float(g.std()) < _FADE_STD
 
 
 def advance_until_static(next_frame, *, max_frames: int = 240, window: int = 24,
@@ -87,6 +99,7 @@ class Emulator(Protocol):
     def press(self, button: str, hold_frames: int = 8, settle_frames: int = 16) -> None: ...
     def tick(self, frames: int) -> None: ...
     def settle(self, max_frames: int = 240) -> bool: ...
+    def faded(self) -> bool: ...
     def read(self, addr: int) -> int: ...
     def save_screen(self, path: str) -> None: ...
     def screen_ndarray(self): ...   # current frame as an (H, W, C) uint8 array — for pixel perception
@@ -132,6 +145,7 @@ class PyBoyEmulator:
         self._realtime = (not headless) if realtime is None else realtime
         self._pyboy.set_emulation_speed(0)   # unbounded; we own the wall-clock pacing
         self._next_frame_t: Optional[float] = None
+        self._faded = False   # did the last press cross a map-warp fade? (see faded())
         # Optional MP4 capture of the run; video+audio recorded frame-by-frame in _advance, muxed in
         # close(). Works with or without a window (recording does not require --sound/--window).
         self._recorder = None
@@ -143,21 +157,24 @@ class PyBoyEmulator:
         # Let the boot/intro settle a little so the first observation is real (unpaced, unrecorded).
         self._pyboy.tick(60, render=True)
 
-    def _advance(self, frames: int, render: bool) -> None:
+    def _advance(self, frames: int, render: bool, watch_fade: bool = False) -> None:
         """Emulate `frames`. In real-time mode, step ONE frame at a time and sleep to the wall
         clock so motion is watchable AND the audio stays continuous (a bulk tick + sleep would
-        starve the sound queue). Headless mode bulk-ticks as fast as possible."""
+        starve the sound queue). Headless mode bulk-ticks as fast as possible. With `watch_fade`,
+        always step per-frame and set `self._faded` if any frame is a near-uniform map-warp fade."""
         frames = max(1, frames)
         rec = self._recorder is not None
-        # Bulk-tick only when neither pacing NOR recording needs per-frame access.
-        if not self._realtime and not rec:
+        # Bulk-tick only when nothing (pacing / recording / fade-watch) needs per-frame access.
+        if not self._realtime and not rec and not watch_fade:
             self._pyboy.tick(frames, render=render)
             return
         for _ in range(frames):
-            self._pyboy.tick(1, render=render or rec)   # recorder needs a fresh framebuffer
+            self._pyboy.tick(1, render=render or rec or watch_fade)   # need a fresh framebuffer
             if rec:
                 self._recorder.capture(self._pyboy.screen.ndarray)
                 self._recorder.capture_audio(self._pyboy.sound.ndarray)  # full-rate, every frame
+            if watch_fade and _is_fade(self._pyboy.screen.ndarray):
+                self._faded = True
             if self._realtime:
                 self._pace_one_frame()
 
@@ -179,13 +196,20 @@ class PyBoyEmulator:
         if b not in BUTTONS:
             raise ValueError(f"unknown button: {button}")
         # PyBoy 2.x: button(name, delay) presses then releases over `delay` frames.
+        self._faded = False
         self._pyboy.button(b, delay=hold_frames)
         self._advance(hold_frames, render=False)
-        # Let menus open / text scroll / the character finish a step.
-        self._advance(settle_frames, render=True)
+        # Let menus open / text scroll / the character finish a step — and watch for a map-warp fade.
+        self._advance(settle_frames, render=True, watch_fade=True)
 
     def tick(self, frames: int) -> None:
+        self._faded = False
         self._advance(max(1, frames), render=True)
+
+    def faded(self) -> bool:
+        """Did the last press cross a near-uniform FADE (Gen-1's map-warp signal)? Pixels only — lets
+        the perceiver detect a place transition without consulting RAM (the no-leak posture)."""
+        return self._faded
 
     def settle(self, max_frames: int = 240, window: int = 24, eps: float = 2.0) -> bool:
         """Advance until the screen stops changing (waiting for input) or ``max_frames`` elapse.

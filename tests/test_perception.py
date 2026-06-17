@@ -21,6 +21,22 @@ from tests.test_pokemon_red import FakeEmulator
 def _frame(val: int):
     return np.full((144, 160, 4), val, dtype=np.uint8)
 
+
+def _scene(seed: int = 1):
+    """A TEXTURED frame (deterministic) — a 'map' with structure so a translation can align it. Values
+    stay < 230 so detect_mode reads it as overworld (no near-white UI panel)."""
+    g = np.random.RandomState(seed).randint(0, 200, size=(144, 160), dtype=np.uint16).astype(np.uint8)
+    f = np.zeros((144, 160, 4), dtype=np.uint8)
+    f[..., 0] = f[..., 1] = f[..., 2] = g
+    f[..., 3] = 255
+    return f
+
+
+def _scroll(scene, dx_tiles: int = 0, dy_tiles: int = 0):
+    """Simulate the camera scrolling when the player moves (dx_tiles, dy_tiles): the overlap then
+    aligns at a +N-tile shift, exactly as a real same-map move does (vs an unrelated _scene = a warp)."""
+    return np.roll(np.roll(scene, -dy_tiles * 16, axis=0), -dx_tiles * 16, axis=1)
+
 ROLE_KEYS = {"confidence", "context", "pose", "spatial_memory",
              "affordances", "last_action", "screen_text", "raw_available", "raw_ref"}
 
@@ -84,10 +100,23 @@ def test_first_obs_inits_pose_and_is_unknown_outcome():
 
 
 def test_moved_advances_the_dead_reckoned_cursor():
-    per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=300.0), PerceptMemory()
-    per.perceive(_frame(0), mem, {"last_action": None})            # prime prev_frame
-    s = per.perceive(_frame(200), mem, {"last_action": "down+down+down"})  # move (< area thr) ⇒ moved
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene()
+    per.perceive(scene, mem, {"last_action": None})                # prime prev_frame
+    s = per.perceive(_scroll(scene, dy_tiles=1), mem, {"last_action": "down+down"})  # scrolled 1 tile down
     assert s.last_action["outcome"] == "moved" and s.pose["value"] == [0, 1]
+
+
+def test_odometry_caps_at_one_tile_to_honor_the_controller_contract():
+    # The ExploreBrain treats [d,d] as a net ONE-tile step; recording the true 1-or-2 tiles made it
+    # overshoot/oscillate (stuck in the bedroom). So a multi-tile scroll is robustly detected as 'moved'
+    # via the best-shift, but the cursor advances exactly ONE cell. (The full measured-distance drift
+    # fix waits on a controller that understands variable steps.)
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene()
+    per.perceive(scene, mem, {"last_action": None})
+    s = per.perceive(_scroll(scene, dx_tiles=3), mem, {"last_action": "right+right+right+right"})
+    assert s.last_action["outcome"] == "moved" and s.pose["value"] == [1, 0]
 
 
 def test_area_change_resets_the_coordinate_frame():
@@ -99,20 +128,83 @@ def test_area_change_resets_the_coordinate_frame():
     assert s.pose["value"] == [0, 0] and s.pose["area"] == 1       # fresh frame, area incremented
 
 
-def test_area_change_seals_a_portal_so_the_seam_isnt_a_frontier():
-    """Regression (the door-oscillation bug): crossing a DETECTED transition must not leave the
-    way-back as an unexplored frontier — else the autopilot walks straight back through the door and
-    ping-pongs across the seam. The cell behind us is sealed as a PORTAL (walkable, but not an
-    exploration target), while the arrival cell stays a frontier so the agent explores the NEW area."""
-    per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=100.0), PerceptMemory()
-    per.perceive(_frame(0), mem, {"last_action": None})            # prime
-    per.perceive(_frame(10), mem, {"last_action": "down+down"})    # move within area -> (0,1)
-    s = per.perceive(_frame(200), mem, {"last_action": "down+down"})  # big diff -> AREA transition (entered moving down)
-    assert s.pose["value"] == [0, 0] and s.pose["area"] == 1
+def test_place_graph_round_trip_returns_to_the_known_place():
+    """Place-graph (the run-#4 lab fix): a WARP (no translation aligns the frames) mints a NEW place;
+    taking the door BACK returns to the SAME place with its accumulated map restored — not a freshly
+    minted place 2 — and the door we left by is sealed as a portal (walkable, not a frontier), so the
+    autopilot can't ping-pong the seam (the old door-oscillation bug)."""
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    a, b = _scene(1), _scene(2)                                    # two unrelated 'maps' (no shift aligns)
+    per.perceive(a, mem, {"last_action": None})                    # place 0, (0,0)
+    per.perceive(_scroll(a, dy_tiles=1), mem, {"last_action": "down+down"})   # -> (0,1) in place 0
+    s1 = per.perceive(b, mem, {"last_action": "down+down"})        # scene cut => WARP to a new place
+    assert s1.pose["area"] == 1 and s1.pose["value"] == [0, 0]
+    # door-back: a real door warp FADES, so the fade flag fires through the post-warp re-baseline and
+    # the reverse edge restores place 0 (the translation path alone is suppressed for that one frame).
+    s2 = per.perceive(a, mem, {"last_action": "up+up", "transition": True})
+    assert s2.pose["area"] == 0                                    # the KNOWN place, restored (not place 2)
+    cells = {(c["x"], c["y"]): c for c in s2.spatial_memory["map"]}
+    assert (0, 1) in cells                                         # place 0's accumulated map is back
+    assert any(c.get("portal") == 1 for c in s2.spatial_memory["map"])   # the door out is sealed
+    assert s2.spatial_memory["places_known"] == 2                  # exactly two places, no spurious mint
+
+
+def test_warp_seals_both_doors_but_keeps_the_arrival_explorable():
+    # Anti-ping-pong (the house-door oscillation the closed-loop autopilot hit): BOTH ends of a door are
+    # sealed as portals (not frontiers) — the source cell AND the cell BEHIND the arrival — while the
+    # arrival cell itself stays a frontier so the frontier-only autopilot can still explore the new place.
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    a, b = _scene(1), _scene(2)
+    per.perceive(a, mem, {"last_action": None})
+    per.perceive(_scroll(a, dy_tiles=1), mem, {"last_action": "down+down"})   # -> (0,1) in place 0
+    s = per.perceive(b, mem, {"last_action": "down+down"})        # warp into place 1 (entered moving down)
     cells = {(c["x"], c["y"]): c for c in s.spatial_memory["map"]}
-    assert cells[(0, -1)]["portal"] == 0 and cells[(0, -1)]["visited"]   # the way back -> previous area (id 0)
-    assert [0, -1] not in s.spatial_memory["frontiers"]                  # ...and is NOT an exploration target
-    assert [0, 0] in s.spatial_memory["frontiers"]                       # but the new area IS explored forward
+    assert s.pose["value"] == [0, 0]
+    assert cells[(0, 0)].get("portal") is None                   # arrival stays explorable
+    assert cells[(0, -1)].get("portal") == 0                     # the way back is sealed
+    assert [0, 0] in s.spatial_memory["frontiers"]               # ...so the new place IS explorable
+    assert [0, -1] not in s.spatial_memory["frontiers"]          # ...but the door-back isn't a target
+
+
+def test_fade_flag_triggers_transition_even_right_after_a_menu():
+    # The run-#4 DOMINANT miss: a warp right after a (mis)classified menu frame. The translation has no
+    # valid overworld `prev` to compare (first/resync), but the emulator's pixels-only FADE flag still
+    # forces the place transition — which the old diff path suppressed.
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    per.perceive(_scene(1), mem, {"last_action": None})                       # place 0
+    menu = np.full((144, 160, 3), 60, dtype=np.uint8); menu[:96, 96:] = 255
+    per.perceive(menu, mem, {"last_action": "up+up"})                         # menu => resync (next is first)
+    s = per.perceive(_scene(2), mem, {"last_action": "up+up", "transition": True})  # fade flag set
+    assert s.pose["area"] == 1                                                # transitioned despite first
+
+
+def test_scene_cut_without_a_fade_flag_still_warps():
+    # A warp that does NOT fade (interior stairs) is still caught: no translation aligns the frames, so
+    # the scene-cut residual exceeds the threshold => a new place. No emulator fade flag needed.
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    per.perceive(_scene(1), mem, {"last_action": None})
+    per.perceive(_scroll(_scene(1), dx_tiles=1), mem, {"last_action": "right+right"})   # a real move
+    s = per.perceive(_scene(7), mem, {"last_action": "right+right"})          # scene cut, no fade flag
+    assert s.pose["area"] == 1
+
+
+def test_plugin_threads_emulator_fade_into_perceiver_context(tmp_path):
+    # Wiring: the plugin must hand the emulator's fade flag to the perceiver as context['transition'],
+    # so a warp resets the dead-reckoning frame. Verified with a spy perceiver.
+    from core.contracts import ToolCall
+    seen: dict = {}
+
+    class Spy:
+        def perceive(self, frame, memory, context=None):
+            seen.update(context or {})
+            return SymbolicState(confidence=0.4, context="overworld", raw_ref="")
+
+    emu = FakeEmulator()
+    emu._faded = True
+    p = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=Spy())
+    p.handle(ToolCall(tool="press_button", args={"button": "up"}, agent_id="a", call_id="c"))
+    p.observe("a")
+    assert seen.get("transition") is True
 
 
 def test_detect_mode_separates_overworld_menu_dialog_battle():
@@ -162,6 +254,17 @@ def test_detect_mode_uniform_fade_is_not_battle():
     batt[20:50, 90:140] = 30   # enemy sprite patch -> std well above the guard
     batt[60:96, 10:60] = 30    # player sprite patch
     assert detect_mode(batt) == "battle"
+
+
+def test_detect_mode_bright_overworld_is_not_menu():
+    # Regression (run #4): a bright OUTDOOR scene (Pallet's white roofs/paths) pushes a region into the
+    # 0.15-0.3 band but is NOT a UI panel. It must read 'overworld', not 'menu' — the old catch-all
+    # mislabeled it, forcing a resync that masked the very next map warp (the 0<->39 lumping).
+    from games.pokemon_red.perceiver import detect_mode
+    bright = np.full((144, 160, 3), 100, dtype=np.uint8)
+    bright[100:, :40] = 255       # near-white strip along the bottom (~0.22 of the bottom region)
+    bright[:30, 110:] = 255       # bright building roof, upper-right (well under the 0.35 menu bar)
+    assert detect_mode(bright) == "overworld"
 
 
 def test_perceive_hands_off_non_overworld_and_rebaselines_on_return():
