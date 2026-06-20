@@ -73,6 +73,24 @@ API-error circuit breaker** — the harness retried each credit-400 and counted 
 outage burns the cap on no-ops; halting after N consecutive identical API errors would fail fast/cheap (optional
 hardening). *Process win: the run-end auto-report hook (built this session) fired correctly — first live test.*
 
+**Run #15 (2026-06-20) — CONCLUSIVE end-to-end re-run; the downstream wall is INTERIOR navigation (credits were
+masking it). Report `reports/2026-06-20-live-run-15.md`.** Built an **API-error circuit breaker** first
+(`API_ERROR_CIRCUIT_BREAKER=4`: the brain detects backend errors echoed as content + exceptions, counts
+consecutive failures, both drivers halt fast with the real error — so an outage no longer burns the wake budget;
++4 tests, 167), **topped up credits**, and re-ran from `start.state`. With credits healthy (**0 errors, breaker
+correctly SILENT** — first live proof it doesn't interfere), the agent again reached **Oak's lab cold
+(`38→37→0→40` by step 130)** but then got **wall-locked navigating the lab INTERIOR to reach Oak** — **all 100
+wakes were `[wake:stuck]`**, never got the starter, never reached the battle; budget-cap halt (~$0.6-0.8). The
+**pose-only occupancy map drifts/corrupts in the tight lab room** (the agent self-diagnoses *"the wall map is
+corrupt"*); the place-graph fixed BETWEEN-map nav, but WITHIN-room nav is still pose-only and drifts. **⇒ THE
+#1 BLOCKER is now interior / short-range navigation — the residual Phase-B dead-reckoning drift that was
+DEFERRED** (it blocks the starter → rival → Route 1, and it even defeats the stuck-watchdog, which is placated by
+real-but-aimless wandering). **NEXT, reprioritized: (1) fix interior/short-range navigation** (measured-distance
+odometry that the Phase-B notes deferred / an interior re-grounding / an occupancy reset on entering a small
+room); (2) the **learned blind-execute battle policy** now queues BEHIND nav (the battle is already solved — run
+#12/#13 — but the agent can't reach one cold until it can get the starter). Credits/circuit-breaker are no longer
+the blocker.
+
 **What works (built + tested, 158 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
   role-named `SymbolicState`; odometry + occupancy map; `detect_mode` (overworld/menu/dialog/battle).
