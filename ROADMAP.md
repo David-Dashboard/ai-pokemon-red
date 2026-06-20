@@ -85,6 +85,31 @@ Each rung changes **one** thing, so a failure has one cause (the same scientific
 The role-named `SymbolicState` seam (`core/perception.py`: *"only the representation behind each role is
 environment-specific"*) was built to survive 2D→3D. **It3 is where we find out if that bet paid off.**
 
+## Prior art & the baseline to beat — Cradle (BAAI / Skywork / NTU / PKU)
+
+**Cradle is our thesis, already built.** "General Computer Control": one agent, **screenshots-in /
+keyboard-mouse-out, NO API** (= our no-ROM / plan-from-screen), generalizing across games (RDR2 40-min
+missions, Cities: Skylines, Stardew Valley) AND desktop apps (Chrome/Outlook/CapCut) + OSWorld. GPT-4o
+backbone; six modules incl. **Skill Curation** (their System-2→System-1 skill library), Memory, Self-Reflection.
+It confirms our north star is a real, pursued direction — and it is **ahead of us on demonstrated breadth**
+(it drives RDR2 + real desktops today; we're at It1). https://baai-agents.github.io/Cradle/
+
+**Our differentiator (the baseline to beat): Cradle runs GPT-4o on EVERY step** — no free autopilot, no dual
+process (the cost catastrophe, baked in). Our **dual-process + model-agnostic** design (free System 1 in the
+loop; dial up to Opus only at decisions) is the direct improvement on the two places Cradle is *documented to
+fail* — and those failures **empirically confirm our two discontinuities**:
+- **Real-time** — Cradle "struggles with real-time combat… can't locate enemies": a model-per-step loop is too
+  slow → confirms **It3** (System 1 must own the loop). Exactly where **Portal** breaks a Cradle-style agent and
+  our architecture could win.
+- **Perception** — "poor spatial perception, 2D recognition, non-standard UI": the frozen human-I/O interface did
+  NOT buy transfer — **perception did them in** (perception-invariance is the co-equal hard half). OSWorld at
+  **7.81%** = desktop is perception-bound, NOT human-saturated.
+
+**Actionable for the plan:** (1) read Cradle's **Skill Curation / skill-library** before building **S5**
+(System-1 authoring) — the closest existing implementation. (2) Their **keyboard/mouse action layer** is a
+concrete reference for the **desktop/web GamePlugin**. (3) Treat Cradle as the **baseline to beat on Portal and
+on sustained cost** — same thesis; our edge is cost-viability + real-time.
+
 ## Phasing (relative, not dates)
 
 It1 → It2 near-term (the generalization proof) · It3 mid-term (first real architectural stress) · It4 real-world-
