@@ -64,20 +64,25 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 ## 2. Current status (2026-06-21)
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.** The **FOUNDATION is DONE +
-all paid-validated:** S1 cost-breaker, S2 constitution-first, S3 β within-run-memory, **[`ARCHITECTURE.md`](ARCHITECTURE.md)
-(ADR-001) = the dual-process seam** (`ai-pokemon-red` = WORLD INTERFACE + System 1; `ai-aria` = AGENT + System 2),
-and the **constitution moved into aria's config** (`pokemon-red-data/constitution.md`; harness sends `system=""`).
-aria's core audited CLEAN (no game-specific code). **A long cold playthrough (463 steps, ~$0.30) then found the
-#1 BLOCKER: the OAK STARTER-DIALOG AUTO-ADVANCE TRAP** — the agent navigates to Oak's lab cold but loops the
-"which POKéMON?" prompt (auto-advance mashes A on a textbox A can't advance; in Red you must walk to a ball),
-never getting the starter. **It's a PERCEPTION/System-1 problem, NOT memory** (the agent's `<lesson>`s recorded
-the failure; memory can't invent an action perception never surfaces — so S5/skill-library is NOT next).
-**→ DIRECT NEXT ACTION = a SEEN-STATES / NOVELTY signal** (David's steer): *stuck = REVISITING a seen state (a
-cycle); progress = NOVEL states* — NOT a 1-step "did A advance?" check. It unifies the 3 hand-built signals
-(occupancy + OutcomeMemory + disconfirm), whose gap is they don't see the screen/dialog state. **Data-first:**
-capture Oak's "which POKéMON?" frames (frozen frame or 2-state cycle?) → build the signal in `core/` + gate
-auto-advance (advance only on NOVEL text; on a revisit → stop → let run #17's affordance probe walk to a ball) →
-re-run from `start.state`. Full detail: `reports/LEARNINGS.md` (the longloop bullet) + the `novelty-signal` memory.
+all paid-validated** (S1 cost-breaker, S2 constitution-first, S3 β within-run-memory, **[`ARCHITECTURE.md`](ARCHITECTURE.md)
+(ADR-001) = the dual-process seam**; the constitution moved into aria's config). A long cold playthrough found the
+**#1 BLOCKER: the OAK STARTER-DIALOG TRAP** — auto-advance mashes A forever on the "which POKéMON?" prompt (a
+textbox A can't dismiss; in Red you must walk to a ball), so the agent never gets the starter. **⇒ NOW FIXED
+(BUILT + free-validated, branch `feat/novelty-signal` — `0faa518`→`b147721`→`ce9cc4a`, harness-only): a
+SEEN-STATES / NOVELTY signal** (David's steer; the unifying signal behind the occupancy map + OutcomeMemory +
+disconfirm). Data-first confirmed the trap is a **~6-state CYCLE, not a frozen frame** (settled "which POKéMON?"
+recurs 10×, pose frozen, never battle), so a 1-step "did A advance?" check fails (text changes every press). The
+fix counts **VISITS** (rising-edge — a held textbox is 1 visit, a loop is separate visits, so a legit dialog is
+never mistaken for a cycle) to `(state_signature, screen_text)` and at **3 visits** stops auto-advancing and
+**defers UP** to aria with a **pure-fact `cycle_note`** ("you are repeating a state you have already seen…") —
+**System 1 detects, System 2 decides** (no harness steering; thin nudges stay out of `core/`). `core/novelty.py`
+`NoveltyMemory` + the `HybridBrain` gate; **233 tests**; the SHIPPED gate replayed over the real 463-step run
+trips **26× ALL in the lab trap (first @ step 416), 0 false positives** (`eval/inspect_longloop_trap.py` asserts
+it). Deferred (recorded): semantic/embedding novelty — the key-building call site is the swap point if a run
+shows decode noise fragmenting exact-match. **→ DIRECT NEXT ACTION = the PAID validation run** (NO aria rebuild —
+harness-only): `reset_aria_memory.py --yes`, `python -u`, guards on; re-run cold from `start.state` and confirm
+the agent escapes Oak's prompt → gets the starter → rival battle → leaves the lab. Then **S5 (procedural memory /
+skill library)**. Full detail: `reports/LEARNINGS.md` (the seen-states/novelty bullet) + the `novelty-signal` memory.
 
 **⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session — read the
 "⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE" block below + [`ROADMAP.md`](ROADMAP.md). Goal = the
