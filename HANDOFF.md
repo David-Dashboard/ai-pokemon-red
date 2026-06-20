@@ -35,25 +35,35 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-17)
 
-**LATEST (2026-06-20): the run-#15 INTERIOR-NAVIGATION wall is BROKEN (harness-only, free-validated; NOT yet
-paid-tested).** Run #15's #1 blocker was dead-reckoning DRIFT in tight rooms. Measured it *directly* against
-the RAM oracle (run #15 logged both the perceiver pose and ground-truth x/y): **40.2% of overworld moves drifted,
-139/144 of them the exact "RAM moved 2 tiles, perceiver recorded 1" case.** Root cause = a wrong MOVEMENT MODEL:
-the autopilot presses `[d,d]` and the code assumed GateWorld's *"turn, then move = net 1 tile"*, but the **real
-emulator absorbs the turn within the held press**, so `[d,d]` moves **TWO** tiles when open while the perceiver
-capped the cursor at one → ~1 tile lost per same-direction step → the interior map corrupts. Verified the true
-mechanics on the live emulator (`eval/probe_step.py`): a **single `[d]` press = exactly one tile** (even on a
-direction change; turn is free), `[d,d]` = two. **Fix (two halves):** (1) `ExploreBrain(single_step=True)` — the
-Pokémon drivers press `[d]` (one tile/decision) so each move stays synced; the **agnostic default stays `[d,d]`**
-(GateWorld untouched — step granularity is a per-world property the driver injects, `core/` stays world-agnostic).
-(2) **measured-distance odometry** in the perceiver — advance the cursor by the best-shift magnitude (clamped to
-the ±4-tile window), marking every traversed cell visited, instead of capping at one. **Validated free on run
-#15's real frames (`eval/replay_drift.py`): cap-at-one drift 40.2% → 0** (residual = pre-existing post-warp
-re-baselines + multi-axis LLM presses). **170 tests** (+3). Committed on `feat/interior-nav-drift` (off `main`,
-NOT pushed/merged). **NEXT: a guarded paid end-to-end re-run** (the run #15 config from `start.state`) to confirm
-the agent now reaches Oak, gets the starter, and proceeds — the precondition for starter → rival → Route 1. Then
-(2) the learned blind-execute battle policy. (Mandatory before any paid run: `reset_aria_memory.py --yes`, credit
-probe, `python -u`.)
+**LATEST (2026-06-20): the run-#15 INTERIOR-NAVIGATION wall is BROKEN + PAID-VALIDATED (run #16); the bottleneck
+moved to AFFORDANCE / region-of-interest discovery.** Run #15's #1 blocker was dead-reckoning DRIFT in tight
+rooms. Measured it *directly* against the RAM oracle (run #15 logged both the perceiver pose and ground-truth
+x/y): **40.2% of overworld moves drifted, 139/144 the exact "RAM moved 2 tiles, perceiver recorded 1" case.**
+Root cause = a wrong MOVEMENT MODEL: the autopilot presses `[d,d]` and the code assumed GateWorld's *"turn, then
+move = net 1 tile"*, but the **real emulator absorbs the turn within the held press**, so `[d,d]` moves **TWO**
+tiles when open while the perceiver capped the cursor at one → ~1 tile lost per same-direction step → the interior
+map corrupts. Verified the true mechanics on the live emulator (`eval/probe_step.py`): a **single `[d]` press =
+exactly one tile** (even on a direction change; turn is free), `[d,d]` = two. **Fix (two halves):** (1)
+`ExploreBrain(single_step=True)` — the Pokémon drivers press `[d]` (one tile/decision) so each move stays synced;
+the **agnostic default stays `[d,d]`** (GateWorld untouched — step granularity is a per-world property the driver
+injects, `core/` stays world-agnostic). (2) **measured-distance odometry** in the perceiver — advance the cursor
+by the best-shift magnitude (clamped to the ±4-tile window), marking every traversed cell visited, instead of
+capping at one. **Free-validated** on run #15's real frames (`eval/replay_drift.py`: 40.2% → 0) AND **paid-validated
+live in run #16** (`reports/2026-06-20-live-run-16-interior-nav-drift-fix-end-to-end-re-run.md`): drift **2.9% vs
+40.2%**, and **only 4% across 149 move-pairs INSIDE the lab (map 40)** — the room that corrupted before is now
+traversed cleanly, and the agent walked **up to Oak's tile at the top of the lab**, past run #15's wall. **170
+tests.** Committed on `feat/interior-nav-drift` (off `main`, NOT pushed/merged).
+**NEXT — the bottleneck MOVED (run #16): AFFORDANCE / ROI discovery.** Run #16 navigated the lab fine but
+**never got the starter** (`in_battle` 0 all 618 steps, budget-cap halt): the perceiver models pure GEOMETRY
+(visited/walls/frontiers/portals) and has **no representation of interactables** — Oak and the Pokéballs are
+non-walkable tiles, so they read as *walls*, never frontiers; the autopilot only chases frontiers (wanders) and
+the text-only LLM confabulates ("lab maze / staircase / exit"). Neither layer tries *face a ball and press A*.
+**(1) Build an interaction-discovery primitive:** when the autopilot exhausts frontiers (the `[wake:stuck]`
+trigger), face each adjacent *wall* and press A — a mode-change/decoded-text means that wall is an INTERACTABLE
+(record it as an ROI, wake the LLM with it). Free, vision-free, world-agnostic, *replaces* wasted stuck-wakes; the
+precondition for starter → rival → Route 1. (2) Optional: overworld-only vision + animation-saliency NPC detection.
+(3) The learned blind-execute battle policy stays queued behind. (Mandatory before any paid run:
+`reset_aria_memory.py --yes`, credit probe, `python -u`.)
 
 **(2026-06-17): the agent WINS the rival battle and progresses PAST it — Phase A "fight" is DONE,
 end-to-end.** Run #12 (verified per-step): it beat Gary's Squirtle with Charmander despite the type
