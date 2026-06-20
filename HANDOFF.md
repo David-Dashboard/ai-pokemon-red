@@ -107,6 +107,8 @@ job until the cost-breaker (S1 below) is in.**
 - **S5 — System-1 authoring (first rung)** *(ai-pokemon-red · FREE · 1 session)* — a within-run `PolicyMemory`:
   when System 2 makes the same battle decision twice, compile a blind-execute policy System 1 replays for free,
   deferring on novelty/no-progress. **In-memory only** (learning-boundary; no across-run persist).
+  **Read first — prior art:** Cradle's **Skill Curation / skill-library** (Voyager-lineage) is the closest existing
+  implementation of this self-authored-skill loop; see `ROADMAP.md` (Prior art — Cradle) + `cradle-prior-art` memory.
 - **S6 — Place-detection reliability** *(ai-pokemon-red · FREE · 1 session)* — the entertaining-testbed thread.
   Fix the place-graph: fades warp even on a non-directional action (stop **lumping**); dialog-flicker stops
   minting spurious places (stop **fragmenting**). Replay-validated; unblocks leaving the lab → Route 1.
