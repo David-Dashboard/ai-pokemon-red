@@ -51,16 +51,22 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 brain + world-as-tools + dual-process architecture (`ROADMAP.md`). The run-history blocks below (run #17's
 "place-detection is the #1 blocker / NEXT", etc.) are now CONTEXT — that nav work is S6 in the plan.**
 
-**⇒ S1 + S2 are DONE (built + free-validated + adversarially reviewed). α/β decided = β (aria owns within-run
-memory).** S1 (cost-breaker, branch `feat/cost-breaker`) unblocked paid runs; S2 (constitution-first, harness
-branch `feat/constitution-first` + aria local) put `POKEMON_SYSTEM` in aria's cached prefix (kills the ~7×
-duplication). **DIRECT NEXT ACTION: (1) the first guarded paid run** — it validates BOTH S1 live (the `[tokens]`
-line shows real usage; a guard halts) AND S2 live (the per-wake prompt-token count should drop sharply vs the
-~13–30k baseline; **re-check THINK/MOVE adherence** since the contract moved to the cached constitution). **(2)
-then S3 (β)** — retire the harness's *duplicate* within-run store (LESSON buffer) in favour of aria's native
-memory (wiped per run via `reset_aria_memory.py`), keeping the harness-only signals aria can't derive (the
-auto-advanced **missed-text transcript**, OutcomeMemory/disconfirm). S4 (world-as-tools) follows; S5/S6 are
-independent free wins. See the S1 + S2 cards below.
+**⇒ S1 + S2 are DONE + PAID-VALIDATED LIVE (built + free-validated + adversarially reviewed + a ~$0.07 paid
+smoke run). α/β decided = β (aria owns within-run memory).** S1 (cost-breaker, branch `feat/cost-breaker`)
+unblocked paid runs; S2 (constitution-first, harness branch `feat/constitution-first` + aria local) put
+`POKEMON_SYSTEM` in aria's cached prefix. **The 2026-06-20 battle smoke run (from `rival_battle.state`)
+confirmed BOTH live:** S1's `[tokens]` line + budget-cap halt + cost summary work against the real backend;
+S2's constitution is honored (a "reply PONG" probe proved it), **THINK/MOVE adherence HELD** (the key risk —
+cleared), and the per-wake prompt was lean **~4–8k** (vs the ~13–30k baseline), growing only ~300–500 tok/wake.
+*(Caveats: aria's usage omits cache tokens so the `[tokens]` cost is a safe over-estimate; aria's Docker image
+bakes in its src — `docker compose build aria` to pick up code changes; from `start.state` the autopilot ran
+120 steps with 0 wakes, so use a fixture to exercise the brain cheaply.)*
+
+**DIRECT NEXT ACTION: S3 (β)** — retire the harness's *duplicate* within-run store (LESSON buffer) in favour of
+aria's native memory (wiped per run via `reset_aria_memory.py`), keeping the harness-only signals aria can't
+derive (the auto-advanced **missed-text transcript**, OutcomeMemory/disconfirm). Then a **longer paid run** to
+measure end-to-end cost/wake at steady state. S4 (world-as-tools) follows; S5/S6 are independent free wins.
+See the S1 + S2 cards below.
 
 **LATEST (2026-06-20, run #17): the AFFORDANCE LAYER is VALIDATED — the agent got the starter COLD and WON the
 rival battle (first start→starter→win in one run). The bottleneck moved to PLACE-DETECTION reliability.**
