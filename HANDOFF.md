@@ -1,7 +1,9 @@
 # HANDOFF — ai-pokemon-red
 
 Read this first. It is the living summary of **what we're building, where we are, and what's next.**
-Deeper detail lives in `reports/` (start with the consolidated report) and `reports/LEARNINGS.md`.
+Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNINGS.md` (the chronological
+per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
+seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
 _Last updated: 2026-06-16._
 
