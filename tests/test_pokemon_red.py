@@ -92,12 +92,14 @@ def test_pokemon_system_unmuzzles_and_advertises_lesson():
 
 
 def test_pokemon_system_has_battle_guidance():
-    # Phase A: the prompt must teach battle navigation (FIGHT menu, positional nav, a default move),
-    # so the LLM can act once it's woken at a settled battle screen.
+    # Battle policy v2 (run-#6b fixes): the prompt must teach picking a DAMAGING move (not mashing A
+    # into a non-damaging status move like GROWL) and reading the screen to name your Pokémon + the foe.
     low = POKEMON_SYSTEM.lower()
     assert "battle" in low
-    assert "fight" in low                      # names the action-menu option to attack with
-    assert "first move" in low                 # the cheap default, never auto-mash
+    assert "fight" in low                      # the action-menu option to attack with
+    assert "damage" in low                     # pick a move that DEALS DAMAGE...
+    assert "growl" in low                      # ...not a non-damaging status move (the run-#6b trap)
+    assert "mash a" in low                     # explicit: do NOT just mash A
 
 
 # -- battle pacing: settle a battle animation before observing -----------------

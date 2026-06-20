@@ -401,9 +401,11 @@ class LLMButtonBrain:
         # can't do this (the decoder mangles the uppercase names it would need to compare), but the
         # model's own vision reads them — so we nudge it to let the observation overturn a prior belief.
         if (obs.data.get("screen_text") or "").strip():
-            feedback = (feedback + "\nTRUST THE SCREEN: believe what the image and the on-screen text "
-                        "show RIGHT NOW over anything you assumed or said earlier; if they conflict, "
-                        "the screen is correct — say so and update your plan.").strip()
+            feedback = (feedback + "\nTRUST THE SCREEN — this overrides memory: BEFORE you decide, state "
+                        "plainly what the image and on-screen text show RIGHT NOW. If that differs from "
+                        "what you assumed or said on an earlier turn, you misread it earlier — the screen "
+                        "wins: correct your belief and plan from what's shown now, and do NOT keep "
+                        "narrating the old version.").strip()
         if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
             feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
                         + "\n- ".join(self.lessons)).strip()
