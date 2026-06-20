@@ -408,6 +408,16 @@ $env:ARIA_BEARER_TOKEN = ((Get-Content ..\ai-aria\.env | Where-Object { $_ -matc
 uv run python play_loop.py --rom "roms/PokemonRed.gb"        # headless, watchdog-guarded, persistent
 ```
 
+**After the run — Definition of Done (document EVERY paid run; also in `CLAUDE.md`):**
+```bash
+# 1. scaffold the report from the run's OWN artifacts (oracle-verified facts pre-filled — no hand-counting):
+uv run python -m eval.report_run runs/run<N> --title "<what it tested>" --cost "~$X" --archive iter-<NNN>_<date>.zip
+#    -> writes reports/<date>-live-run-<N>.md (battle outcome incl. a sustained-win check, map trajectory,
+#       wake/auto-advance/error counts, the episode-summary line). Pure helpers are unit-tested.
+# 2. fill the report's TODO sections (TL;DR / what worked / broke / next) — grounded in the oracle, not narration.
+# 3. add a dated bullet to reports/LEARNINGS.md.   4. update HANDOFF.md §2 (LATEST + NEXT) + memory/current-status.md.
+```
+
 **aria gotchas (have bitten us):** `ARIA_DATA_DIR` must point at `pokemon-red-data` (else Red runs
 without its seed — verified in run #3 via the container's mount `pokemon-red-data → /app/data`); the
 Anthropic key behind aria needs credits; prompt caching was off but **partly engaged in run #3** (96K).
@@ -466,6 +476,7 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   inspect_translation.py   #   best-shift overlap diff: same-map vs transition separation (Phase B)
   replay_perceiver.py      #   replay a run's frames through the perceiver; check for map-lumping (Phase B)
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
+  report_run.py            #   scaffold reports/<date>-live-run-<N>.md from a run's oracle.jsonl + log (Definition of Done step 1)
 tests/                     # 158 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
