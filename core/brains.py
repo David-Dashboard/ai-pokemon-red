@@ -483,7 +483,7 @@ def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str
 
 
 def _openai_complete(
-    model: str, url: str, api_key: Optional[str] = None
+    model: str, url: str, api_key: Optional[str] = None, system: Optional[str] = None
 ) -> Callable[[str, Optional[str]], str]:
     """complete_fn for an OpenAI-compatible /v1/chat/completions endpoint —
     e.g. llama.cpp's `llama-server` (run it with `--mmproj` for vision), or the
@@ -493,7 +493,12 @@ def _openai_complete(
 
     Returns (text, usage): the reply plus the response's `usage` block (prompt/completion/cached token
     counts) so the brain can meter spend (S1). The Ollama path and test stubs return a bare string;
-    LLMButtonBrain normalizes both, so token metering is opt-in per backend without a protocol change."""
+    LLMButtonBrain normalizes both, so token metering is opt-in per backend without a protocol change.
+
+    `system` (S2 constitution-first): when set, it is sent as a SYSTEM-role message rather than stapled
+    into the user turn — so a constitution-aware brain (aria) can cache it in its static prefix once,
+    instead of re-embedding + replaying it every wake (the ~7x duplication + sub-cache-floor cost). For
+    a plain OpenAI server the system role is honoured natively; either way it's the right layer."""
     import requests
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
@@ -508,9 +513,13 @@ def _openai_complete(
                                 "image_url": {"url": f"data:image/png;base64,{b64}"}})
             except OSError:
                 pass
+        messages: list = []
+        if system:   # the constitution rides a system-role message (cached prefix), not the user turn
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": content})
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": content}],
+            "messages": messages,
             "stream": False,
             "max_tokens": 128,   # room for THINK + MOVE + an optional GOTO and one-line LESSON
             "temperature": 0,
@@ -585,6 +594,11 @@ class LLMButtonBrain:
         # too, where the brain is a BARE LLMButtonBrain (no HybridBrain). When wrapped, HybridBrain has
         # its own `woke` (the count the driver actually reads via the wrapper); this one is then unused.
         self.woke = 0
+        # S2 (constitution-first): the OpenAI-family backends deliver `self.system` as a SYSTEM-role
+        # message (so a constitution-aware brain caches it once), so `decide` must NOT also prepend it to
+        # the user prompt. Ollama (no chat system role here) and an INJECTED complete_fn keep the old
+        # inline delivery — backward-compatible (the test stubs see the system in the prompt as before).
+        self._delivers_system = False
         if complete_fn is not None:
             self.complete = complete_fn
         elif backend == "ollama":
@@ -593,7 +607,15 @@ class LLMButtonBrain:
         # llamacpp/openai, but bearer-authed. It runs as its own service — we only
         # speak HTTP to it, importing none of its code.
         elif backend in ("llamacpp", "openai", "aria"):
-            self.complete = _openai_complete(model, url, api_key=api_key)
+            # Deliver the system prompt as a system-role message ONLY when one was EXPLICITLY provided
+            # (the constitution case — the drivers pass POKEMON_SYSTEM). With no explicit system, keep
+            # the _DEFAULT_SYSTEM fallback INLINE in the user prompt, so a plain openai/llamacpp caller's
+            # wire format is unchanged (don't silently relocate a default into a system message).
+            if system is not None:
+                self.complete = _openai_complete(model, url, api_key=api_key, system=self.system)
+                self._delivers_system = True
+            else:
+                self.complete = _openai_complete(model, url, api_key=api_key)
         else:
             raise ValueError(
                 f"unknown LLM backend: {backend!r} (use 'ollama', 'llamacpp', or 'aria')")
@@ -639,8 +661,12 @@ class LLMButtonBrain:
         if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
             feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
                         + "\n- ".join(self.lessons)).strip()
-        prompt = (f"{self.system}\n\n{strategy}\n{feedback}\n\n"
-                  f"Current state:\n{obs.text}\n\nYour reply:")
+        # The per-turn (volatile) content. When the backend delivers the constitution as a system-role
+        # message (S2: openai/llamacpp/aria), DON'T also prepend self.system here — that would re-embed
+        # it in the user turn (the duplication S2 removes). Ollama / an injected complete_fn keep it
+        # inline (no system role on those paths), preserving the prior behaviour.
+        body = (f"{strategy}\n{feedback}\n\nCurrent state:\n{obs.text}\n\nYour reply:")
+        prompt = body if self._delivers_system else f"{self.system}\n\n{body}"
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
             raw, usage = self._invoke(prompt, image)

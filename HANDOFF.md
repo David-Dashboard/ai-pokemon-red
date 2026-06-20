@@ -51,12 +51,16 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 brain + world-as-tools + dual-process architecture (`ROADMAP.md`). The run-history blocks below (run #17's
 "place-detection is the #1 blocker / NEXT", etc.) are now CONTEXT — that nav work is S6 in the plan.**
 
-**⇒ S1 (the harness cost-breaker) is now BUILT + free-validated (branch `feat/cost-breaker`, off
-`feat/interior-nav-drift`; 193 tests).** It was the standing precondition: paid runs were blocked until it
-landed. So **paid runs are now unblocked** — and the FIRST guarded paid run is itself S1's live validation
-(confirm the per-wake `[tokens]` line shows real aria usage and a guard actually halts). After that, the
-DIRECT NEXT ACTION is the spine **S2 (constitution-first)** → S3 (β) → S4, with S5/S6 as independent free
-wins. See the S1 card below (now marked DONE) for what shipped.
+**⇒ S1 + S2 are DONE (built + free-validated + adversarially reviewed). α/β decided = β (aria owns within-run
+memory).** S1 (cost-breaker, branch `feat/cost-breaker`) unblocked paid runs; S2 (constitution-first, harness
+branch `feat/constitution-first` + aria local) put `POKEMON_SYSTEM` in aria's cached prefix (kills the ~7×
+duplication). **DIRECT NEXT ACTION: (1) the first guarded paid run** — it validates BOTH S1 live (the `[tokens]`
+line shows real usage; a guard halts) AND S2 live (the per-wake prompt-token count should drop sharply vs the
+~13–30k baseline; **re-check THINK/MOVE adherence** since the contract moved to the cached constitution). **(2)
+then S3 (β)** — retire the harness's *duplicate* within-run store (LESSON buffer) in favour of aria's native
+memory (wiped per run via `reset_aria_memory.py`), keeping the harness-only signals aria can't derive (the
+auto-advanced **missed-text transcript**, OutcomeMemory/disconfirm). S4 (world-as-tools) follows; S5/S6 are
+independent free wins. See the S1 + S2 cards below.
 
 **LATEST (2026-06-20, run #17): the AFFORDANCE LAYER is VALIDATED — the agent got the starter COLD and WON the
 rival battle (first start→starter→win in one run). The bottleneck moved to PLACE-DETECTION reliability.**
@@ -107,9 +111,17 @@ job until the cost-breaker (S1 below) is in.**
   auto-enable for paid brains in both drivers; the wake-watchdog lives DRIVER-side (correlates `brain.woke`
   with the oracle), so RAM never enters the brain. **Unblocks every future paid run** — and the first guarded
   paid run is S1's own live validation (real usage in the `[tokens]` line + a guard that actually halts).
-- **S2 — Constitution-first move** *(both repos · FREE to merge · 1 session)* — add a `constitution` slot as
-  aria's first cached block; feed `POKEMON_SYSTEM` into it; stop the harness stapling it into the user turn.
-  Kills the ~7× duplication + correct layering. (Assumes α; see open decision.)
+- **S2 — Constitution-first move** *(both repos · FREE · 1 session)* — **✅ DONE (built + free-validated +
+  adversarially reviewed; harness branch `feat/constitution-first`, aria local on `pokemon-red-constitution`).**
+  Resolved the "biggest unknown": **aria did NOT honor an inbound system message** (`handle()` took only the
+  last user msg). So the mechanism is: aria now renders an inbound **system-role** message as a `constitution`
+  block placed FIRST in `_STATIC` (cached prefix BP1, dormant when none sent → companion unchanged); the harness
+  sends `POKEMON_SYSTEM` as a **system message** (openai/aria backends) instead of stapling it into the user
+  turn. **POKEMON_SYSTEM stays single-source in the harness** (decoupled, over HTTP) yet now caches once instead
+  of duplicating ~7×/wake. Runtime-traced end-to-end (constitution → `deps.static_prompt` → litellm
+  `cache_control: role:system` → BP1). 211 harness tests + 9 new aria tests; companion byte-identical when
+  dormant. **⚠ first paid run must re-validate THINK/MOVE adherence** (the contract moved from the user turn to
+  the cached constitution — review MEDIUM-2; unprovable offline).
 - **S3 — Within-run memory → aria (β)** *(both · 2–3 sessions; message-split subset first, ~85–90% fewer
   prompt tokens/wake)* — constitution rides a system role once; harness sends only the live delta; retire the
   harness lesson buffer for aria's `<lesson>`. ⚠ **resolve first:** does aria honor an inbound system-role

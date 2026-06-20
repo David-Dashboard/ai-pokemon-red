@@ -315,6 +315,82 @@ def test_llm_brain_resets_goto_and_lesson_on_model_failure():
     assert brain.lessons == ["remember the ledge"]       # buffer keeps the earlier lesson
 
 
+# -- S2 constitution-first: deliver the system prompt as a system-role message ------------
+
+class _FakeResp:
+    def __init__(self, content="THINK: x\nMOVE: a", usage=None):
+        self._content = content
+        self._usage = usage or {"prompt_tokens": 10, "completion_tokens": 2}
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return {"choices": [{"message": {"content": self._content}}], "usage": self._usage}
+
+
+def test_openai_complete_sends_system_as_separate_message(monkeypatch):
+    # S2: the constitution rides a SYSTEM-role message; the user turn must NOT re-embed it (so a
+    # constitution-aware brain caches it once instead of replaying it every wake).
+    from core.brains import _openai_complete
+    captured = {}
+    monkeypatch.setattr("requests.post",
+                        lambda url, json=None, headers=None, timeout=None: captured.update(payload=json)
+                        or _FakeResp())
+    complete = _openai_complete("m", "http://x", api_key="k", system="SYSTEM-CONSTITUTION")
+    text, usage = complete("USER-CONTENT", None)
+    msgs = captured["payload"]["messages"]
+    assert msgs[0] == {"role": "system", "content": "SYSTEM-CONSTITUTION"}
+    assert msgs[1]["role"] == "user"
+    user_text = msgs[1]["content"][0]["text"]
+    assert "USER-CONTENT" in user_text and "SYSTEM-CONSTITUTION" not in user_text   # not duplicated
+    assert text.startswith("THINK") and usage["prompt_tokens"] == 10                # usage still returned
+
+
+def test_openai_complete_omits_system_message_when_none(monkeypatch):
+    from core.brains import _openai_complete
+    captured = {}
+    monkeypatch.setattr("requests.post",
+                        lambda url, json=None, headers=None, timeout=None: captured.update(payload=json)
+                        or _FakeResp())
+    _openai_complete("m", "http://x")("USER", None)            # no system
+    msgs = captured["payload"]["messages"]
+    assert [m["role"] for m in msgs] == ["user"]               # only the user turn
+
+
+def test_aria_backend_brain_keeps_constitution_out_of_the_user_turn(monkeypatch):
+    # End-to-end through decide(): backend=aria delivers self.system as a system message; the user
+    # prompt body carries the per-turn content but NOT the constitution.
+    captured = {}
+    monkeypatch.setattr("requests.post",
+                        lambda url, json=None, headers=None, timeout=None: captured.update(payload=json)
+                        or _FakeResp())
+    brain = LLMButtonBrain("a", backend="aria", api_key="k", system="MY-CONSTITUTION", use_vision=False)
+    assert brain._delivers_system is True
+    brain.decide(_obs(), [], {})
+    msgs = captured["payload"]["messages"]
+    assert any(m["role"] == "system" and m["content"] == "MY-CONSTITUTION" for m in msgs)
+    user_text = next(m for m in msgs if m["role"] == "user")["content"][0]["text"]
+    assert "MY-CONSTITUTION" not in user_text                  # constitution not stapled into the user turn
+
+
+def test_default_system_stays_inline_without_an_explicit_constitution():
+    # Review MEDIUM: a plain openai/llamacpp brain with NO explicit system keeps _DEFAULT_SYSTEM inline
+    # (wire format unchanged) — only an explicitly-provided constitution rides a system-role message.
+    assert LLMButtonBrain("a", backend="openai")._delivers_system is False
+    assert LLMButtonBrain("a", backend="openai", system="X")._delivers_system is True
+    assert LLMButtonBrain("a", backend="aria", api_key="k", system="X")._delivers_system is True
+
+
+def test_injected_complete_fn_keeps_system_inline_for_backward_compat():
+    # An injected complete_fn (tests / custom backends) has no system-role channel, so self.system stays
+    # inline in the prompt exactly as before S2 (no silent behaviour change).
+    prompts: list[str] = []
+    brain = LLMButtonBrain("a", system="INLINE-SYS",
+                           complete_fn=lambda p, i: prompts.append(p) or "MOVE: a")
+    assert brain._delivers_system is False
+    brain.decide(_obs(), [], {})
+    assert "INLINE-SYS" in prompts[0]                          # still prepended for injected/ollama paths
+
+
 # -- S1 cost-breaker: token metering + spend estimate --------------------------
 
 def test_estimate_cost_basic_cached_and_created():
