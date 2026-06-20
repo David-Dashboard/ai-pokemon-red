@@ -507,6 +507,13 @@ def _ctx_obs(context="overworld"):
     return Observation(data={"context": context}, text="", agent_id="a", t=0.0)
 
 
+def _dlg_obs(text, context="dialog"):
+    """A dialog/battle_text Observation carrying decoded screen_text (for the seen-states cycle gate).
+    No pose -> state_signature is constant per context, so the same text reads as the same state."""
+    from core.contracts import Observation
+    return Observation(data={"context": context, "screen_text": text}, text="", agent_id="a", t=0.0)
+
+
 def test_hybrid_uses_free_autopilot_when_it_acts():
     from core.brains import HybridBrain, _call
     ap = _StubBrain(_call("press_sequence", {"buttons": ["down", "down"]}, "a"), "explore")
@@ -657,6 +664,85 @@ def test_hybrid_advance_fuse_forces_a_wake():
     assert h.advanced == _ADVANCE_FUSE and h.woke == 0            # all free so far
     h.decide(_ctx_obs("battle_text"), [], {})                    # the (cap+1)th: fuse trips -> wake
     assert h.woke == 1 and h._consec_advance == 0
+
+
+# -- seen-states / novelty cycle gate (the Oak "which POKEMON?" trap) ----------
+
+def test_hybrid_cycle_gate_wakes_on_a_revisited_dialog_state():
+    """Seen-states gate: auto-advancing back to the SAME dialog text in SEPARATE visits (Oak's
+    'which POKEMON?' reopening, a textbox A can't dismiss) is a cycle — after _CYCLE_REVISITS visits,
+    stop mashing and WAKE, handing System 2 the bare cycle_note fact (no suggested response)."""
+    from core.brains import HybridBrain, _call, _CYCLE_REVISITS
+
+    class _Capturing:
+        def __init__(self, call):
+            self._c, self.last_thought, self.cycle_notes, self.goto = call, "", [], None
+        def decide(self, obs, tools, context):
+            self.cycle_notes.append(context.get("cycle_note"))
+            return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    a, b = _dlg_obs("which POKEMON?"), _dlg_obs("OAK: Now, ASH,")
+    seq = [a, b] * (_CYCLE_REVISITS - 1) + [a]      # 'a' visited _CYCLE_REVISITS times (interleaved)
+    for o in seq[:-1]:
+        h.decide(o, [], {})
+    assert h.woke == 0 and h.advanced == len(seq) - 1     # every visit so far auto-advanced for free
+    h.decide(seq[-1], [], {})                             # the _CYCLE_REVISITS-th VISIT to 'a' -> trips
+    assert h.woke == 1 and h.mode == "llm" and h.advanced == len(seq) - 1
+    assert fb.cycle_notes[-1] and "already seen" in fb.cycle_notes[-1]
+
+
+def test_hybrid_cycle_gate_ignores_a_held_textbox():
+    """A settled textbox HELD across consecutive observations (pose frozen, box not yet advanced) is
+    ONE visit, never a cycle — the step-300 'Don't go out!' guard. Auto-advance keeps mashing free."""
+    from core.brains import HybridBrain
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), advance_on_dialog=True)
+    held = _dlg_obs("Don't go out!")
+    for _ in range(6):
+        h.decide(held, [], {})                  # same key, consecutive -> stays 1 visit
+    assert h.woke == 0 and h.advanced == 6
+
+
+def test_hybrid_cycle_gate_passes_a_unique_monologue():
+    """A normal monologue of DISTINCT lines (Oak's lab intro) is all-novel -> auto-advances fully,
+    never trips the cycle gate."""
+    from core.brains import HybridBrain
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), advance_on_dialog=True)
+    for i in range(12):
+        h.decide(_dlg_obs(f"line {i}"), [], {})
+    assert h.woke == 0 and h.advanced == 12
+
+
+def test_hybrid_cycle_gate_dormant_on_empty_text():
+    """Empty screen_text carries no state key -> the cycle gate never engages (only _ADVANCE_FUSE
+    backstops). Repeated blank dialog stays free, well past _CYCLE_REVISITS."""
+    from core.brains import HybridBrain, _CYCLE_REVISITS
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), advance_on_dialog=True)
+    for _ in range(_CYCLE_REVISITS + 5):
+        h.decide(_ctx_obs("dialog"), [], {})        # empty screen_text
+    assert h.woke == 0 and h.advanced == _CYCLE_REVISITS + 5
+
+
+def test_hybrid_cycle_gate_off_when_auto_advance_disabled():
+    """With auto-advance off, a 'dialog' already wakes every time; the cycle gate stays dormant — no
+    'cycle' wake reason, no cycle_note — even on a repeated state (agnostic default unaffected)."""
+    from core.brains import HybridBrain, _call, _CYCLE_REVISITS
+
+    class _Capturing:
+        def __init__(self, call):
+            self._c, self.last_thought, self.cycle_notes, self.goto = call, "", [], None
+        def decide(self, obs, tools, context):
+            self.cycle_notes.append(context.get("cycle_note"))
+            return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb)                         # advance_on_dialog defaults False
+    a = _dlg_obs("which POKEMON?")
+    for _ in range(_CYCLE_REVISITS + 2):
+        h.decide(a, [], {})
+    assert h.woke == _CYCLE_REVISITS + 2 and h.advanced == 0      # every dialog wakes (normal off path)
+    assert all(n is None for n in fb.cycle_notes)                # never the cycle channel
 
 
 def test_hybrid_battle_text_when_woken_is_not_marked_dead_or_surprising():

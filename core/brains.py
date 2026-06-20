@@ -27,6 +27,7 @@ from typing import Callable, Optional
 
 from core.contracts import Observation, ToolCall, ToolSpec
 from core.disconfirm import DisconfirmDetector
+from core.novelty import NoveltyMemory
 from core.outcome import OutcomeMemory, action_key, state_signature
 
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
@@ -42,6 +43,14 @@ _TRANSCRIPT_CAP = 12
 # forever for free. Normal dialog/battle narration is a handful of frames between decisions, so this
 # never trips in practice — it's a backstop, not a budget.
 _ADVANCE_FUSE = 50
+# Seen-states cycle gate: a dialog state VISITED this many times while auto-advancing means we're
+# CYCLING a textbox the confirm button can't dismiss (e.g. Oak's "which POKEMON?" — in Red you must
+# WALK to a Pokeball, A only re-opens the prompt). Stop mashing and wake System 2 with the bare fact.
+# Unlike _ADVANCE_FUSE (consecutive frames, reset by the interleaved overworld frames the cycle emits,
+# so it never tripped), this counts VISITS and is immune. From the longloop run the trap's settled
+# frames recur 10x; 3 visits trips at step ~416 (the trap ran uncaught to 463), while the legit Oak
+# intro (all-unique lines) and a held textbox (1 visit) never trip.
+_CYCLE_REVISITS = 3
 
 # Circuit breaker: halt after this many CONSECUTIVE failed model calls (the driver checks
 # brain.consec_api_errors). A persistent backend outage — e.g. aria/litellm returning the same
@@ -323,6 +332,7 @@ class HybridBrain:
         self.agent_id = (getattr(autopilot, "agent_id", None)
                          or getattr(fallback, "agent_id", None) or "agent")
         self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
+        self.novelty = NoveltyMemory()   # seen-states signal: detect a cycling dialog (auto-advance gate)
         self._last_sig = None
         self._last_action = None
         # feature #3: the disconfirm/surprise detector — when the agent makes no observable progress
@@ -340,6 +350,16 @@ class HybridBrain:
         sig = state_signature(obs.data)
         progressed = self._last_sig is not None and sig != self._last_sig
         ctx_label = obs.data.get("context") or "overworld"
+        # Seen-states / novelty signal: while auto-advancing, are we moving through NOVEL text or
+        # cycling back to a dialog state we've already visited (a textbox the confirm button can't
+        # dismiss — Oak's "which POKEMON?")? Count VISITS to (signature, screen_text); observe(None)
+        # on non-advanceable/empty frames so a state seen before and after a gap counts twice. Only
+        # gates when auto-advance is on (else a dialog already wakes the LLM). See core/novelty.py.
+        txt = (obs.data.get("screen_text") or "").strip()
+        adv_ctx = ctx_label in ("dialog", "battle_text")
+        nkey = (sig, txt) if (adv_ctx and txt) else None
+        visits = self.novelty.observe(nkey)   # ALWAYS once per decide; observe(None) breaks a held run
+        cycling = self.advance_on_dialog and nkey is not None and visits >= _CYCLE_REVISITS
         # In a BATTLE the pose-based signature is frozen (the menu cursor isn't the world map), so every
         # turn looks like "no progress" even while the fight advances. Tallying that would mark the
         # confirm button (A — the primary battle action: advance text, pick FIGHT, choose a move) as a
@@ -370,14 +390,14 @@ class HybridBrain:
             # the confirm button for FREE, waking the LLM only at a real choice (a 'menu'/'battle'
             # decision). The action/move menus stay 'battle' -> wake, so a move pick is never mashed.
             advanceable = self.advance_on_dialog and ctx_label in ("dialog", "battle_text")
-            if advanceable and self._consec_advance < _ADVANCE_FUSE:
+            if advanceable and not cycling and self._consec_advance < _ADVANCE_FUSE:
                 # advance it for FREE (no LLM). Auto-advancing IS progress (the story moves on) even
                 # though the signature can't see it, so clear the no-progress streak.
                 self.mode = "advance"
                 self.advanced += 1
                 self._consec_advance += 1
                 self.disconfirm.reset()
-                txt = (obs.data.get("screen_text") or "").strip()   # capture the text we're skipping past
+                # `txt` (the screen text we're skipping past) was captured at the top of decide().
                 # consecutive-dedup is deliberate: advancing text never shows the SAME line twice in a
                 # row, so only the immediately-previous line can repeat (a held frame between A-presses).
                 if txt and (not self.transcript or self.transcript[-1] != txt):
@@ -386,9 +406,10 @@ class HybridBrain:
                 self.last_thought = "[auto-advance]"
                 call = _call("press_button", {"button": "a"}, self.agent_id)
             else:
-                # a real menu/battle decision, OR the fuse tripped (force a periodic look so an
-                # endless free-advance loop can't run forever).
-                why = "fuse" if advanceable else "mode"
+                # a real menu/battle decision, the CYCLE gate (we're revisiting a dialog state the
+                # confirm button can't dismiss), OR the fuse tripped (a periodic look so an endless
+                # free-advance loop can't run forever).
+                why = "cycle" if cycling else ("fuse" if advanceable else "mode")
                 self._consec_advance = 0
                 call = self._wake(obs, tools, context, why)
         else:
@@ -409,6 +430,11 @@ class HybridBrain:
         note = self.disconfirm.note()   # a persistent no-progress streak -> SURPRISE + ask for a LESSON
         if note:
             context = {**context, "surprise_note": note}
+        if why == "cycle":   # seen-states signal: we're revisiting a dialog state the confirm button
+            # can't dismiss. Hand System 2 the bare FACT — no suggested response (aria owns the
+            # decision; keeps thin steering out of core/).
+            context = {**context, "cycle_note":
+                       "You are repeating a state you have already seen — your last action made no progress."}
         if self.transcript:   # hand over (and clear) the dialog text the LLM auto-advanced past
             context = {**context, "transcript": " / ".join(self.transcript)}
             self.transcript = []
@@ -655,6 +681,9 @@ class LLMButtonBrain:
         surprise = context.get("surprise_note")  # disconfirm/surprise nudge (HybridBrain detector)
         if surprise:
             feedback = (feedback + "\n" + surprise).strip()
+        cycle = context.get("cycle_note")        # seen-states signal: cycling a state (HybridBrain detector)
+        if cycle:
+            feedback = (feedback + "\n" + cycle).strip()
         transcript = context.get("transcript")   # dialog text the harness auto-advanced past for you
         if transcript:
             feedback = (feedback + "\nText shown since your last decision (auto-advanced): "

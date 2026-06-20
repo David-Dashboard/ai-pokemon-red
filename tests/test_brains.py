@@ -252,6 +252,21 @@ def test_llm_brain_regrounding_coexists_with_transcript_and_lessons():
     assert "ledges drop south" in p                     # the re-injected lesson
 
 
+def test_llm_brain_surfaces_cycle_note():
+    """The seen-states cycle signal reaches the prompt: a wake carrying context['cycle_note'] appends
+    the bare fact to feedback (parallel to surprise_note), so System 2 knows it's looping a state."""
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    note = "You are repeating a state you have already seen — your last action made no progress."
+    brain.decide(_obs(), [], {"cycle_note": note})
+    assert note in prompts[0]
+
+
 def test_llm_brain_ignores_unfilled_lesson_template():
     reply = "MOVE: up\nLESSON: <one short lesson>"
     brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
