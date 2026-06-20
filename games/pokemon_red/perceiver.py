@@ -164,12 +164,18 @@ class OverworldPerceiver:
         if self._font is None:
             return ""
         try:
-            from .textbox import decode
+            from .textbox import decode, decode_move_menu
             text = decode(frame, self._font)
+            menu = decode_move_menu(frame, self._font)   # in-battle FIGHT move list + cursor, if shown
         except Exception:
             return ""
         known = sum(c not in "? \n" for c in text)
-        return text if known >= 3 else ""   # guard: ignore glyph-poor regions (not a real textbox)
+        parts = []
+        if known >= 3:                      # guard: ignore glyph-poor regions (not a real textbox)
+            parts.append(text)
+        if menu:                            # surfaced even when the textbox itself is blank (move-select)
+            parts.append(menu)
+        return "\n".join(parts)
 
     def perceive(self, frame, memory: PerceptMemory,
                  context: Optional[JSON] = None) -> SymbolicState:

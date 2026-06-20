@@ -76,6 +76,53 @@ class FontTable:
         return best if best_d <= tol else None
 
 
+# In-battle FIGHT move list: up to 4 moves on 8px rows (offset from the dialog rows), the move name at
+# cell 5, and a ▶ cursor at cell 4 on the HIGHLIGHTED row (measured from real frames). Decoding which
+# move is highlighted is the state the LLM needs to navigate to a damaging move instead of guessing.
+_MENU_ROWS = (104, 112, 120, 128)
+_CURSOR_CELL = 4
+_NAME_CELL = 5
+
+
+def decode_move_menu(frame, table: FontTable) -> str:
+    """If the in-battle move list is on screen, return e.g. "move menu — cursor on SCRATCH; moves:
+    SCRATCH, GROWL"; else "". Pixels only. Lets the agent see which move is highlighted (run #10: it
+    knew it wanted SCRATCH but couldn't tell GROWL was highlighted, so it kept landing on GROWL)."""
+    if frame is None:
+        return ""
+    g = _gray(frame)
+    moves, highlighted = [], None
+    for y0 in _MENU_ROWS:
+        # A move-list row is INDENTED: cells 0-2 (the left margin before the ▶ cursor) are blank.
+        # Battle dialog ("CHARMANDER used...") fills those cells, so this rejects it as a fake menu.
+        if any(int((g[y0:y0 + CELL, X0 + c * CELL:X0 + (c + 1) * CELL] < 140).sum()) >= 2 for c in range(3)):
+            continue
+        name = ""
+        for c in range(_NAME_CELL, NCELLS):
+            x = X0 + c * CELL
+            cell = (g[y0:y0 + CELL, x:x + CELL] < 140).astype(np.uint8)
+            if int(cell.sum()) < 2:
+                name += " "
+                continue
+            ch = table.lookup(pack(cell))
+            name += ch if ch is not None else "?"
+        name = name.strip()
+        if sum(ch.isalpha() for ch in name) < 3:   # not a real move name on this row
+            continue
+        cx = X0 + _CURSOR_CELL * CELL
+        cursor = int((g[y0:y0 + CELL, cx:cx + CELL] < 140).sum()) >= 2
+        moves.append(name)
+        if cursor:
+            highlighted = name
+    if not moves:
+        return ""
+    # Reject the ACTION menu (FIGHT / PKMN / ITEM / RUN) — those are reserved, never move names.
+    if any(w in mv.upper() for mv in moves for w in ("FIGHT", "PKMN", "ITEM", "RUN")):
+        return ""
+    cur = f"cursor on {highlighted}; " if highlighted else ""
+    return f"move menu — {cur}moves: {', '.join(moves)}"
+
+
 def decode(frame, table: FontTable, blank: int = 2) -> str:
     """Decode the textbox to text. Blank cells -> spaces; unknown glyphs -> '?'. Returns the (up to)
     two lines joined by a newline, trailing blanks/'?'-runs trimmed; '' when there's no text."""

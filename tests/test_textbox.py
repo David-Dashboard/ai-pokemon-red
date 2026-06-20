@@ -70,6 +70,36 @@ def test_glyph_mapped_to_empty_string_is_dropped():
     assert tb.decode(f, table) == "A"   # 'A' then "" (dropped)
 
 
+def test_decode_move_menu_reads_highlighted_move():
+    # The in-battle move list: a ▶ cursor at cell 4 of the HIGHLIGHTED row, move names at cell 5+, on
+    # rows offset from the dialog rows. The agent needs to know which move is highlighted (run #10).
+    ft = tb.FontTable([(tb.pack(GLYPH_A), "A")])
+    f = _white()
+    solid = np.ones((8, 8), dtype=np.uint8)
+
+    def put(y0, ci, bits):
+        x = tb.X0 + ci * tb.CELL
+        f[y0:y0 + 8, x:x + 8][bits.astype(bool)] = 0
+
+    put(104, 4, solid)                          # ▶ cursor on the first move row
+    for i in range(3):
+        put(104, 5 + i, GLYPH_A)                # name "AAA" (the highlighted move)
+        put(112, 5 + i, GLYPH_A)                # second move "AAA", no cursor
+    m = tb.decode_move_menu(f, ft)
+    assert "moves: AAA, AAA" in m and "cursor on AAA" in m
+
+
+def test_decode_move_menu_ignores_left_aligned_battle_dialog():
+    # Battle dialog ("CHARMANDER used...") fills the LEFT cells; a move list has a blank left margin.
+    # Without the margin gate the decoder would read dialog rows as a fake menu (the run-#10 bug).
+    ft = tb.FontTable([(tb.pack(GLYPH_A), "A")])
+    f = _white()
+    for ci in range(6):                          # left-aligned text from cell 0, like dialog
+        x = tb.X0 + ci * tb.CELL
+        f[104:112, x:x + 8][GLYPH_A.astype(bool)] = 0
+    assert tb.decode_move_menu(f, ft) == ""
+
+
 def test_font_table_roundtrips_via_json(tmp_path):
     p = tmp_path / "f.json"
     key = tb.pack(GLYPH_A)
