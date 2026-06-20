@@ -43,6 +43,23 @@ _TRANSCRIPT_CAP = 12
 # never trips in practice — it's a backstop, not a budget.
 _ADVANCE_FUSE = 50
 
+# Circuit breaker: halt after this many CONSECUTIVE failed model calls (the driver checks
+# brain.consec_api_errors). A persistent backend outage — e.g. aria/litellm returning the same
+# 400 "credit balance is too low" every wake (runs #5/#6/#14) — otherwise burns the whole --max-llm-
+# calls budget on no-op retries before halting; this fails fast and loud instead. A real reply resets it.
+API_ERROR_CIRCUIT_BREAKER = 4
+
+# Substrings that mark a reply as a backend/API error PASSED THROUGH as content (aria returns litellm
+# errors as a 200 with the error text in the message, so they don't raise — runs #5/#6/#14). Specific
+# enough that a normal THINK/MOVE reply never matches.
+_API_ERROR_MARKERS = ("ModelHTTPError", "Something went wrong on my end", "BadRequestError",
+                      "status_code: 4", "status_code: 5", "credit balance", "litellm.")
+
+
+def _looks_like_api_error(raw: Optional[str]) -> bool:
+    """True if a model reply is actually a backend error echoed back as content (not a real answer)."""
+    return bool(raw) and any(m in raw for m in _API_ERROR_MARKERS)
+
 
 def _call(tool: str, args: dict, agent_id: str) -> ToolCall:
     return ToolCall(tool=tool, args=args, agent_id=agent_id, call_id=f"call-{uuid.uuid4()}")
@@ -280,6 +297,16 @@ class HybridBrain:
     def wake_rate(self) -> float:
         return self.woke / self.total if self.total else 0.0
 
+    @property
+    def consec_api_errors(self) -> int:
+        """Forward the wrapped LLM brain's consecutive-error count, so the run driver's circuit breaker
+        can halt a persistent backend outage (only the fallback actually calls the model)."""
+        return getattr(self.fallback, "consec_api_errors", 0)
+
+    @property
+    def last_api_error(self) -> str:
+        return getattr(self.fallback, "last_api_error", "")
+
 
 def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:
     """Return a complete_fn(prompt, image_path) -> text backed by Ollama."""
@@ -380,6 +407,8 @@ class LLMButtonBrain:
         self.lessons: list[str] = []
         self._last_pos = None        # (x, y) at the previous decision
         self._last_buttons = None    # what we pressed last, for wall-bump feedback
+        self.consec_api_errors = 0   # consecutive failed model calls (circuit breaker; reset on a real reply)
+        self.last_api_error = ""     # the most recent backend error detail, for the halt message
         if complete_fn is not None:
             self.complete = complete_fn
         elif backend == "ollama":
@@ -439,8 +468,16 @@ class LLMButtonBrain:
         try:
             raw = self.complete(prompt, image)
         except Exception as e:
+            self._note_api_error(f"{type(e).__name__}: {e}")   # network/HTTP raise
             print(f"[LLMButtonBrain] model call failed ({e}); defaulting to 'a'")
             return _call("press_button", {"button": "a"}, self.agent_id)
+        if _looks_like_api_error(raw):
+            # aria echoes a backend error (e.g. credit-balance 400) as a 200 with the error as content,
+            # so it doesn't raise. Count it toward the circuit breaker and DON'T parse it as a move.
+            self._note_api_error((raw.strip().splitlines() or [""])[0][:200])
+            self.last_thought = "[api-error] " + raw.strip()[:140]
+            return _call("press_button", {"button": "a"}, self.agent_id)
+        self.consec_api_errors = 0          # a real reply — the backend is healthy again
         buttons, thought = self._parse(raw)
         self.goto = self._parse_goto(raw)   # optional destination for the free autopilot (feature #2)
         self.lesson = self._parse_lesson(raw)  # optional one-line lesson -> per-run buffer (feature #3)
@@ -453,6 +490,11 @@ class LLMButtonBrain:
         if len(buttons) == 1:
             return _call("press_button", {"button": buttons[0]}, self.agent_id)
         return _call("press_sequence", {"buttons": buttons}, self.agent_id)
+
+    def _note_api_error(self, detail: str) -> None:
+        """Record a failed model call for the circuit breaker (the driver halts at the threshold)."""
+        self.consec_api_errors += 1
+        self.last_api_error = detail
 
     def _movement_feedback(self, obs: Observation) -> str:
         """Tell the model when its previous move hit a wall (position unchanged). Skipped in

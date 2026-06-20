@@ -65,13 +65,22 @@ def main() -> int:
     print(f"[loop] resume={init}  max_steps={args.max_steps}  budget={args.max_llm_calls} LLM calls  "
           f"halt_if_stuck={args.stuck_steps} steps", flush=True)
 
+    from core.brains import API_ERROR_CIRCUIT_BREAKER
+    def _circuit_ok(step):   # halt a chunk EARLY on a persistent backend outage (don't grind the chunk)
+        return getattr(brain, "consec_api_errors", 0) < API_ERROR_CIRCUIT_BREAKER
+
     best = None
     stale = done = 0
     stop = ""
     try:
         while done < args.max_steps:
-            run_episode(gw, plugin, brain, aid, max_steps=args.chunk, on_step=on_step)
+            run_episode(gw, plugin, brain, aid, max_steps=args.chunk, on_step=on_step,
+                        should_continue=_circuit_ok)
             done += args.chunk
+            if getattr(brain, "consec_api_errors", 0) >= API_ERROR_CIRCUIT_BREAKER:
+                stop = (f"the model API failed {brain.consec_api_errors}x in a row — HALTING "
+                        f"(circuit breaker). last error: {brain.last_api_error}")
+                break
             plugin.save_state(args.state)
             fp = fingerprint()
             st = read_state(plugin.emu.read)

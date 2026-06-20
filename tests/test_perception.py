@@ -466,6 +466,19 @@ def test_hybrid_auto_advance_does_not_accrue_a_stuck_streak():
     assert h.advanced == 5 and h.woke == 0 and h.disconfirm.fired is False
 
 
+def test_hybrid_forwards_consec_api_errors_for_the_circuit_breaker():
+    """The driver's circuit breaker reads brain.consec_api_errors, but only the wrapped fallback calls
+    the model — so HybridBrain must forward the fallback's count (and reset when it heals)."""
+    from core.brains import HybridBrain, LLMButtonBrain
+    replies = iter(["ModelHTTPError: status_code: 400 credit balance is too low", "MOVE: a"])
+    fb = LLMButtonBrain("a", complete_fn=lambda p, i: next(replies))
+    h = HybridBrain(_StubBrain(None), fb)            # autopilot stuck -> always wakes the fallback
+    h.decide(_ctx_obs("overworld"), [], {})
+    assert h.consec_api_errors == 1 and "credit balance" in h.last_api_error
+    h.decide(_ctx_obs("overworld"), [], {})
+    assert h.consec_api_errors == 0                  # a real reply healed it, forwarded through
+
+
 def test_hybrid_auto_advances_battle_text_for_free():
     """Battle auto-advance: narration ('battle_text') presses A for free like plain dialog — run #12
     spent ~68 of 73 wakes inside ONE battle, most on advanceable narration it couldn't act on."""

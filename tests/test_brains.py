@@ -39,6 +39,40 @@ def test_llm_brain_takes_buttons_from_move_line_and_captures_thought():
     assert "stairs" in brain.last_thought
 
 
+def test_looks_like_api_error_detects_passthrough_errors():
+    from core.brains import _looks_like_api_error
+    assert _looks_like_api_error("Something went wrong on my end: ModelHTTPError: status_code: 400")
+    assert _looks_like_api_error('AnthropicException - {"message":"Your credit balance is too low"}')
+    assert not _looks_like_api_error("THINK: go up\nMOVE: up up")   # a normal reply must NOT trip it
+    assert not _looks_like_api_error("")
+
+
+def test_llm_brain_circuit_breaker_counts_api_errors_and_resets_on_a_real_reply():
+    # aria echoes a backend error (credit-balance 400) as a 200 with the error as the message content,
+    # so it doesn't raise — the brain must still count it toward the circuit breaker and NOT act on it.
+    replies = iter([
+        "Something went wrong on my end: ModelHTTPError: status_code: 400 ... credit balance is too low",
+        "litellm.BadRequestError: AnthropicException - credit balance is too low",
+        "THINK: ok\nMOVE: up",            # a real reply heals the breaker
+    ])
+    brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: next(replies))
+    c1 = brain.decide(_obs(), [], {})
+    assert c1.args["button"] == "a" and brain.consec_api_errors == 1   # defaulted, counted
+    brain.decide(_obs(), [], {})
+    assert brain.consec_api_errors == 2 and "credit balance" in brain.last_api_error
+    c3 = brain.decide(_obs(), [], {})
+    assert c3.args["button"] == "up" and brain.consec_api_errors == 0  # healthy reply -> reset
+
+
+def test_llm_brain_exception_also_counts_toward_circuit_breaker():
+    def boom(prompt, image):
+        raise ConnectionError("aria unreachable")
+    brain = LLMButtonBrain("a", complete_fn=boom)
+    brain.decide(_obs(), [], {})
+    brain.decide(_obs(), [], {})
+    assert brain.consec_api_errors == 2 and "aria unreachable" in brain.last_api_error
+
+
 def test_llm_brain_backend_selection():
     LLMButtonBrain("a", backend="ollama")      # builds an Ollama complete_fn
     LLMButtonBrain("a", backend="llamacpp")    # builds an OpenAI-compatible one

@@ -166,7 +166,14 @@ def main() -> int:
 
     max_llm_calls = args.max_llm_calls
 
+    from core.brains import API_ERROR_CIRCUIT_BREAKER
+
     def should_continue(step):
+        ce = getattr(brain, "consec_api_errors", 0)
+        if ce >= API_ERROR_CIRCUIT_BREAKER:    # persistent backend outage (e.g. credits) -> fail fast
+            print(f"\n[guard] the model API failed {ce}x in a row - HALTING (circuit breaker).\n"
+                  f"        last error: {getattr(brain, 'last_api_error', '')}")
+            return False
         if max_llm_calls > 0 and getattr(brain, "woke", 0) >= max_llm_calls:
             print(f"\n[guard] budget cap hit ({getattr(brain, 'woke', 0)} LLM calls) - HALTING.")
             return False
