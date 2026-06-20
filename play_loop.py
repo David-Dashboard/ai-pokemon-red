@@ -80,7 +80,12 @@ def main() -> int:
                   flush=True)
             improved = best is None or any(a > b for a, b in zip(fp, best))
             best = fp if best is None else tuple(max(a, b) for a, b in zip(fp, best))
-            stale = 0 if improved else stale + args.chunk
+            # A battle shows NO fingerprint progress (badges/maps/level/cells don't move until a mon
+            # faints/levels), and with battle auto-advance a fight now runs many free steps per LLM
+            # call — so the watchdog could halt mid-battle. Suppress staleness while in a battle: a
+            # trainer fight can't be fled, has bounded turns, and --max-llm-calls is the real ceiling.
+            # (in_battle is RAM — the oracle's control/log role only, never fed to the agent.)
+            stale = 0 if (improved or st["in_battle"]) else stale + args.chunk
             if fp[0] >= 8:
                 stop = "all 8 badges — onward to the Elite Four"
                 break
