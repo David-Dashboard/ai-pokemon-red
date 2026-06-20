@@ -54,7 +54,8 @@ watchdog in BOTH drivers (no halt mid-fight). **Run #13 (text-only hybrid from `
 config + auto-advance) WON the rival battle with just 18 BATTLE wakes vs run #12's ~68 (~3.8× cheaper)** —
 verified per-step (`in_battle` 2→0 sustained at step 72; SCRATCH ×12 / GROWL ×0; correct grounding, 0 confab,
 0 errors); 22 wakes / 400 steps total (5.5%), post-battle nav cost only 4 wakes (it even left the lab + explored
-Pallet). Video `runs/run13.mp4`, oracle `runs/run13/`, archive iter-013. Branch `feat/battle-auto-advance` off
+Pallet). **Report `reports/2026-06-20-live-run-13-battle-auto-advance.md`**, video `runs/run13.mp4`, oracle
+`runs/run13/`, archive iter-013. Branch `feat/battle-auto-advance` off
 `main`, committed, **NOT pushed**. 158 tests. NEXT: (2) the **learned blind-execute battle policy** (skill
 compilation, now feasible because the state is decoded — INSIGHTS §6; run #13's 7 identical "FIGHT→SCRATCH"
 turns are the obvious thing to compile); (3) tighten **lab-exit / Pallet navigation** (the residual Phase-B gap).
