@@ -33,9 +33,23 @@ Four constraints held on purpose (they're what makes the result transfer):
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn`.
 
-## 2. Current status (2026-06-16)
+## 2. Current status (2026-06-17)
 
-**What works (built + tested, 139 tests pass, no ROM/PyBoy needed for tests):**
+**LATEST (2026-06-17): the agent now WINS the rival battle and progresses PAST it — Phase A "fight" is DONE,
+end-to-end.** Run #12 (verified per-step): it beat Gary's Squirtle with Charmander despite the type
+disadvantage, got the Pokédex, left the lab. The chain that got us here, all validated live: **confabulation
+(the cheap model misreading low-res battle SPRITES) → fixed by running text-only + decoding clean state; move
+selection (couldn't read which move was highlighted) → fixed by `decode_move_menu` (move list + ▶ cursor) →
+won.** The recurring lesson all session: **decode the state, keep the agent constant, wake the model only when
+it must decide.** **Read `reports/INSIGHTS.md`** for the conceptual synthesis (the perception seam,
+generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law). **143 tests.**
+**NEXT (bottleneck has moved OFF fighting):** (1) **battle auto-advance** — wake only at the action/move menus,
+auto-advance battle text (~4× cheaper battles: run #12 spent ~68 of 73 wakes inside the battle, woken every
+step); (2) the **learned blind-execute battle policy** (skill compilation, now feasible because the state is
+decoded — INSIGHTS §6); (3) tighten **lab-exit / Pallet navigation** (the residual Phase-B gap run #12
+re-exposed post-battle). Branch `feat/lesson-buffer` is the integration branch (everything stacks here).
+
+**What works (built + tested, 143 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
   role-named `SymbolicState`; odometry + occupancy map; `detect_mode` (overworld/menu/dialog/battle).
   **Validated on real pixels:** per-step walkability 99.3% (tuned), modes incl. a **real battle 8/8**,
@@ -103,11 +117,12 @@ observation overturn a prior decision (agnostic-feature #4).
 budget-capped; reached the lab, then the last ~55 wakes 400'd as the Anthropic credits ran out); **run #6 $0**
 (all 30 wakes 400'd — zero credit balance); **#6b ~$0.25 / #7 ~$0.3 / #8 ~$0.4** (battle-policy tests from the
 fixture, after credits were restored; #6b validated battle mechanics, #7 crashed at step 39, #8 clean cap-50 —
-none won; the confabulation isn't fixed); ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
+none won; the confabulation isn't fixed); **#9 ~$0.3 (no-vision → confab=image), #10 ~$0.3 (clean grounding),
+#11 ~$0.3 (move-menu, all SCRATCH), #12 ~$0.5 (WON, cap 80)**; ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
 0 before) — a bonus, still not the bottleneck at this wake volume.
 
 **Phase A items 1+2 (2026-06-16, this session) — battle-move policy + belief re-grounding BUILT (harness-only,
-free-validated; 139 tests, +14; committed `99e4c22` + docs on `feat/lesson-buffer`, NOT pushed).** The next
+free-validated; 143 tests, +14; committed `99e4c22` + docs on `feat/lesson-buffer`, NOT pushed).** The next
 iteration's harness work is done and ready for a guarded paid re-run:
 - **Battle settle (the real fix for "woke 40× and never reached the menu").** Battle animations run 100+
   frames, so the fixed 16-frame `press` settle was landing observations *mid-animation*. New
@@ -163,7 +178,7 @@ do Phase B before re-testing the battle**, and when we do re-test, **isolate it 
 rival-battle `.state` fixture** (RAM sets up the fixture; the agent still acts from pixels) so flaky overworld
 nav doesn't gate it. Video `runs/run4.mp4`; oracle `runs/run4/`; pre-wipe archive `iter-003_2026-06-17.zip`.
 
-**Phase B (2026-06-17) — navigation rebuilt + VALIDATED live; the run-#4 wall is broken (uncommitted, 139 tests).**
+**Phase B (2026-06-17) — navigation rebuilt + VALIDATED live; the run-#4 wall is broken (uncommitted, 143 tests).**
 The frame-diff area detector was missing 8/10 warps and lumping distinct maps into one corrupt occupancy
 area (run #4's lab-entrance failure). Phase B replaced it:
 - **Transition = ego-motion vs scene-cut (translation), with a fade backstop.** Within a map the camera
@@ -179,7 +194,7 @@ area (run #4's lab-entrance failure). Phase B replaced it:
   broke the ExploreBrain's `[d,d]`=net-one-tile motion contract (overshoot/oscillate — caught by the
   closed-loop test). So the shift drives robust moved-vs-blocked detection but the cursor still advances one
   tile; the full measured-distance drift fix awaits a controller that understands variable steps.
-- **Validated:** unit (139 tests) + real-data replay + a free autopilot closed-loop run (`38→37→0`, 0 lumping,
+- **Validated:** unit (143 tests) + real-data replay + a free autopilot closed-loop run (`38→37→0`, 0 lumping,
   0 ping-pong). New evals: `inspect_warp`, `inspect_translation`, `replay_perceiver`.
 
 **Live run #5 (2026-06-17, recorded, guarded) — Phase B nav VALIDATED live; lab completion blocked because
@@ -202,7 +217,7 @@ harness-only learning/dialog build — steps 1, 2, 3a, 3b** (the per-run `LESSON
 disconfirm/surprise detector, fail-safe dialog auto-advance, and the Gen-1 textbox decoder + on-screen
 grounding + missed-text transcript). Branch `feat/lesson-buffer`, **PUSHED to origin** through commit
 `8233a82` (PR not yet opened — `gh` isn't installed; one-click URL on the GitHub branch page; recommended
-base `feat/perception-module`), **139 tests**, each step adversarially reviewed (the step-3 review found
+base `feat/perception-module`), **143 tests**, each step adversarially reviewed (the step-3 review found
 no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Details in `LEARNINGS.md`.
 
 **Now (run-#2-informed, cheapest first):**
@@ -297,22 +312,29 @@ NOT win** (in_battle stayed 2 all 30 wakes) — the bottleneck MOVED to two new 
    Charmander and the fight is ongoing. The `TRUST THE SCREEN` nudge was injected but did NOT override the
    confab — too weak.
 
-**Battle policy v2 (run-#6b-informed) — TRIED, did NOT close the gap (runs #7/#8, 2026-06-17; committed).**
-`POKEMON_SYSTEM` now says to read the screen, name your Pokémon + the foe, and pick a DAMAGING move (not mash
-A); the `core/` belief nudge was strengthened ("state what you see; the screen wins"). Re-tested from the
-fixture. **It didn't work:** the agent confabulates a confident, **INVERTED** identity — it reasons *"Water
-beats Fire, I'll use WATER GUN to finish Charmander"* while the decoded screen says its OWN Pokémon is
-Charmander and the foe is Squirtle. It still mashes A (SCRATCH+GROWL under a WATER-GUN fantasy) and didn't
-win. *The finding:* belief-grounding is **deeper than a prompt** — a cheap model builds an internally-
-consistent wrong world ("rival battle → I have the advantage → I'm the water type") and reasons from it; a
-soft nudge can't overturn it. **PAUSED here (per David).** *Stronger lever for later:* the decoder reads
-`Go! CHARMANDER!` / `Enemy SQUIRTLE`, so the harness could parse those and inject a HARD fact ("your active
-Pokémon is CHARMANDER; the foe is SQUIRTLE") rather than a soft nudge. *aria credit note:* credits ran dry
-mid-run #5 and were restored before #6b/#7/#8 (probe before each) — a recurring external dependency.
-*(Process: run #7 hard-crashed at step 39 with no traceback because stdout was BUFFERED — run paid jobs with
-`python -u` so a crash leaves evidence; run #8 unbuffered completed clean.)*
+**Battle policy — RESOLVED; the agent now WINS the rival battle (runs #6b–#12, 2026-06-17; all committed).**
+The path took several iterations and the right fix was *decode the state*, not nudge the prompt:
+- **v2 prompt+nudge (runs #7/#8) did NOT work.** The agent confabulated a confident **INVERTED** identity
+  (*"I'm Squirtle, I'll WATER GUN the Charmander"* while it WAS Charmander). Belief-grounding is deeper than a
+  prompt — a cheap model builds an internally-consistent wrong world and reasons from it; a soft nudge can't
+  overturn it.
+- **Run #9 (`--no-vision`) proved the IMAGE was the confab source** — with the battle sprites off, the
+  confabulation vanished (Haiku misreads low-res pixel-art — the Iteration-01 weakness, in the one place we'd
+  never decoded). But text-only was unusable because the decoded names were garbled.
+- **Completed the OCR (no ROM)** via `eval/calibrate_battle.py` (auto-calibrate from self-verified known
+  words), fixed the text-only prompt (stop asking for a screenshot), and **run #10 confirmed CORRECT grounding**
+  ("Charmander vs Squirtle, bad matchup"). Remaining gap = move EXECUTION (couldn't read the highlighted move).
+- **`decode_move_menu`** (move list + ▶ cursor) closed it: **run #11** used SCRATCH ×7 / GROWL ×0 reading
+  *"cursor on SCRATCH"*; **run #12 (cap 80) WON** (in_battle 2→0 sustained, progressed past the battle).
+- *Lesson:* the reasoning was never broken; the **input** was. Decode the battle state → the agent fights and
+  wins. *(Process: run #7 hard-crashed with no traceback because stdout was BUFFERED — run paid jobs `python -u`;
+  the "context ceiling" diagnosis of run #5 was wrong, it was OUT OF CREDITS — read the litellm log.)*
 
-Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
+**NEXT — the bottleneck has moved off fighting (see the LATEST block in §2):** (1) **battle auto-advance**
+(wake at the action/move menus, auto-advance battle text — ~4× cheaper battles; the static first rung of skill
+compilation); (2) the **learned blind-execute battle policy** (System-2→System-1, now feasible because the
+state is decoded — `reports/INSIGHTS.md` §6); (3) tighten **lab-exit / Pallet navigation** (residual Phase-B
+gap run #12 re-exposed). Then the credit-gated **gating-probe** verdict and continued play.
 
 **Confirmed by the run-#3 memory audit (free):** the harness `LESSON:` buffer (step 1) **engaged live** —
 the model emitted `LESSON:` 56× / `<lesson>` 0×, and prompts show the re-injection + the decoded
@@ -352,7 +374,7 @@ place-graph is now **Phase B** above, not merely deferred.) Also still open: ext
 ## 5. How to run
 
 ```bash
-uv run pytest -q                 # 139 tests, no ROM/PyBoy needed
+uv run pytest -q                 # 143 tests, no ROM/PyBoy needed
 
 # watch the free autopilot (real-time + sound), record video+audio:
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain explore --perception \
@@ -381,14 +403,15 @@ Anthropic key behind aria needs credits; prompt caching was off but **partly eng
 
 ## 6. Repo state
 
-- **Working branch: `feat/lesson-buffer`** (the harness-only learning/dialog build + run #3) — **pushed
-  to origin** through `379d90b` (docs). **Phase A is now COMMITTED but NOT pushed** — `99e4c22`
-  (battle settle + signature fix + battle guidance + belief-update nudge + tests + the 3 eval scripts) and
-  `fd86bf5` (these docs), so the branch is **ahead of origin by 2**. Working tree is clean except the
-  untracked `make_state.py` helper. It stacks on `feat/perception-module` (the earlier
-  **PR open** against `main`, at `8e0a24a`). **No PR opened for `feat/lesson-buffer` yet** — `gh` isn't
-  installed here; open it via the GitHub branch page (recommended base `feat/perception-module` so the
-  diff is just steps 1–3 + run #3), or fast-forward `feat/perception-module` to fold it into the open PR.
+- **`feat/lesson-buffer` is the integration branch — everything stacks here** (Phase A + Phase B + all the
+  battle-grounding/OCR/move-menu work + `reports/INSIGHTS.md`), as ~70 granular **per-feature** commits. It was
+  **fast-forward-merged into `main`** (it was 0-behind / N-ahead, so the merge is a clean fast-forward with no
+  conflicts) and **pushed** — `main` now has all the work. (`gh` is NOT installed, so the merge was a local
+  fast-forward + push, not a GitHub PR.) Working tree clean except the untracked local helpers `make_state.py`
+  + `rival_battle.state` (the battle-policy fixture). New branches off `main` from here for the next features.
+- You supply your own legally-obtained `roms/PokemonRed.gb` (none is bundled). `start.state` (past the intro,
+  in the bedroom) is generated by `make_state.py`; `rival_battle.state` (parked at the rival battle, for the
+  isolated battle tests) by `eval/make_battle_state.py`. Both untracked/local.
 - You supply your own legally-obtained `roms/PokemonRed.gb` (none is bundled). `start.state` (past
   the intro, in the bedroom) is generated by `make_state.py`.
 - Windows + PowerShell host (a Bash tool is also available). Files under `runs/` are gitignored.
@@ -432,7 +455,7 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   inspect_translation.py   #   best-shift overlap diff: same-map vs transition separation (Phase B)
   replay_perceiver.py      #   replay a run's frames through the perceiver; check for map-lumping (Phase B)
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
-tests/                     # 139 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
+tests/                     # 143 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
