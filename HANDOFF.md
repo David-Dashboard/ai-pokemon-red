@@ -46,11 +46,17 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-20)
 
-**⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session today — read the
-"⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE" block below + [`ROADMAP.md`](ROADMAP.md). The DIRECT NEXT
-ACTION is S1 (the harness cost-breaker); NO paid runs until it lands. The run-history blocks below (run #17's
-"place-detection is the #1 blocker / NEXT", etc.) are now CONTEXT — that nav work is S6 in the plan, not the
-next step. Goal = the brain + world-as-tools + dual-process architecture (`ROADMAP.md`).**
+**⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session — read the
+"⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE" block below + [`ROADMAP.md`](ROADMAP.md). Goal = the
+brain + world-as-tools + dual-process architecture (`ROADMAP.md`). The run-history blocks below (run #17's
+"place-detection is the #1 blocker / NEXT", etc.) are now CONTEXT — that nav work is S6 in the plan.**
+
+**⇒ S1 (the harness cost-breaker) is now BUILT + free-validated (branch `feat/cost-breaker`, off
+`feat/interior-nav-drift`; 193 tests).** It was the standing precondition: paid runs were blocked until it
+landed. So **paid runs are now unblocked** — and the FIRST guarded paid run is itself S1's live validation
+(confirm the per-wake `[tokens]` line shows real aria usage and a guard actually halts). After that, the
+DIRECT NEXT ACTION is the spine **S2 (constitution-first)** → S3 (β) → S4, with S5/S6 as independent free
+wins. See the S1 card below (now marked DONE) for what shipped.
 
 **LATEST (2026-06-20, run #17): the AFFORDANCE LAYER is VALIDATED — the agent got the starter COLD and WON the
 rival battle (first start→starter→win in one run). The bottleneck moved to PLACE-DETECTION reliability.**
@@ -90,9 +96,17 @@ prompt size. Confirmed Haiku-4.5 pricing: **$1 / $5 per MTok in/out, $0.10 cache
 job until the cost-breaker (S1 below) is in.**
 
 **THE PLAN — executable sessions (each a code-grounded card from the 2026-06-20 scoping workflow):**
-- **S1 — Harness cost-breaker** *(ai-pokemon-red · FREE · 1 session · no prereqs)* — **THE DIRECT NEXT STEP.**
-  Per-wake prompt-token cap + estimated-spend circuit-breaker + a "stuck-N-WAKES" fuse + per-call
-  `prompt_tokens` to the console. Unblocks every future paid run (the standing precondition).
+- **S1 — Harness cost-breaker** *(ai-pokemon-red · FREE · no prereqs)* — **✅ DONE (built + free-validated,
+  branch `feat/cost-breaker`; 193 tests).** Shipped all four: **(1)** per-call `prompt_tokens` to the console
+  (`_openai_complete` now returns `(text, usage)` — the brain was discarding the usage block; `LLMButtonBrain`
+  meters it and prints `[tokens] prompt=… (cached=…) completion=… ~$… | run ~$…` each wake); **(2)** per-wake
+  prompt-token cap (`--max-prompt-tokens`, default 32000 — a runaway-bloat tripwire above the ~13k baseline);
+  **(3)** estimated-spend circuit-breaker (`--max-cost-usd`; brain accrues `total_cost_usd` from real usage ×
+  Haiku-4.5 pricing, injectable → brain-agnostic); **(4)** a wake-denominated watchdog (`--stuck-wakes`,
+  default 30 — the honest complement to `--stuck-steps`, which run #15's aimless wandering placated). All four
+  auto-enable for paid brains in both drivers; the wake-watchdog lives DRIVER-side (correlates `brain.woke`
+  with the oracle), so RAM never enters the brain. **Unblocks every future paid run** — and the first guarded
+  paid run is S1's own live validation (real usage in the `[tokens]` line + a guard that actually halts).
 - **S2 — Constitution-first move** *(both repos · FREE to merge · 1 session)* — add a `constitution` slot as
   aria's first cached block; feed `POKEMON_SYSTEM` into it; stop the harness stapling it into the user turn.
   Kills the ~7× duplication + correct layering. (Assumes α; see open decision.)
@@ -113,9 +127,9 @@ job until the cost-breaker (S1 below) is in.**
   Fix the place-graph: fades warp even on a non-directional action (stop **lumping**); dialog-flicker stops
   minting spurious places (stop **fragmenting**). Replay-validated; unblocks leaving the lab → Route 1.
 
-**Sequence:** **S1 first** (free, no prereqs, unblocks paid). Then the spine S2 → S3 (β) → S4 (realignment),
+**Sequence:** **S1 is DONE** (free, unblocked paid). Next build = the spine **S2 → S3 (β) → S4 (realignment)**,
 with **S5 + S6 as independent free wins** that also keep the game moving. S4 is the deepest; S2+S3 are its
-foundation. **No paid run until S1 lands.**
+foundation. **Paid runs are now unblocked** — the first guarded one doubles as S1's live validation.
 
 **OPEN DECISIONS (recorded, not blocking S1):** (a) within-run memory owner **α vs β** — David leans **β**
 (brain owns it); confirm before S2/S3 merge. (b) **within-run vs across-run** System-1 policy learning —

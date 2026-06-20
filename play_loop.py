@@ -34,6 +34,16 @@ def main() -> int:
     ap.add_argument("--max-steps", type=int, default=3000, help="hard step cap for this launch")
     ap.add_argument("--max-llm-calls", type=int, default=150, help="budget guard: stop after this many LLM wakes")
     ap.add_argument("--stuck-steps", type=int, default=60, help="halt if no real progress for this many steps")
+    ap.add_argument("--stuck-wakes", type=int, default=30,
+                    help="halt after this many LLM WAKES with no real progress — the wake-denominated "
+                         "watchdog. Catches flailing that --stuck-steps misses once free auto-advance "
+                         "inflates the step count between wakes (the run-#15 'aimless wandering' case)")
+    ap.add_argument("--max-cost-usd", type=float, default=1.50,
+                    help="estimated-spend circuit breaker: halt when the running cost ESTIMATE "
+                         "(token usage x model pricing) reaches this many USD. 0 = off")
+    ap.add_argument("--max-prompt-tokens", type=int, default=48000,
+                    help="per-wake prompt-token cap: halt if any single wake's prompt exceeds this "
+                         "(a runaway-bloat tripwire, well above the observed ~13-30k/wake baseline). 0 = off")
     ap.add_argument("--url", default="http://localhost:8001")
     ap.add_argument("--model", default="aria")
     ap.add_argument("--token", default=os.environ.get("ARIA_BEARER_TOKEN"))
@@ -63,13 +73,19 @@ def main() -> int:
         return (st["badges"], plugin._reward.maps_seen, st["party_level_sum"], len(coverage))
 
     print(f"[loop] resume={init}  max_steps={args.max_steps}  budget={args.max_llm_calls} LLM calls  "
-          f"halt_if_stuck={args.stuck_steps} steps", flush=True)
+          f"halt_if_stuck={args.stuck_steps} steps / {args.stuck_wakes} wakes  "
+          f"cost_cap=${args.max_cost_usd:.2f}  prompt_cap={args.max_prompt_tokens} tok", flush=True)
 
     from core.brains import API_ERROR_CIRCUIT_BREAKER
-    def _circuit_ok(step):   # halt a chunk EARLY on a persistent backend outage (don't grind the chunk)
-        return getattr(brain, "consec_api_errors", 0) < API_ERROR_CIRCUIT_BREAKER
+    from core.cost_guard import spend_halt_reason, wake_stall_halt_reason
+    def _circuit_ok(step):   # per-step halt: stop a chunk EARLY on a backend outage OR a spend overrun
+        if getattr(brain, "consec_api_errors", 0) >= API_ERROR_CIRCUIT_BREAKER:
+            return False
+        return spend_halt_reason(brain, max_cost_usd=args.max_cost_usd,
+                                 max_prompt_tokens=args.max_prompt_tokens) is None
 
     best = None
+    woke_at_progress = 0       # brain.woke at the last real-progress checkpoint (stuck-wakes baseline)
     stale = done = 0
     stop = ""
     try:
@@ -80,6 +96,11 @@ def main() -> int:
             if getattr(brain, "consec_api_errors", 0) >= API_ERROR_CIRCUIT_BREAKER:
                 stop = (f"the model API failed {brain.consec_api_errors}x in a row — HALTING "
                         f"(circuit breaker). last error: {brain.last_api_error}")
+                break
+            spend_stop = spend_halt_reason(brain, max_cost_usd=args.max_cost_usd,
+                                           max_prompt_tokens=args.max_prompt_tokens)
+            if spend_stop:
+                stop = spend_stop
                 break
             plugin.save_state(args.state)
             fp = fingerprint()
@@ -95,11 +116,17 @@ def main() -> int:
             # trainer fight can't be fled, has bounded turns, and --max-llm-calls is the real ceiling.
             # (in_battle is RAM — the oracle's control/log role only, never fed to the agent.)
             stale = 0 if (improved or st["in_battle"]) else stale + args.chunk
+            if improved or st["in_battle"]:
+                woke_at_progress = brain.woke      # reset the wake-watchdog baseline on real progress
             if fp[0] >= 8:
                 stop = "all 8 badges — onward to the Elite Four"
                 break
             if brain.woke >= args.max_llm_calls:
                 stop = f"budget guard hit ({brain.woke} LLM calls)"
+                break
+            wake_stop = wake_stall_halt_reason(brain.woke, woke_at_progress, args.stuck_wakes)
+            if wake_stop:
+                stop = wake_stop + " — likely needs a capability we haven't built yet"
                 break
             if stale >= args.stuck_steps:
                 stop = (f"no progress for {stale} steps — HALTING (not looping). Likely needs a "
@@ -109,13 +136,16 @@ def main() -> int:
         plugin.save_state(args.state)
         plugin.close()
     print(f"[loop] STOP: {stop or 'step cap reached'}. progress -> {args.state}; "
-          f"total LLM calls={brain.woke}. Relaunch to continue.", flush=True)
+          f"total LLM calls={brain.woke}, est spend ~${getattr(brain, 'total_cost_usd', 0.0):.2f} "
+          f"({getattr(brain, 'total_prompt_tokens', 0)} in / "
+          f"{getattr(brain, 'total_completion_tokens', 0)} out tok). Relaunch to continue.", flush=True)
 
     # Definition-of-Done step 1: auto-scaffold a report skeleton (oracle facts + exact brain wake
     # counts). Best-effort; won't clobber an existing report. Fill its TODOs + LEARNINGS/HANDOFF/memory.
     try:
         from eval.report_run import scaffold_report
-        path, _ = scaffold_report("runs/loop", brain=brain)
+        path, _ = scaffold_report("runs/loop", brain=brain,
+                                  cost=f"~${getattr(brain, 'total_cost_usd', 0.0):.2f} (estimated)")
         print(f"[loop] report: scaffolded {path} — fill its TODOs (see CLAUDE.md Definition of Done)"
               if path else "[loop] report: one already exists for this date — not overwriting.", flush=True)
     except Exception as e:  # pragma: no cover - reporting must never break a run

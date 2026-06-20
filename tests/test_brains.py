@@ -313,3 +313,124 @@ def test_llm_brain_resets_goto_and_lesson_on_model_failure():
     brain.decide(_obs(), [], {})              # this call raises inside complete()
     assert brain.goto is None and brain.lesson is None   # not stale
     assert brain.lessons == ["remember the ledge"]       # buffer keeps the earlier lesson
+
+
+# -- S1 cost-breaker: token metering + spend estimate --------------------------
+
+def test_estimate_cost_basic_cached_and_created():
+    from core.brains import _estimate_cost, HAIKU_45_PRICING as P
+    assert _estimate_cost({}, P) == 0.0
+    # all-uncached: 1000 in @ $1/MTok + 100 out @ $5/MTok
+    assert _estimate_cost({"prompt_tokens": 1000, "completion_tokens": 100}, P) == pytest.approx(0.0015)
+    # 800 of the 1000 prompt tokens were a cache READ (@ $0.10/MTok); 200 billed at the input rate
+    cached = {"prompt_tokens": 1000, "completion_tokens": 100,
+              "prompt_tokens_details": {"cached_tokens": 800}}
+    assert _estimate_cost(cached, P) == pytest.approx(0.00078)
+    # cache-CREATION tokens (litellm key) bill at the write rate and are excluded from the remainder
+    created = {"prompt_tokens": 1000, "cache_creation_input_tokens": 400, "completion_tokens": 0}
+    assert _estimate_cost(created, P) == pytest.approx(600 * 1e-6 + 400 * 1.25e-6)
+
+
+def test_llm_brain_meters_tokens_and_cost_from_usage_tuple():
+    # The OpenAI/aria complete_fn returns (text, usage); the brain records + accumulates it.
+    usage = {"prompt_tokens": 1000, "completion_tokens": 100}
+    brain = LLMButtonBrain("a", complete_fn=lambda p, i: ("THINK: x\nMOVE: a", usage))
+    brain.decide(_obs(), [], {})
+    assert brain.last_prompt_tokens == 1000
+    assert brain.total_prompt_tokens == 1000 and brain.total_completion_tokens == 100
+    assert brain.total_cost_usd == pytest.approx(0.0015)
+
+
+def test_llm_brain_cost_meters_accumulate_across_wakes():
+    usage = {"prompt_tokens": 200, "completion_tokens": 10}
+    brain = LLMButtonBrain("a", complete_fn=lambda p, i: ("THINK: x\nMOVE: a", usage))
+    brain.decide(_obs(), [], {})
+    brain.decide(_obs(), [], {})
+    assert brain.total_prompt_tokens == 400 and brain.total_completion_tokens == 20
+    assert brain.last_prompt_tokens == 200                       # most-recent wake, not the sum
+    assert brain.total_cost_usd == pytest.approx(2 * (200e-6 + 10 * 5e-6))
+
+
+def test_llm_brain_string_complete_fn_meters_nothing():
+    # A bare-string complete_fn (Ollama / gateworld / test stubs) must still work and meter zero.
+    brain = LLMButtonBrain("a", complete_fn=lambda p, i: "THINK: x\nMOVE: up")
+    call = brain.decide(_obs(), [], {})
+    assert call.args["button"] == "up"                          # behaviour unchanged
+    assert brain.last_usage == {} and brain.last_prompt_tokens == 0
+    assert brain.total_cost_usd == 0.0
+
+
+def test_llm_brain_meters_usage_even_on_error_as_content_reply():
+    # aria echoes a backend error as a 200 with usage attached; meter the tokens but still count the error.
+    err = "litellm.BadRequestError: AnthropicException - credit balance is too low"
+    brain = LLMButtonBrain("a", complete_fn=lambda p, i: (err, {"prompt_tokens": 300, "completion_tokens": 5}))
+    brain.decide(_obs(), [], {})
+    assert brain.consec_api_errors == 1                         # still flagged as an error (not parsed as a move)
+    assert brain.last_prompt_tokens == 300 and brain.total_cost_usd > 0   # but the spend was metered
+
+
+def test_llm_brain_custom_pricing_is_respected():
+    # Brain is model-agnostic (ROADMAP): a different pricing dict bills differently.
+    brain = LLMButtonBrain("a", pricing={"in": 2e-6, "out": 0.0, "cache_read": 0.0, "cache_write": 0.0},
+                           complete_fn=lambda p, i: ("MOVE: a", {"prompt_tokens": 100, "completion_tokens": 50}))
+    brain.decide(_obs(), [], {})
+    assert brain.total_cost_usd == pytest.approx(100 * 2e-6)    # output billed at 0 here
+
+
+def test_hybrid_forwards_cost_and_token_meters_from_fallback():
+    from core.brains import ExploreBrain, HybridBrain
+    llm = LLMButtonBrain("a", complete_fn=lambda p, i: ("THINK: x\nMOVE: a",
+                                                        {"prompt_tokens": 500, "completion_tokens": 10}))
+    hb = HybridBrain(ExploreBrain("a"), llm)
+    assert hb.total_cost_usd == 0.0 and hb.last_prompt_tokens == 0   # nothing metered yet
+    llm.decide(_obs(), [], {})                                       # one wake populates the fallback's meters
+    assert hb.last_prompt_tokens == 500 and hb.total_prompt_tokens == 500
+    assert hb.total_completion_tokens == 10
+    assert hb.total_cost_usd == pytest.approx(500e-6 + 10 * 5e-6)
+
+
+def test_llm_brain_counts_wakes_for_the_wake_watchdog():
+    # `--brain llm` uses a BARE LLMButtonBrain (no HybridBrain), and the driver's wake-watchdog reads
+    # brain.woke — so each decide() must count, or the guard is advertised-but-inert (review HIGH finding).
+    brain = LLMButtonBrain("a", complete_fn=lambda p, i: "MOVE: a")
+    assert brain.woke == 0
+    brain.decide(_obs(), [], {})
+    brain.decide(_obs(), [], {})
+    assert brain.woke == 2
+
+
+def test_llm_brain_clears_prompt_meter_on_call_failure():
+    # An exception (no usage) must not leave a stale last_prompt_tokens that the per-wake cap reads.
+    replies = iter([("MOVE: a", {"prompt_tokens": 31000, "completion_tokens": 0})])
+
+    def complete(p, i):
+        try:
+            return next(replies)
+        except StopIteration:
+            raise ConnectionError("aria unreachable")
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    brain.decide(_obs(), [], {})
+    assert brain.last_prompt_tokens == 31000
+    brain.decide(_obs(), [], {})              # raises -> meter must reset, not stay at 31000
+    assert brain.last_prompt_tokens == 0 and brain.last_usage == {}
+
+
+def test_hybrid_meters_cost_through_a_real_wake():
+    # Exercise the path the drivers use: overworld + a stuck autopilot -> HybridBrain wakes the LLM,
+    # which meters the usage; the wrapper's forwarded meters must reflect it.
+    from core.brains import HybridBrain
+
+    class _NullAutopilot:           # always "stuck" -> forces a wake
+        agent_id = "a"
+        last_thought = ""
+        def decide(self, obs, tools, context):
+            return None
+
+    llm = LLMButtonBrain("a", complete_fn=lambda p, i: ("THINK: x\nMOVE: a",
+                                                        {"prompt_tokens": 400, "completion_tokens": 20}))
+    hb = HybridBrain(_NullAutopilot(), llm)
+    hb.decide(_obs(), [], {})
+    assert hb.woke == 1
+    assert hb.last_prompt_tokens == 400 and hb.total_prompt_tokens == 400
+    assert hb.total_cost_usd == pytest.approx(400e-6 + 20 * 5e-6)

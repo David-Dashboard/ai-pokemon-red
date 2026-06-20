@@ -85,6 +85,19 @@ def main() -> int:
     ap.add_argument("--max-llm-calls", type=int, default=0,
                     help="budget cap: HALT after this many LLM wakes (each ~= one paid call). "
                          "0 = off. Use on paid (--brain llm/hybrid) runs to bound spend.")
+    ap.add_argument("--max-cost-usd", type=float, default=0.0,
+                    help="estimated-spend circuit breaker: HALT when the running cost ESTIMATE "
+                         "(token usage x model pricing) reaches this many USD. 0 = off; auto-enabled "
+                         "($1.00) for paid brains (llm/hybrid) — the true cost ceiling --max-llm-calls "
+                         "only approximates (a bloated wake can cost many times a lean one).")
+    ap.add_argument("--max-prompt-tokens", type=int, default=0,
+                    help="per-wake prompt-token cap: HALT if any single wake's prompt exceeds this "
+                         "(a runaway-bloat tripwire). 0 = off; auto-enabled (48000) for paid brains — "
+                         "well above the observed ~13-30k/wake baseline so a normal large wake won't trip it.")
+    ap.add_argument("--stuck-wakes", type=int, default=0,
+                    help="wake-denominated watchdog: HALT after this many LLM WAKES with no real "
+                         "progress (catches flailing the step watchdog misses once free auto-advance "
+                         "inflates the step count between wakes). 0 = off; auto-enabled (30) for paid brains.")
     args = ap.parse_args()
 
     agent_id = f"agent-{uuid.uuid4()}"
@@ -149,9 +162,24 @@ def main() -> int:
         stuck = 80
         print(f"[guard] paid brain '{args.brain}': progress watchdog ON - halts after {stuck} steps "
               f"with no progress (override with --stuck-steps).")
+    # Cost guardrails (S1) — the spend breaker, per-wake prompt cap, and wake-denominated watchdog.
+    # Auto-enabled for paid brains (like --stuck-steps) so a forgotten flag can't leave a paid run
+    # unguarded; each is overridable by its own flag (and 0 disables it on an explicit override).
+    max_cost = args.max_cost_usd
+    max_prompt_tokens = args.max_prompt_tokens
+    stuck_wakes = args.stuck_wakes
+    if args.brain in ("llm", "hybrid"):
+        if max_cost == 0.0:
+            max_cost = 1.00
+        if max_prompt_tokens == 0:
+            max_prompt_tokens = 48000
+        if stuck_wakes == 0:
+            stuck_wakes = 30
+        print(f"[guard] paid brain '{args.brain}': cost cap ~${max_cost:.2f}, prompt cap "
+              f"{max_prompt_tokens} tok/wake, wake watchdog {stuck_wakes} wakes (override each with its flag).")
     from games.pokemon_red.memory_map import read_state
     coverage: set = set()
-    wd = {"best": None, "last": 0}
+    wd = {"best": None, "last": 0, "woke": 0}
 
     def note_progress(step):
         st = read_state(plugin.emu.read)               # ORACLE: watchdog only, never the agent's input
@@ -165,10 +193,12 @@ def main() -> int:
         # --max-llm-calls is the real ceiling. (in_battle is RAM — oracle/watchdog only, never the agent.)
         if improved or st["in_battle"]:
             wd["last"] = step
+            wd["woke"] = getattr(brain, "woke", 0)     # wake-watchdog baseline (reset on real progress)
 
     max_llm_calls = args.max_llm_calls
 
     from core.brains import API_ERROR_CIRCUIT_BREAKER
+    from core.cost_guard import spend_halt_reason, wake_stall_halt_reason
 
     def should_continue(step):
         ce = getattr(brain, "consec_api_errors", 0)
@@ -178,6 +208,15 @@ def main() -> int:
             return False
         if max_llm_calls > 0 and getattr(brain, "woke", 0) >= max_llm_calls:
             print(f"\n[guard] budget cap hit ({getattr(brain, 'woke', 0)} LLM calls) - HALTING.")
+            return False
+        # spend ceilings (cost breaker + per-wake prompt-token cap) and the wake-denominated watchdog —
+        # one shared, tested implementation (core.cost_guard); wd["woke"] is the wake count at the last
+        # oracle-progress checkpoint (RAM-derived, set in note_progress — never reaches the agent).
+        reason = spend_halt_reason(brain, max_cost_usd=max_cost, max_prompt_tokens=max_prompt_tokens)
+        if reason is None:
+            reason = wake_stall_halt_reason(getattr(brain, "woke", 0), wd["woke"], stuck_wakes)
+        if reason:
+            print(f"\n[guard] {reason} - HALTING.")
             return False
         if stuck <= 0:
             return True
@@ -227,6 +266,9 @@ def main() -> int:
     if hasattr(brain, "wake_rate"):  # hybrid: how often the expensive brain was actually needed
         print(f"  llm_woke: {brain.woke}/{brain.total} steps ({100 * brain.wake_rate:.1f}%) "
               f"— autopilot handled the rest for free")
+    if getattr(brain, "total_prompt_tokens", 0) or getattr(brain, "total_cost_usd", 0.0):
+        print(f"  tokens: {brain.total_prompt_tokens} in / {brain.total_completion_tokens} out "
+              f"({brain.total_cached_tokens} cached); est spend ~${brain.total_cost_usd:.2f}")
     if args.record:
         print(f"  recording: {args.record}")
 
@@ -236,7 +278,9 @@ def main() -> int:
     if args.brain in ("llm", "hybrid"):
         try:
             from eval.report_run import scaffold_report
-            path, _ = scaffold_report(args.out, brain=brain, cost=None)
+            cost = (f"~${brain.total_cost_usd:.2f} (estimated)"
+                    if getattr(brain, "total_cost_usd", 0.0) else None)
+            path, _ = scaffold_report(args.out, brain=brain, cost=cost)
             print(f"  report: scaffolded {path} — fill its TODOs (see CLAUDE.md Definition of Done)"
                   if path else "  report: a report for this run/date already exists — not overwriting "
                                "(re-run eval.report_run --force to refresh facts).")

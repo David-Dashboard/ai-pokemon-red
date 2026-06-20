@@ -61,6 +61,38 @@ def _looks_like_api_error(raw: Optional[str]) -> bool:
     return bool(raw) and any(m in raw for m in _API_ERROR_MARKERS)
 
 
+# Default per-token prices for the spend ESTIMATE (USD/token) — Haiku-4.5 rates (2026-06): $1.00 / $5.00
+# per MTok in/out, $1.25 cache-write, $0.10 cache-read. The brain is model-agnostic (ROADMAP), so pass a
+# different `pricing` to bill another model. This is an estimate for a cost GUARD, not an invoice: it bills
+# whatever usage fields the backend returns and treats input with no reported cache-split at the full
+# input rate (a slight over-estimate, the safe direction for a "don't overspend" breaker).
+HAIKU_45_PRICING = {"in": 1.00e-6, "out": 5.00e-6, "cache_read": 0.10e-6, "cache_write": 1.25e-6}
+
+
+def _estimate_cost(usage: Optional[dict], pricing: dict) -> float:
+    """USD estimate for ONE model call from its OpenAI-shaped `usage`. litellm surfaces Anthropic prompt
+    caching as prompt_tokens_details.cached_tokens and/or cache_read/creation_input_tokens; whichever are
+    present are billed at the cache rates and the remainder of prompt_tokens at the input rate.
+
+    NOTE (S1 / pre-S2): the live aria backend currently reports only prompt/completion/total tokens — NO
+    cache split (`ai-aria/.../openai_compat.py`) — so today `cached`/`created` are 0 and the whole prompt
+    bills at the input rate (an over-estimate, the safe direction for a spend guard). The cache branch is
+    forward-looking: it becomes live once aria forwards cache tokens. It assumes those fields are a SUBSET
+    already inside `prompt_tokens` (litellm's OpenAI normalization rolls cache reads into prompt_tokens);
+    if aria ever forwards the RAW Anthropic `input_tokens` (the uncached remainder) plus a separate cache
+    count, this subtraction would under-bill — re-verify the subset semantics when S2 turns caching on."""
+    if not usage:
+        return 0.0
+    pt = usage.get("prompt_tokens") or 0
+    ct = usage.get("completion_tokens") or 0
+    details = usage.get("prompt_tokens_details") or {}
+    cached = details.get("cached_tokens") or usage.get("cache_read_input_tokens") or 0
+    created = usage.get("cache_creation_input_tokens") or 0
+    uncached = max(pt - cached - created, 0)
+    return (uncached * pricing["in"] + cached * pricing["cache_read"]
+            + created * pricing["cache_write"] + ct * pricing["out"])
+
+
 def _call(tool: str, args: dict, agent_id: str) -> ToolCall:
     return ToolCall(tool=tool, args=args, agent_id=agent_id, call_id=f"call-{uuid.uuid4()}")
 
@@ -407,6 +439,29 @@ class HybridBrain:
     def last_api_error(self) -> str:
         return getattr(self.fallback, "last_api_error", "")
 
+    # Forward the wrapped LLM brain's token/cost meters so the driver's cost guardrails (per-wake
+    # prompt-token cap, estimated-spend breaker) read the same numbers whether the brain is bare or
+    # hybrid-wrapped (only the fallback actually calls the model). Mirrors consec_api_errors above.
+    @property
+    def last_prompt_tokens(self) -> int:
+        return getattr(self.fallback, "last_prompt_tokens", 0)
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        return getattr(self.fallback, "total_prompt_tokens", 0)
+
+    @property
+    def total_completion_tokens(self) -> int:
+        return getattr(self.fallback, "total_completion_tokens", 0)
+
+    @property
+    def total_cached_tokens(self) -> int:
+        return getattr(self.fallback, "total_cached_tokens", 0)
+
+    @property
+    def total_cost_usd(self) -> float:
+        return getattr(self.fallback, "total_cost_usd", 0.0)
+
 
 def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:
     """Return a complete_fn(prompt, image_path) -> text backed by Ollama."""
@@ -434,12 +489,16 @@ def _openai_complete(
     e.g. llama.cpp's `llama-server` (run it with `--mmproj` for vision), or the
     decoupled `ai-aria` companion (POST :8001, bearer-authed, vision via data
     URIs). Also works with any OpenAI-shaped server. Images ride as base64 data
-    URIs. Pass api_key to send an `Authorization: Bearer <key>` header."""
+    URIs. Pass api_key to send an `Authorization: Bearer <key>` header.
+
+    Returns (text, usage): the reply plus the response's `usage` block (prompt/completion/cached token
+    counts) so the brain can meter spend (S1). The Ollama path and test stubs return a bare string;
+    LLMButtonBrain normalizes both, so token metering is opt-in per backend without a protocol change."""
     import requests
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
 
-    def complete(prompt: str, image_path: Optional[str]) -> str:
+    def complete(prompt: str, image_path: Optional[str]) -> tuple[str, dict]:
         content: list = [{"type": "text", "text": prompt}]
         if image_path:
             try:
@@ -459,7 +518,8 @@ def _openai_complete(
         r = requests.post(f"{url}/v1/chat/completions", json=payload,
                           headers=headers, timeout=120)
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        body = r.json()
+        return body["choices"][0]["message"]["content"], (body.get("usage") or {})
 
     return complete
 
@@ -490,6 +550,7 @@ class LLMButtonBrain:
         backend: str = "ollama",
         api_key: Optional[str] = None,
         system: Optional[str] = None,
+        pricing: Optional[dict] = None,
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
@@ -509,6 +570,21 @@ class LLMButtonBrain:
         self._last_buttons = None    # what we pressed last, for wall-bump feedback
         self.consec_api_errors = 0   # consecutive failed model calls (circuit breaker; reset on a real reply)
         self.last_api_error = ""     # the most recent backend error detail, for the halt message
+        # Token/cost metering (S1 cost-breaker). The OpenAI/aria backend returns a usage block; we
+        # accumulate it so the drivers can enforce a per-wake prompt-token cap and an estimated-spend
+        # ceiling (the true cost guard `--max-llm-calls` only approximates). `pricing` keeps the brain
+        # model-agnostic — default Haiku-4.5 rates, override for another model.
+        self.pricing = pricing or HAIKU_45_PRICING
+        self.last_usage: dict = {}     # the most recent call's usage block ({} if the backend reports none)
+        self.last_prompt_tokens = 0    # prompt tokens of the most recent wake (per-wake cap reads this)
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_cached_tokens = 0
+        self.total_cost_usd = 0.0      # running ESTIMATE of spend this run (usage x pricing)
+        # Count model-call wakes so the driver's wake-watchdog (`--stuck-wakes`) works for `--brain llm`
+        # too, where the brain is a BARE LLMButtonBrain (no HybridBrain). When wrapped, HybridBrain has
+        # its own `woke` (the count the driver actually reads via the wrapper); this one is then unused.
+        self.woke = 0
         if complete_fn is not None:
             self.complete = complete_fn
         elif backend == "ollama":
@@ -527,6 +603,7 @@ class LLMButtonBrain:
         # turn's destination/lesson looking "current" to HybridBrain — only THIS reply may set them.
         self.goto = None
         self.lesson = None
+        self.woke += 1   # every decide() is one model-call wake (drives the wake-watchdog for --brain llm)
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
         feedback = self._movement_feedback(obs)
         if not self.use_vision:
@@ -566,11 +643,14 @@ class LLMButtonBrain:
                   f"Current state:\n{obs.text}\n\nYour reply:")
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
-            raw = self.complete(prompt, image)
+            raw, usage = self._invoke(prompt, image)
         except Exception as e:
             self._note_api_error(f"{type(e).__name__}: {e}")   # network/HTTP raise
+            self.last_usage, self.last_prompt_tokens = {}, 0    # no usage this wake — don't leave a stale value
             print(f"[LLMButtonBrain] model call failed ({e}); defaulting to 'a'")
             return _call("press_button", {"button": "a"}, self.agent_id)
+        self._account(usage)   # meter tokens/cost for the spend guards (an error-as-content reply may
+                               # still report usage, so account before the api-error check below)
         if _looks_like_api_error(raw):
             # aria echoes a backend error (e.g. credit-balance 400) as a 200 with the error as content,
             # so it doesn't raise. Count it toward the circuit breaker and DON'T parse it as a move.
@@ -590,6 +670,36 @@ class LLMButtonBrain:
         if len(buttons) == 1:
             return _call("press_button", {"button": buttons[0]}, self.agent_id)
         return _call("press_sequence", {"buttons": buttons}, self.agent_id)
+
+    def _invoke(self, prompt: str, image: Optional[str]) -> tuple[str, dict]:
+        """Call the backend and normalize the reply to (text, usage). A complete_fn may return a bare
+        string (Ollama, gateworld, test stubs) or a (text, usage) tuple (the OpenAI/aria path), so token
+        metering is opt-in per backend without changing the complete_fn contract every caller relies on."""
+        out = self.complete(prompt, image)
+        if isinstance(out, tuple):
+            raw, usage = out
+            return raw, (usage or {})
+        return out, {}
+
+    def _account(self, usage: dict) -> None:
+        """Record one call's token usage + estimated cost for the spend guardrails, and echo a per-call
+        line to the console so spend is visible LIVE (S1). No-op (silent) when the backend reports no
+        usage, so string-returning stubs/tests stay quiet."""
+        self.last_usage = usage or {}
+        self.last_prompt_tokens = self.last_usage.get("prompt_tokens") or 0
+        if not self.last_usage:
+            return
+        ct = self.last_usage.get("completion_tokens") or 0
+        details = self.last_usage.get("prompt_tokens_details") or {}
+        cached = details.get("cached_tokens") or self.last_usage.get("cache_read_input_tokens") or 0
+        cost = _estimate_cost(self.last_usage, self.pricing)
+        self.total_prompt_tokens += self.last_prompt_tokens
+        self.total_completion_tokens += ct
+        self.total_cached_tokens += cached
+        self.total_cost_usd += cost
+        print(f"[tokens] prompt={self.last_prompt_tokens} (cached={cached}) completion={ct} "
+              f"~${cost:.4f}  |  run {self.total_prompt_tokens} in / {self.total_completion_tokens} out "
+              f"~${self.total_cost_usd:.3f}", flush=True)
 
     def _note_api_error(self, detail: str) -> None:
         """Record a failed model call for the circuit breaker (the driver halts at the threshold)."""
