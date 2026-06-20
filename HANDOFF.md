@@ -145,6 +145,11 @@ job until the cost-breaker (S1 below) is in.**
   `cache_control: role:system` → BP1). 211 harness tests + 9 new aria tests; companion byte-identical when
   dormant. **⚠ first paid run must re-validate THINK/MOVE adherence** (the contract moved from the user turn to
   the cached constitution — review MEDIUM-2; unprovable offline).
+  **⇒ SUPERSEDED IN PART by the constitution-move (ADR-001):** "POKEMON_SYSTEM stays single-source in the
+  harness, sent as a system message" is no longer true — the constitution now lives in **aria's config**
+  (`pokemon-red-data/constitution.md`, read via `memory.read_constitution`); the harness sends `system=""`
+  (nothing on the wire); the inbound-system-message path remains only as a fallback. The brain owns its
+  identity (the world doesn't send it each wake). *(Code in place; aria rebuild + paid validation pending.)*
 - **S3 — Within-run memory → aria (β)** *(harness-only · FREE · branch `feat/within-run-memory-beta`)* —
   **✅ DONE (built + free-validated; adversarial review cut off by a session limit → key risks self-verified
   instead).** `LLMButtonBrain(owns_memory=True)` (set by the aria drivers) retires the harness's DUPLICATE
@@ -644,7 +649,7 @@ Anthropic key behind aria needs credits; prompt caching was off but **partly eng
 ## 7. Project structure (file-by-file)
 
 ```
-core/                      # WORLD-AGNOSTIC framework (the reusable agent). No game specifics.
+core/                      # WORLD-AGNOSTIC half of the WORLD INTERFACE (System 1 + the seam). NOT the agent — aria is (ADR-001).
   contracts.py             #   FROZEN wire types (ToolSpec/Call/Result, Event, Observation) + Protocols. Hash-pinned.
   gateway.py               #   the single door: permission check + deep-copy + dispatch to plugin
   runner.py                #   owns TIME / the ReAct loop: observe -> decide -> execute, N steps

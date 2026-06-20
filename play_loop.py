@@ -22,7 +22,7 @@ import uuid
 from core.brains import ExploreBrain, HybridBrain, LLMButtonBrain
 from core.gateway import Gateway
 from core.runner import run_episode
-from games.pokemon_red import POKEMON_SANDBOX, POKEMON_SYSTEM
+from games.pokemon_red import POKEMON_SANDBOX  # POKEMON_SYSTEM now lives in aria's config (ADR-001)
 
 
 def main() -> int:
@@ -72,8 +72,9 @@ def main() -> int:
     plugin = PokemonRedPlugin(rom_path=args.rom, out_dir="runs/loop", headless=True,
                               init_state=init, perceiver=OverworldPerceiver())
     llm = LLMButtonBrain(aid, model=args.model, url=args.url, backend="aria",
-                         api_key=args.token, use_vision=True, system=POKEMON_SYSTEM,
-                         owns_memory=True)  # aria owns within-run memory (S3 beta); this driver is aria-only
+                         api_key=args.token, use_vision=True,
+                         system="",          # aria owns its constitution (pokemon-red-data/constitution.md, ADR-001)
+                         owns_memory=True)   # ...and its within-run memory (S3 beta); this driver is aria-only
     brain = HybridBrain(ExploreBrain(aid, single_step=True, probe_interactables=True), llm, advance_on_dialog=True)  # autopilot ([d]=1 tile, probe walls when stuck) + auto-advance dialog + wake at decisions
     gw = Gateway(plugin, POKEMON_SANDBOX)
 

@@ -34,9 +34,9 @@ import zipfile
 
 # The seed constitution (git-tracked) + the model-weight caches — everything NOT in here is
 # run-generated experience and gets wiped for a clean slate.
-SEED = {".gitignore", "goals.md", "core_memory.md", "lessons.md", "README.md"}
+SEED = {".gitignore", "goals.md", "core_memory.md", "lessons.md", "README.md", "constitution.md"}
 KEEP_CACHES = {"embed_model_cache", ".hf"}
-SEED_TRACKED = ["goals.md", "core_memory.md", "lessons.md", "README.md", ".gitignore"]
+SEED_TRACKED = ["goals.md", "core_memory.md", "lessons.md", "README.md", ".gitignore", "constitution.md"]
 
 
 def _default_data_dir() -> str:

@@ -436,6 +436,29 @@ def test_injected_complete_fn_keeps_system_inline_for_backward_compat():
     assert "INLINE-SYS" in prompts[0]                          # still prepended for injected/ollama paths
 
 
+# -- ADR-001: the constitution lives in aria's config; the harness sends system="" (nothing) ----------
+
+def test_empty_system_stays_empty_none_falls_back_to_default():
+    # system="" means "the backend owns its constitution" (aria reads constitution.md) -> stays empty.
+    # system=None means "no constitution given" -> the world-agnostic default.
+    assert LLMButtonBrain("a", system="").system == ""
+    assert LLMButtonBrain("a").system != ""                    # None -> _DEFAULT_SYSTEM
+
+
+def test_aria_with_empty_system_sends_only_the_observation(monkeypatch):
+    # ADR-001: aria owns its constitution (config), so the harness passes system="" -> NO system message,
+    # NO _DEFAULT_SYSTEM inline; the user turn is just the observation.
+    captured = {}
+    monkeypatch.setattr("requests.post",
+                        lambda url, json=None, headers=None, timeout=None: captured.update(payload=json)
+                        or _FakeResp())
+    brain = LLMButtonBrain("a", backend="aria", api_key="k", system="", use_vision=False)
+    brain.decide(_obs(), [], {})
+    msgs = captured["payload"]["messages"]
+    assert [m["role"] for m in msgs] == ["user"]                       # no system message on the wire
+    assert "You are an agent acting in a world" not in msgs[0]["content"][0]["text"]  # no _DEFAULT_SYSTEM inline
+
+
 # -- S1 cost-breaker: token metering + spend estimate --------------------------
 
 def test_estimate_cost_basic_cached_and_created():

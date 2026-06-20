@@ -564,10 +564,12 @@ class LLMButtonBrain:
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
-        # The system prompt is injectable so the SAME brain serves any world: Pokémon passes its
-        # POKEMON_SYSTEM, the gating probe passes a neutral framing (the leak control). core/ ships
-        # only a world-agnostic default — it knows about no specific game.
-        self.system = system or _DEFAULT_SYSTEM
+        # The system prompt is injectable so the SAME brain serves any world: the gating probe passes a
+        # neutral framing (the leak control). core/ ships only a world-agnostic default — no game text.
+        # Three cases: a non-empty string = use it; `None` = no constitution given -> the world-agnostic
+        # default; `""` (empty) = the BACKEND owns its constitution (e.g. aria reads it from its own
+        # config, ADR-001) -> send NOTHING from the harness. So an explicit "" must STAY empty.
+        self.system = _DEFAULT_SYSTEM if system is None else system
         self.last_thought = ""       # the model's latest reasoning, for display
         self.goto: Optional[list] = None  # destination cell the planner named this turn (or None)
         self.lesson: Optional[str] = None  # one-line lesson the LLM authored THIS turn (or None)
@@ -679,7 +681,10 @@ class LLMButtonBrain:
         # it in the user turn (the duplication S2 removes). Ollama / an injected complete_fn keep it
         # inline (no system role on those paths), preserving the prior behaviour.
         body = (f"{strategy}\n{feedback}\n\nCurrent state:\n{obs.text}\n\nYour reply:")
-        prompt = body if self._delivers_system else f"{self.system}\n\n{body}"
+        # Prepend self.system inline ONLY when it's non-empty AND the backend isn't delivering it as a
+        # system message. Empty self.system (the backend owns its constitution, e.g. aria) -> send just
+        # the observation body.
+        prompt = body if (self._delivers_system or not self.system) else f"{self.system}\n\n{body}"
         image = obs.data.get("screen_path") if self.use_vision else None
         try:
             raw, usage = self._invoke(prompt, image)

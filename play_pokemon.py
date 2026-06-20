@@ -145,13 +145,16 @@ def main() -> int:
             print("\nSetup error:\n--backend aria needs a bearer token "
                   "(--llm-token or $ARIA_BEARER_TOKEN).\n", file=sys.stderr)
             return 2
+        owns = args.backend == "aria"
         llm = LLMButtonBrain(agent_id, model=model, url=url,
                              backend=args.backend, use_vision=not args.no_vision,
-                             api_key=args.llm_token, system=POKEMON_SYSTEM,
-                             # aria owns its own durable within-run memory (S3 beta) -> the harness drops
-                             # its duplicate LESSON buffer; a memoryless backend keeps it. Same condition
-                             # as the bearer-token gate above (the memory-owning backend is 'aria').
-                             owns_memory=(args.backend == "aria"))
+                             api_key=args.llm_token,
+                             # aria OWNS its constitution (seeded as pokemon-red-data/constitution.md,
+                             # ADR-001) -> send "" so the harness adds NO system prompt; a memoryless
+                             # backend (ollama/llamacpp) has no config, so it still gets POKEMON_SYSTEM.
+                             system=("" if owns else POKEMON_SYSTEM),
+                             # aria also owns within-run memory (S3 beta) -> drop the harness LESSON buffer.
+                             owns_memory=owns)
         if args.brain == "llm":
             brain = llm
         else:  # hybrid = free autopilot + wake the LLM only at decisions
