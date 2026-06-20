@@ -163,14 +163,14 @@ def render_report(facts: dict, meta: dict) -> str:
         lines += [
             row("LLM wakes", wakes_cell),
             row("Auto-advances (free)", facts.get("auto_advances")),
-            row("Errors (400 / crash / credit)", facts.get("errors")),
+            row("Errors (400 / crash / credit)", facts.get("errors") if facts.get("errors") is not None else "— (parse the log)"),
         ]
         if "summary_woke" in facts:
             lines.append(row("Episode summary", f"{facts['summary_woke']}/{facts['summary_steps']} wakes "
                                                 f"({facts['summary_wake_pct']}%)"
                                                 + (f", reward {facts['total_reward']}" if 'total_reward' in facts else "")))
     else:
-        lines.append(row("Console log", "(none found — fill manually)"))
+        lines.append(row("Wakes / advances", "(no console log parsed — fill from the log)"))
     lines += [
         row("Cost", meta.get("cost") or "TODO"),
         "",
@@ -204,17 +204,64 @@ def _read_oracle(run_dir: str):
     return [json.loads(l) for l in open(p, encoding="utf-8")]
 
 
-def _read_log(path: str):
+def _read_log(path: Optional[str]):
     if not path or not os.path.exists(path):
         return None
     return open(path, encoding="utf-8", errors="replace").read()   # logs carry the odd cp1252 byte
+
+
+def _run_id_from(run_dir: str, override: Optional[str] = None) -> str:
+    if override:
+        return override
+    base = os.path.basename(str(run_dir).rstrip("/\\"))
+    m = re.search(r"(\d+\w*)$", base)
+    return m.group(1) if m else base
+
+
+def scaffold_report(run_dir: str, *, run_id: Optional[str] = None, title: str = "",
+                    date: Optional[str] = None, cost: Optional[str] = None,
+                    archive: Optional[str] = None, config: Optional[str] = None,
+                    brain=None, log_path: Optional[str] = "auto", out: Optional[str] = None,
+                    force: bool = False):
+    """Write a report skeleton for `run_dir`; return (path_or_None, facts). Path is None (nothing
+    written) if a report already exists and `force` is False — so a re-run never clobbers a filled-in
+    report. Reads only the run's own artifacts + writes under reports/.
+
+    When `brain` is given (the in-process run driver), its exact `woke`/`advanced` counters OVERRIDE the
+    log-parsed ones — at run-end a shell-redirected console log may still be buffered, but the brain
+    object is authoritative. `log_path="auto"` uses the sibling `<run_dir>_console.log` if it exists."""
+    date = date or datetime.date.today().isoformat()
+    rid = _run_id_from(run_dir, run_id)
+    if log_path == "auto":
+        cand = f"{str(run_dir).rstrip('/')}_console.log"
+        log_path = cand if os.path.exists(cand) else None
+    facts = extract_facts(_read_oracle(run_dir), _read_log(log_path))
+    if brain is not None:                       # authoritative in-process counts
+        woke = getattr(brain, "woke", None)
+        adv = getattr(brain, "advanced", None)
+        if woke is not None:
+            facts["wakes"] = woke
+        if adv is not None:
+            facts["auto_advances"] = adv
+        if woke is not None or adv is not None:
+            facts["has_log"] = True             # so the wake/advance rows render
+    meta = {"run_id": rid, "title": title, "date": date, "config": config, "cost": cost, "archive": archive}
+    if out is None:
+        slug = _slug(title)
+        out = os.path.join("reports", f"{date}-live-run-{rid}" + (f"-{slug}" if slug else "") + ".md")
+    if os.path.exists(out) and not force:
+        return None, facts
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write(render_report(facts, meta))
+    return out, facts
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Scaffold a per-run report from the run's own artifacts.")
     ap.add_argument("run_dir", help="the run's output dir, e.g. runs/run13")
     ap.add_argument("--run-id", default=None, help="override the run id (default: trailing chars of run_dir)")
-    ap.add_argument("--log", default=None, help="console log path (default: <run_dir>_console.log)")
+    ap.add_argument("--log", default=None, help="console log path (default: <run_dir>_console.log if present)")
     ap.add_argument("--title", default="", help="short title for the report header + filename slug")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     ap.add_argument("--config", default=None, help="the command/flags used (filled into the report)")
@@ -224,29 +271,14 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="overwrite an existing report")
     args = ap.parse_args()
 
-    run_dir = args.run_dir.rstrip("/\\")
-    base = os.path.basename(run_dir)
-    rid = args.run_id or (re.search(r"(\d+\w*)$", base).group(1) if re.search(r"(\d+\w*)$", base) else base)
-    log_path = args.log or f"{run_dir}_console.log"
-    date = args.date or datetime.date.today().isoformat()
-
-    facts = extract_facts(_read_oracle(run_dir), _read_log(log_path))
-    meta = {"run_id": rid, "title": args.title, "date": date, "config": args.config,
-            "cost": args.cost, "archive": args.archive}
-    report = render_report(facts, meta)
-
-    out = args.out
+    out, facts = scaffold_report(args.run_dir, run_id=args.run_id, title=args.title, date=args.date,
+                                 config=args.config, cost=args.cost, archive=args.archive,
+                                 log_path=(args.log or "auto"), out=args.out, force=args.force)
     if out is None:
-        slug = _slug(args.title)
-        out = os.path.join("reports", f"{date}-live-run-{rid}" + (f"-{slug}" if slug else "") + ".md")
-    if os.path.exists(out) and not args.force:
-        print(f"[report_run] {out} already exists — pass --force to overwrite. Facts:\n")
-        print(report)
+        print(f"[report_run] a report already exists for this run/date — pass --force to overwrite.")
+        print(f"[report_run] facts: outcome={facts.get('outcome')} wakes={facts.get('wakes')} "
+              f"battle_wakes={facts.get('battle_wakes')} errors={facts.get('errors')} rows={facts.get('rows')}")
         return 1
-    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-    with open(out, "w", encoding="utf-8") as fh:
-        fh.write(report)
-
     print(f"[report_run] wrote {out}")
     print(f"[report_run] outcome={facts.get('outcome')} wakes={facts.get('wakes')} "
           f"battle_wakes={facts.get('battle_wakes')} advances={facts.get('auto_advances')} "

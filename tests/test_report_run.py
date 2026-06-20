@@ -4,7 +4,9 @@ The whole point of the scaffolder is that the numbers are reliable, so the win/n
 must NOT call a 1-frame in_battle blip a win — the run #8 over-claim) and the counts are pinned here.
 """
 
-from eval.report_run import extract_facts, render_report, _battle_outcome
+import json
+
+from eval.report_run import extract_facts, render_report, scaffold_report, _battle_outcome
 
 
 def _oracle(in_battle, maps=None):
@@ -50,6 +52,36 @@ def test_extract_facts_counts_errors_and_handles_missing_artifacts():
     assert f["errors"] >= 2                 # the 400 + the Traceback
     g = extract_facts(_oracle([2, 2, 2]), None)
     assert g["has_log"] is False and g["outcome"] == "in-battle-at-cap"
+
+
+class _FakeBrain:
+    woke = 7
+    advanced = 12
+
+
+def test_scaffold_report_writes_injects_brain_counts_and_does_not_clobber(tmp_path):
+    run_dir = tmp_path / "run99"
+    run_dir.mkdir()
+    with open(run_dir / "oracle.jsonl", "w", encoding="utf-8") as f:
+        for ib in [2] * 4 + [0] * 16:                 # a clean win (trailing zeros >= hold)
+            f.write(json.dumps({"in_battle": ib, "map_id": 40}) + "\n")
+    out = tmp_path / "report.md"
+
+    # the driver path: oracle + the in-process brain's exact counts (no console log)
+    path, facts = scaffold_report(str(run_dir), title="t", brain=_FakeBrain(),
+                                  log_path=None, out=str(out), date="2026-06-20")
+    assert path == str(out) and out.exists()
+    assert facts["outcome"] == "won"
+    assert facts["wakes"] == 7 and facts["auto_advances"] == 12   # brain counts override the (absent) log
+    body = out.read_text(encoding="utf-8")
+    assert "**WON**" in body and "DEFINITION OF DONE" in body
+
+    # a re-run must NOT clobber an existing (possibly filled-in) report...
+    again, _ = scaffold_report(str(run_dir), brain=_FakeBrain(), log_path=None, out=str(out))
+    assert again is None
+    # ...unless forced.
+    forced, _ = scaffold_report(str(run_dir), brain=_FakeBrain(), log_path=None, out=str(out), force=True)
+    assert forced == str(out)
 
 
 def test_render_report_has_facts_and_todos():

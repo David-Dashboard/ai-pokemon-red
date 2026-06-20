@@ -410,10 +410,9 @@ uv run python play_loop.py --rom "roms/PokemonRed.gb"        # headless, watchdo
 
 **After the run — Definition of Done (document EVERY paid run; also in `CLAUDE.md`):**
 ```bash
-# 1. scaffold the report from the run's OWN artifacts (oracle-verified facts pre-filled — no hand-counting):
-uv run python -m eval.report_run runs/run<N> --title "<what it tested>" --cost "~$X" --archive iter-<NNN>_<date>.zip
-#    -> writes reports/<date>-live-run-<N>.md (battle outcome incl. a sustained-win check, map trajectory,
-#       wake/auto-advance/error counts, the episode-summary line). Pure helpers are unit-tested.
+# 1. the paid drivers AUTO-scaffold reports/<date>-live-run-<N>.md at run-end (scaffold_report: oracle-
+#    verified facts + exact brain wake counts). To add a title/cost or the full console-log facts, re-run:
+uv run python -m eval.report_run runs/run<N> --title "<what it tested>" --cost "~$X" --archive iter-<NNN>_<date>.zip --force
 # 2. fill the report's TODO sections (TL;DR / what worked / broke / next) — grounded in the oracle, not narration.
 # 3. add a dated bullet to reports/LEARNINGS.md.   4. update HANDOFF.md §2 (LATEST + NEXT) + memory/current-status.md.
 ```

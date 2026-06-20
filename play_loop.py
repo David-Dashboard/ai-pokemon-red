@@ -101,6 +101,16 @@ def main() -> int:
         plugin.close()
     print(f"[loop] STOP: {stop or 'step cap reached'}. progress -> {args.state}; "
           f"total LLM calls={brain.woke}. Relaunch to continue.", flush=True)
+
+    # Definition-of-Done step 1: auto-scaffold a report skeleton (oracle facts + exact brain wake
+    # counts). Best-effort; won't clobber an existing report. Fill its TODOs + LEARNINGS/HANDOFF/memory.
+    try:
+        from eval.report_run import scaffold_report
+        path, _ = scaffold_report("runs/loop", brain=brain)
+        print(f"[loop] report: scaffolded {path} — fill its TODOs (see CLAUDE.md Definition of Done)"
+              if path else "[loop] report: one already exists for this date — not overwriting.", flush=True)
+    except Exception as e:  # pragma: no cover - reporting must never break a run
+        print(f"[loop] report: auto-scaffold skipped ({type(e).__name__}: {e})", flush=True)
     return 0
 
 

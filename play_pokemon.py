@@ -220,6 +220,19 @@ def main() -> int:
               f"— autopilot handled the rest for free")
     if args.record:
         print(f"  recording: {args.record}")
+
+    # Definition-of-Done step 1: auto-scaffold a report skeleton for PAID runs (oracle facts from
+    # <out>/oracle.jsonl, exact wake counts from the brain). Best-effort — never fail a run over a
+    # report; it won't clobber an existing file. Fill its TODOs + LEARNINGS/HANDOFF/memory (CLAUDE.md).
+    if args.brain in ("llm", "hybrid"):
+        try:
+            from eval.report_run import scaffold_report
+            path, _ = scaffold_report(args.out, brain=brain, cost=None)
+            print(f"  report: scaffolded {path} — fill its TODOs (see CLAUDE.md Definition of Done)"
+                  if path else "  report: a report for this run/date already exists — not overwriting "
+                               "(re-run eval.report_run --force to refresh facts).")
+        except Exception as e:  # pragma: no cover - reporting must never break a run
+            print(f"  report: auto-scaffold skipped ({type(e).__name__}: {e})")
     return 0
 
 
