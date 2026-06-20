@@ -35,7 +35,27 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-17)
 
-**LATEST (2026-06-17): the agent now WINS the rival battle and progresses PAST it — Phase A "fight" is DONE,
+**LATEST (2026-06-20): the run-#15 INTERIOR-NAVIGATION wall is BROKEN (harness-only, free-validated; NOT yet
+paid-tested).** Run #15's #1 blocker was dead-reckoning DRIFT in tight rooms. Measured it *directly* against
+the RAM oracle (run #15 logged both the perceiver pose and ground-truth x/y): **40.2% of overworld moves drifted,
+139/144 of them the exact "RAM moved 2 tiles, perceiver recorded 1" case.** Root cause = a wrong MOVEMENT MODEL:
+the autopilot presses `[d,d]` and the code assumed GateWorld's *"turn, then move = net 1 tile"*, but the **real
+emulator absorbs the turn within the held press**, so `[d,d]` moves **TWO** tiles when open while the perceiver
+capped the cursor at one → ~1 tile lost per same-direction step → the interior map corrupts. Verified the true
+mechanics on the live emulator (`eval/probe_step.py`): a **single `[d]` press = exactly one tile** (even on a
+direction change; turn is free), `[d,d]` = two. **Fix (two halves):** (1) `ExploreBrain(single_step=True)` — the
+Pokémon drivers press `[d]` (one tile/decision) so each move stays synced; the **agnostic default stays `[d,d]`**
+(GateWorld untouched — step granularity is a per-world property the driver injects, `core/` stays world-agnostic).
+(2) **measured-distance odometry** in the perceiver — advance the cursor by the best-shift magnitude (clamped to
+the ±4-tile window), marking every traversed cell visited, instead of capping at one. **Validated free on run
+#15's real frames (`eval/replay_drift.py`): cap-at-one drift 40.2% → 0** (residual = pre-existing post-warp
+re-baselines + multi-axis LLM presses). **170 tests** (+3). Committed on `feat/interior-nav-drift` (off `main`,
+NOT pushed/merged). **NEXT: a guarded paid end-to-end re-run** (the run #15 config from `start.state`) to confirm
+the agent now reaches Oak, gets the starter, and proceeds — the precondition for starter → rival → Route 1. Then
+(2) the learned blind-execute battle policy. (Mandatory before any paid run: `reset_aria_memory.py --yes`, credit
+probe, `python -u`.)
+
+**(2026-06-17): the agent WINS the rival battle and progresses PAST it — Phase A "fight" is DONE,
 end-to-end.** Run #12 (verified per-step): it beat Gary's Squirtle with Charmander despite the type
 disadvantage, got the Pokédex, left the lab. The chain that got us here, all validated live: **confabulation
 (the cheap model misreading low-res battle SPRITES) → fixed by running text-only + decoding clean state; move
@@ -416,7 +436,7 @@ place-graph is now **Phase B** above, not merely deferred.) Also still open: ext
 ## 5. How to run
 
 ```bash
-uv run pytest -q                 # 158 tests, no ROM/PyBoy needed
+uv run pytest -q                 # 170 tests, no ROM/PyBoy needed
 
 # watch the free autopilot (real-time + sound), record video+audio:
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain explore --perception \
@@ -505,9 +525,11 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   inspect_warp.py          #   does a map warp emit a fade? per-frame std through a press (Phase B B0)
   inspect_translation.py   #   best-shift overlap diff: same-map vs transition separation (Phase B)
   replay_perceiver.py      #   replay a run's frames through the perceiver; check for map-lumping (Phase B)
+  probe_step.py            #   live emu: confirm single [d] press = 1 tile, [d,d] = 2 (interior-nav drift fix)
+  replay_drift.py          #   replay a run's frames; score perceiver pose-delta vs RAM per step (drift fix)
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
   report_run.py            #   scaffold reports/<date>-live-run-<N>.md from a run's oracle.jsonl + log (Definition of Done step 1)
-tests/                     # 158 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
+tests/                     # 170 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
