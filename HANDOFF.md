@@ -35,7 +35,33 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-17)
 
-**LATEST (2026-06-20): the run-#15 INTERIOR-NAVIGATION wall is BROKEN + PAID-VALIDATED (run #16); the bottleneck
+**LATEST (2026-06-20, run #17): the AFFORDANCE LAYER is VALIDATED — the agent got the starter COLD and WON the
+rival battle (first start→starter→win in one run). The bottleneck moved to PLACE-DETECTION reliability.**
+Built two free, pixels-only signals to fix run #16's "navigates the lab but can't transact the starter" wall:
+**motion-saliency** (camera-static frame-diff → idle-animating NPCs as ROIs; a cluster-size filter rejects
+animated terrain — data-validated, Pallet water 35→7, lab NPCs kept) and the **interaction-probe** (out of
+frontiers → face each WALL + press A; a reaction = an interactable, since NPCs/objects sit on non-walkable tiles
+and read as walls). Surfaced as `spatial_memory.rois` + an LLM hint; both off by default in `core/`, on in the
+Pokémon drivers. **Run #17 (cold from `start.state`, run-16 config + the layer): the probe fired 23× and got
+SQUIRTLE, then WON the rival battle** (vs Bulbasaur, a type disadvantage; `in_battle` 2→0 sustained @842, stayed
+on map 40 = no blackout) — **nav+starter cost only ~6 of 69 wakes** (the probe is free autopilot; 227 free
+advances). Report `reports/2026-06-20-live-run-17-affordance-layer-probe-saliency-got-the-starter.md`, ~$0.6-0.8.
+**Also built (groundwork, NOT yet effective): cross-place exploration** (when a room is exhausted, route through
+a portal to a place that still has frontiers — the decode-aligned way to make "leave Pallet" emerge instead of
+being told by `goals.md`). **185 tests.** **THE #1 BLOCKER IS NOW PLACE-DETECTION RELIABILITY:** the Phase-B
+place-graph MISSES real warps (run #16 + the free `probe_loop` MERGED the lab into Pallet — area 0 — because the
+warp completed on a non-directional action, and the transition is gated on `direction is not None`) AND mints
+SPURIOUS places from dialog-flicker (run #15 FRAGMENTED the lab into 5 places). The drift fix made WITHIN-room
+geometry trustworthy; BETWEEN-room identity is not — and that blocks cross-place + clean interior reasoning +
+reliably leaving the lab post-battle. **NEXT: (1) fix place-detection (don't miss a non-directional warp; don't
+mint from dialog-flicker — data-first, we have the frames); (2) investigate a NEW API error mode that halted run
+#17 post-win — `invalid_request` (AnthropicException, NOT credits), the circuit breaker correctly caught 4 in a
+row; (3) then cross-place lets the agent leave the lab and head for Route 1.** *Prompt audit (this session): both
+`POKEMON_SYSTEM` and aria's seed (`goals.md`/`core_memory.md`/`lessons.md`) inject RECALL — the full Kanto route,
+type chart, gym order — so "go north" is told, not decoded; cross-place is the decode-aligned fix (David's call
+on stripping the seed).* Branch `feat/interior-nav-drift` (off `main`), pushed.
+
+**(run #16): the run-#15 INTERIOR-NAVIGATION wall is BROKEN + PAID-VALIDATED; the bottleneck
 moved to AFFORDANCE / region-of-interest discovery.** Run #15's #1 blocker was dead-reckoning DRIFT in tight
 rooms. Measured it *directly* against the RAM oracle (run #15 logged both the perceiver pose and ground-truth
 x/y): **40.2% of overworld moves drifted, 139/144 the exact "RAM moved 2 tiles, perceiver recorded 1" case.**
@@ -446,7 +472,7 @@ place-graph is now **Phase B** above, not merely deferred.) Also still open: ext
 ## 5. How to run
 
 ```bash
-uv run pytest -q                 # 170 tests, no ROM/PyBoy needed
+uv run pytest -q                 # 185 tests, no ROM/PyBoy needed
 
 # watch the free autopilot (real-time + sound), record video+audio:
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain explore --perception \
@@ -514,6 +540,7 @@ games/pokemon_red/         # THE POKEMON WORLD (a GamePlugin; real-world regime,
   plugin.py                #   observe()/handle()/tools(); builds SymbolicState OR RAM obs; logs oracle.jsonl
   perceiver.py             #   OverworldPerceiver: odometry + occupancy map; detect_mode() (+choice detect); decodes textbox; NO RAM
   textbox.py               #   Gen-1 textbox decoder: pixels -> text via the glyph table (no RAM/VRAM)
+  saliency.py              #   motion-saliency: camera-static frame-diff -> NPC/ROI candidates (terrain-filtered)
   gen1_font.json           #   the glyph asset (calibrated; extend via eval/calibrate_font.py)
   emulator.py              #   the ONLY PyBoy import; wall-clock pacing governor + recording hook
   memory_map.py            #   RAM addresses -> structured state (the ORACLE; never an agent input)
@@ -537,9 +564,11 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   replay_perceiver.py      #   replay a run's frames through the perceiver; check for map-lumping (Phase B)
   probe_step.py            #   live emu: confirm single [d] press = 1 tile, [d,d] = 2 (interior-nav drift fix)
   replay_drift.py          #   replay a run's frames; score perceiver pose-delta vs RAM per step (drift fix)
+  inspect_motion.py        #   motion-saliency probe: per-map NPC ROIs vs animated terrain (affordance layer)
+  probe_loop.py            #   FREE closed-loop (scripted-A fallback): validate probe+saliency+cross-place, no API
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
   report_run.py            #   scaffold reports/<date>-live-run-<N>.md from a run's oracle.jsonl + log (Definition of Done step 1)
-tests/                     # 170 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
+tests/                     # 185 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
