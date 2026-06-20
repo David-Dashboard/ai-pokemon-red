@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-16._
+_Last updated: 2026-06-20._
 
 ---
 
@@ -42,14 +42,22 @@ disadvantage, got the Pokédex, left the lab. The chain that got us here, all va
 selection (couldn't read which move was highlighted) → fixed by `decode_move_menu` (move list + ▶ cursor) →
 won.** The recurring lesson all session: **decode the state, keep the agent constant, wake the model only when
 it must decide.** **Read `reports/INSIGHTS.md`** for the conceptual synthesis (the perception seam,
-generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law). **143 tests.**
-**NEXT (bottleneck has moved OFF fighting):** (1) **battle auto-advance** — wake only at the action/move menus,
-auto-advance battle text (~4× cheaper battles: run #12 spent ~68 of 73 wakes inside the battle, woken every
-step); (2) the **learned blind-execute battle policy** (skill compilation, now feasible because the state is
-decoded — INSIGHTS §6); (3) tighten **lab-exit / Pallet navigation** (the residual Phase-B gap run #12
-re-exposed post-battle). Branch `feat/lesson-buffer` is the integration branch (everything stacks here).
+generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law). **158 tests.**
+**NEXT (bottleneck has moved OFF fighting):** (1) ~~**battle auto-advance**~~ **BUILT (2026-06-20, harness-only,
+free-validated) — paid run pending.** Wake only at the action/move menus; auto-advance battle narration for free.
+`textbox.battle_subscreen` (pixels-only) splits a SETTLED battle frame into `battle_text` (narration → press A
+free) vs `battle` (the action/move menu → wake); the perceiver emits the finer `context`; `HybridBrain`'s
+dialog auto-advance branch is widened by one predicate to also advance `battle_text`. **Safety = positive-ID-
+for-advance, default-to-wake** (a mis-read MOVE menu would auto-pick GROWL — the catastrophic case — so the
+move menu is detected FIRST and any ambiguity wakes). Validated on the 8 real `runs/battle` captures (clean
+split) + 15 synthetic tests (**158 total**); plus a generic `_ADVANCE_FUSE=50` and a battle-aware `play_loop`
+watchdog (no halt mid-fight). Branch `feat/battle-auto-advance` off `main`, committed (`695faee`..`c2432cb`),
+**NOT pushed**. **Next: the guarded paid run** (from `rival_battle.state`, David's go-ahead) — does the battle
+wake count drop sharply (target: a handful vs run #12's ~68) and still win? Then (2) the **learned blind-execute
+battle policy** (skill compilation, now feasible because the state is decoded — INSIGHTS §6); (3) tighten
+**lab-exit / Pallet navigation** (the residual Phase-B gap run #12 re-exposed post-battle).
 
-**What works (built + tested, 143 tests pass, no ROM/PyBoy needed for tests):**
+**What works (built + tested, 158 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
   role-named `SymbolicState`; odometry + occupancy map; `detect_mode` (overworld/menu/dialog/battle).
   **Validated on real pixels:** per-step walkability 99.3% (tuned), modes incl. a **real battle 8/8**,
@@ -374,7 +382,7 @@ place-graph is now **Phase B** above, not merely deferred.) Also still open: ext
 ## 5. How to run
 
 ```bash
-uv run pytest -q                 # 143 tests, no ROM/PyBoy needed
+uv run pytest -q                 # 158 tests, no ROM/PyBoy needed
 
 # watch the free autopilot (real-time + sound), record video+audio:
 uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain explore --perception \
@@ -455,7 +463,7 @@ eval/                      # measurement harnesses (all $0; no ROM needed to imp
   inspect_translation.py   #   best-shift overlap diff: same-map vs transition separation (Phase B)
   replay_perceiver.py      #   replay a run's frames through the perceiver; check for map-lumping (Phase B)
   gating_probe.py          #   run GateWorld both skins; reasoning-vs-recall verdict
-tests/                     # 143 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
+tests/                     # 158 tests, no ROM/PyBoy (FakeEmulator + synthetic frames + injected writers)
 reports/                   # iteration reports, consolidated report, specs, live-run post-mortem, LEARNINGS.md
 play_pokemon.py            # single-run driver (watch/record/--brain explore|hybrid|llm)
 play_loop.py               # loop-safe driver: watchdog + budget guard + checkpointing (use for paid runs)
