@@ -24,8 +24,15 @@ System 2** only on *necessity* (novelty / low-confidence) or *override* (a surpr
 *entertaining testbed* for designing this harness — **not a game to beat**. The companion deployment already
 embodies this (it acts on its world via real tools); the game drifted to a text-advisor — the plan below
 realigns it. **The full multi-month arc (It1 Pokémon → It5 robot, + the orthogonal small-worker track) is
-pinned in [`ROADMAP.md`](ROADMAP.md).** Architecture detail: `ai-aria/PROMPT_ARCHITECTURE.md` +
-`memory/dual-process-architecture.md` + `knowledge-export/`.
+pinned in [`ROADMAP.md`](ROADMAP.md).**
+
+**⇒ The repo-boundary CONTRACT is pinned in [`ARCHITECTURE.md`](ARCHITECTURE.md) (ADR-001, 2026-06-20) — read it
+and don't drift from it:** `ai-pokemon-red` = the WORLD INTERFACE + **System 1** (perception + reflexive fast
+loop + the oracle); `ai-aria` = the AGENT + **System 2** (deliberate reasoning + ALL memory + identity/
+constitution). They meet at ONE frozen seam (`SymbolicState` → agent; an intent → world). Research-grounded
+(SwiftSage; the 3-layer reactive/deliberative robotics architecture; "Distilling System 2 into System 1";
+Voyager). Only revise on an empirical surprise, as a new ADR. Other architecture detail:
+`ai-aria/PROMPT_ARCHITECTURE.md` + `memory/dual-process-architecture.md` + `knowledge-export/`.
 
 Four constraints held on purpose (they're what makes the result transfer):
 - **Generalize** — find the *smallest* increments that let the *same* agent act in a *different*
