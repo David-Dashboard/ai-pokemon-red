@@ -61,6 +61,17 @@ row; (3) then cross-place lets the agent leave the lab and head for Route 1.** *
 type chart, gym order — so "go north" is told, not decoded; cross-place is the decode-aligned fix (David's call
 on stripping the seed).* Branch `feat/interior-nav-drift` (off `main`), pushed.
 
+**⚠ COST ALERT (2026-06-20) — credits exhausted; investigation queued. See `reports/2026-06-20-cost-investigation.md`.**
+Today's 6 paid runs (#12–#17) burned **~8.4M input tokens (~$7–10 on Haiku-4.5)**; the 9–11 AM local window
+(runs #13–#14) drained the first balance to zero ~10:40, then #15–#17 burned ~$6 more. Two structural causes
+(read-only finding): (1) **aria makes ~1 internal `aux` call per game wake** (reflection/memory — ~half the
+spend), and (2) **prompts BALLOON to ~30K tokens, ~32% cached** (aria's growing memory + the big recall seed
+every turn; worst on the stuck-in-lab runs #16/#17 at 2.5–2.8M each; also caused #17's `invalid_request` halt).
+**Do NOT run another paid job until a harness cost-breaker is in.** NEXT (in-depth, post-compaction + Ultracode):
+confirm Haiku-4.5 pricing, decompose a 30K prompt, root-cause the 32% caching + the `aux` cadence, and design the
+fixes (harness: cost/prompt-size circuit-breaker, lower caps, stuck-halt; aria: throttle reflection, cap context,
+trim seed, enable caching).
+
 **(run #16): the run-#15 INTERIOR-NAVIGATION wall is BROKEN + PAID-VALIDATED; the bottleneck
 moved to AFFORDANCE / region-of-interest discovery.** Run #15's #1 blocker was dead-reckoning DRIFT in tight
 rooms. Measured it *directly* against the RAM oracle (run #15 logged both the perceiver pose and ground-truth
