@@ -466,6 +466,126 @@ def test_hybrid_auto_advance_does_not_accrue_a_stuck_streak():
     assert h.advanced == 5 and h.woke == 0 and h.disconfirm.fired is False
 
 
+def test_hybrid_auto_advances_battle_text_for_free():
+    """Battle auto-advance: narration ('battle_text') presses A for free like plain dialog — run #12
+    spent ~68 of 73 wakes inside ONE battle, most on advanceable narration it couldn't act on."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "x"}, "a"), "llm")   # obvious if the LLM were woken
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    call = h.decide(_ctx_obs("battle_text"), [], {})
+    assert call.tool == "press_button" and call.args["button"] == "a"     # advanced, not the LLM's 'x'
+    assert h.woke == 0 and h.advanced == 1 and h.mode == "advance"
+
+
+def test_hybrid_wakes_on_battle_menu_even_with_auto_advance_on():
+    """The safety contract: the action/move menu stays context=='battle' -> WAKES (a move pick is a
+    decision, never auto-mashed). Only narration ('battle_text') auto-advances."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "a"}, "a"), "llm")
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    h.decide(_ctx_obs("battle"), [], {})
+    assert h.woke == 1 and h.advanced == 0
+
+
+def test_hybrid_battle_text_does_not_accrue_a_stuck_streak():
+    """Auto-advancing battle narration is invisible progress, so it resets the no-progress streak —
+    no spurious SURPRISE on the next menu wake (mirrors the plain-dialog guarantee)."""
+    from core.brains import HybridBrain
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), replan_after=2, advance_on_dialog=True)
+    for _ in range(5):
+        h.decide(_ctx_obs("battle_text"), [], {})
+    assert h.advanced == 5 and h.woke == 0 and h.disconfirm.fired is False
+
+
+def test_hybrid_battle_text_wakes_when_auto_advance_disabled():
+    """Agnostic default (off): 'battle_text' is just another non-overworld context -> wakes. A world
+    that never emits the label is wholly unaffected (no Pokémon-specific behavior leaks into core)."""
+    from core.brains import HybridBrain, _call
+    fb = _StubBrain(_call("press_button", {"button": "a"}, "a"), "llm")
+    h = HybridBrain(_StubBrain(None), fb)                          # advance_on_dialog defaults False
+    h.decide(_ctx_obs("battle_text"), [], {})
+    assert h.woke == 1 and h.advanced == 0
+
+
+def test_hybrid_advance_fuse_forces_a_wake():
+    """Safety fuse: after _ADVANCE_FUSE consecutive free advances the next one forces ONE LLM wake (so
+    a pathological never-terminating advanceable loop can't run forever for free), then resets."""
+    from core.brains import HybridBrain, _ADVANCE_FUSE
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), advance_on_dialog=True)
+    for _ in range(_ADVANCE_FUSE):
+        h.decide(_ctx_obs("battle_text"), [], {})
+    assert h.advanced == _ADVANCE_FUSE and h.woke == 0            # all free so far
+    h.decide(_ctx_obs("battle_text"), [], {})                    # the (cap+1)th: fuse trips -> wake
+    assert h.woke == 1 and h._consec_advance == 0
+
+
+def test_hybrid_battle_text_when_woken_is_not_marked_dead_or_surprising():
+    """Predicate-widen guard (the disconfirm/outcome skip): even when 'battle_text' WAKES (auto-advance
+    off), the confirm button is never marked a dead 'avoid' action and no SURPRISE fires — battle
+    progress is invisible to the frozen pose signature whether the label is 'battle' or 'battle_text'."""
+    from core.brains import HybridBrain, _call
+
+    class _Capturing:
+        def __init__(self, call):
+            self._c, self.last_thought, self.avoids, self.surprises = call, "", [], []
+        def decide(self, obs, tools, context):
+            self.avoids.append(context.get("avoid")); self.surprises.append(context.get("surprise_note"))
+            return self._c
+
+    fb = _Capturing(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, replan_after=2)          # auto-advance off -> battle_text wakes
+    for _ in range(6):
+        h.decide(_ctx_obs("battle_text"), [], {})
+    assert h.woke == 6
+    assert all("a" not in (av or []) for av in fb.avoids)         # confirm button never marked dead
+    assert all(s is None for s in fb.surprises)                   # no spurious 'stuck' nudge
+
+
+def _battle_frame():
+    """A synthetic battle-shaped frame: white HP boxes (top) + white action/text box (bottom) over a
+    dark middle, so detect_mode reads 'battle' (the contrast keeps std above the fade guard)."""
+    b = np.full((144, 160, 3), 60, dtype=np.uint8)
+    b[:58, :] = 255
+    b[96:, :] = 255
+    return b
+
+
+def test_perceive_emits_battle_text_for_narration(monkeypatch):
+    """Wiring: in a battle frame the perceiver splits the SETTLED screen via battle_subscreen and
+    passes its verdict through as the context the brain routes on."""
+    import games.pokemon_red.textbox as tbx
+    monkeypatch.setattr(tbx, "battle_subscreen", lambda frame, table: "battle_text")
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    per._font_loaded, per._font = True, object()                  # pretend the glyph asset is loaded
+    s = per.perceive(_battle_frame(), mem, {"last_action": "a"})
+    assert s.context == "battle_text"
+
+
+def test_perceive_emits_battle_for_a_menu(monkeypatch):
+    import games.pokemon_red.textbox as tbx
+    monkeypatch.setattr(tbx, "battle_subscreen", lambda frame, table: "battle_menu")
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    per._font_loaded, per._font = True, object()
+    s = per.perceive(_battle_frame(), mem, {"last_action": "a"})
+    assert s.context == "battle"                                  # a menu -> the wake label
+
+
+def test_perceive_battle_without_font_defaults_to_battle():
+    """No glyph asset -> can't positively identify narration -> default to 'battle' (wake), never a
+    silent auto-advance."""
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    per._font_loaded, per._font = True, None                      # asset absent/unloadable
+    s = per.perceive(_battle_frame(), mem, {"last_action": "a"})
+    assert s.context == "battle"
+
+
+def test_detect_mode_unchanged_for_battle_frame():
+    """Regression: the battle split lives in perceive(), NOT detect_mode — detect_mode still returns
+    'battle' for a battle frame, so _settle_if_battle (which keys on detect_mode) keeps firing."""
+    from games.pokemon_red.perceiver import detect_mode
+    assert detect_mode(_battle_frame()) == "battle"
+
+
 def test_hybrid_injects_surprise_nudge_after_repeated_no_progress():
     """Disconfirm detector: once the agent has made no observable progress for `replan_after`
     consecutive decisions (here the autopilot is always stuck -> waking every step with a fixed

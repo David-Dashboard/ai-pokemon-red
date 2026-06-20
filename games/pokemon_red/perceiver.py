@@ -148,12 +148,8 @@ class OverworldPerceiver:
         self._font = None            # lazily-loaded Gen-1 glyph table (textbox decoder)
         self._font_loaded = False
 
-    def _read_text(self, frame) -> str:
-        """Decode the dialog textbox to text — PIXELS ONLY (no RAM/VRAM), via the static glyph asset.
-        Returns '' if the asset is absent, decoding fails, or the region holds too little recognizable
-        text (so a non-textbox screen, e.g. the START menu over the world, doesn't produce junk)."""
-        if frame is None:
-            return ""
+    def _ensure_font(self):
+        """Lazily load the Gen-1 glyph table (a static pixels-only asset). None if absent/unloadable."""
         if not self._font_loaded:
             self._font_loaded = True
             try:
@@ -161,7 +157,25 @@ class OverworldPerceiver:
                 self._font = FontTable.load()
             except Exception:
                 self._font = None
-        if self._font is None:
+        return self._font
+
+    def _battle_context(self, frame) -> str:
+        """A SETTLED battle frame -> 'battle_text' (advanceable narration the harness auto-advances)
+        or 'battle' (the action/move menu: a DECISION -> wake). Pixels-only; DEFAULTS TO 'battle'
+        (wake) unless narration is positively identified, so a mis-read menu is never auto-advanced."""
+        if frame is None or self._ensure_font() is None:
+            return "battle"
+        try:
+            from .textbox import battle_subscreen
+            return "battle_text" if battle_subscreen(frame, self._font) == "battle_text" else "battle"
+        except Exception:
+            return "battle"
+
+    def _read_text(self, frame) -> str:
+        """Decode the dialog textbox to text — PIXELS ONLY (no RAM/VRAM), via the static glyph asset.
+        Returns '' if the asset is absent, decoding fails, or the region holds too little recognizable
+        text (so a non-textbox screen, e.g. the START menu over the world, doesn't produce junk)."""
+        if frame is None or self._ensure_font() is None:
             return ""
         try:
             from .textbox import decode, decode_move_menu
@@ -196,10 +210,15 @@ class OverworldPerceiver:
         # do NOT run odometry on it (a menu cursor move isn't walking). Re-baseline when we return.
         mode = detect_mode(frame)
         if mode != "overworld":
+            # In a battle, split the SETTLED frame finer: narration ('battle_text', the harness
+            # auto-advances it for free) vs the action/move menu ('battle', a decision -> wake). Other
+            # modes pass through unchanged. detect_mode still returns 'battle', so _settle_if_battle
+            # (which keys on detect_mode) keeps firing on narration frames.
+            ctx_label = self._battle_context(frame) if mode == "battle" else mode
             m["prev_frame"] = np.asarray(frame).copy() if frame is not None else None
             m["resync"] = True
             return SymbolicState(
-                confidence=0.5, context=mode,
+                confidence=0.5, context=ctx_label,
                 pose={"frame": "grid", "value": list(m["cursor"]), "uncertain": True, "area": m["place"]},
                 spatial_memory={"kind": "occupancy-grid", "area": m["place"]},
                 affordances=[],

@@ -37,6 +37,11 @@ _LESSON_CAP = 8
 # How many recent auto-advanced dialog text chunks to carry as the "missed since last decision"
 # transcript. Capped so a long forced dialog can't bloat the next wake's prompt.
 _TRANSCRIPT_CAP = 12
+# A safety fuse: force one LLM wake after this many CONSECUTIVE free auto-advances, so a pathological
+# never-terminating advance loop (a stuck textbox/battle that always reads as advanceable) can't run
+# forever for free. Normal dialog/battle narration is a handful of frames between decisions, so this
+# never trips in practice — it's a backstop, not a budget.
+_ADVANCE_FUSE = 50
 
 
 def _call(tool: str, args: dict, agent_id: str) -> ToolCall:
@@ -156,6 +161,7 @@ class HybridBrain:
         self.last_thought = ""
         self.woke = 0
         self.advanced = 0          # free dialog auto-advances (press A), not LLM wakes
+        self._consec_advance = 0   # consecutive free auto-advances; trips the _ADVANCE_FUSE safety wake
         self.transcript: list = []  # dialog text auto-advanced past since the last wake (the missed text)
         self.total = 0
         self.mode = "autopilot"
@@ -190,9 +196,9 @@ class HybridBrain:
         # confirm button (A — the primary battle action: advance text, pick FIGHT, choose a move) as a
         # dead/"avoid" action AND fire a spurious SURPRISE every few turns. So, like an auto-advanced
         # dialog, treat battle progress as invisible to this signature: don't tally it, keep the
-        # no-progress streak clear. (Battle screens read as context=='battle' — incl. the action/move
-        # menus — so this also covers them.)
-        if ctx_label == "battle":
+        # no-progress streak clear. (Battle screens read as 'battle' — the action/move menus — or
+        # 'battle_text' — auto-advanced narration; both are covered here.)
+        if ctx_label in ("battle", "battle_text"):
             self.disconfirm.reset()
         else:
             if self._last_action is not None:  # grade the PREVIOUS action: did the situation change?
@@ -211,23 +217,33 @@ class HybridBrain:
             context["goto"] = self.goto               # the autopilot BFS-pathfinds toward it (free), else explores
 
         if ctx_label != "overworld":
-            if self.advance_on_dialog and ctx_label == "dialog":
-                # plain textbox: advance it for FREE (no LLM). Auto-advancing IS progress (the story
-                # moves on) even though the signature can't see it, so clear the no-progress streak.
+            # Auto-advanceable = a PLAIN textbox ('dialog') OR battle NARRATION ('battle_text'): mash
+            # the confirm button for FREE, waking the LLM only at a real choice (a 'menu'/'battle'
+            # decision). The action/move menus stay 'battle' -> wake, so a move pick is never mashed.
+            advanceable = self.advance_on_dialog and ctx_label in ("dialog", "battle_text")
+            if advanceable and self._consec_advance < _ADVANCE_FUSE:
+                # advance it for FREE (no LLM). Auto-advancing IS progress (the story moves on) even
+                # though the signature can't see it, so clear the no-progress streak.
                 self.mode = "advance"
                 self.advanced += 1
+                self._consec_advance += 1
                 self.disconfirm.reset()
                 txt = (obs.data.get("screen_text") or "").strip()   # capture the text we're skipping past
-                # consecutive-dedup is deliberate: advancing dialog never shows the SAME text twice in a
+                # consecutive-dedup is deliberate: advancing text never shows the SAME line twice in a
                 # row, so only the immediately-previous line can repeat (a held frame between A-presses).
                 if txt and (not self.transcript or self.transcript[-1] != txt):
                     self.transcript.append(txt)
                     del self.transcript[:-_TRANSCRIPT_CAP]
-                self.last_thought = "[auto-advance dialog]"
+                self.last_thought = "[auto-advance]"
                 call = _call("press_button", {"button": "a"}, self.agent_id)
             else:
-                call = self._wake(obs, tools, context, "mode")
+                # a real menu/battle decision, OR the fuse tripped (force a periodic look so an
+                # endless free-advance loop can't run forever).
+                why = "fuse" if advanceable else "mode"
+                self._consec_advance = 0
+                call = self._wake(obs, tools, context, why)
         else:
+            self._consec_advance = 0
             call = self.autopilot.decide(obs, tools, context)
             if call is not None:
                 self.mode = "autopilot"
