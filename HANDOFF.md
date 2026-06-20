@@ -99,7 +99,9 @@ observation overturn a prior decision (agnostic-feature #4).
 **Spend:** run #1 ~$3; run #2 ~$0.23; **run #3 ~$0.33** (40 wakes; 73 aria calls, 446K in / 9.8K out);
 **run #4 ~$0.11** (14 wakes; watchdog-halted in Pallet, never reached the lab); **run #5 ~$0.83** (100 wakes,
 budget-capped; reached the lab, then the last ~55 wakes 400'd as the Anthropic credits ran out); **run #6 $0**
-(all 30 wakes 400'd — zero credit balance); ~$0.66 across the free work before. **aria is now OUT OF CREDITS.** Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
+(all 30 wakes 400'd — zero credit balance); **#6b ~$0.25 / #7 ~$0.3 / #8 ~$0.4** (battle-policy tests from the
+fixture, after credits were restored; #6b validated battle mechanics, #7 crashed at step 39, #8 clean cap-50 —
+none won; the confabulation isn't fixed); ~$0.66 across the free work before. Prompt caching now **partly engages** (run #3: 96K cached tokens, vs
 0 before) — a bonus, still not the bottleneck at this wake volume.
 
 **Phase A items 1+2 (2026-06-16, this session) — battle-move policy + belief re-grounding BUILT (harness-only,
@@ -293,10 +295,20 @@ NOT win** (in_battle stayed 2 all 30 wakes) — the bottleneck MOVED to two new 
    Charmander and the fight is ongoing. The `TRUST THE SCREEN` nudge was injected but did NOT override the
    confab — too weak.
 
-**Next (battle-policy iteration, run-#6b-informed):** strengthen the prompt to pick a damaging move (not
-mash A) + sharpen the belief-update nudge so a fresh observation overrides a stale belief; re-test from the
-fixture (cheap, under any credit ceiling). *aria credit note:* the credits ran dry mid-run #5 and were
-restored before run #6b (verified with a probe) — a recurring external dependency to watch.
+**Battle policy v2 (run-#6b-informed) — TRIED, did NOT close the gap (runs #7/#8, 2026-06-17; committed).**
+`POKEMON_SYSTEM` now says to read the screen, name your Pokémon + the foe, and pick a DAMAGING move (not mash
+A); the `core/` belief nudge was strengthened ("state what you see; the screen wins"). Re-tested from the
+fixture. **It didn't work:** the agent confabulates a confident, **INVERTED** identity — it reasons *"Water
+beats Fire, I'll use WATER GUN to finish Charmander"* while the decoded screen says its OWN Pokémon is
+Charmander and the foe is Squirtle. It still mashes A (SCRATCH+GROWL under a WATER-GUN fantasy) and didn't
+win. *The finding:* belief-grounding is **deeper than a prompt** — a cheap model builds an internally-
+consistent wrong world ("rival battle → I have the advantage → I'm the water type") and reasons from it; a
+soft nudge can't overturn it. **PAUSED here (per David).** *Stronger lever for later:* the decoder reads
+`Go! CHARMANDER!` / `Enemy SQUIRTLE`, so the harness could parse those and inject a HARD fact ("your active
+Pokémon is CHARMANDER; the foe is SQUIRTLE") rather than a soft nudge. *aria credit note:* credits ran dry
+mid-run #5 and were restored before #6b/#7/#8 (probe before each) — a recurring external dependency.
+*(Process: run #7 hard-crashed at step 39 with no traceback because stdout was BUFFERED — run paid jobs with
+`python -u` so a crash leaves evidence; run #8 unbuffered completed clean.)*
 
 Then the credit-gated **gating-probe** verdict (means-ends reasoning) and continued play.
 
