@@ -86,14 +86,22 @@ _DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 
 class ExploreBrain:
     """Local frontier-exploration autopilot — NO LLM, NO API. Reads the SymbolicState's occupancy
-    map and BFS-paths to the nearest frontier, stepping there two presses at a time (turn+move) so a
-    turn-in-place isn't misread as a wall. This is the cheap controller that does routine traversal,
-    so an expensive brain is only needed at real decisions. Returns None when no frontier remains
-    (exploration of the known area is exhausted)."""
+    map and BFS-paths to the nearest frontier. This is the cheap controller that does routine
+    traversal, so an expensive brain is only needed at real decisions. Returns None when no frontier
+    remains (exploration of the known area is exhausted).
 
-    def __init__(self, agent_id: str) -> None:
+    `single_step` selects the per-tile MOTION CONTRACT (a per-world property the driver injects):
+      * False (agnostic default): press the direction TWICE ([d, d]) — "turn, then move", a net one
+        tile under GateWorld semantics where a direction change costs a press.
+      * True: press the direction ONCE ([d]). On the real Pokémon emulator the held press absorbs the
+        turn, so a single press = exactly one tile (validated, eval/probe_step). [d, d] there moves
+        TWO tiles, which the dead-reckoning cursor recorded as one -> the run-#15 interior DRIFT.
+        Single-stepping keeps every move one tile so the cursor stays synced with the world."""
+
+    def __init__(self, agent_id: str, single_step: bool = False) -> None:
         self.agent_id = agent_id
         self.last_thought = ""
+        self.single_step = single_step
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         sm = obs.data.get("spatial_memory") or {}
@@ -160,7 +168,8 @@ class ExploreBrain:
         return None
 
     def _move(self, d: str) -> ToolCall:
-        return _call("press_sequence", {"buttons": [d, d]}, self.agent_id)  # turn, then move
+        buttons = [d] if self.single_step else [d, d]   # one tile: [d] (real emu) or [d,d] (agnostic)
+        return _call("press_sequence", {"buttons": buttons}, self.agent_id)
 
 
 class HybridBrain:

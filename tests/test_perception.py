@@ -107,16 +107,29 @@ def test_moved_advances_the_dead_reckoned_cursor():
     assert s.last_action["outcome"] == "moved" and s.pose["value"] == [0, 1]
 
 
-def test_odometry_caps_at_one_tile_to_honor_the_controller_contract():
-    # The ExploreBrain treats [d,d] as a net ONE-tile step; recording the true 1-or-2 tiles made it
-    # overshoot/oscillate (stuck in the bedroom). So a multi-tile scroll is robustly detected as 'moved'
-    # via the best-shift, but the cursor advances exactly ONE cell. (The full measured-distance drift
-    # fix waits on a controller that understands variable steps.)
+def test_odometry_records_measured_distance_and_marks_traversed_cells():
+    # Measured-distance odometry (the run-#15 interior-DRIFT fix): a multi-tile scroll advances the
+    # cursor by the TRUE tiles moved (best-shift magnitude), not a capped 1. Capping at one was the
+    # drift: [d,d] moved two tiles but recorded one, so the occupancy map corrupted in the lab room.
+    # Every cell stepped THROUGH is marked visited (no phantom mid-path frontier).
     per, mem = OverworldPerceiver(), PerceptMemory()
     scene = _scene()
     per.perceive(scene, mem, {"last_action": None})
-    s = per.perceive(_scroll(scene, dx_tiles=3), mem, {"last_action": "right+right+right+right"})
-    assert s.last_action["outcome"] == "moved" and s.pose["value"] == [1, 0]
+    s = per.perceive(_scroll(scene, dx_tiles=3), mem, {"last_action": "right+right+right"})
+    assert s.last_action["outcome"] == "moved" and s.pose["value"] == [3, 0]
+    assert s.last_action["tiles"] == 3
+    cells = {(c["x"], c["y"]): c for c in s.spatial_memory["map"]}
+    assert all((cx, 0) in cells and cells[(cx, 0)]["visited"] for cx in (1, 2, 3))  # traversed cells
+
+
+def test_odometry_clamps_a_mis_measured_scroll_to_the_search_range():
+    # A defensive clamp: a wildly large best-shift magnitude can't fling the cursor beyond the
+    # +/- search range (4 tiles), so a single bad measurement degrades gracefully, never explodes.
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene()
+    per.perceive(scene, mem, {"last_action": None})
+    s = per.perceive(_scroll(scene, dy_tiles=4), mem, {"last_action": "down+down"})
+    assert s.last_action["outcome"] == "moved" and abs(s.pose["value"][1]) <= 4
 
 
 def test_area_change_resets_the_coordinate_frame():
@@ -345,6 +358,29 @@ def test_explore_bfs_paths_to_a_distant_frontier():
     ]
     call = ExploreBrain("a").decide(_obs_with_map((0, 0), cells, [[2, 0]]), [], {})
     assert call.tool == "press_sequence" and call.args["buttons"][0] == "right"
+
+
+def test_explore_single_step_presses_one_button_per_tile():
+    # The run-#15 drift fix: with single_step the autopilot presses the direction ONCE ([d]) so a move
+    # is exactly one tile on the real emulator (the held press absorbs the turn). The agnostic default
+    # stays [d, d]. Same map/frontier, only the press encoding differs.
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left", "right"]}]  # only down open
+    obs = _obs_with_map((0, 0), cells, [[0, 0]])
+    assert ExploreBrain("a", single_step=True).decide(obs, [], {}).args["buttons"] == ["down"]
+    assert ExploreBrain("a").decide(obs, [], {}).args["buttons"] == ["down", "down"]  # default unchanged
+
+
+def test_explore_single_step_goto_first_step_is_one_press():
+    from core.brains import ExploreBrain
+    cells = [
+        {"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left"]},   # right -> (1,0)
+        {"x": 1, "y": 0, "visited": True, "walls": ["up", "down"]},
+        {"x": 2, "y": 0, "visited": True, "walls": ["up", "down", "right"]},
+    ]
+    obs = _obs_with_map((0, 0), cells, [])
+    call = ExploreBrain("a", single_step=True).decide(obs, [], {"goto": [2, 0]})
+    assert call.args["buttons"] == ["right"]   # one press toward the target, not [right, right]
 
 
 def test_explore_returns_none_when_no_frontier_remains():

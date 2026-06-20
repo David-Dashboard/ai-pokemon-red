@@ -126,14 +126,14 @@ def main() -> int:
                 print("\nSetup error:\n--brain hybrid needs --perception.\n", file=sys.stderr)
                 return 2
             from core.brains import ExploreBrain, HybridBrain
-            brain = HybridBrain(ExploreBrain(agent_id), llm, advance_on_dialog=True)
+            brain = HybridBrain(ExploreBrain(agent_id, single_step=True), llm, advance_on_dialog=True)
     elif args.brain == "explore":
         if not args.perception:
             print("\nSetup error:\n--brain explore needs --perception (it navigates on the "
                   "SymbolicState occupancy map).\n", file=sys.stderr)
             return 2
         from core.brains import ExploreBrain
-        brain = ExploreBrain(agent_id)
+        brain = ExploreBrain(agent_id, single_step=True)   # real emu: [d] = one tile (no drift)
     else:
         from core.brains import ScriptedBrain
         brain = ScriptedBrain(agent_id, seed=args.seed)

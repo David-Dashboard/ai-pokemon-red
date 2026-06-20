@@ -267,22 +267,25 @@ class OverworldPerceiver:
             m["resync"] = True
             outcome = "moved"
         elif not first and direction:
-            # Did we actually move? The best-shift magnitude along the action axis is a robust
-            # moved-vs-blocked signal (a real scroll vs a turn-into-a-wall). We advance the cursor by
-            # exactly ONE tile, NOT the measured count: the ExploreBrain controller treats [d,d] as a
-            # net one-tile step, and recording the true 1-or-2 tiles makes it overshoot and oscillate
-            # (it got stuck in the bedroom). Capping preserves that contract; the full measured-distance
-            # odometry (the complete drift fix) waits on a controller that understands variable steps.
+            # Did we actually move, and how far? The best-shift magnitude along the action axis is a
+            # robust moved-vs-blocked signal (a real scroll vs a turn-into-a-wall) AND the true distance
+            # scrolled. We advance the cursor by the MEASURED tile count and mark every cell stepped
+            # THROUGH as visited. The autopilot now single-steps ([d] = one tile, ExploreBrain
+            # single_step), so this is 1 for routine traversal; a multi-tile press (an LLM 'up+up') lands
+            # the cursor at the true end instead of silently dropping tiles. The old cap-at-one was the
+            # run-#15 interior DRIFT bug: [d,d] moved two tiles but recorded one, so the occupancy map
+            # corrupted in the tight lab room. Clamp to the search range so a mis-measure can't fling it.
             axis_px = abs(sdy) if direction in ("up", "down") else abs(sdx)
             if axis_px < _TILE_PX / 2:         # negligible scroll -> we walked into a wall
                 cell["walls"].add(direction)
                 outcome = "blocked"
             else:
-                tiles = 1
+                tiles = max(1, min(_SHIFT_RANGE // _TILE_PX, int(round(axis_px / _TILE_PX))))
                 dx, dy = _DELTA[direction]
-                x, y = x + dx, y + dy
+                for _ in range(tiles):         # mark each tile traversed, not just the endpoint
+                    x, y = x + dx, y + dy
+                    cells.setdefault((x, y), {"visited": True, "walls": set()})["visited"] = True
                 m["cursor"] = (x, y)
-                cells.setdefault((x, y), {"visited": True, "walls": set()})["visited"] = True
                 cell = cells[(x, y)]
                 outcome = "moved"
 
