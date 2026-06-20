@@ -50,6 +50,23 @@ def _dominant_dir(action: Optional[str]) -> Optional[str]:
     return toks[-1] if toks else None
 
 
+def _has_frontier(cells: dict) -> bool:
+    """True if this place still has an exploration frontier: a visited, non-portal cell with a non-wall
+    direction into an unvisited (unknown) cell. Lets a GLOBAL explorer tell which OTHER places are still
+    worth visiting (the cross-place exploration signal)."""
+    for (cx, cy), c in cells.items():
+        if not c.get("visited") or c.get("portal") is not None:
+            continue
+        for d in _DIRS:
+            if d in c["walls"]:
+                continue
+            ddx, ddy = _DELTA[d]
+            nbr = cells.get((cx + ddx, cy + ddy))
+            if nbr is None or not nbr.get("visited"):
+                return True
+    return False
+
+
 def _frame_diff(a, b) -> float:
     if a is None or b is None:
         return 0.0
@@ -322,6 +339,11 @@ class OverworldPerceiver:
         # Motion-detected entities (NPCs) as candidate interaction targets, most-seen first.
         rois = sorted(([cx, cy] for (cx, cy), c in cells.items() if c.get("motion")),
                       key=lambda rc: -cells[(rc[0], rc[1])]["motion"])
+        # Place-graph for a GLOBAL (cross-place) explorer: every portal edge (door cell + crossing
+        # direction + destination place) and which places still have a frontier. Lets the controller
+        # leave an exhausted room and resume exploring elsewhere instead of getting stuck (the lab trap).
+        place_portals = [[p, list(c), d, dest] for (p, c), (dest, _e, d) in m["edges"].items()]
+        place_frontiers = [pid for pid, pcells in m["places"].items() if _has_frontier(pcells)]
         # Full map + frontier cells, so a LOCAL controller can pathfind without the LLM. A frontier
         # is a visited cell with a non-wall direction into an unvisited (unknown) cell.
         grid, frontiers = [], []
@@ -346,6 +368,7 @@ class OverworldPerceiver:
             spatial_memory={"kind": "occupancy-grid", "area": m["place"], "visited": visited_n,
                             "walls_here": sorted(cell["walls"]),
                             "map": grid, "frontiers": frontiers, "rois": rois,
+                            "place_portals": place_portals, "place_frontiers": place_frontiers,
                             "places_known": len(m["places"])},
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome,
@@ -369,13 +392,16 @@ class OverworldPerceiver:
         src = m["place"]
         key = (src, exit_cell)
         if key in m["edges"]:
-            dest, entry = m["edges"][key]
+            dest, entry, _ = m["edges"][key]
         else:
             dest = m["next_place"]
             m["next_place"] += 1
             entry = (0, 0)
-            m["edges"][key] = (dest, entry)
-            m["edges"][(dest, entry)] = (src, exit_cell)   # reverse edge (keyed by cell, not direction)
+            # store the crossing DIRECTION on each edge so a global explorer can route OUT of an
+            # exhausted room: from src you cross by pressing `direction` at exit_cell; from dest you
+            # cross back by pressing the reverse at entry.
+            m["edges"][key] = (dest, entry, direction)
+            m["edges"][(dest, entry)] = (src, exit_cell, _BACK[direction])   # reverse edge (keyed by cell)
             m["places"].setdefault(dest, {})
         dcells = m["places"].setdefault(dest, {})
         dcells.setdefault(entry, {"visited": True, "walls": set()})["visited"] = True   # arrival: explorable

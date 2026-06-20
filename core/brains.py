@@ -135,7 +135,17 @@ class ExploreBrain:
         if d:
             self.last_thought = f"to nearest frontier via {d}"
             return self._move(d)
-        # Out of frontiers — before giving up to the LLM, probe the walls for an interactable.
+        # This room is fully explored — but the GLOBAL map may not be. Before probing or giving up,
+        # route back through a known portal to a place that still has a frontier (the cross-place
+        # explorer): exhaust the lab -> pop back to Pallet -> walk its remaining frontiers. General; it
+        # only activates when the observation carries a place-graph (other worlds are unaffected).
+        area = (obs.data.get("pose") or {}).get("area")
+        d = self._cross_place(cur, cells, area, sm.get("place_portals") or [],
+                              set(sm.get("place_frontiers") or []))
+        if d:
+            self.last_thought = f"area explored — cross to a place with frontiers via {d}"
+            return self._move(d)
+        # Out of frontiers everywhere reachable — now probe the walls here for an interactable.
         if self.probe_interactables:
             d = self._next_probe(cur, cells, sm.get("rois") or [])
             if d:
@@ -159,6 +169,51 @@ class ExploreBrain:
         d = cand[0]
         done.add(d)
         return d
+
+    def _cross_place(self, cur, cells, area, portals, frontier_places) -> Optional[str]:
+        """Route OUT of an exhausted room toward a place that still has a frontier. Two-level: a BFS over
+        the PLACE graph (portals) finds the nearest frontier-bearing place and the first door to head for;
+        then a BFS within THIS room walks to that door, and once on it we press the crossing direction.
+        Returns a direction to move, or None (no other place has a frontier / it's unreachable)."""
+        if area is None or not portals or not frontier_places or area in frontier_places:
+            return None
+        hop = self._route_first_portal(area, portals, frontier_places)
+        if hop is None:
+            return None
+        door, cross_dir = hop
+        if cur != door:
+            return self._bfs_first_step(cur, cells, {door})   # walk to the door (None if unreachable)
+        return cross_dir                                      # on the door -> step through the portal
+
+    @staticmethod
+    def _route_first_portal(area, portals, frontier_places):
+        """BFS over the place graph (portals = [place, [x,y], dir, dest]) from `area` to the nearest place
+        in `frontier_places`. Returns (door_cell, cross_dir) for the FIRST hop out of `area`, or None."""
+        from collections import deque
+        adj: dict = {}
+        for place, cell, d, dest in portals:
+            adj.setdefault(place, []).append((dest, (cell[0], cell[1]), d))
+        prev = {area: None}            # place -> (from_place, door_cell, cross_dir) used to reach it
+        q = deque([area])
+        target = None
+        while q:
+            p = q.popleft()
+            if p != area and p in frontier_places:
+                target = p
+                break
+            for dest, cell, d in adj.get(p, []):
+                if dest not in prev:
+                    prev[dest] = (p, cell, d)
+                    q.append(dest)
+        if target is None:
+            return None
+        node = target                  # walk the chain back to the hop whose source is `area`
+        while prev[node] is not None and prev[node][0] != area:
+            node = prev[node][0]
+        if prev.get(node) is None:
+            return None
+        _src, door, cross_dir = prev[node]
+        return (door, cross_dir)
 
     def _probe(self, d: str) -> ToolCall:
         # Face the adjacent tile, then press the confirm button: facing turns IN PLACE (no scroll -> no

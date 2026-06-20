@@ -357,11 +357,13 @@ def test_scorer_walkability_confusion_and_escape():
 
 # -- ExploreBrain: local frontier autopilot (no LLM) --------------------------
 
-def _obs_with_map(pose, cells, frontiers, rois=None):
+def _obs_with_map(pose, cells, frontiers, rois=None, area=None, portals=None, place_frontiers=None):
     from core.contracts import Observation
     return Observation(
-        data={"pose": {"value": list(pose)},
-              "spatial_memory": {"map": cells, "frontiers": frontiers, "rois": rois or []}},
+        data={"pose": {"value": list(pose), "area": area},
+              "spatial_memory": {"map": cells, "frontiers": frontiers, "rois": rois or [],
+                                 "place_portals": portals or [],
+                                 "place_frontiers": place_frontiers or []}},
         text="", agent_id="a", t=0.0)
 
 
@@ -410,6 +412,37 @@ def test_explore_returns_none_when_no_frontier_remains():
     from core.brains import ExploreBrain
     cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
     assert ExploreBrain("a").decide(_obs_with_map((0, 0), cells, []), [], {}) is None
+
+
+def test_explore_crosses_to_a_place_that_still_has_frontiers():
+    # Cross-place exploration: this room (area 1, 'the lab') is fully explored, but place 0 ('Pallet')
+    # still has a frontier — so route to the door back to it instead of getting stuck (the lab trap).
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left", "right"]},       # only down is open
+             {"x": 0, "y": 1, "visited": True, "walls": ["left", "right", "down"], "portal": 0}]  # the door
+    portals = [[1, [0, 1], "down", 0], [0, [3, 3], "up", 1]]   # lab<->Pallet door edges (with cross dir)
+    obs = _obs_with_map((0, 0), cells, [], area=1, portals=portals, place_frontiers=[0])
+    call = ExploreBrain("a").decide(obs, [], {})
+    assert call is not None and call.args["buttons"][0] == "down"   # heads to the door back to Pallet
+
+
+def test_explore_on_a_portal_steps_through_it_to_cross():
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left", "right"]},      # interior -> door below
+             {"x": 0, "y": 1, "visited": True, "walls": ["left", "right", "down"], "portal": 0}]  # the door
+    portals = [[1, [0, 1], "down", 0]]
+    obs = _obs_with_map((0, 1), cells, [], area=1, portals=portals, place_frontiers=[0])
+    call = ExploreBrain("a").decide(obs, [], {})       # on the door, no local frontier -> use the cross dir
+    assert call.args["buttons"] == ["down", "down"]
+
+
+def test_explore_no_cross_when_no_place_has_a_frontier():
+    # If NO place has a frontier anywhere, cross-place must not fire (else it would ping-pong rooms).
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
+    portals = [[1, [0, 1], "down", 0]]
+    obs = _obs_with_map((0, 0), cells, [], area=1, portals=portals, place_frontiers=[])
+    assert ExploreBrain("a").decide(obs, [], {}) is None         # nothing to explore anywhere -> give up
 
 
 def test_explore_probes_a_wall_for_an_interactable_when_out_of_frontiers():
