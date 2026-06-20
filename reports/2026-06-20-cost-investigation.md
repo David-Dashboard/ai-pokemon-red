@@ -1,71 +1,120 @@
-# Cost investigation — credit exhaustion 2026-06-20 (GROUNDING for the in-depth dive)
+# Cost investigation — credit exhaustion 2026-06-20 (ROOT-CAUSED)
 
-_Read-only investigation triggered by: "between 9 AM and 11 AM today we exhausted all the credits."
-This captures the HARD DATA + the causes found so far, and scopes the in-depth (Ultracode, post-compaction)
-investigation so it starts grounded. No code changed; no fixes applied yet._
+_Triggered by: "between 9 AM and 11 AM today we exhausted all the credits."
+**Status: in-depth investigation COMPLETE** (multi-agent, 2026-06-20, Ultracode). This file was a
+read-only grounding doc; it has been **rewritten with the evidence-based root cause** — the first
+draft's central cause (below, "Superseded") was WRONG. No fixes applied yet; solution directions at
+the end. Token counts are ground truth (aria `usage.jsonl` + the 17 archived `iter-*.zip`); dollars
+use **confirmed** Haiku-4.5 pricing._
 
-## Hard data (from aria's `usage.jsonl`, the per-call token log)
+## Bottom line
 
-Model behind `aria-brain` (litellm-config.yaml): **`anthropic/claude-haiku-4-5`** (also `small-worker` +
-`aria-brain-fallback`). Archives hold the PREVIOUS run's usage (reset archives-then-wipes); `usage.jsonl`
-current = run #17.
+The ~$6 was **not** aria's reflection/memory machinery. It was the **conversation prompt itself** —
+a ~13K-token prompt billed at near-full price on *every* game wake because almost none of it caches,
+then *doubled* on ~60% of wakes by the agent's own `memory_recall` ReAct loop. The single biggest
+chunk is aria **re-sending the harness's entire game manual (`POKEMON_SYSTEM`) ~7× per wake**.
 
-| run | conv calls | **aux calls** | prompt_tokens | completion | ~cost* |
+## Hard data (aria `usage.jsonl` run #17 + all 17 archived runs)
+
+Model behind BOTH `aria-brain` and `small-worker` = **`anthropic/claude-haiku-4-5`**
+(`litellm-config.yaml`). The live `usage.jsonl` only ever holds the latest run (reset wipes it, after
+archiving to `aria_memory_archives/iter-NNN_<date>.zip` — every run IS recoverable there).
+
+**Run #17 token attribution (the clean, complete log):**
+
+| source | calls | input tok | **% input** | avg/call | cached |
 | --- | --- | --- | --- | --- | --- |
-| #12 | 51 | 44 | 510,185 | 11,533 | $0.45 |
-| #13 | 73 | 66 | 675,781 | 10,723 | $0.58 |
-| #14 | 22 | 15 | 203,693 | 3,161 | $0.18 (hit zero ~10:40) |
-| #15 | 80 | 9 | 161,295 | 2,490 | $0.14 |
-| #16 | 103 | **96** | **2,517,992** | 46,894 | $2.20 |
-| #17 (in archive) | 101 | **94** | **2,835,305** | 37,396 | $2.42 |
-| #17 (current log) | 69 | 58 | 1,514,655 | 26,900 | $1.32 |
-| **TODAY TOTAL** | | | **8,418,906** | **139,097** | **~$7.3*** |
+| **conversation** | 69 (4 failed) | 1,416,757 | **93.5%** | 20,533 | 34.4% |
+| **aux (rolling recap)** | 58 | 97,898 | **6.5%** | 1,688 | 0% |
 
-*Cost is a ROUGH estimate at assumed Haiku rates ($0.8/M in, $4/M out) — **the exact Haiku-4.5 price must
-be verified in the deep dive**; the TOKEN counts are ground truth. At a higher real price this is ~$8–10.
+**Across ALL 17 archives (13.66M input tok):** conversation **92.1%**, aux **7.9%** — rock-steady.
+The two stuck-in-lab runs (`iter-016` 2.52M + `iter-017` 2.84M, avg prompt 23–26K) are **61% of
+today's burn**. Caching was effectively OFF most of the day (`0%` on most runs; only `iter-016/017`
+reached 36–41%) → overall only **17.4%** of conversation input was ever cache-read.
 
-- Run #17 average prompt: **11,926 tokens/call**; largest prompts **~30,000 tokens**; cached **~32%**.
-- Timezone: `usage.jsonl` ts are UTC; archive mtimes are local (CEST, UTC+2). The user's **9–11 AM local
-  window = runs #13–#14**; **run #14 drained the first balance to zero ~10:40** (the documented
-  "credit balance too low"). After a top-up, the afternoon runs **#15–#17 burned the bulk (~$6)**.
+## Real cost (CONFIRMED pricing)
 
-## Causes found (preliminary — to be confirmed in depth)
+Haiku 4.5 (Anthropic docs, fetched 2026-06-20): **$1.00/MTok in · $5.00/MTok out · $1.25/MTok 5-min
+cache-write · $0.10/MTok cache-read.** (The first draft assumed $0.8/M in — real is 25% higher.)
 
-1. **Aria roughly DOUBLES the calls with internal overhead.** ~1 `aux` call per `conversation` call
-   (run #16: 103 conv + 96 aux). `aux` = aria's memory system (reflection / digest / retrieval re-rank via
-   the `small-worker` Haiku model — see `memory.yaml`: episodic digests, notes archiving, hybrid retrieval).
-   ~Half of every run's spend is machinery unrelated to choosing a button.
-2. **Prompts BALLOON to ~30K tokens (avg ~12–14K), only ~32% cached.** Aria injects its growing memory +
-   the large recall seed (`goals.md`/`core_memory.md`/`lessons.md`) every turn; context grows with run
-   length. The **stuck-in-the-lab runs (#16/#17) were the worst** (long run → huge context → 2.5–2.8M tokens
-   each). Same ballooning almost certainly caused run #17's `invalid_request` halt.
-3. **Caching is mostly OFF (~32%)** — a long-standing known issue; most input is re-sent every call.
+- **Run #17 ≈ $1.21–1.33** (conversation $1.06 = $0.93 uncached + $0.05 cache-read + $0.08 output; aux $0.15).
+- **Today ≈ $7–9** (~10.3M input tok: 8.83M archives + 1.5M live). "~$6" ≈ the post-top-up portion.
 
-## Open questions for the IN-DEPTH (Ultracode) investigation
+## Root cause — the causal chain (ranked by $)
 
-- **Exact $:** confirm Haiku-4.5 pricing and compute real spend per run + today total.
-- **`aux` calls:** what precisely are they (reflection cadence, retrieval re-rank, digest)? Can they be
-  throttled/disabled for game runs without breaking play? Quantify their share of tokens (not just calls).
-- **Prompt ballooning:** decompose a 30K prompt — how much is the recall seed, how much aria's growing
-  memory (episodic/journal/notes), how much the harness transcript/lessons? Where's the cap that should exist?
-- **Caching:** WHY only 32%? (Is the changing observation/context busting the cacheable prefix? Is caching
-  configured at all for this litellm path?) Full caching is a ~3–4× input-cost lever.
-- **`invalid_request`:** exact cause (prompt size limit? malformed message? empty content?) — reproduce.
-- **Runaway check:** confirm aux/retries don't scale super-linearly (they looked ~1:1, not exponential).
+1. **Uncached round-1 prompt — ~$0.93/run = 77% of cost.** Of run #17's 1.42M conv tokens, **929K
+   billed at full $1/MTok** (only 487K were $0.10 cache-reads). That uncached 929K *is* the first full
+   prompt of each wake (~13K × 65), which never caches across turns (see #3).
+2. **The transcript replays the harness's whole game manual ~7× per wake (uncached).** The transcript
+   block is **71% of one round (~12.7K tok)**. `prompt._transcript()` replays the last 6 journal
+   exchanges verbatim, and *each stored `message` is the harness's full payload* — embedding the
+   ~475-token `POKEMON_SYSTEM`. So that static manual is paid once as the live observation **+ 6× in
+   the transcript**, every wake, all uncached. This is the bulk of the uncached 929K.
+3. **Caching is structurally crippled for THIS agent.** `cache_control` is on `role=system` only
+   (`litellm-config.yaml:17`), but the game agent's system blocks are only **~1–2K tok — below Haiku's
+   4096-token minimum cacheable prefix**, so the system prefix *never caches*. The ~13K of real content
+   rides in the **user message** (no `cache_control`) and churns every turn → never byte-identical →
+   never cached. The only caching that happens is *intra-turn* (round-2 re-reads round-1 on tool wakes):
+   0% on no-tool wakes, ~44% on tool wakes → **34.4% blended**.
+4. **The "30K prompt" is half illusion — the `memory_recall` ReAct loop.** The agent's one enabled tool
+   fires on **42/69 wakes**, each forcing a 2nd model round that re-sends the whole prompt (usage is
+   bimodal 14K/28K = exactly 1.99×). It inflates the token *count* but costs little in $ (the 2nd round
+   is the cached part). Real money is still the uncached round-1.
+5. **aux/reflection — a red herring.** ~8% of tokens across all runs (~$0.15/run). ~1 call/wake (the
+   `recap.earlier_today_summary` rolling recap) but each is tiny (~1.7K). `reflection.py` is offline/cron
+   (digests only *past* days) — it does NOT fire per-turn.
 
-## Levers (to design in the deep dive)
+## Why the v0.26.0 cache solution delivers 34% here, not the measured ~80%
 
-**Harness-side (this repo — protective, low-risk):** a cost/prompt-size circuit-breaker (halt on a token or
-estimated-spend cap; would've stopped the 30K-prompt runs early and pre-empted `invalid_request`); lower
-default `--max-llm-calls`; treat "stuck N wakes" as a hard halt (stuck runs were the costliest); log
-per-call prompt_tokens to the run console for visibility.
+**It IS active** — ai-aria's game branch `pokemon-red-constitution` forked from main *at the
+prompt-caching merge* `6a268b1` (PR #27); `e641741` (v1 byte-stable system) + `651f311` (v2 2nd
+breakpoint) are in the branch; the live config has `cache_control_injection_points`. **The branch is
+NOT rebased on main** (8 behind = v0.26.1 MCP + v0.26.2 turn-deadline, *no newer caching*; 9 ahead =
+the constitution). Rebasing would NOT help caching.
 
-**Aria-side (the brain repo — the big wins, David's call):** throttle/disable reflection (`aux`) during game
-runs (~halves tokens); cap injected context + trim the recall seed (kills the 30K prompts); turn on prompt
-caching (~3–4× input cost).
+The solution was designed + measured (~80%) for the **companion** prompt shape: a LARGE stable system
+prefix (persona + accumulated core_memory/lessons, well over 4096 tok) and a SMALL per-turn user
+message. The **game agent inverts that**: a near-empty post-reset memory → tiny ~1–2K system prefix
+(below the 4096 floor → cache never even writes), and a huge volatile user message (the 6× game-manual
+transcript). So the cacheable slot is too small to cross the floor while the big, stable content sits
+in the uncacheable slot. **Correct mechanism, wrong calibration for an inverted prompt.**
+
+## Corrections to the first draft (now known-wrong)
+
+1. ~~"Aux roughly DOUBLES the calls / ~half of every run's spend is machinery."~~ **FALSE.** Half the
+   *calls*, but **~8% of tokens / ~13% of cost**. aux is not the driver.
+2. ~~"Same ballooning almost certainly caused run #17's `invalid_request` halt."~~ **FALSE.** The
+   journal shows the literal 400: *"Your credit balance is too low to access the Anthropic API."* It's
+   non-retryable, so `num_retries:3` did NOT amplify; the harness circuit-breaker
+   (`API_ERROR_CIRCUIT_BREAKER=4`) halted cleanly after 4 failures. The failures cost **~0 tokens**.
+3. Images are NOT implicated — runs #13–#17 ran `--no-vision`; a frame is ~31 tok anyway. Bloat is 100% text.
+4. One investigator disagreement resolved: `memory_recall` fires on ~60% of wakes (direct bimodal +
+   journal-histogram evidence), NOT "rarely" — but its *retrieval* is local (no extra Anthropic call);
+   the cost is the 2nd model round it triggers.
+
+## Solution directions (identified; not yet built — for the design discussion)
+
+**Aria-side (restores the cache + kills the duplication — biggest wins; David's repo):**
+- **Send `POKEMON_SYSTEM` as a SYSTEM message, not inside the user turn.** The harness currently sends
+  ONE user message, 0 system messages (`core/brains.py:452`); aria wraps it. Riding the system role
+  would (a) let the existing `cache_control` catch the manual and (b) lift the cacheable prefix over the
+  4096 floor → the v0.26.0 solution starts working as designed.
+- **Stop journaling/replaying the static manual.** The harness stores its full payload in aria's
+  `journal.message`, so the transcript replays the manual 6×. Logging only the state *delta* would cut
+  ~7K tok/wake.
+- **Disable `memory_recall` for the game agent** (near-empty memory to recall; it's the only enabled
+  tool) → removes the 2nd ReAct round on ~60% of wakes.
+
+**Harness-side (this repo — protective, the standing precondition):**
+- A prompt-token / estimated-spend circuit-breaker + a hard "stuck-N-wakes" halt + per-call
+  `prompt_tokens` logged to the console. Would have stopped the 30K-prompt runs early and pre-empted the
+  credit-out. **No paid runs until this is in.**
 
 ## Status
 
-NO fixes applied — read-only. **Recommendation: no more paid runs until at least the harness cost-breaker
-is in.** The in-depth multi-agent investigation (read aria's reflection + retrieval + caching paths, decompose
-a real 30K prompt, confirm pricing, propose concrete fixes) runs post-compaction with Ultracode on.
+Root-caused; **no fixes applied.** Token counts ground-truth; pricing confirmed; cache underperformance
+explained (inverted prompt shape, solution active but miscalibrated). Solution directions above await the
+design discussion.
+
+<!-- Superseded first-draft cause (kept for the record): "aux ≈ half the spend" + "ballooning caused
+the invalid_request". Both disproven above. -->

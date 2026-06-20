@@ -16,6 +16,17 @@ This is **not** about beating Pokémon. Pokémon Red is the **first probe world*
 > Build a **simple, generalizable** agent that acts on the world — generalizing across games and
 > eventually reality — that is **cheap** and works from the **screen**, not privileged state.
 
+**The destination, sharpened (2026-06-20 planning session):** the generalizable agent is a **decoupled
+dual-process system** — `ai-aria` is the **BRAIN** (owns cognition + within-run memory; *authors its own
+System 1 policies*; **acts on the world through tool use**), and a **WORLD** (Pokémon here; the companion's
+digital life elsewhere) exposes **coarse skill-tools**. **System 1** drives cheaply; it defers **up to
+System 2** only on *necessity* (novelty / low-confidence) or *override* (a surprise preempts). Pokémon is the
+*entertaining testbed* for designing this harness — **not a game to beat**. The companion deployment already
+embodies this (it acts on its world via real tools); the game drifted to a text-advisor — the plan below
+realigns it. **The full multi-month arc (It1 Pokémon → It5 robot, + the orthogonal small-worker track) is
+pinned in [`ROADMAP.md`](ROADMAP.md).** Architecture detail: `ai-aria/PROMPT_ARCHITECTURE.md` +
+`memory/dual-process-architecture.md` + `knowledge-export/`.
+
 Four constraints held on purpose (they're what makes the result transfer):
 - **Generalize** — find the *smallest* increments that let the *same* agent act in a *different*
   world. Avoid Pokémon-specific hacks. (The brain, **ai-aria**, is a fully decoupled HTTP service.)
@@ -61,16 +72,46 @@ row; (3) then cross-place lets the agent leave the lab and head for Route 1.** *
 type chart, gym order — so "go north" is told, not decoded; cross-place is the decode-aligned fix (David's call
 on stripping the seed).* Branch `feat/interior-nav-drift` (off `main`), pushed.
 
-**⚠ COST ALERT (2026-06-20) — credits exhausted; investigation queued. See `reports/2026-06-20-cost-investigation.md`.**
-Today's 6 paid runs (#12–#17) burned **~8.4M input tokens (~$7–10 on Haiku-4.5)**; the 9–11 AM local window
-(runs #13–#14) drained the first balance to zero ~10:40, then #15–#17 burned ~$6 more. Two structural causes
-(read-only finding): (1) **aria makes ~1 internal `aux` call per game wake** (reflection/memory — ~half the
-spend), and (2) **prompts BALLOON to ~30K tokens, ~32% cached** (aria's growing memory + the big recall seed
-every turn; worst on the stuck-in-lab runs #16/#17 at 2.5–2.8M each; also caused #17's `invalid_request` halt).
-**Do NOT run another paid job until a harness cost-breaker is in.** NEXT (in-depth, post-compaction + Ultracode):
-confirm Haiku-4.5 pricing, decompose a 30K prompt, root-cause the 32% caching + the `aux` cadence, and design the
-fixes (harness: cost/prompt-size circuit-breaker, lower caps, stuck-halt; aria: throttle reflection, cap context,
-trim seed, enable caching).
+**⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE (planning session). Full record: `knowledge-export/` +
+`ai-aria/PROMPT_ARCHITECTURE.md`; cost detail `reports/2026-06-20-cost-investigation.md`.**
+
+**Cost root-cause (CORRECTED — the earlier "aux ≈ half the spend" was WRONG):** the CONVERSATION prompt is
+**~92% of tokens** (aux/reflection ~8%); aria re-sends the whole `POKEMON_SYSTEM` manual **~7×/wake** (harness
+staples it into the USER message → aria journals it → replays the last 6), and caching is crippled because
+aria's system prefix is **below Haiku-4.5's 4096-token cache floor** while the big stable content rides the
+uncacheable user message. **~$1.2/run, ~$7–9/day.** The `invalid_request` halts were **OUT OF CREDITS**, not
+prompt size. Confirmed Haiku-4.5 pricing: **$1 / $5 per MTok in/out, $0.10 cache-read.** **Do NOT run a paid
+job until the cost-breaker (S1 below) is in.**
+
+**THE PLAN — executable sessions (each a code-grounded card from the 2026-06-20 scoping workflow):**
+- **S1 — Harness cost-breaker** *(ai-pokemon-red · FREE · 1 session · no prereqs)* — **THE DIRECT NEXT STEP.**
+  Per-wake prompt-token cap + estimated-spend circuit-breaker + a "stuck-N-WAKES" fuse + per-call
+  `prompt_tokens` to the console. Unblocks every future paid run (the standing precondition).
+- **S2 — Constitution-first move** *(both repos · FREE to merge · 1 session)* — add a `constitution` slot as
+  aria's first cached block; feed `POKEMON_SYSTEM` into it; stop the harness stapling it into the user turn.
+  Kills the ~7× duplication + correct layering. (Assumes α; see open decision.)
+- **S3 — Within-run memory → aria (β)** *(both · 2–3 sessions; message-split subset first, ~85–90% fewer
+  prompt tokens/wake)* — constitution rides a system role once; harness sends only the live delta; retire the
+  harness lesson buffer for aria's `<lesson>`. ⚠ **resolve first:** does aria honor an inbound system-role
+  message, or must the constitution be seeded into its config? (biggest unknown).
+- **S4 — World-as-tools API (the realignment)** *(both · 2–3 sessions)* — harness exposes the world as an MCP
+  server (start: `observe` + `move`); aria attaches it via its existing MCP toolset and **acts via tool-calls**
+  instead of returning text. Minimal scripted slice first; the cheap-first System-1/2 re-integration is its own
+  follow-on. **Direction confirmed: harness = MCP server, aria = client** (keeps the decoupling).
+- **S5 — System-1 authoring (first rung)** *(ai-pokemon-red · FREE · 1 session)* — a within-run `PolicyMemory`:
+  when System 2 makes the same battle decision twice, compile a blind-execute policy System 1 replays for free,
+  deferring on novelty/no-progress. **In-memory only** (learning-boundary; no across-run persist).
+- **S6 — Place-detection reliability** *(ai-pokemon-red · FREE · 1 session)* — the entertaining-testbed thread.
+  Fix the place-graph: fades warp even on a non-directional action (stop **lumping**); dialog-flicker stops
+  minting spurious places (stop **fragmenting**). Replay-validated; unblocks leaving the lab → Route 1.
+
+**Sequence:** **S1 first** (free, no prereqs, unblocks paid). Then the spine S2 → S3 (β) → S4 (realignment),
+with **S5 + S6 as independent free wins** that also keep the game moving. S4 is the deepest; S2+S3 are its
+foundation. **No paid run until S1 lands.**
+
+**OPEN DECISIONS (recorded, not blocking S1):** (a) within-run memory owner **α vs β** — David leans **β**
+(brain owns it); confirm before S2/S3 merge. (b) **within-run vs across-run** System-1 policy learning —
+near-term **within-run** (S5); across-run would revise the learning-boundary HARD LAW (deliberate, later).
 
 **(run #16): the run-#15 INTERIOR-NAVIGATION wall is BROKEN + PAID-VALIDATED; the bottleneck
 moved to AFFORDANCE / region-of-interest discovery.** Run #15's #1 blocker was dead-reckoning DRIFT in tight
