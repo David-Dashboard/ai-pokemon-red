@@ -68,7 +68,7 @@ all paid-validated** (S1 cost-breaker, S2 constitution-first, S3 β within-run-m
 (ADR-001) = the dual-process seam**; the constitution moved into aria's config). A long cold playthrough found the
 **#1 BLOCKER: the OAK STARTER-DIALOG TRAP** — auto-advance mashes A forever on the "which POKéMON?" prompt (a
 textbox A can't dismiss; in Red you must walk to a ball), so the agent never gets the starter. **⇒ NOW FIXED
-(BUILT + free-validated, branch `feat/novelty-signal` — `0faa518`→`b147721`→`ce9cc4a`, harness-only): a
++ PAID-VALIDATED LIVE, branch `feat/novelty-signal`, harness-only, ~$1.77 / 3 cold runs): a
 SEEN-STATES / NOVELTY signal** (David's steer; the unifying signal behind the occupancy map + OutcomeMemory +
 disconfirm). Data-first confirmed the trap is a **~6-state CYCLE, not a frozen frame** (settled "which POKéMON?"
 recurs 10×, pose frozen, never battle), so a 1-step "did A advance?" check fails (text changes every press). The
@@ -79,10 +79,17 @@ never mistaken for a cycle) to `(state_signature, screen_text)` and at **3 visit
 `NoveltyMemory` + the `HybridBrain` gate; **233 tests**; the SHIPPED gate replayed over the real 463-step run
 trips **26× ALL in the lab trap (first @ step 416), 0 false positives** (`eval/inspect_longloop_trap.py` asserts
 it). Deferred (recorded): semantic/embedding novelty — the key-building call site is the swap point if a run
-shows decode noise fragmenting exact-match. **→ DIRECT NEXT ACTION = the PAID validation run** (NO aria rebuild —
-harness-only): `reset_aria_memory.py --yes`, `python -u`, guards on; re-run cold from `start.state` and confirm
-the agent escapes Oak's prompt → gets the starter → rival battle → leaves the lab. Then **S5 (procedural memory /
-skill library)**. Full detail: `reports/LEARNINGS.md` (the seen-states/novelty bullet) + the `novelty-signal` memory.
+shows decode noise fragmenting exact-match. **LIVE VALIDATION (3 cold runs from `start.state`): the agent got the starter (CHARMANDER) cold in ALL 3** (the
+longloop NEVER did); **run 2 FROZE and the gate fired 11× `[wake:cycle]`** → aria reasoned *"A and B both repeat —
+try a direction"* → walked to the Pokéballs → starter → reached the rival battle (`in_battle=2`); run 1 (no freeze)
+confirms the gate stays **quiet on a moving agent** (the pose-inclusive key fires on a *frozen* cycle only). **⇒ NEW
+DOWNSTREAM BOTTLENECK (separate from the trap) = the post-starter NICKNAME-ENTRY KEYBOARD:** run 3 got the starter
+then stuck **44× `[wake:mode]`** on the nickname grid, which `detect_mode` **misreads as `battle`** (the known
+full-screen-bright-menu limit); the rival-battle trigger is also non-deterministic. **→ DIRECT NEXT ACTION:** answer
+NO to nicknaming, OR fix the keyboard-as-`battle` misdetection, OR — the unifying fix extending this work — a general
+"no-novelty across N wakes → press B" stuck-breaker. Then **S5 (procedural memory)**. *(Honest cost: freeze-recovery
+is wake-heavy — 12 / 57 / 70 wakes across the 3 runs.)* Full detail: `reports/2026-06-21-seen-states-validation.md`
++ `reports/LEARNINGS.md` + the `novelty-signal` memory.
 
 **⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session — read the
 "⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE" block below + [`ROADMAP.md`](ROADMAP.md). Goal = the
