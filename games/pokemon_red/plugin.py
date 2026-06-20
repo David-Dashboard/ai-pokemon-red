@@ -244,6 +244,11 @@ class PokemonRedPlugin:
         if sym.affordances:
             lines.append(f"Unexplored/open directions from here (head toward these to make "
                          f"progress): {', '.join(sym.affordances)}.")
+        rois = sm.get("rois") or []
+        if rois:
+            sample = ", ".join(f"{r[0]} {r[1]}" for r in rois[:4])
+            lines.append(f"Something MOVED here (a likely NPC/person to talk to) at (x y): {sample}. "
+                         f"Walk next to it and press A to interact ('GOTO: x y' gets you adjacent).")
         lines.append(f"Tiles explored in this area so far: {sm.get('visited', 0)}.")
         # Concrete, namable destinations: a free pathfinder can walk to any known cell. Listing the
         # frontier coords lets the planner say 'GOTO: x y' and let the autopilot drive there.

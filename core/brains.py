@@ -98,10 +98,18 @@ class ExploreBrain:
         TWO tiles, which the dead-reckoning cursor recorded as one -> the run-#15 interior DRIFT.
         Single-stepping keeps every move one tile so the cursor stays synced with the world."""
 
-    def __init__(self, agent_id: str, single_step: bool = False) -> None:
+    def __init__(self, agent_id: str, single_step: bool = False,
+                 probe_interactables: bool = False) -> None:
         self.agent_id = agent_id
         self.last_thought = ""
         self.single_step = single_step
+        # When frontier exploration is exhausted, instead of immediately giving up (waking the LLM),
+        # PROBE the surrounding walls for an interactable: an NPC / object / sign sits on a non-walkable
+        # tile, so it reads as a wall and is never a frontier — the only way to find it from the screen
+        # is to face it and press the confirm button. Off by default (agnostic worlds unchanged); the
+        # Pokémon drivers turn it on. `_probed` remembers which wall directions were tried at each cell.
+        self.probe_interactables = probe_interactables
+        self._probed: dict = {}
 
     def decide(self, obs: Observation, tools: list[ToolSpec], context: dict) -> Optional[ToolCall]:
         sm = obs.data.get("spatial_memory") or {}
@@ -127,8 +135,36 @@ class ExploreBrain:
         if d:
             self.last_thought = f"to nearest frontier via {d}"
             return self._move(d)
+        # Out of frontiers — before giving up to the LLM, probe the walls for an interactable.
+        if self.probe_interactables:
+            d = self._next_probe(cur, cells, sm.get("rois") or [])
+            if d:
+                self.last_thought = f"probe interactable -> {d}"
+                return self._probe(d)
         self.last_thought = "no reachable frontier — area explored"
         return None
+
+    def _next_probe(self, cur, cells, rois) -> Optional[str]:
+        """Pick the next WALL direction at `cur` to probe for an interactable (each tried once). A wall
+        pointing at a motion-detected ROI is probed FIRST (guided search). None when every wall here is
+        already probed — truly stuck, so the LLM is woken."""
+        walls = set(cells.get(cur, {}).get("walls", []))
+        done = self._probed.setdefault(cur, set())
+        cand = [d for d in ("up", "down", "left", "right") if d in walls and d not in done]
+        if not cand:
+            return None
+        roiset = {tuple(r[:2]) for r in rois}
+        # neighbour-in-ROI -> False sorts before True, so an ROI-pointing direction goes first
+        cand.sort(key=lambda d: (cur[0] + _DELTA[d][0], cur[1] + _DELTA[d][1]) not in roiset)
+        d = cand[0]
+        done.add(d)
+        return d
+
+    def _probe(self, d: str) -> ToolCall:
+        # Face the adjacent tile, then press the confirm button: facing turns IN PLACE (no scroll -> no
+        # odometry drift), then A interacts. A dialog/menu/battle on the next observation = that "wall"
+        # was an interactable; nothing = it really was a wall.
+        return _call("press_sequence", {"buttons": [d, "a"]}, self.agent_id)
 
     @staticmethod
     def _unexplored_dir(cur, cells) -> Optional[str]:

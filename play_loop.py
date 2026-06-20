@@ -49,7 +49,7 @@ def main() -> int:
                               init_state=init, perceiver=OverworldPerceiver())
     llm = LLMButtonBrain(aid, model=args.model, url=args.url, backend="aria",
                          api_key=args.token, use_vision=True, system=POKEMON_SYSTEM)
-    brain = HybridBrain(ExploreBrain(aid, single_step=True), llm, advance_on_dialog=True)  # autopilot ([d]=1 tile) + auto-advance dialog + wake at decisions
+    brain = HybridBrain(ExploreBrain(aid, single_step=True, probe_interactables=True), llm, advance_on_dialog=True)  # autopilot ([d]=1 tile, probe walls when stuck) + auto-advance dialog + wake at decisions
     gw = Gateway(plugin, POKEMON_SANDBOX)
 
     coverage: set = set()

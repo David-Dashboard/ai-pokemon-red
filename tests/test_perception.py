@@ -132,6 +132,29 @@ def test_odometry_clamps_a_mis_measured_scroll_to_the_search_range():
     assert s.last_action["outcome"] == "moved" and abs(s.pose["value"][1]) <= 4
 
 
+def test_perceiver_surfaces_a_motion_roi_for_a_moving_sprite():
+    # Motion-saliency wiring: on a CAMERA-STATIC step (no scroll) a changed off-centre tile is a moving
+    # entity -> recorded as an ROI at its world cell (player cell + the on-screen offset from centre).
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene()
+    per.perceive(scene, mem, {"last_action": None})        # prime prev_frame (first=True, no odometry)
+    moved = scene.copy()
+    moved[0:16, 0:16, :3] = 255 - moved[0:16, 0:16, :3]    # invert one off-centre tile = a 'sprite' moved
+    s = per.perceive(moved, mem, {"last_action": "up+up"})  # blocked (no scroll) -> camera static
+    rois = s.spatial_memory.get("rois")
+    assert rois and [-4, -4] in rois        # screen tile (0,0) is 4 left & 4 up of the centred player
+
+
+def test_perceiver_no_roi_when_camera_scrolled():
+    # A real MOVE scrolls the whole frame; that is not camera-static, so a frame diff is meaningless and
+    # no ROI is recorded (the detector must only run on aligned frames).
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene()
+    per.perceive(scene, mem, {"last_action": None})
+    s = per.perceive(_scroll(scene, dy_tiles=1), mem, {"last_action": "down+down"})  # camera scrolled 1 tile
+    assert not s.spatial_memory.get("rois")
+
+
 def test_area_change_resets_the_coordinate_frame():
     per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=100.0), PerceptMemory()
     per.perceive(_frame(0), mem, {"last_action": None})            # prime
@@ -334,11 +357,11 @@ def test_scorer_walkability_confusion_and_escape():
 
 # -- ExploreBrain: local frontier autopilot (no LLM) --------------------------
 
-def _obs_with_map(pose, cells, frontiers):
+def _obs_with_map(pose, cells, frontiers, rois=None):
     from core.contracts import Observation
     return Observation(
         data={"pose": {"value": list(pose)},
-              "spatial_memory": {"map": cells, "frontiers": frontiers}},
+              "spatial_memory": {"map": cells, "frontiers": frontiers, "rois": rois or []}},
         text="", agent_id="a", t=0.0)
 
 
@@ -387,6 +410,41 @@ def test_explore_returns_none_when_no_frontier_remains():
     from core.brains import ExploreBrain
     cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
     assert ExploreBrain("a").decide(_obs_with_map((0, 0), cells, []), [], {}) is None
+
+
+def test_explore_probes_a_wall_for_an_interactable_when_out_of_frontiers():
+    # Affordance discovery: boxed in (no frontier), the default brain gives up (wakes the LLM); with
+    # probe_interactables it faces a wall and presses A — an interactable (NPC/object) reads as a wall.
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
+    obs = _obs_with_map((0, 0), cells, [])
+    assert ExploreBrain("a").decide(obs, [], {}) is None                       # default: give up
+    call = ExploreBrain("a", probe_interactables=True).decide(obs, [], {})
+    assert call.tool == "press_sequence" and call.args["buttons"][-1] == "a"   # face a wall + press A
+    assert call.args["buttons"][0] in ("up", "down", "left", "right")
+
+
+def test_explore_probe_prioritizes_a_motion_roi_direction():
+    # Guided search: a motion-detected ROI above us -> probe UP first (face the NPC + A), not a random wall.
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
+    obs = _obs_with_map((0, 0), cells, [], rois=[[0, -1]])      # ROI in the cell directly above
+    call = ExploreBrain("a", probe_interactables=True).decide(obs, [], {})
+    assert call.args["buttons"] == ["up", "a"]
+
+
+def test_explore_probe_tries_each_wall_once_then_gives_up():
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
+    obs = _obs_with_map((0, 0), cells, [])
+    b = ExploreBrain("a", probe_interactables=True)
+    tried = set()
+    for _ in range(4):
+        call = b.decide(obs, [], {})
+        assert call is not None and call.args["buttons"][-1] == "a"
+        tried.add(call.args["buttons"][0])
+    assert tried == {"up", "down", "left", "right"}            # each wall probed exactly once
+    assert b.decide(obs, [], {}) is None                       # exhausted -> wake the LLM
 
 
 def test_explore_goto_pathfinds_to_a_named_target_cell():

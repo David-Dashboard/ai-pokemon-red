@@ -289,6 +289,21 @@ class OverworldPerceiver:
                 cell = cells[(x, y)]
                 outcome = "moved"
 
+        # Motion-saliency (free NPC/ROI prior): when the camera was STATIC this step — we didn't
+        # scroll (a blocked move or an A-press, |best-shift| < half a tile) — two consecutive frames
+        # are pixel-aligned, so any region that still CHANGES is a MOVING entity (an idle-animating
+        # NPC). The occupancy map only knows walls, not what's ON them; this fills that gap. Record
+        # each such entity's WORLD cell (player cell + the on-screen offset) with a motion tally, so
+        # the controller/LLM can seek it. Pixels only; saliency.motion_rois cluster-filters animated
+        # terrain (water/flowers) out. The entity sits on a non-walkable tile (it reads as a wall), so
+        # the ROI cell stays unvisited and never becomes a phantom frontier.
+        camera_static = (not first) and prev is not None and max(abs(sdx), abs(sdy)) < _TILE_PX / 2
+        if camera_static:
+            from .saliency import motion_rois, roi_offsets
+            for dx, dy in roi_offsets(motion_rois(prev, frame)):
+                rc = cells.setdefault((x + dx, y + dy), {"visited": False, "walls": set()})
+                rc["motion"] = rc.get("motion", 0) + 1
+
         m["prev_frame"] = np.asarray(frame).copy() if frame is not None else None
 
         # Affordances: directions from HERE that aren't known walls. Prefer those leading to an
@@ -304,6 +319,9 @@ class OverworldPerceiver:
                 open_unexplored.append(d)
 
         visited_n = sum(1 for c in cells.values() if c.get("visited"))
+        # Motion-detected entities (NPCs) as candidate interaction targets, most-seen first.
+        rois = sorted(([cx, cy] for (cx, cy), c in cells.items() if c.get("motion")),
+                      key=lambda rc: -cells[(rc[0], rc[1])]["motion"])
         # Full map + frontier cells, so a LOCAL controller can pathfind without the LLM. A frontier
         # is a visited cell with a non-wall direction into an unvisited (unknown) cell.
         grid, frontiers = [], []
@@ -327,7 +345,7 @@ class OverworldPerceiver:
             pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": m["place"]},
             spatial_memory={"kind": "occupancy-grid", "area": m["place"], "visited": visited_n,
                             "walls_here": sorted(cell["walls"]),
-                            "map": grid, "frontiers": frontiers,
+                            "map": grid, "frontiers": frontiers, "rois": rois,
                             "places_known": len(m["places"])},
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome,
