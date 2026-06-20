@@ -82,6 +82,9 @@ class FontTable:
 _MENU_ROWS = (104, 112, 120, 128)
 _CURSOR_CELL = 4
 _NAME_CELL = 5
+# The four battle ACTION-menu commands. Reserved words: they're never move names (so they reject a
+# fake move menu) and their presence positively identifies the action menu (a decision -> wake).
+_ACTION_WORDS = ("FIGHT", "PKMN", "ITEM", "RUN")
 
 
 def decode_move_menu(frame, table: FontTable) -> str:
@@ -117,10 +120,37 @@ def decode_move_menu(frame, table: FontTable) -> str:
     if not moves:
         return ""
     # Reject the ACTION menu (FIGHT / PKMN / ITEM / RUN) — those are reserved, never move names.
-    if any(w in mv.upper() for mv in moves for w in ("FIGHT", "PKMN", "ITEM", "RUN")):
+    if any(w in mv.upper() for mv in moves for w in _ACTION_WORDS):
         return ""
     cur = f"cursor on {highlighted}; " if highlighted else ""
     return f"move menu — {cur}moves: {', '.join(moves)}"
+
+
+_MIN_TEXT_GLYPHS = 4   # a frame needs at least this many real (non-'?'/blank) glyphs to be "narration"
+
+
+def battle_subscreen(frame, table: FontTable) -> str:
+    """Classify a SETTLED battle frame from PIXELS ONLY:
+      'battle_text'  — advanceable narration ("GARY sent out SQUIRTLE!", "CHARMANDER used SCRATCH!").
+      'battle_menu'  — the action menu (FIGHT/PKMN/ITEM/RUN) or the move-select menu: a DECISION, wake.
+
+    Positive-ID-for-advance, DEFAULT-TO-WAKE. Returns 'battle_text' only when narration is positively
+    identified; every ambiguity (move menu, action menu, blank/garbled frame) returns 'battle_menu'.
+    The asymmetry is deliberate: a wasted wake costs cents, but auto-advancing a mis-read MOVE menu
+    picks whatever the cursor sits on (e.g. GROWL) and can lose the fight (the run #6b/#11 failure)."""
+    if frame is None:
+        return "battle_menu"
+    # 1) the MOVE menu first — the catastrophic case, caught by its own robust positive detector.
+    if decode_move_menu(frame, table):
+        return "battle_menu"
+    text = decode(frame, table)
+    # 2) the ACTION menu — a reserved command word in the textbox.
+    up = text.upper()
+    if any(w in up for w in _ACTION_WORDS):
+        return "battle_menu"
+    # 3) narration only on a POSITIVE read of enough real glyphs; otherwise wake (4).
+    real = sum(ch not in " ?\n" for ch in text)
+    return "battle_text" if real >= _MIN_TEXT_GLYPHS else "battle_menu"
 
 
 def decode(frame, table: FontTable, blank: int = 2) -> str:
