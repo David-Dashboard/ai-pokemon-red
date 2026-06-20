@@ -47,6 +47,10 @@ def main() -> int:
     ap.add_argument("--url", default="http://localhost:8001")
     ap.add_argument("--model", default="aria")
     ap.add_argument("--token", default=os.environ.get("ARIA_BEARER_TOKEN"))
+    ap.add_argument("--allow-dirty-memory", action="store_true",
+                    help="skip the fresh-run aria-memory guard (use when resuming, or for a deliberate "
+                         "dirty start). A FRESH run on un-reset aria memory leaks the prior run under the "
+                         "beta learning boundary (S3).")
     args = ap.parse_args()
 
     from games.pokemon_red import PokemonRedPlugin
@@ -55,10 +59,21 @@ def main() -> int:
 
     aid = f"agent-{uuid.uuid4()}"
     init = args.state if os.path.exists(args.state) else args.seed_state
+    # Fail-loud freshness guard (S3 beta): a FRESH run (seed-state, no checkpoint to resume) must start
+    # on reset aria memory, else it leaks the prior run. A resume (init == args.state) legitimately
+    # carries this run's own accumulated aria memory across launches, so the guard is skipped there.
+    if not args.allow_dirty_memory and init == args.seed_state:
+        from reset_aria_memory import _default_data_dir, is_clean
+        if not is_clean():
+            print(f"[loop] ABORT: aria memory ({_default_data_dir()}) is NOT reset, but this is a FRESH "
+                  f"run — it would leak the prior run (beta learning boundary). Run "
+                  f"reset_aria_memory.py --yes, or pass --allow-dirty-memory.", flush=True)
+            return 2
     plugin = PokemonRedPlugin(rom_path=args.rom, out_dir="runs/loop", headless=True,
                               init_state=init, perceiver=OverworldPerceiver())
     llm = LLMButtonBrain(aid, model=args.model, url=args.url, backend="aria",
-                         api_key=args.token, use_vision=True, system=POKEMON_SYSTEM)
+                         api_key=args.token, use_vision=True, system=POKEMON_SYSTEM,
+                         owns_memory=True)  # aria owns within-run memory (S3 beta); this driver is aria-only
     brain = HybridBrain(ExploreBrain(aid, single_step=True, probe_interactables=True), llm, advance_on_dialog=True)  # autopilot ([d]=1 tile, probe walls when stuck) + auto-advance dialog + wake at decisions
     gw = Gateway(plugin, POKEMON_SANDBOX)
 

@@ -98,7 +98,23 @@ def main() -> int:
                     help="wake-denominated watchdog: HALT after this many LLM WAKES with no real "
                          "progress (catches flailing the step watchdog misses once free auto-advance "
                          "inflates the step count between wakes). 0 = off; auto-enabled (30) for paid brains.")
+    ap.add_argument("--allow-dirty-memory", action="store_true",
+                    help="skip the aria-memory freshness guard. By default a paid aria run ABORTS if "
+                         "aria's data dir wasn't reset (run reset_aria_memory.py --yes first) — under the "
+                         "beta learning boundary (S3) aria owns within-run memory, so an un-reset start "
+                         "silently leaks the prior run across the blank-every-run boundary.")
     args = ap.parse_args()
+
+    # Fail-loud freshness guard (S3 beta): a paid aria run must start on freshly-reset aria memory, or
+    # it leaks the prior run. (aria owns the within-run store now; nothing in-process prevents the leak.)
+    if args.brain in ("llm", "hybrid") and args.backend == "aria" and not args.allow_dirty_memory:
+        from reset_aria_memory import _default_data_dir, is_clean
+        if not is_clean():
+            print(f"\n[guard] aria's memory dir ({_default_data_dir()}) is NOT reset — it holds "
+                  f"prior-run experience, which the beta learning boundary would LEAK across runs.\n"
+                  f"        Run:  python reset_aria_memory.py --yes   (or pass --allow-dirty-memory to "
+                  f"resume / override).", file=sys.stderr)
+            return 2
 
     agent_id = f"agent-{uuid.uuid4()}"
 
@@ -131,7 +147,11 @@ def main() -> int:
             return 2
         llm = LLMButtonBrain(agent_id, model=model, url=url,
                              backend=args.backend, use_vision=not args.no_vision,
-                             api_key=args.llm_token, system=POKEMON_SYSTEM)
+                             api_key=args.llm_token, system=POKEMON_SYSTEM,
+                             # aria owns its own durable within-run memory (S3 beta) -> the harness drops
+                             # its duplicate LESSON buffer; a memoryless backend keeps it. Same condition
+                             # as the bearer-token gate above (the memory-owning backend is 'aria').
+                             owns_memory=(args.backend == "aria"))
         if args.brain == "llm":
             brain = llm
         else:  # hybrid = free autopilot + wake the LLM only at decisions

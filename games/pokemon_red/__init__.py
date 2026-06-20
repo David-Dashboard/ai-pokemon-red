@@ -36,15 +36,15 @@ POKEMON_SYSTEM = (
     "text since your last decision is provided), so when you are woken you are AT a menu: make a "
     "choice, don't just try to advance text. You can't RUN a trainer "
     "battle and rarely need ITEM or PKMN — keep attacking until the foe faints.\n"
-    "Reply in this format. THINK and MOVE are required; GOTO and LESSON are optional:\n"
+    "Reply in this format. THINK and MOVE are required; GOTO is optional:\n"
     "THINK: <one short sentence — what you see and what you'll do>\n"
     "MOVE: <2-4 buttons separated by spaces, from: up down left right a b>\n"
     "GOTO: x y   (optional) send yourself to a known map cell (coordinates are shown when "
     "available); a free pathfinder then walks you there over the next steps, so you needn't "
-    "steer every tile.\n"
-    "LESSON: <one short lesson>   (optional) record something durable you learned THIS run — what "
-    "blocked you, what actually worked, or where you really are. It is remembered and shown back "
-    "to you on later turns this run only (it does not carry over to future runs)."
+    "steer every tile."
+    # NOTE (S3 beta): the harness no longer advertises a plain `LESSON:` line. aria owns within-run
+    # memory and already teaches its native <lesson>/<note> tags (its own memory protocol); those tags
+    # are parsed + stripped by aria before the reply, so they never reach the harness THINK/MOVE parser.
 )
 
 __all__ = ["PokemonRedPlugin", "POKEMON_SANDBOX", "POKEMON_SYSTEM"]

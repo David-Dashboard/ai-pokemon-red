@@ -11,7 +11,10 @@ def test_fires_only_after_threshold_consecutive_no_progress():
     d.record(False); assert d.note() is None       # 2
     d.record(False)                                # 3 -> fires
     note = d.note()
-    assert note and note.startswith("SURPRISE") and "LESSON" in note
+    # S3 beta: the note is channel-neutral (no literal "LESSON:" token — the within-run store depends
+    # on the backend), but still a SURPRISE nudge to change approach + remember the blocker.
+    assert note and note.startswith("SURPRISE") and "LESSON" not in note
+    assert "no observable progress" in note and "remember what is blocking you" in note
 
 
 def test_progress_resets_the_streak():
@@ -48,7 +51,7 @@ def test_note_fires_without_action_detail_when_last_action_missing():
     d = DisconfirmDetector(after=1)
     d.record(False, None)                          # no last_action info available
     note = d.note()
-    assert note and "SURPRISE" in note and "LESSON" in note
+    assert note and "SURPRISE" in note and "LESSON" not in note    # channel-neutral wording (S3 beta)
     assert "last move" not in note and "last action" not in note   # no action-specific detail
 
 

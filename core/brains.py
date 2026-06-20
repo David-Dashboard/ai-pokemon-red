@@ -560,6 +560,7 @@ class LLMButtonBrain:
         api_key: Optional[str] = None,
         system: Optional[str] = None,
         pricing: Optional[dict] = None,
+        owns_memory: bool = False,
     ) -> None:
         self.agent_id = agent_id
         self.use_vision = use_vision
@@ -570,10 +571,20 @@ class LLMButtonBrain:
         self.last_thought = ""       # the model's latest reasoning, for display
         self.goto: Optional[list] = None  # destination cell the planner named this turn (or None)
         self.lesson: Optional[str] = None  # one-line lesson the LLM authored THIS turn (or None)
-        # HARNESS-owned, per-run lesson buffer (learning-boundary law): lessons the LLM records are
-        # kept here, re-injected into the prompt on later wakes within this run, and discarded when
-        # the object dies at run end. This is NOT aria's persistent <lesson>/lessons.md — a plain
-        # LESSON: line the harness captures, so nothing bleeds into the next run.
+        # `owns_memory` (S3 / beta): does the BACKEND keep its own durable, per-wake-reinjected memory?
+        # World-agnostic — it's a property of the backend, not the game. When True (the decoupled aria
+        # brain, set by its driver), the brain OWNS the within-run lesson store (its native <lesson> ->
+        # lessons.md, re-read each turn), so the harness must NOT also keep + re-inject a duplicate
+        # buffer. When False (ollama / a plain OpenAI server / an injected complete_fn / the gating
+        # probe — no durable backend memory), the harness buffer below is the ONLY within-run lesson
+        # store. The across-run boundary is then preserved differently per regime: False -> the buffer
+        # is fresh per process; True -> reset_aria_memory.py wipes aria's store before each run.
+        self.owns_memory = owns_memory
+        # HARNESS-owned, per-run lesson buffer (learning-boundary law) — the within-run lesson store for
+        # a MEMORYLESS backend (owns_memory=False). Lessons the LLM records via a plain `LESSON:` line
+        # are kept here, re-injected on later wakes within this run, and discarded when the object dies
+        # at run end. NOT aria's persistent <lesson>/lessons.md. Dormant when owns_memory=True (aria's
+        # native memory is the store instead) — kept allocated so the attribute shape stays stable.
         self.lessons: list[str] = []
         self._last_pos = None        # (x, y) at the previous decision
         self._last_buttons = None    # what we pressed last, for wall-bump feedback
@@ -658,7 +669,9 @@ class LLMButtonBrain:
                         "what you assumed or said on an earlier turn, you misread it earlier — the screen "
                         "wins: correct your belief and plan from what's shown now, and do NOT keep "
                         "narrating the old version.").strip()
-        if self.lessons:  # re-inject this run's lessons (harness-owned buffer; never crosses runs)
+        if self.lessons and not self.owns_memory:  # re-inject the harness buffer ONLY for a memoryless
+            # backend; when owns_memory=True the brain (aria) re-injects its own lessons.md each turn, so
+            # a second harness copy would duplicate it (the S3 retirement).
             feedback = (feedback + "\nLESSONS you recorded earlier THIS run (apply them):\n- "
                         + "\n- ".join(self.lessons)).strip()
         # The per-turn (volatile) content. When the backend delivers the constitution as a system-role
@@ -686,8 +699,8 @@ class LLMButtonBrain:
         self.consec_api_errors = 0          # a real reply — the backend is healthy again
         buttons, thought = self._parse(raw)
         self.goto = self._parse_goto(raw)   # optional destination for the free autopilot (feature #2)
-        self.lesson = self._parse_lesson(raw)  # optional one-line lesson -> per-run buffer (feature #3)
-        if self.lesson and self.lesson.lower() not in [s.lower() for s in self.lessons]:
+        self.lesson = self._parse_lesson(raw)  # parsed for the wake-log tail; stored only if owns_memory=False
+        if self.lesson and not self.owns_memory and self.lesson.lower() not in [s.lower() for s in self.lessons]:
             self.lessons.append(self.lesson)   # dedup is whole-buffer + case-insensitive (not just
             del self.lessons[:-_LESSON_CAP]     # the last entry); keep most recent, re-injection cheap
         self.last_thought = thought or raw.strip()[:160]

@@ -34,13 +34,23 @@ Four constraints held on purpose (they're what makes the result transfer):
   scoring oracle** (`oracle.jsonl`); it never enters the agent's input.
 - **Cheap** — minimize API calls/tokens. A free local autopilot does routine work; wake the
   expensive LLM only at decisions.
-- **Learning boundary (HARD LAW — do not drift):** *across-run* learning is **harness/code updates
-  ONLY** (perception, brains, detectors) — the agent starts **blank every run** (archive + wipe before
-  each). *Within-run* learning lives in the **harness** (`core/`): the occupancy map, `OutcomeMemory`,
-  the disconfirm detector, any LLM-authored `LESSON:` — fresh per run, injected into the LLM's context
-  each wake, **discarded at run end**. aria *authors* lessons; the harness *persists + re-injects* them
-  within the run. Never use aria's durable memory as the within-run store; never let a lesson bleed
-  into the next run.
+- **Learning boundary (HARD LAW — revised for β, 2026-06-20):** *across-run* learning is
+  **harness/code updates ONLY** (perception, brains, detectors) — the agent starts **blank every run**
+  (archive + wipe before each). *Within-run* learning now has **two homes**: **(a) harness-only signals
+  the brain can't derive** — the occupancy map, `OutcomeMemory`, the disconfirm detector, the
+  auto-advanced **missed-text transcript** — live in `core/`, fresh per run, injected each wake,
+  discarded at run end; **(b) under a memory-owning backend** (aria, `LLMButtonBrain(owns_memory=True)`)
+  the brain's **own durable memory IS the authoritative within-run store** (the `<lesson>`/`<note>`/
+  `<core_update>` it authors), persisted by aria through the run and **wiped before the next run by
+  `reset_aria_memory.py`**. For a **memoryless backend** (`owns_memory=False`: ollama / default /
+  injected) the harness keeps its own per-run `LESSON:` buffer (re-injected each wake, discarded at run
+  end). **The no-across-run-leak invariant is now LOAD-BEARING on the reset:** the paid drivers refuse to
+  start a *fresh* memory-owning run on un-reset aria memory (fail-loud `is_clean` guard; override
+  `--allow-dirty-memory` for a resume), and `reset_aria_memory.py` **fails hard** if its git seed-revert
+  can't run or doesn't verify. *(This deliberately revises the old letter — "never use aria's durable
+  memory as the within-run store" — while keeping the intent: blank every run, no lesson bleeds across.
+  β was David's call; see `ai-aria/PROMPT_ARCHITECTURE.md`. The law's planned It4 expiry — across-run
+  learning — is a separate, later revision.)*
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn`.
 
@@ -128,10 +138,19 @@ job until the cost-breaker (S1 below) is in.**
   `cache_control: role:system` → BP1). 211 harness tests + 9 new aria tests; companion byte-identical when
   dormant. **⚠ first paid run must re-validate THINK/MOVE adherence** (the contract moved from the user turn to
   the cached constitution — review MEDIUM-2; unprovable offline).
-- **S3 — Within-run memory → aria (β)** *(both · 2–3 sessions; message-split subset first, ~85–90% fewer
-  prompt tokens/wake)* — constitution rides a system role once; harness sends only the live delta; retire the
-  harness lesson buffer for aria's `<lesson>`. ⚠ **resolve first:** does aria honor an inbound system-role
-  message, or must the constitution be seeded into its config? (biggest unknown).
+- **S3 — Within-run memory → aria (β)** *(harness-only · FREE · branch `feat/within-run-memory-beta`)* —
+  **✅ DONE (built + free-validated; adversarial review cut off by a session limit → key risks self-verified
+  instead).** `LLMButtonBrain(owns_memory=True)` (set by the aria drivers) retires the harness's DUPLICATE
+  LESSON buffer — both its accumulation and re-injection are gated off, so aria's native `<lesson>`→`lessons.md`
+  (re-injected by aria each turn, stripped server-side so THINK/MOVE is untouched) is the sole within-run lesson
+  store; `POKEMON_SYSTEM` drops the `LESSON:` lines; the disconfirm SURPRISE note is channel-neutral. Memoryless
+  backends (`owns_memory=False`) keep the harness buffer (byte-identical). **Kept (aria can't derive):** the
+  missed-text transcript, OutcomeMemory, disconfirm. **No aria code change** (it already owns the machinery).
+  **Leak-safety (β makes the reset load-bearing):** `reset_aria_memory.py` gained `is_clean()` + a **fail-hard
+  git seed-revert (verified vs HEAD)**; both drivers **fail-loud abort** a fresh aria run on un-reset memory
+  (`--allow-dirty-memory` overrides / play_loop skips on resume). The law was revised (§1 above). 219 tests.
+  ⚠ **first paid run must check that the agent still authors lessons** (now via `<lesson>`; run-#3 had
+  `LESSON:` 56× / `<lesson>` 0× — provable only live).
 - **S4 — World-as-tools API (the realignment)** *(both · 2–3 sessions)* — harness exposes the world as an MCP
   server (start: `observe` + `move`); aria attaches it via its existing MCP toolset and **acts via tool-calls**
   instead of returning text. Minimal scripted slice first; the cheap-first System-1/2 re-integration is its own

@@ -79,16 +79,16 @@ def _seed_party_mon1(emu: FakeEmulator):
     emu.mem[base + mm.OFF_MAX_HP + 1] = 0x18  # 24
 
 
-# -- prompt: lesson channel un-muzzled ----------------------------------------
+# -- prompt: lesson channel (S3 beta — harness channel retired) ---------------
 
-def test_pokemon_system_unmuzzles_and_advertises_lesson():
-    # The muzzle ("EXACTLY ... and nothing else") is lifted so the model may emit a LESSON line,
-    # and the LESSON channel is advertised. THINK/MOVE (what _parse depends on) are still required.
+def test_pokemon_system_no_harness_lesson_channel_under_beta():
+    # S3 beta: the harness no longer advertises a plain `LESSON:` line — aria owns within-run memory and
+    # teaches its own <lesson> tag (stripped server-side, so THINK/MOVE parsing is untouched).
+    assert "LESSON:" not in POKEMON_SYSTEM                  # harness plain-text channel retired
+    assert "<lesson>" not in POKEMON_SYSTEM.lower()         # the harness prompt must NOT teach the tag either
+    # The muzzle stays lifted (so aria can emit its tags around the reply); THINK/MOVE still required.
     assert "nothing else" not in POKEMON_SYSTEM
-    assert "LESSON:" in POKEMON_SYSTEM
-    assert "THINK:" in POKEMON_SYSTEM and "MOVE:" in POKEMON_SYSTEM
-    # It must NOT instruct aria's persistent <lesson> tag (that would cross runs).
-    assert "<lesson>" not in POKEMON_SYSTEM.lower()
+    assert "THINK:" in POKEMON_SYSTEM and "MOVE:" in POKEMON_SYSTEM and "GOTO:" in POKEMON_SYSTEM
 
 
 def test_pokemon_system_has_battle_guidance():

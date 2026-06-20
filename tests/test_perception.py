@@ -743,7 +743,8 @@ def test_hybrid_injects_surprise_nudge_after_repeated_no_progress():
     for _ in range(3):
         h.decide(obs, [], {})
     assert fb.seen[0] is None and fb.seen[1] is None              # early wakes: no nudge yet
-    assert fb.seen[2] and "SURPRISE" in fb.seen[2] and "LESSON" in fb.seen[2]  # 3rd -> surprise + ask for a lesson
+    assert fb.seen[2] and "SURPRISE" in fb.seen[2]                # 3rd no-progress decision -> surprise nudge
+    assert "remember what is blocking you" in fb.seen[2]          # channel-neutral wording (S3 beta)
 
 
 def test_hybrid_surprise_fires_during_dialog_flail():

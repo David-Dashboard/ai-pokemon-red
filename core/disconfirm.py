@@ -4,10 +4,12 @@ Unifies the within-run prediction-error signals into ONE nudge for the planner:
   * stuck / no-progress — the agent keeps acting but the observed situation does not change, and
   * a blocked move — the perceiver reports the last move hit a wall (`SymbolicState.last_action`).
 When a disconfirmation PERSISTS (no observable change for `after` consecutive decisions) it emits a
-one-line `SURPRISE: ...` note that tells the planner to try something different and record a one-line
-`LESSON:`. That lesson lands in the harness-owned per-run LESSON buffer (`LLMButtonBrain`), closing the
-loop. World-agnostic: the only expectation encoded is the universal one — a chosen action should change
-the observable situation; no change disconfirms it.
+one-line `SURPRISE: ...` note that tells the planner to try something different and remember what is
+blocking it. The note is **channel-neutral** — it does not name a specific memory mechanism, because the
+within-run lesson store depends on the backend: a memory-owning brain (aria) records it via its own
+durable memory; a memoryless backend records it via the harness `LESSON:` buffer (see
+`LLMButtonBrain.owns_memory`). World-agnostic: the only expectation encoded is the universal one — a
+chosen action should change the observable situation; no change disconfirms it.
 
 This subsumes the earlier ad-hoc loop-breaker (which fired only when the free autopilot ran out of
 frontier); the no-progress signal also catches the case the loop-breaker MISSED — flailing inside a
@@ -64,6 +66,6 @@ class DisconfirmDetector:
             detail = ""
         msg = (f"SURPRISE: {n} decisions in a row with no observable progress.{detail} Something you "
                f"expect to work isn't — do NOT repeat recent actions, try a clearly different "
-               f"approach, and record a one-line LESSON: about what is blocking you.")
+               f"approach, and remember what is blocking you so you don't repeat it.")
         self._streak = 0   # consume: reset so we nudge once per `after`, not on every later step
         return msg

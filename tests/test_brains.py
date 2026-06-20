@@ -315,6 +315,51 @@ def test_llm_brain_resets_goto_and_lesson_on_model_failure():
     assert brain.lessons == ["remember the ledge"]       # buffer keeps the earlier lesson
 
 
+# -- S3 beta: owns_memory retires the harness LESSON buffer (aria owns within-run memory) ----------
+
+def test_owns_memory_defaults_false():
+    assert LLMButtonBrain("a").owns_memory is False            # every existing caller unaffected
+
+
+def test_owns_memory_true_suppresses_harness_lesson_buffer():
+    prompts: list[str] = []
+
+    def complete(p, i):
+        prompts.append(p)
+        return "THINK: x\nMOVE: a\nLESSON: door is locked"
+
+    brain = LLMButtonBrain("a", owns_memory=True, complete_fn=complete)
+    brain.decide(_obs(), [], {})
+    brain.decide(_obs(), [], {})
+    assert brain.lessons == []                                 # parsed for display but NOT stored
+    assert "LESSONS you recorded earlier THIS run" not in prompts[1]   # not re-injected (aria owns it)
+
+
+def test_owns_memory_false_keeps_harness_lesson_buffer():
+    # the memoryless path (ollama/default/injected) is byte-for-byte the pre-S3 behaviour
+    prompts: list[str] = []
+
+    def complete(p, i):
+        prompts.append(p)
+        return "THINK: x\nMOVE: a\nLESSON: door is locked"
+
+    brain = LLMButtonBrain("a", owns_memory=False, complete_fn=complete)
+    brain.decide(_obs(), [], {})
+    assert brain.lessons == ["door is locked"]                 # stored
+    brain.decide(_obs(), [], {})
+    assert "LESSONS you recorded earlier THIS run (apply them):" in prompts[1] and "door is locked" in prompts[1]
+
+
+def test_aria_lesson_tag_does_not_corrupt_parsing_or_buffer():
+    # An aria-style <lesson> tag (in production aria strips it server-side) must NOT be mistaken for a
+    # harness LESSON: line, nor leak buttons into the move.
+    reply = "THINK: walk\nMOVE: down down\n<lesson>water beats fire</lesson>"
+    brain = LLMButtonBrain("a", owns_memory=True, complete_fn=lambda p, i: reply)
+    call = brain.decide(_obs(), [], {})
+    assert call.args["buttons"] == ["down", "down"]            # buttons intact
+    assert brain.lesson is None and brain.lessons == []        # <lesson> tag != harness LESSON:
+
+
 # -- S2 constitution-first: deliver the system prompt as a system-role message ------------
 
 class _FakeResp:
