@@ -43,19 +43,21 @@ selection (couldn't read which move was highlighted) → fixed by `decode_move_m
 won.** The recurring lesson all session: **decode the state, keep the agent constant, wake the model only when
 it must decide.** **Read `reports/INSIGHTS.md`** for the conceptual synthesis (the perception seam,
 generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law). **158 tests.**
-**NEXT (bottleneck has moved OFF fighting):** (1) ~~**battle auto-advance**~~ **BUILT (2026-06-20, harness-only,
-free-validated) — paid run pending.** Wake only at the action/move menus; auto-advance battle narration for free.
+**NEXT (bottleneck has moved OFF fighting):** (1) ~~**battle auto-advance**~~ **DONE + VALIDATED LIVE (run #13,
+2026-06-20).** Wake only at the action/move menus; auto-advance battle narration for free.
 `textbox.battle_subscreen` (pixels-only) splits a SETTLED battle frame into `battle_text` (narration → press A
 free) vs `battle` (the action/move menu → wake); the perceiver emits the finer `context`; `HybridBrain`'s
 dialog auto-advance branch is widened by one predicate to also advance `battle_text`. **Safety = positive-ID-
 for-advance, default-to-wake** (a mis-read MOVE menu would auto-pick GROWL — the catastrophic case — so the
-move menu is detected FIRST and any ambiguity wakes). Validated on the 8 real `runs/battle` captures (clean
-split) + 15 synthetic tests (**158 total**); plus a generic `_ADVANCE_FUSE=50` and a battle-aware `play_loop`
-watchdog (no halt mid-fight). Branch `feat/battle-auto-advance` off `main`, committed (`695faee`..`c2432cb`),
-**NOT pushed**. **Next: the guarded paid run** (from `rival_battle.state`, David's go-ahead) — does the battle
-wake count drop sharply (target: a handful vs run #12's ~68) and still win? Then (2) the **learned blind-execute
-battle policy** (skill compilation, now feasible because the state is decoded — INSIGHTS §6); (3) tighten
-**lab-exit / Pallet navigation** (the residual Phase-B gap run #12 re-exposed post-battle).
+move menu is detected FIRST and any ambiguity wakes). Plus a generic `_ADVANCE_FUSE=50` and a battle-aware
+watchdog in BOTH drivers (no halt mid-fight). **Run #13 (text-only hybrid from `rival_battle.state`, the run #12
+config + auto-advance) WON the rival battle with just 18 BATTLE wakes vs run #12's ~68 (~3.8× cheaper)** —
+verified per-step (`in_battle` 2→0 sustained at step 72; SCRATCH ×12 / GROWL ×0; correct grounding, 0 confab,
+0 errors); 22 wakes / 400 steps total (5.5%), post-battle nav cost only 4 wakes (it even left the lab + explored
+Pallet). Video `runs/run13.mp4`, oracle `runs/run13/`, archive iter-013. Branch `feat/battle-auto-advance` off
+`main`, committed, **NOT pushed**. 158 tests. NEXT: (2) the **learned blind-execute battle policy** (skill
+compilation, now feasible because the state is decoded — INSIGHTS §6; run #13's 7 identical "FIGHT→SCRATCH"
+turns are the obvious thing to compile); (3) tighten **lab-exit / Pallet navigation** (the residual Phase-B gap).
 
 **What works (built + tested, 158 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
