@@ -60,6 +60,19 @@ Pallet). **Report `reports/2026-06-20-live-run-13-battle-auto-advance.md`**, vid
 compilation, now feasible because the state is decoded — INSIGHTS §6; run #13's 7 identical "FIGHT→SCRATCH"
 turns are the obvious thing to compile); (3) tighten **lab-exit / Pallet navigation** (the residual Phase-B gap).
 
+**Run #14 (2026-06-20) — first integrated COLD-START end-to-end run; nav holds, credits ran dry (downstream
+inconclusive). Report `reports/2026-06-20-live-run-14.md`.** From `start.state` (text-only, all current
+capabilities) the agent reached **Oak's lab `38→37→0→40` by step 130 on 15 productive wakes** — Phase B
+navigation validated COLD (past run #4's wall; run #5 only reached it before credits) — and auto-advanced Oak's
+dialog (81 free) in the lab. **Then Anthropic credits hit zero at step 276** (litellm log: *"credit balance is
+too low"*); the 65 later wakes were 400s, budget-cap halt at 80, never reached the starter. Same recurring
+external blocker (runs #5/#6/#14), NOT a capability gap; spend ~$0.10. **So "where it breaks downstream of the
+lab" is STILL open.** ⇒ The **immediate** next step is **(0) top up the Anthropic credits behind aria + probe,
+then re-run this exact end-to-end test** (precondition for #1–#3). A harness gap the outage exposed: **no
+API-error circuit breaker** — the harness retried each credit-400 and counted it against the wake budget, so an
+outage burns the cap on no-ops; halting after N consecutive identical API errors would fail fast/cheap (optional
+hardening). *Process win: the run-end auto-report hook (built this session) fired correctly — first live test.*
+
 **What works (built + tested, 158 tests pass, no ROM/PyBoy needed for tests):**
 - **Perception module** (`core/perception.py` seam + `games/pokemon_red/perceiver.py`): pixels →
   role-named `SymbolicState`; odometry + occupancy map; `detect_mode` (overworld/menu/dialog/battle).
