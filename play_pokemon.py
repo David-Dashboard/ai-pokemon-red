@@ -157,7 +157,11 @@ def main() -> int:
         fp = (st["badges"], st["party_level_sum"], len(coverage))
         improved = wd["best"] is None or any(a > b for a, b in zip(fp, wd["best"]))
         wd["best"] = fp if wd["best"] is None else tuple(max(a, b) for a, b in zip(fp, wd["best"]))
-        if improved:
+        # A battle shows NO fingerprint progress (badges/level/cells don't move until a mon faints), and
+        # with battle auto-advance a fight runs many free steps per LLM call — so the watchdog could halt
+        # mid-fight. Treat being in a battle as progress: a trainer fight can't be fled and is bounded;
+        # --max-llm-calls is the real ceiling. (in_battle is RAM — oracle/watchdog only, never the agent.)
+        if improved or st["in_battle"]:
             wd["last"] = step
 
     max_llm_calls = args.max_llm_calls
