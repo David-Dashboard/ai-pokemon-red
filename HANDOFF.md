@@ -44,7 +44,13 @@ Four constraints held on purpose (they're what makes the result transfer):
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn`.
 
-## 2. Current status (2026-06-17)
+## 2. Current status (2026-06-20)
+
+**⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session today — read the
+"⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE" block below + [`ROADMAP.md`](ROADMAP.md). The DIRECT NEXT
+ACTION is S1 (the harness cost-breaker); NO paid runs until it lands. The run-history blocks below (run #17's
+"place-detection is the #1 blocker / NEXT", etc.) are now CONTEXT — that nav work is S6 in the plan, not the
+next step. Goal = the brain + world-as-tools + dual-process architecture (`ROADMAP.md`).**
 
 **LATEST (2026-06-20, run #17): the AFFORDANCE LAYER is VALIDATED — the agent got the starter COLD and WON the
 rival battle (first start→starter→win in one run). The bottleneck moved to PLACE-DETECTION reliability.**
