@@ -384,6 +384,13 @@ class LLMButtonBrain:
         self.lesson = None
         strategy = context.get("strategy", "")  # KB-injected strategy doc, if any
         feedback = self._movement_feedback(obs)
+        if not self.use_vision:
+            # Text-only: no image is sent, so tell the model NOT to expect/ask for a screenshot — else
+            # it wastes the turn ("I cannot see the screenshot you've attached", run #9) instead of
+            # acting on the decoded on-screen text + state below.
+            feedback = ("TEXT-ONLY MODE: no screenshot is provided — there is no image to look at. "
+                        "Decide entirely from the decoded on-screen text and the state below; never "
+                        "ask for or wait on an image.\n" + feedback).strip()
         avoid = context.get("avoid") or []      # actions that did nothing here (outcome memory)
         if avoid:
             feedback = (feedback + f"\nNOTE: these did NOTHING here, do NOT repeat them: "
@@ -401,8 +408,9 @@ class LLMButtonBrain:
         # can't do this (the decoder mangles the uppercase names it would need to compare), but the
         # model's own vision reads them — so we nudge it to let the observation overturn a prior belief.
         if (obs.data.get("screen_text") or "").strip():
+            src = "the image and on-screen text show" if self.use_vision else "the on-screen text shows"
             feedback = (feedback + "\nTRUST THE SCREEN — this overrides memory: BEFORE you decide, state "
-                        "plainly what the image and on-screen text show RIGHT NOW. If that differs from "
+                        f"plainly what {src} RIGHT NOW. If that differs from "
                         "what you assumed or said on an earlier turn, you misread it earlier — the screen "
                         "wins: correct your belief and plan from what's shown now, and do NOT keep "
                         "narrating the old version.").strip()

@@ -168,6 +168,36 @@ def test_llm_brain_no_regrounding_on_whitespace_only_screen_text():
     assert "TRUST THE SCREEN" not in prompts[0]
 
 
+def test_llm_brain_text_only_mode_announces_no_image():
+    # --no-vision: no image is sent, so the prompt must tell the model not to expect a screenshot
+    # (run #9 wasted turns asking for the missing image) and the belief nudge must NOT reference an image.
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        assert image is None          # text-only: no image path passed to the backend
+        return "MOVE: a"
+
+    obs = Observation(data={"screen_path": "f.png", "screen_text": "CHARMANDER used SCRATCH!"},
+                      text="state", agent_id="a", t=0.0)
+    LLMButtonBrain("a", complete_fn=complete, use_vision=False).decide(obs, [], {})
+    p = prompts[0]
+    assert "TEXT-ONLY" in p
+    assert "the image and on-screen text" not in p    # nudge must not reference the (absent) image
+    assert "on-screen text shows" in p                # text-only nudge wording instead
+
+
+def test_llm_brain_vision_mode_has_no_text_only_banner():
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: a"
+
+    LLMButtonBrain("a", complete_fn=complete, use_vision=True).decide(_obs(), [], {})
+    assert "TEXT-ONLY MODE" not in prompts[0]
+
+
 def test_llm_brain_regrounding_coexists_with_transcript_and_lessons():
     # The nudge is APPENDED, not substituted: a wake carrying a transcript + a prior lesson + screen_text
     # must surface all three. Guards against a refactor that overwrites feedback instead of extending it.
