@@ -70,3 +70,15 @@ def test_tolerates_text_and_tuple_and_empty():
     # whitespace-only -> None
     ve2 = VisionEscalator(lambda p, i: "   ")
     assert ve2.ground("f.png", ("s", "1")) is None
+
+
+def test_escalation_spend_is_metered():
+    """The Sonnet usage is metered into total_cost_usd so a single cost cap can bound escalation too."""
+    ve = VisionEscalator(lambda p, i: ("text", {"prompt_tokens": 1000, "completion_tokens": 200}))
+    assert ve.total_cost_usd == 0.0
+    ve.ground("f.png", ("s", "1"))
+    assert ve.total_cost_usd > 0.0                  # 1000 in x $3/M + 200 out x $15/M
+    ve.ground("f.png", ("s", "1"))                  # cached -> no new spend
+    after = ve.total_cost_usd
+    ve.ground("f.png", ("s", "1"))
+    assert ve.total_cost_usd == after

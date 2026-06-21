@@ -83,6 +83,10 @@ def _looks_like_api_error(raw: Optional[str]) -> bool:
 # whatever usage fields the backend returns and treats input with no reported cache-split at the full
 # input rate (a slight over-estimate, the safe direction for a "don't overspend" breaker).
 HAIKU_45_PRICING = {"in": 1.00e-6, "out": 5.00e-6, "cache_read": 0.10e-6, "cache_write": 1.25e-6}
+# Sonnet 4.6 pricing for the perception-escalation cost estimate, folded into the SAME run cost cap as
+# the cheap agent (so escalation isn't a separate untracked budget). A guard estimate — over-billing is
+# the safe direction; adjust if Anthropic's posted Sonnet rates differ.
+SONNET_46_PRICING = {"in": 3.00e-6, "out": 15.00e-6, "cache_read": 0.30e-6, "cache_write": 3.75e-6}
 
 
 def _estimate_cost(usage: Optional[dict], pricing: dict) -> float:
@@ -530,7 +534,11 @@ class HybridBrain:
 
     @property
     def total_cost_usd(self) -> float:
-        return getattr(self.fallback, "total_cost_usd", 0.0)
+        # the cheap agent's spend PLUS any perception-escalation (strong-VLM) spend, so a single
+        # --max-cost-usd cap bounds BOTH — escalation is not a separate untracked budget.
+        base = getattr(self.fallback, "total_cost_usd", 0.0)
+        esc = getattr(self.escalator, "total_cost_usd", 0.0) if self.escalator is not None else 0.0
+        return base + esc
 
 
 def _ollama_complete(model: str, url: str) -> Callable[[str, Optional[str]], str]:

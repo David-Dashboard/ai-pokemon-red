@@ -841,6 +841,10 @@ def test_hybrid_escalates_perception_on_a_stuck_wake():
     h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True, escalator=esc)
     h.decide(_ctx_obs("overworld"), [], {})              # healthy wake -> no escalation
     assert len(esc.calls) == 0
+    # the cost cap bounds escalation too: HybridBrain.total_cost_usd folds in the escalator's spend
+    esc.total_cost_usd = 0.05
+    fb.total_cost_usd = 0.10
+    assert abs(h.total_cost_usd - 0.15) < 1e-9
     for _ in range(_STUCK_STALE + 1):                    # persist on a held screen -> stuck
         h.decide(_battle_obs(), [], {})
     assert len(esc.calls) >= 1                            # escalation fired once stuck

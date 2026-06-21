@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Callable, Hashable, Optional
 
+from core.brains import SONNET_46_PRICING, _estimate_cost
+
 # Asks for GROUNDING (what is this / how is it operated), NOT a single committed action — the cheap agent
 # owns the decision. Deliberately world-agnostic (no game names): it must read any screen, any world.
 _DEFAULT_QUESTION = (
@@ -33,11 +35,13 @@ class VisionEscalator:
     times per run, and at most ONCE per distinct state (cached)."""
 
     def __init__(self, describe_fn: Callable[[str, Optional[str]], object],
-                 question: str = _DEFAULT_QUESTION, max_calls: int = 8) -> None:
+                 question: str = _DEFAULT_QUESTION, max_calls: int = 8, pricing: Optional[dict] = None) -> None:
         self.describe_fn = describe_fn   # (prompt, image_path) -> text  OR  (text, usage); both tolerated
         self.question = question
         self.max_calls = max_calls
+        self.pricing = pricing or SONNET_46_PRICING
         self.calls = 0
+        self.total_cost_usd = 0.0        # ESTIMATE of escalation spend; folded into the brain's cost cap
         self._cache: dict = {}           # state_key -> description (or None); ONE attempt per state
 
     def ground(self, image_path: Optional[str], state_key: Hashable) -> Optional[str]:
@@ -54,7 +58,11 @@ class VisionEscalator:
         self.calls += 1
         try:
             out = self.describe_fn(self.question, image_path)
-            text = out[0] if isinstance(out, tuple) else out
+            if isinstance(out, tuple):        # (text, usage) — meter the spend into the cost cap
+                text = out[0]
+                self.total_cost_usd += _estimate_cost(out[1] if len(out) > 1 else None, self.pricing)
+            else:
+                text = out
             text = (text or "").strip() or None
         except Exception:                     # a failed VLM call must NEVER break the run
             text = None
