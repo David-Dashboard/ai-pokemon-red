@@ -85,10 +85,19 @@ try a direction"* → walked to the Pokéballs → starter → reached the rival
 confirms the gate stays **quiet on a moving agent** (the pose-inclusive key fires on a *frozen* cycle only). **⇒ NEW
 DOWNSTREAM BOTTLENECK (separate from the trap) = the post-starter NICKNAME-ENTRY KEYBOARD:** run 3 got the starter
 then stuck **44× `[wake:mode]`** on the nickname grid, which `detect_mode` **misreads as `battle`** (the known
-full-screen-bright-menu limit); the rival-battle trigger is also non-deterministic. **→ DIRECT NEXT ACTION:** answer
-NO to nicknaming, OR fix the keyboard-as-`battle` misdetection, OR — the unifying fix extending this work — a general
-"no-novelty across N wakes → press B" stuck-breaker. Then **S5 (procedural memory)**. *(Honest cost: freeze-recovery
-is wake-heavy — 12 / 57 / 70 wakes across the 3 runs.)* Full detail: `reports/2026-06-21-seen-states-validation.md`
+full-screen-bright-menu limit); the rival-battle trigger is also non-deterministic. **⇒ FIXED (BUILT + free-validated,
+`e960360`): a general no-novelty STUCK-BREAKER** (the seen-states principle generalized past the dialog cycle gate —
+David's call on which approach serves the thesis). Key correction caught by checking the data first: the keyboard is a
+**HELD state** (44 identical frames = 1 "visit"), which the cycle gate's rising-edge counting collapses — so the right
+signal is **"decisions since the last NOVEL state"** (unifies a *cycle* and a *persistence*; self-clears on a real
+battle's fresh narration, so it's robust to the `battle` mislabel). At `_STUCK_STALE=12` it hands aria the same
+**pure-fact** seam (a `stuck_note`). Free-validated on the real oracles: fires **27× ALL in run 3's keyboard region
+(first @ step 459, ~26 steps before the watchdog halt), 0 false-fires during run 2's real battle**; 238 tests. **→
+DIRECT NEXT ACTION = PAID-validate the stuck-breaker** (does the bare fact let aria press B / back out of the
+keyboard? — free validation proves the signal fires, NOT that aria recovers). Then **S5 (procedural memory)**.
+*(Orthogonal cleanup still open: the perceiver's keyboard-as-`battle` misread — now non-blocking but worth fixing.
+Honest cost: freeze-recovery is wake-heavy — 12 / 57 / 70 wakes across the 3 runs.)* Full detail:
+`reports/2026-06-21-seen-states-validation.md`
 + `reports/LEARNINGS.md` + the `novelty-signal` memory.
 
 **⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session — read the
