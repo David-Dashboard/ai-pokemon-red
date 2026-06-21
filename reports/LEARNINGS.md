@@ -193,3 +193,19 @@ the frozen `core/contracts.py` is untouched (advisory rides the open `spatial_me
   is wrong and predictions get pinned to the wrong cell. ⇒ For the task-#8 autopilot use, trust predictions for
   cells AHEAD / near the player (clean crops), detect off-centre frames, and keep the behavioural veto — don't
   trust the peripheral advisory. (This is the Q6 robustness item, now quantified live.)
+- **2026-06-21 — cross-tileset hash test, ADVERSARIALLY VERIFIED (the verification overturned the first read —
+  the workflow earned its keep).** On the new data (kanto1 + races + fixtures, 8817 faced-tiles) the hash
+  leave-one-MAP-out looked great (Forest correctly novel 3.3%; every map ≥ its baseline; "no CLIP-style
+  failure"). A 5-agent verification workflow **overturned the strong claim.** **Lesson 1 — hold out the right
+  UNIT:** leave-one-MAP-out ≠ leave-one-TILESET-out; a held-out *indoor* map kept a *sibling* indoor map in the
+  store, hiding the failure. Honest leave-one-TILESET-out (`eval/_verify_tileset.py`): town/route survive
+  (wall-recall 84.7% / 99.5%) but **INDOOR wall-recall = 0.0% — 449/449 walls called walkable @ conf 0.94** (the
+  confident-mispredict failure). **Lesson 2 — aggregate accuracy LIES for navigation; measure WALL-RECALL:**
+  indoor's 80.7% acc > 67.2% baseline *hid* a 0% wall-recall because indoor is ~70% walkable (calling everything
+  walkable scores well). **Lesson 3 — name the real root cause:** an all-zeros dHash ALIAS (flat/low-contrast
+  tiles → hash 0) drove 82% of the miscalls (369 exact collisions to outdoor-walkable) — a fixable fingerprint
+  defect, not "intrinsic ambiguity" (one lens called it benign on the *inflated* protocol; the tileset-out lens
+  exposed it). Edge-crop (0.5%) + labels (98.9% RAM-agree) cleared as confounds. ⇒ cheap fixes (flatness guard +
+  intensity bits) BEFORE the CLIP arm. **Process lesson: a good-looking generalisation number on the wrong
+  hold-out unit is the classic self-deception — adversarially re-derive the hold-out, and pick the metric that
+  matches the downstream cost (here: don't-walk-into-walls = wall-recall, not accuracy).**

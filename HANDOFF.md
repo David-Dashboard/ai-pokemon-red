@@ -65,8 +65,27 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-21 eve) — DATA-CAPTURE TOOLING + FIRST CROSS-TILESET DATA (free; branch `feat/novelty-signal`,
-unpushed).** To close the DATA GAP (we only had ~5 early maps that SHARE a tileset, which inflated the hash's
+**⇒ NEWEST (2026-06-21 night) — TASK #9 cross-tileset hash test RUN + ADVERSARIALLY VERIFIED; headline
+CORRECTED (branch `feat/novelty-signal`, pushed).** Ran the hash leave-one-MAP-out on the new data (8817
+faced-tiles, 10 runs) — it LOOKED great (Forest novel 3.3%, no map below baseline). A **5-agent verification
+workflow OVERTURNED the strong claim:** leave-one-MAP-out hid a failure because a held-out indoor map kept a
+**sibling** indoor map in the store. Under the honest **leave-one-TILESET-out** (`eval/_verify_tileset.py`,
+independently reproduced): town wall-recall **84.7%** ✓, route **99.5%** ✓, but **INDOOR wall-recall = 0.0% —
+449/449 walls miscalled WALKABLE @ conf 0.94** (the confident-mispredict failure the hash was supposed to
+avoid). **Aggregate accuracy HID it** (indoor 80.7% > 67.2% baseline, because indoor is ~70% walkable) — the
+metric that matters for a navigator is **WALL-RECALL.** Root cause = an **all-zeros dHash ALIAS** (flat/low-
+contrast tiles → hash 0; 82% of the miscalls; 369 exact collisions to outdoor-walkable). Confounds CLEARED:
+(4,4) edge-crop negligible (0.5% mis-crop — interiors pin the player centre + pad with void), labels/split
+clean (98.9% RAM-agree). **Corrected headline: strong RECURRENCE within a tileset + safe NOVELTY on a new
+tileset; NO indoor cross-tileset generalisation.** Two meta-lessons: **aggregate accuracy lies for nav —
+measure wall-recall**, and **hold out the whole TILESET, not one map.** **⇒ REVISED NEXT (before any CLIP):
+cheap fixes — (a) flatness/void guard (near-uniform → novel/low-conf, not walkable), (b) more-discriminative
+hash (intensity bits) to break the collisions; re-measure indoor wall-recall on leave-one-tileset-out. The
+overlap-window CLIP / hash⊕CLIP hybrid (task #9 step 2) is GATED behind those + a wall-recall≥~50% bar.** Full
+record (verification update at top): `reports/2026-06-21-tile-fingerprint-map-and-cross-tileset-capture.md`.
+
+**⇒ (2026-06-21 eve) — DATA-CAPTURE TOOLING + FIRST CROSS-TILESET DATA (free; branch `feat/novelty-signal`,
+pushed).** To close the DATA GAP (we only had ~5 early maps that SHARE a tileset, which inflated the hash's
 cross-map win), built three free tools: **`play_record.py`** — a windowed PyBoy session you GUIDE, with a `Tab`
 toggle that hands control to the autopilot for hands-free dense sampling (WASD layout via in-place SDL2-keymap
 mutation — the user's arrow keys are dead; `C`=checkpoint `.state`; records probe-compatible frames+oracle);

@@ -3,6 +3,29 @@
 **Type:** free work (no paid LLM run) — build + offline validation + data capture. All on branch
 `feat/novelty-signal` (pushed). 269 tests pass.
 
+## ⚠ VERIFICATION UPDATE — headline CORRECTED (5-agent adversarial workflow, reproduced)
+The cross-tileset claim in §Results was **overturned** by adversarial verification (`eval/_verify_tileset.py`,
+independently reproduced). **Leave-one-MAP-out ≠ leave-one-TILESET-out:** a held-out *indoor* map kept a
+sibling indoor map in the store, which HID a failure. Under the honest **leave-one-TILESET-out** (hold ALL
+maps of a tileset; no sibling in store):
+
+| held-out tileset | coverage | acc | **wall-recall** | reading |
+|---|---|---|---|---|
+| town (0,1) | 89.2% | 97.2% | **84.7%** | survives |
+| route (12,13) | 81.1% | 95.5% | **99.5%** | survives |
+| **indoor (37,38,39,40,41)** | 69.4% | 80.7% | **0.0%** | **449/449 walls miscalled WALKABLE @ conf 0.94** |
+| forest (51) | 3.3% | 100% | n/a | correctly NOVEL, but all-walkable so acc vacuous |
+
+**So the hash DOES confidently mispredict cross-tileset for INDOOR — the exact failure I credited it with
+avoiding.** Two meta-lessons: (1) **aggregate accuracy lies for navigation — measure WALL-RECALL** (indoor's
+80.7% > 67.2% baseline hid a 0% wall-recall because indoor is ~70% walkable); (2) **hold out the whole
+TILESET, not one map.** Root cause = an **all-zeros dHash ALIAS** (flat/low-contrast tiles all hash to 0 →
+82% of the indoor miscalls, 369 exact collisions to outdoor-walkable tiles). Confounds *cleared*: the (4,4)
+edge-crop is negligible (0.5% mis-crop — interiors pin the player centre and pad with void), and labels/split
+are clean (98.9% RAM-agreement). **Corrected headline: strong RECURRENCE within a tileset + safe NOVELTY on a
+new tileset; NO indoor cross-tileset generalisation.** The hash still beats CLIP on the *same* leave-one-MAP-out
+protocol (lab 77.7% vs CLIP 26.9%), but neither was tested cross-tileset apples-to-apples. **Revised NEXT below.**
+
 ## Goal
 Execute the converged perception decision (`reports/2026-06-21-perception-architecture-decision.md`):
 give the agent an **online, behaviour-labelled `tile→function` world model keyed by a cheap perceptual
@@ -60,10 +83,12 @@ honestly on genuinely new tilesets.
   Same policy, different fates — the seed divergence worked, and race2/3 generated more Route 1/Viridian data.
 
 ## Why it matters
-The decisive earlier finding was *CLIP captures appearance, not function*. This session confirms the
-flip side empirically: a **deterministic exact-structure hash is strictly better** for the one thing that
-works (recurrence) — free, no torch, CI-testable — and it honestly says "novel → explore" instead of
-confidently mispredicting. The cheap path wasn't a compromise; it was the correct tool.
+The hash owns the **recurrence** win for free (no torch, CI-testable) and beats CLIP on the same
+leave-one-MAP-out protocol — that part is real and verified. But the verification (see top) shows the cheap
+path is **not** the whole answer: cross-TILESET, the hash confidently mispredicts indoor walls (wall-recall
+0.0%) because flat tiles alias to one hash. So the honest takeaway is narrower than "the correct tool": the
+hash is the right tool for *recurrence + novelty*, and a *separate* mechanism (a flatness guard / more bits /
+or a dense arm) is needed for *cross-tileset wall discrimination*.
 
 ## Caveats (honest)
 - **Advisory is noisier than the clean faced-tile recognition** (61% all-cells) due to the (4,4)
@@ -73,13 +98,20 @@ confidently mispredicting. The cheap path wasn't a compromise; it was the correc
 - **Oracle quirks:** the race index showed transient `badges=1` / `battle=?` — RAM misreads on
   fade/transition frames (the index takes a max), not real progress. Auto-explore cannot beat gyms.
 
-## Next
-- **Task #9** — re-run leave-one-MAP-out on the NEW tilesets (Route 1/2, Viridian Forest) + David's
-  **overlap-window CLIP** + the **hash⊕CLIP hybrid** (BM25-style sparse+dense): does the hash's recurrence
-  win HOLD off the shared early tiles? (`.venv-probe4` for the CLIP arm.)
-- **Task #8** — the navigation-speedup A/B (use predictions in the autopilot to skip appearance-known
-  walls; replay/live), respecting the "trust-ahead + veto" rule from the wired-replay finding.
-- More capture toward Pewter/Mt Moon for richer tilesets.
+## Next (revised after verification)
+The CLIP arm is now SCOPED to the one place the hash measurably fails — cross-tileset wall discrimination —
+and gated behind cheaper fixes that may close most of the gap:
+1. **Cheap fix first (free, no torch):** (a) a **flatness/void guard** so near-uniform crops read
+   novel/low-confidence instead of confidently-walkable (the all-zeros alias is 82% of the indoor miscalls);
+   (b) a **more discriminative hash** (e.g. add quantized-intensity bits) to break the 369 cross-tileset
+   collisions. Re-measure **indoor wall-recall** on leave-one-TILESET-out (`eval/_verify_tileset.py`).
+2. **CLIP arm only if (1) falls short** — David's overlap-window CLIP + hash⊕CLIP hybrid (BM25-style
+   sparse+dense). Bar to justify its torch/sidecar cost: raise indoor wall-recall to ≥~50% (ideally toward
+   town's 84.7%) WITHOUT hurting town/route wall-recall or the recurrence coverage, AND preserve safe novelty
+   on a genuinely-new tileset (don't reintroduce CLIP's confident cross-tileset mispredict).
+3. **Task #8** (nav-speedup A/B) — must use wall-recall-safe predictions; the veto stays authoritative.
+4. **More data** — only ONE clean new tileset (Forest) exists and it's all-walkable; capture toward
+   Pewter/Mt Moon (a new tileset *with walls*) before calling novelty-safety robust.
 
 <!-- Free work, no paid run -> no oracle battle-scorecard. Numbers above are from eval/probe_tilemap.py
      + eval/replay_tilemap.py against recorded oracles; commits 016ca79..2368a7c on feat/novelty-signal. -->
