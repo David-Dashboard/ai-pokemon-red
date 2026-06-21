@@ -63,7 +63,25 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 ## 2. Current status (2026-06-21)
 
-**⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.** The **FOUNDATION is DONE +
+**⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
+
+**⇒ NEWEST — the ROBUSTNESS-FIRST pivot (measured reliability, fixed the #1 gap). Branch `feat/novelty-signal`
+(NOT pushed; the whole session stacks here).** Single-run "successes" were hiding poor reliability, so we measured
+it: a **3-run cold batch scored 0/3 STARTER**. A **6-agent diagnosis workflow OVERTURNED my "odometry is broken"
+hypothesis** (`_best_shift` is sound) → the real gap is **BEHAVIORAL: the autopilot jams a blocked move 243× with
+no breaker**, plus an **add-only occupancy** (`walls` never cleared) that a cutscene poisons. **FIX (committed
+`4f4878d`):** (1) a **repeated-no-move breaker** (`_NO_MOVE_STALL=8` → a STEERED `nomove_note` wake instead of
+repeating the dead move) + (2) **self-correcting occupancy** (clear walls on a CONFIRMED move). **PAID-CONFIRMED:
+STARTER 0/3 → 4/5** (clean A/B, same config; ≥4/5 was the target). Fix #2 is the lever (runs now cover 41-42 lab
+tiles vs 5-6); run 5 reached the rival battle. **⇒ DIRECT NEXT: the bottleneck moved DOWNSTREAM** — (a) a residual
+walk-to-a-ball affordance miss (fix4 wandered 42 tiles, never transacted — 1/5), (b) post-starter (no Route 1 yet:
+nickname keyboard / rival battle / lab exit). Also built this session (all on `feat/novelty-signal`): the
+SEEN-STATES/NOVELTY signal (Oak dialog-trap fix, paid-validated below), the no-novelty STUCK-BREAKER, and
+PERCEPTION-ESCALATION (`--vision-escalation`: a strong VLM grounds a confusing screen at stuck moments — built +
+path-validated, not yet shown to change a paid outcome). **Meta-lessons: measure robustness with N runs not 1;
+diagnose before fixing; free-validate every fix.** Detail: `reports/LEARNINGS.md` (the ROBUSTNESS-FIRST bullet).
+
+The **FOUNDATION is DONE +
 all paid-validated** (S1 cost-breaker, S2 constitution-first, S3 β within-run-memory, **[`ARCHITECTURE.md`](ARCHITECTURE.md)
 (ADR-001) = the dual-process seam**; the constitution moved into aria's config). A long cold playthrough found the
 **#1 BLOCKER: the OAK STARTER-DIALOG TRAP** — auto-advance mashes A forever on the "which POKéMON?" prompt (a
