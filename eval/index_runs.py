@@ -73,8 +73,8 @@ def main() -> int:
     for i in infos:
         date = datetime.fromtimestamp(i["first"]).strftime("%Y-%m-%d %H:%M") if i["first"] else "?"
         maps = ",".join(str(m) for m in sorted(i["maps"])) if i["maps"] else "-"
-        if len(maps) > 40:
-            maps = maps[:37] + "…"
+        if len(maps) > 80:
+            maps = maps[:78] + ".."
         man, auto = i["modes"].get("manual", 0), i["modes"].get("auto", 0)
         mode = f"{man}/{auto}" if (man or auto) else "-"
         extras = ", ".join(filter(None, [

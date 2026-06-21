@@ -65,7 +65,20 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-21) — TILE-FINGERPRINT `tile→function` MAP + NOVELTY GATE: BUILT + FREE-VALIDATED (task #7
+**⇒ NEWEST (2026-06-21 eve) — DATA-CAPTURE TOOLING + FIRST CROSS-TILESET DATA (free; branch `feat/novelty-signal`,
+unpushed).** To close the DATA GAP (we only had ~5 early maps that SHARE a tileset, which inflated the hash's
+cross-map win), built three free tools: **`play_record.py`** — a windowed PyBoy session you GUIDE, with a `Tab`
+toggle that hands control to the autopilot for hands-free dense sampling (WASD layout via in-place SDL2-keymap
+mutation — the user's arrow keys are dead; `C`=checkpoint `.state`; records probe-compatible frames+oracle);
+**`eval/auto_race.py`** — a headless free dumb auto-player (ExploreBrain + A-mash) for parallel data-gen / racing;
+**`eval/index_runs.py`** — a non-destructive chronological catalog → `runs/INDEX.md`. **DATA NOW CAPTURED:** a guided
+`runs/kanto1` (**1303 steps, 15 maps incl. Viridian City + its buildings, Route 1/2, and Viridian Forest (map 51) —
+a genuinely NEW tileset**; 1145 manual / 160 auto) + 3 auto-races (`race1` trapped in the lab cluster; `race2`/`race3`
+reached Route 1 + Viridian, 131/177 tile-types). **⇒ NEXT = task #9: re-run leave-one-MAP-out on these NEW tilesets
++ David's overlap-window CLIP + the hash⊕CLIP hybrid (BM25-style sparse+dense) — does the hash's recurrence win HOLD
+off the shared early-game tiles?** (`.venv-probe4` for the CLIP arm.) The task-#7 nav-speedup A/B (below) stands behind it.
+
+**⇒ (2026-06-21) — TILE-FINGERPRINT `tile→function` MAP + NOVELTY GATE: BUILT + FREE-VALIDATED (task #7
 done; branch `feat/novelty-signal`, unpushed; 269 tests).** Executed the converged design (the block below). New
 **`core/tilemap.py`** (world-agnostic `TileFunctionMap`: a 64-bit dHash perceptual fingerprint + behaviour-labelled
 `observe`/`predict` with confidence + Hamming-tolerant recurrence + `is_novel`) wired into
