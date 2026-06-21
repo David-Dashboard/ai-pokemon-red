@@ -13,10 +13,11 @@ RAM stays the non-leaking ORACLE (the side-log only); the perceiver sees pixels 
 a normal run. Data lands in runs/<name>/ as frame_NNNNNN.png + oracle.jsonl, exactly the format
 eval/probe_tilemap.py, eval/probe_walkability_learn.py and eval/replay_tilemap.py consume.
 
-Controls (the window must be focused):
-  Move = Arrow keys      A = A key      B = S key      Start = Enter      Select = Backspace
+Controls (the window must be focused) -- default --keys wasd:
+  Move = W A S D      A = J      B = K      Start = Enter      Select = Backspace
   TAB  = toggle the auto-explorer on/off      C = save a checkpoint .state      ESC = quit & finalize
-  (PyBoy extras: SPACE = fast-forward while held, Z/X = its own save/load)
+  (PyBoy extras: SPACE = fast-forward while held, Z/X = its own save/load. Use --keys arrows for the
+   classic Arrows + A/S layout instead.)
 
 Run:  uv run python play_record.py --rom roms/PokemonRed.gb --load-state start.state --name kanto1 [--sound]
 """
@@ -39,6 +40,28 @@ from games.pokemon_red.perceiver import OverworldPerceiver
 _DIR_OF = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 
 
+def remap_wasd():
+    """Repoint PyBoy's SDL2 keymap to WASD movement (instead of the arrow keys).
+
+    PyBoy hardcodes a->A, s->B, arrows->d-pad. We mutate the module-global KEY_DOWN/KEY_UP dicts IN
+    PLACE -- verified that the (compiled) sdl2_event_pump resolves them from the module globals, so an
+    in-place update is seen. This overrides a/s (now Left/Down) and moves the GB A/B buttons to J/K;
+    the arrow keys stay mapped too (harmless), and z/x/space/esc keep PyBoy's defaults."""
+    from pyboy.plugins import window_sdl2 as w
+    import sdl2
+    from pyboy.utils import WindowEvent as E
+    w.KEY_DOWN.update({
+        sdl2.SDLK_w: E.PRESS_ARROW_UP, sdl2.SDLK_s: E.PRESS_ARROW_DOWN,
+        sdl2.SDLK_a: E.PRESS_ARROW_LEFT, sdl2.SDLK_d: E.PRESS_ARROW_RIGHT,
+        sdl2.SDLK_j: E.PRESS_BUTTON_A, sdl2.SDLK_k: E.PRESS_BUTTON_B,
+    })
+    w.KEY_UP.update({
+        sdl2.SDLK_w: E.RELEASE_ARROW_UP, sdl2.SDLK_s: E.RELEASE_ARROW_DOWN,
+        sdl2.SDLK_a: E.RELEASE_ARROW_LEFT, sdl2.SDLK_d: E.RELEASE_ARROW_RIGHT,
+        sdl2.SDLK_j: E.RELEASE_BUTTON_A, sdl2.SDLK_k: E.RELEASE_BUTTON_B,
+    })
+
+
 def infer_dir(prev, cur):
     """Direction of a within-map tile step (prev/cur = (map,x,y)); None across maps or no move."""
     if prev is None or cur is None or prev[0] != cur[0]:
@@ -55,6 +78,8 @@ def main() -> int:
     ap.add_argument("--load-state", default="start.state")
     ap.add_argument("--name", default="manual", help="dataset dir under runs/")
     ap.add_argument("--sound", action="store_true")
+    ap.add_argument("--keys", choices=["wasd", "arrows"], default="wasd",
+                    help="movement layout: wasd (default) or the classic arrows + a/s")
     args = ap.parse_args()
 
     out = os.path.join("runs", args.name)
@@ -65,6 +90,8 @@ def main() -> int:
     from pyboy import PyBoy
     pb = PyBoy(args.rom, window="SDL2", sound_emulated=args.sound,
                sound_volume=100 if args.sound else 0)
+    if args.keys == "wasd":
+        remap_wasd()                      # WASD movement; GB A/B move to J/K (your arrows are dead)
     pb.set_emulation_speed(1)             # PyBoy paces to real time; SPACE still fast-forwards
     if args.load_state and os.path.exists(args.load_state):
         with open(args.load_state, "rb") as f:
@@ -136,9 +163,11 @@ def main() -> int:
         oracle.flush()
         step["n"] += 1
 
-    print("Controls: Arrows=move  A=A  S=B  Enter=Start  Backspace=Select  "
-          "SPACE=fast-forward (hold)")
-    print(f"          TAB=toggle auto-explore   C=checkpoint .state   ESC=quit & finalize")
+    if args.keys == "wasd":
+        print("Controls: WASD=move  J=A  K=B  Enter=Start  Backspace=Select  SPACE=fast-forward (hold)")
+    else:
+        print("Controls: Arrows=move  A=A  S=B  Enter=Start  Backspace=Select  SPACE=fast-forward (hold)")
+    print("          TAB=toggle auto-explore   C=checkpoint .state   ESC=quit & finalize")
     print(f"recording -> {out}/\n")
 
     last_act = None
