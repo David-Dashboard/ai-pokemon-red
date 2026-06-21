@@ -297,6 +297,22 @@ def test_llm_brain_surfaces_vision_hint():
     assert hint in prompts[0]
 
 
+def test_llm_brain_surfaces_nomove_note():
+    """The repeated-wall-jam steering reaches the prompt: context['nomove_note'] is appended so the agent
+    knows to re-route off a stale wall map."""
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: down"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    note = ("You keep trying to move but your position hasn't changed — your wall map may be stale or "
+            "wrong. Try a DIFFERENT direction, or move toward a different open tile.")
+    brain.decide(_obs(), [], {"nomove_note": note})
+    assert note in prompts[0]
+
+
 def test_llm_brain_ignores_unfilled_lesson_template():
     reply = "MOVE: up\nLESSON: <one short lesson>"
     brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)

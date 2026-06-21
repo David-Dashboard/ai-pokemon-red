@@ -33,6 +33,12 @@ _AREA_THRESHOLD = 30.0  # best-SHIFT residual above which NO translation aligns 
                         # Measured (eval/inspect_translation): same-map best-shift diff p90~5; real
                         # warps 55-77 (incl. stairs); a frame right after a warp can spike, so we
                         # re-baseline one frame after every transition.
+                        # NOTE (2026-06-21 diagnosis): walking up to Oak's table scores ~35 and mints a
+                        # SPURIOUS in-lab place here. Raising this to 45 was REVERTED: free-validation
+                        # found a real lab-area transition at residual ~37 (warp/same-map bands overlap
+                        # more than 55-77), so 45 would miss warps. The proper guard is a 2-frame
+                        # confirmation (require the high residual to persist), not a higher threshold —
+                        # deferred; the phantom place is a low-impact co-symptom, not the trap.
 _TILE_PX = 16           # overworld tile = 16x16 px; the camera scrolls in whole-tile steps
 _SHIFT_RANGE = 64       # search +/- this many px (4 tiles) for the translation that aligns two frames
 # A small selection box in the upper-right (a YES/NO or list OVER a bottom textbox) marks a CHOICE,
@@ -297,6 +303,13 @@ class OverworldPerceiver:
                 cell["walls"].add(direction)
                 outcome = "blocked"
             else:
+                # Re-ground (2026-06-21 diagnosis): the occupancy was ADD-ONLY (walls never cleared), so a
+                # wall written at a phantom cell during Oak's cutscene boxed the agent in forever. A
+                # CONFIRMED scroll is fresh evidence the cell is passable, so clear the stale wall both
+                # ways: `direction` is open from the cell we left, and `_BACK[direction]` is open from the
+                # cell we entered. (Only fires on a real move — |scroll| >= half a tile — so a wall-jam
+                # still records its wall above.)
+                cell["walls"].discard(direction)
                 tiles = max(1, min(_SHIFT_RANGE // _TILE_PX, int(round(axis_px / _TILE_PX))))
                 dx, dy = _DELTA[direction]
                 for _ in range(tiles):         # mark each tile traversed, not just the endpoint
@@ -304,6 +317,7 @@ class OverworldPerceiver:
                     cells.setdefault((x, y), {"visited": True, "walls": set()})["visited"] = True
                 m["cursor"] = (x, y)
                 cell = cells[(x, y)]
+                cell["walls"].discard(_BACK[direction])
                 outcome = "moved"
 
         # Motion-saliency (free NPC/ROI prior): when the camera was STATIC this step — we didn't

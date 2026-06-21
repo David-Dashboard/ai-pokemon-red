@@ -58,6 +58,12 @@ _CYCLE_REVISITS = 3
 # narration keeps producing novel text, resetting the count). Conservative: between _CYCLE_REVISITS
 # (3) and the driver wake-watchdog (~40), so it nudges a recovery well before the run is halted.
 _STUCK_STALE = 12
+# Repeated-no-move breaker: consecutive OVERWORLD decisions with NO pose change before we force a STEERED
+# System-2 wake. From the 2026-06-21 odometry diagnosis: in the lab the autopilot jammed ONE blocked move
+# 243x (pose frozen) and never woke, draining to the watchdog; the runs that GOT the starter escaped only
+# when an LLM wake re-routed off the stale wall. Firing at 8 breaks the jam early; legit walking changes the
+# pose every single_step, so it resets and never trips while the agent is actually moving.
+_NO_MOVE_STALL = 8
 
 # Circuit breaker: halt after this many CONSECUTIVE failed model calls (the driver checks
 # brain.consec_api_errors). A persistent backend outage — e.g. aria/litellm returning the same
@@ -351,6 +357,8 @@ class HybridBrain:
         self._seen_states: set = set()
         self._since_novel = 0
         self._stuck = False
+        self._consec_no_move = 0       # consecutive overworld decisions with a frozen pose (a wall-jam)
+        self._last_pose = None
         # Perception escalation (optional, off by default so agnostic worlds/tests are unchanged): on a
         # STUCK wake, a strong VLM grounds the screen for the cheap agent. Pixels only; cached per state
         # + per-run capped (a healthy run never calls it). The Pokémon drivers wire one in. core/ stays
@@ -418,6 +426,14 @@ class HybridBrain:
 
         # goto(target): consume it on arrival, else hand the persistent target to the free autopilot.
         pose = (obs.data.get("pose") or {}).get("value")
+        # Repeated-no-move tracking: count consecutive OVERWORLD decisions where the pose did NOT change
+        # (the agent keeps issuing moves but isn't going anywhere — a stale-wall-map jam). Reset whenever
+        # it actually moves or leaves the overworld (a frozen pose during dialogue is legitimate).
+        if ctx_label == "overworld" and pose is not None and pose == self._last_pose:
+            self._consec_no_move += 1
+        else:
+            self._consec_no_move = 0
+        self._last_pose = pose
         if self.goto is not None and pose is not None and list(pose) == list(self.goto):
             self.goto = None                          # arrived — destination reached, stop steering there
         if self.goto is not None:
@@ -452,12 +468,19 @@ class HybridBrain:
                 call = self._wake(obs, tools, context, why)
         else:
             self._consec_advance = 0
-            call = self.autopilot.decide(obs, tools, context)
-            if call is not None:
-                self.mode = "autopilot"
-                self.last_thought = getattr(self.autopilot, "last_thought", "")
+            if self._consec_no_move >= _NO_MOVE_STALL:
+                # the autopilot keeps issuing moves but the agent isn't going anywhere (a repeated
+                # wall-jam on a stale/corrupt map — robust1's 243x 'right'). Don't let it repeat the dead
+                # move; wake System 2 with a steering note to RE-ROUTE (what the successful runs did).
+                self._consec_no_move = 0
+                call = self._wake(obs, tools, context, "nomove")
             else:
-                call = self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> LLM
+                call = self.autopilot.decide(obs, tools, context)
+                if call is not None:
+                    self.mode = "autopilot"
+                    self.last_thought = getattr(self.autopilot, "last_thought", "")
+                else:
+                    call = self._wake(obs, tools, context, "stuck")  # autopilot exhausted -> LLM
         self._last_sig = sig
         self._last_action = action_key(call)
         return call
@@ -477,6 +500,12 @@ class HybridBrain:
             # held case the cycle gate misses, e.g. the name-entry keyboard). Same bare-FACT seam.
             context = {**context, "stuck_note":
                        "Your last several actions on this screen produced no new result — you appear to be stuck on it."}
+        if why == "nomove":  # repeated wall-jam: tried to move but the position hasn't changed. Bare FACT
+            # + the one actionable hint (the wall map may be wrong) — System 2 re-routes (the escape the
+            # successful runs found on their own).
+            context = {**context, "nomove_note":
+                       "You keep trying to move but your position hasn't changed — your wall map may be "
+                       "stale or wrong. Try a DIFFERENT direction, or move toward a different open tile."}
         # Perception escalation: when stuck (cycling OR persisting), a strong VLM grounds the screen the
         # cheap perceiver mislabeled/under-read (System-1 escalation tier). Cached per state + capped.
         if self.escalator is not None and (why == "cycle" or self._stuck):
@@ -739,6 +768,9 @@ class LLMButtonBrain:
         stuck = context.get("stuck_note")        # general stuck-breaker: persisting on a screen (HybridBrain)
         if stuck:
             feedback = (feedback + "\n" + stuck).strip()
+        nomove = context.get("nomove_note")      # repeated wall-jam: tried to move, position unchanged
+        if nomove:
+            feedback = (feedback + "\n" + nomove).strip()
         vhint = context.get("vision_hint")       # perception escalation: a strong VLM's screen grounding
         if vhint:
             feedback = (feedback + "\nA closer look at the screen: " + vhint).strip()

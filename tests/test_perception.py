@@ -132,6 +132,34 @@ def test_odometry_clamps_a_mis_measured_scroll_to_the_search_range():
     assert s.last_action["outcome"] == "moved" and abs(s.pose["value"][1]) <= 4
 
 
+def test_perceiver_clears_a_stale_wall_on_a_confirmed_move():
+    """Fix #2 (re-grounding, 2026-06-21): the occupancy was ADD-ONLY, so a wall written at a phantom cell
+    during Oak's cutscene boxed the agent in forever. A CONFIRMED move is fresh evidence the direction is
+    passable, so the stale wall must be cleared."""
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene(7)
+    per.perceive(scene, mem, {"last_action": None})        # prime; cursor (0,0)
+    m = mem.data
+    cells = m["places"][m["place"]]
+    cur = m["cursor"]
+    cells.setdefault(cur, {"visited": True, "walls": set()})["walls"].add("down")   # poison a stale wall
+    per.perceive(_scroll(scene, dy_tiles=1), mem, {"last_action": "down+down"})     # confirmed move DOWN
+    assert "down" not in cells[cur]["walls"]               # the stale wall was re-grounded away
+
+
+def test_perceiver_still_records_a_wall_on_a_genuine_block():
+    """Fix #2 only clears on a CONFIRMED scroll; a real wall-jam (no camera scroll) still records the
+    wall, so the agent still learns true geometry."""
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene(7)
+    per.perceive(scene, mem, {"last_action": None})
+    m = mem.data
+    cells = m["places"][m["place"]]
+    cur = m["cursor"]
+    per.perceive(scene, mem, {"last_action": "right+right"})   # SAME frame = no scroll = blocked
+    assert "right" in cells[cur]["walls"]
+
+
 def test_perceiver_surfaces_a_motion_roi_for_a_moving_sprite():
     # Motion-saliency wiring: on a CAMERA-STATIC step (no scroll) a changed off-centre tile is a moving
     # entity -> recorded as an ROI at its world cell (player cell + the on-screen offset from centre).
@@ -859,6 +887,56 @@ def test_hybrid_no_escalation_without_an_escalator():
     for _ in range(_STUCK_STALE + 2):
         h.decide(_ctx_obs("battle"), [], {})             # would be stuck, but no escalator -> no-op
     assert h._stuck is True and h.escalator is None       # stuck detected; nothing to escalate to
+
+
+# -- repeated-no-move breaker: the overworld wall-jam the autopilot won't give up on -----------------
+
+def _pose_obs(pose, context="overworld"):
+    from core.contracts import Observation
+    return Observation(data={"context": context, "pose": {"value": list(pose)}}, text="", agent_id="a", t=0.0)
+
+
+def test_hybrid_nomove_breaker_wakes_on_a_frozen_pose():
+    """The robust1 failure: the autopilot kept pressing one blocked move (pose frozen) 243x and never
+    woke. Now, after _NO_MOVE_STALL frozen-pose overworld decisions, force a STEERED wake (nomove_note)
+    instead of repeating the dead move."""
+    from core.brains import HybridBrain, _call, _NO_MOVE_STALL
+
+    class _Cap:
+        def __init__(self, c): self._c, self.last_thought, self.notes, self.goto = c, "", [], None
+        def decide(self, obs, tools, context):
+            self.notes.append(context.get("nomove_note")); return self._c
+
+    ap = _StubBrain(_call("press_button", {"button": "right"}, "a"))   # the jam: always "moves" right
+    fb = _Cap(_call("press_button", {"button": "x"}, "a"))
+    h = HybridBrain(ap, fb)
+    for _ in range(_NO_MOVE_STALL):           # frozen pose, autopilot drives -> no wake yet
+        h.decide(_pose_obs([5, 3]), [], {})
+    assert h.woke == 0 and h.mode == "autopilot"
+    h.decide(_pose_obs([5, 3]), [], {})       # the (_NO_MOVE_STALL+1)th frozen decision: breaker fires
+    assert h.woke == 1 and h.mode == "llm"
+    assert fb.notes[-1] and "wall map" in fb.notes[-1]
+
+
+def test_hybrid_nomove_breaker_quiet_while_moving():
+    """A real walk changes the pose each single-step, so the breaker never trips during legit movement."""
+    from core.brains import HybridBrain, _call, _NO_MOVE_STALL
+    ap = _StubBrain(_call("press_button", {"button": "down"}, "a"))
+    h = HybridBrain(ap, _StubBrain(_call("press_button", {"button": "x"}, "a")))
+    for i in range(_NO_MOVE_STALL * 2):
+        h.decide(_pose_obs([5, 3 + i]), [], {})   # pose advances every step
+    assert h.woke == 0
+
+
+def test_hybrid_nomove_breaker_resets_outside_overworld():
+    """A frozen pose during DIALOGUE is legitimate (you can't walk), so the breaker only counts overworld
+    frames and resets elsewhere."""
+    from core.brains import HybridBrain, _call, _NO_MOVE_STALL
+    ap = _StubBrain(_call("press_button", {"button": "right"}, "a"))
+    h = HybridBrain(ap, _StubBrain(_call("press_button", {"button": "x"}, "a")), advance_on_dialog=True)
+    for _ in range(_NO_MOVE_STALL * 2):
+        h.decide(_pose_obs([5, 3], context="dialog"), [], {})   # frozen pose but in dialog
+    assert h.woke <= 1 and h._consec_no_move == 0               # dialog auto-advances; no nomove wake
 
 
 def test_hybrid_battle_text_when_woken_is_not_marked_dead_or_surprising():
