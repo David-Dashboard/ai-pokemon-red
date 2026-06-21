@@ -183,3 +183,13 @@ the frozen `core/contracts.py` is untouched (advisory rides the open `spatial_me
   embedding on the generalisation test BECAUSE the failure mode (a lossy embedding conflating distinct functions
   that share appearance) is exactly what an exact-structure hash avoids. Reserve learned embeddings for the one
   thing structure can't give you (a graded novelty *distance*), not for recognition the hash already nails.
+- **End-to-end WIRED replay (`eval/replay_tilemap.py`, free, drives the real `perceive()` over run `fix4`'s 741
+  overworld frames — vs the probe, which tested the algorithm on re-cropped tiles):** (a) the recurrence curve is
+  textbook — `novel_tiles` fall **22.4→0.5 / frame** while `tile_predictions` rise **45→52 / frame** as the agent
+  learns the room; (b) advisory-vs-later-confirmed-behaviour agreement is **81.2% on ADJACENT (clean faced-tile)
+  cells but only 61.3% across ALL visible cells.** The gap is the honest catch: `_predict_visible` fingerprints
+  EVERY visible cell using the camera-centred player=(4,4) assumption, so (i) peripheral/edge crops are noisier
+  than the centred faced tile and (ii) near map BORDERS the player isn't at (4,4), so the screen→world cell mapping
+  is wrong and predictions get pinned to the wrong cell. ⇒ For the task-#8 autopilot use, trust predictions for
+  cells AHEAD / near the player (clean crops), detect off-centre frames, and keep the behavioural veto — don't
+  trust the peripheral advisory. (This is the Q6 robustness item, now quantified live.)
