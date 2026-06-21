@@ -121,3 +121,65 @@ The core gap: **aria is a memory+reasoning system built for conversation; it lac
 7. **Usefulness-based forgetting** (keep what was referenced / led to success).
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn → forget`. aria has all but the **outcome loop (#1)** — the single highest-leverage agnostic feature.
+
+---
+
+## 2026-06-21 — Lightweight-vision probe + perception-architecture decision (design session)
+Full record: `reports/2026-06-21-perception-architecture-decision.md` + `reports/2026-06-21-vision-model-probe.md`.
+- **Lightweight zero-shot vision on 160×144 GB sprites:** fine-grained SEMANTICS fail across the whole spectrum
+  (even Sonnet flubs species); what survives is LOCALIZATION (everyone), SCENE-class (CLIP ~1.0), and OCR
+  (Florence read the title). Correct labels only for large/blocky sprites. **"ball"/round-object = the most
+  FP-prone class everywhere.** **MobileCLIP2-S0 = best cheap labeler (75M, 9/10); our default ViT-B-32 was the
+  WORST (5/10)** — don't judge CLIP on its weakest variant. Pure captioners (BLIP/CoCa/GIT) are *worse* than
+  Florence on sprites — Florence's multi-task FLD-5B training is *why* it's robust, and multi-task costs nothing
+  at caption time (one task per call). RapidOCR (~8MB ONNX) is ~30× smaller + ~5× faster than Florence and reads
+  GB text usably, but the free template decoder still wins on gen1 → **OCR = template-default, RapidOCR-fallback.**
+- **THE decisive learning (embedding retrieval):** a behaviour-labelled CLIP-embedding "store" predicts walkability
+  **97.7%** on a temporal split — but that is **near-exact RECURRENCE (memorisation), NOT generalisation**
+  (nearest-cosine ~1.0). **Leave-one-MAP-out collapses** (held-out lab **26.9% < 74.8% baseline**; by novelty:
+  cosine `>0.97`→~100%, `<0.90`→≈chance). **CLIP image embedding captures APPEARANCE, not FUNCTION** — held-out
+  lab-floor retrieved house *walls*. ⇒ **A cheap perceptual hash beats CLIP for the recurrence win; reserve the
+  embedding's DISTANCE as a NOVELTY signal only; never trust a retrieved *label* below a high-similarity threshold.**
+- **Multi-signal fusion (adversarial review, 23/24 real, 6 lenses converged):** "more overlapping signals = more
+  robust" is FALSE — vision signals are *correlated failures*. **Split by RELIABILITY CLASS, not cheapness:**
+  behaviourally-grounded signals COMMIT in System 1 (veto/typed-precedence); vision is ADVISORY, surfaced up with
+  provenance, **never weighted-voted**, never its flat-~13% softmax; walkability stays movement-mono-source.
+- **Converged architecture (= David's "minimal-fixed version" = the reviews = the data):** the **world model is an
+  ONLINE behaviour-labelled `tile→function` map the agent builds AS IT PLAYS** (walk→walkable, bump→blocked,
+  probe→interactable), keyed by a cheap tile **fingerprint** (generalise the occupancy map from position-keyed to
+  appearance-keyed = the "don't walk every cell" speedup); CLIP/Florence = perception support + novelty only, not
+  the world model; no offline data-gen needed (David: "the agent builds it as it plays").
+- **META:** test the centrepiece on out-of-distribution data BEFORE building — the leave-map-out split flipped a
+  97.7% "success" into "memorisation, fails to generalise." A single in-distribution number is not validation.
+
+## 2026-06-21 — Tile-fingerprint `tile→function` map + novelty gate BUILT + free-validated (task #7)
+Branch `feat/novelty-signal` (unpushed). New `core/tilemap.py` (agnostic `TileFunctionMap`: 64-bit dHash
+fingerprint + behaviour-labelled observe/predict + Hamming-tolerant recurrence + `is_novel`), wired into
+`games/pokemon_red/perceiver.py` (OBSERVE the faced tile on every move — walk→walkable, bump→blocked, from the
+clean PRE-move frame; SURFACE advisory `tile_predictions` + `novel_tiles` + `tile_types_seen` as additive
+`spatial_memory` keys). **Scope = map + novelty ONLY** (David's call): no autopilot behaviour change, no paid
+run — the speedup A/B is the deferred follow-on. 269 tests (`tests/test_tilemap.py` + perceiver integration);
+the frozen `core/contracts.py` is untouched (advisory rides the open `spatial_memory` dict). New
+`eval/probe_tilemap.py` (numpy+PIL only — **needs no torch/CLIP**, a feature) replays recorded oracles.
+- **THE headline (the cheap hash BEATS CLIP where it matters):** leave-one-MAP-out held-out **lab = 81% coverage
+  @ 84% accuracy** — vs the CLIP embedding's **catastrophic 26.9%** (below baseline) on the same split. Why: Gen-1
+  **indoor maps share a literal tileset**, so the same 16×16 tile pixels recur across maps; a perceptual hash
+  recognises that literal identity, whereas CLIP's *learned* embedding had blurred lab-floor toward house-*walls*.
+  A dumb deterministic hash is MORE faithful to "same pixels ⇒ same function" than a smart lossy embedding here.
+- **Recurrence (temporal split): 99.7% coverage, 92.6% accuracy-when-known** (maj baseline 73.9%). Slightly below
+  CLIP's 97.7% on the temporal split, but the leave-map-out result is the one that decides the design — and the
+  hash wins it 3× over, for free + deterministically + CI-testably.
+- **Tolerance calibration (Q7) — a clean surprise:** accuracy is **FLAT ~92.5% across tol 0..12**; exact-match
+  (tol=0) already recognises **97.6%** of recurring tiles. So the residual ~7% error is **NOT** hash collisions —
+  it's **intrinsic tile/function AMBIGUITY** (the same tile pixels were observed both walkable AND blocked, e.g. a
+  floor tile vs an identical-looking tile an NPC stands on). Appearance alone can't perfectly determine function
+  even within one tileset → the behavioural veto (a real bump overrides) and possibly scene-conditioning (Q2)
+  matter. Default tol set to **6** (just above the same-cell animation spread p90=5, far below the cross-content
+  max 27) — conservative for richer tilesets, on the coverage plateau.
+- **Robustness (Q6):** settled overworld faced-tiles hash IDENTICALLY 76% of revisits; same-cell spread p90=5,
+  so animation is a minor effect for SETTLED frames (the odometry settles before fingerprinting). Lower-priority
+  than feared.
+- **Lesson:** "cheaper" wasn't a compromise — the deterministic hash was *strictly better* than the learned
+  embedding on the generalisation test BECAUSE the failure mode (a lossy embedding conflating distinct functions
+  that share appearance) is exactly what an exact-structure hash avoids. Reserve learned embeddings for the one
+  thing structure can't give you (a graded novelty *distance*), not for recognition the hash already nails.

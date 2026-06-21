@@ -363,6 +363,47 @@ def test_plugin_perception_run_logs_odometry_and_aliases_screen_path(tmp_path):
     assert "map_id" not in obs.data                                # still no RAM leak
 
 
+# -- tile-fingerprint online tile->function map + novelty gate (2026-06-21) ---
+
+def test_tilemap_blocked_move_learns_blocked_tile_and_predicts_recurrence():
+    """The online build + the recurrence speedup: a bump teaches that the faced tile's APPEARANCE is
+    blocked; the same appearance elsewhere on screen is then PREDICTED blocked without re-bumping it."""
+    from core.tilemap import TileFunctionMap
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene(31)
+    # Stamp the faced tile's appearance (screen cell (4,3) = one up from the centred player) ALSO at an
+    # unvisited cell (screen (6,4) = world (2,0)), so recurrence can be recognised there.
+    scene[3 * 16:4 * 16, 4 * 16:5 * 16] = scene[4 * 16:5 * 16, 6 * 16:7 * 16]
+    per.perceive(scene, mem, {"last_action": None})            # prime; cursor (0,0)
+    s = per.perceive(scene, mem, {"last_action": "up+up"})     # identical frame => blocked moving up
+    assert s.last_action["outcome"] == "blocked"
+    assert mem.data["tilemap"].predict(  # the faced tile is learned 'blocked'
+        TileFunctionMap.fingerprint(scene[3 * 16:4 * 16, 4 * 16:5 * 16])) == ("blocked", 1.0)
+    preds = {(p[0], p[1]): p[2] for p in s.spatial_memory["tile_predictions"]}
+    assert preds.get((2, 0)) == "blocked"                      # recognised at an UNVISITED, un-bumped cell
+    assert s.spatial_memory["tile_types_seen"] == 1
+
+
+def test_tilemap_moved_learns_walkable_tile():
+    from core.tilemap import TileFunctionMap
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    scene = _scene(32)
+    per.perceive(scene, mem, {"last_action": None})
+    s = per.perceive(_scroll(scene, dy_tiles=1), mem, {"last_action": "down+down"})  # scrolled => moved
+    assert s.last_action["outcome"] == "moved"
+    faced = scene[5 * 16:6 * 16, 4 * 16:5 * 16]                # the tile walked onto: screen (4,5) pre-move
+    assert mem.data["tilemap"].predict(TileFunctionMap.fingerprint(faced)) == ("walkable", 1.0)
+
+
+def test_tilemap_surfaces_novel_unseen_tiles_and_keys_are_additive():
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    s = per.perceive(_scene(33), mem, {"last_action": None})   # first frame: nothing learned yet
+    assert s.spatial_memory["tile_types_seen"] == 0
+    assert s.spatial_memory["tile_predictions"] == []          # no appearance known -> no prediction
+    assert len(s.spatial_memory["novel_tiles"]) > 0            # every visible unvisited cell is novel
+    assert set(s.to_dict()) == ROLE_KEYS                       # additive keys live INSIDE spatial_memory
+
+
 # -- the scorer (Iteration 03, Step 1: the measurement rig) -------------------
 
 def test_scorer_walkability_confusion_and_escape():

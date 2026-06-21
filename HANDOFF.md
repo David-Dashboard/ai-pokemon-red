@@ -65,7 +65,54 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST — the ROBUSTNESS-FIRST pivot (measured reliability, fixed the #1 gap). Branch `feat/novelty-signal`
+**⇒ NEWEST (2026-06-21) — TILE-FINGERPRINT `tile→function` MAP + NOVELTY GATE: BUILT + FREE-VALIDATED (task #7
+done; branch `feat/novelty-signal`, unpushed; 269 tests).** Executed the converged design (the block below). New
+**`core/tilemap.py`** (world-agnostic `TileFunctionMap`: a 64-bit dHash perceptual fingerprint + behaviour-labelled
+`observe`/`predict` with confidence + Hamming-tolerant recurrence + `is_novel`) wired into
+**`games/pokemon_red/perceiver.py`**: it OBSERVES the faced tile on every move (walk→walkable, bump→blocked, cropped
+from the clean PRE-move frame) and SURFACES advisory `tile_predictions` + `novel_tiles` + `tile_types_seen` as
+**additive `spatial_memory` keys** (the frozen `core/contracts.py` is untouched). **Scope = map + novelty ONLY**
+(David's call): NO autopilot behaviour change, NO paid run — the navigation-speedup A/B is the deferred follow-on.
+Validated FREE + deterministically via **`eval/probe_tilemap.py`** (numpy+PIL only — **needs no torch/CLIP**)
+replaying recorded oracles: **the cheap hash BEATS CLIP exactly where CLIP collapsed — leave-one-MAP-out held-out
+lab 81% coverage @ 84% acc vs CLIP's 26.9%** (Gen-1 indoor maps share a literal tileset, so a hash recognises
+literal tile identity where CLIP's lossy embedding blurred lab-floor toward house-walls). Temporal recurrence 99.7%
+coverage / 92.6% acc-when-known. **Tolerance surprise (Q7): accuracy is FLAT ~92.5% across tol 0..12** — the
+residual ~7% is **intrinsic tile/function AMBIGUITY** (same pixels seen both walkable & blocked), NOT hash
+collisions; default tol=6 (calibrated just above the same-cell animation spread p90=5). ⇒ appearance alone can't
+perfectly determine function even within one tileset — the behavioural veto (a real bump overrides) + scene-
+conditioning (Q2) are the levers. **NEXT = the navigation-speedup A/B** (use predictions in the autopilot to skip
+appearance-known walls; replay/live — OPEN QUESTIONS C.4). Detail: `reports/LEARNINGS.md` (the 2026-06-21
+tile-fingerprint section) + [[vision-probe-findings]].
+
+**⇒ (prior, now BUILT — see NEWEST above) — PERCEPTION ARCHITECTURE DECISION (design session; converged +
+empirically grounded). Full record: [`reports/2026-06-21-perception-architecture-decision.md`](reports/2026-06-21-perception-architecture-decision.md)
++ [`reports/2026-06-21-vision-model-probe.md`](reports/2026-06-21-vision-model-probe.md).** We probed lightweight
+off-the-shelf vision (MobileCLIP/SigLIP/Florence-2/RapidOCR/YOLO) on GB frames, ran 3 adversarial reviews, and
+EMPIRICALLY tested the "CLIP-embedding spatial store" idea. **Decisive result** (`eval/probe_walkability_learn.py`,
+behaviour-labelled store, oracle ground truth): the store predicts walkability **97.7%** on a temporal split — BUT
+that's **near-exact tile RECURRENCE (memorisation), not generalisation**: leave-one-MAP-out **collapses** (held-out
+lab **26.9%, below the 74.8% baseline**; accuracy by novelty: cosine `>0.97`→~100%, `<0.90`→≈chance). **CLIP
+embedding captures APPEARANCE, not FUNCTION** — recognises recurring tiles, does NOT generalise walkability to new
+tilesets. **⇒ CONVERGED DESIGN** (= David's "minimal-fixed version" = the fusion review, all agree): **world model =
+an ONLINE behaviour-labelled `tile→function` map the agent builds AS IT PLAYS** (walk→walkable, bump→blocked,
+probe→interactable; behaviour=truth), keyed by a **cheap tile FINGERPRINT (perceptual hash/template), NOT CLIP** (a
+hash matches the only thing that works — exact recurrence — deterministically + free + CI-testable; this IS the
+"don't walk every cell" speedup = touch each tile-type once, recognise it everywhere). **CLIP/embedding ONLY for
+NOVELTY detection** (far-from-seen → "explore"); vision = ADVISORY, never committed/vote-fused (fusion review,
+23/24 real: typed-evidence PRECEDENCE not weighted-vote; walkability movement-mono-source; no frozen-contract change
+— advisory rides `spatial_memory`, state in `PerceptMemory`). **OCR = template-default + RapidOCR-fallback** (David
+flipped from default-RapidOCR on evidence: gen1 dialog/battle = the 90% text where the template is free + ~100%).
+**BUILT (off-by-default scaffolding, NOT wired):** `vision_service.py` (Flask sidecar) + `core/vision_client.py` +
+~11 `eval/` probe scripts + 2 isolated venvs. Original "Phases 2–5" plan SUPERSEDED. **DATA GAP** (David flagged):
+only ~5 early-game maps exist (no cities/routes; `red_play.mp4` empty; no save-states) — can't broad-validate, but
+the online-build design needs no pre-gen data. **OPEN:** store persistence across runs = a learning-boundary
+revision (defer to It4). **DEFERRED:** literature deep-research (hit web session-limit; retry to ground vs
+self-supervised traversability / BADGR-WayFAST / Bayesian occupancy fusion / Cradle-Voyager / SwiftSage). **The
+tile-fingerprint map + novelty gate is now BUILT (see NEWEST above); the remaining NEXT is the navigation-speedup
+A/B** (use the advisory predictions in the autopilot to skip appearance-known walls). See [[vision-probe-findings]].
+
+**⇒ (prior) — the ROBUSTNESS-FIRST pivot (measured reliability, fixed the #1 gap). Branch `feat/novelty-signal`
 (NOT pushed; the whole session stacks here).** Single-run "successes" were hiding poor reliability, so we measured
 it: a **3-run cold batch scored 0/3 STARTER**. A **6-agent diagnosis workflow OVERTURNED my "odometry is broken"
 hypothesis** (`_best_shift` is sound) → the real gap is **BEHAVIORAL: the autopilot jams a blocked move 243× with

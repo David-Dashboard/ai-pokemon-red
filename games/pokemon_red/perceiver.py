@@ -24,6 +24,7 @@ from typing import Optional
 import numpy as np
 
 from core.perception import JSON, PerceptMemory, SymbolicState
+from core.tilemap import TileFunctionMap
 
 _DIRS = ("up", "down", "left", "right")
 _DELTA = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
@@ -45,6 +46,12 @@ _SHIFT_RANGE = 64       # search +/- this many px (4 tiles) for the translation 
 # not plain advanceable text. Measured near-white fraction in that region: plain dialog ~0.00, an empty
 # opening box ~0.08, a YES/NO box ~0.33, the START menu ~0.94 — so 0.15 cleanly flags a choice.
 _CHOICE_WHITE = 0.15
+# The overworld is camera-centred: the player sits at this screen cell, so the FACED tile (the one we
+# walk onto / bump) is the player cell + the move's delta, in the 10x9 metatile grid (160x144 / 16).
+# This (4,4) assumption holds away from map borders (where the camera stops and the player goes
+# off-centre) — a known MVP limit, flagged for the tile-fingerprint robustness follow-on (Q6).
+_PLAYER_CELL = (4, 4)
+_SCREEN_COLS, _SCREEN_ROWS = 10, 9
 
 
 def _dominant_dir(action: Optional[str]) -> Optional[str]:
@@ -114,6 +121,60 @@ def _best_shift(a, b):
             if score < best_score:
                 best_score, best_d, bsx, bsy = score, d, dx, dy
     return best_d, (bsx, bsy)
+
+
+def _tile_at(frame, sc: int, sr: int):
+    """The 16x16 pixel tile at screen cell (sc, sr) of a 160x144 frame, or None if out of range."""
+    a = np.asarray(frame)
+    y0, x0 = sr * _TILE_PX, sc * _TILE_PX
+    tile = a[y0:y0 + _TILE_PX, x0:x0 + _TILE_PX]
+    return tile if tile.shape[0] == _TILE_PX and tile.shape[1] == _TILE_PX else None
+
+
+def _observe_faced_tile(tmap: TileFunctionMap, prev, direction: str, label: str) -> None:
+    """Record the FACED tile's APPEARANCE with its behaviourally-proven function — 'walkable' from a
+    confirmed move, 'blocked' from a bump. Cropped from the PRE-move frame, where the faced cell is
+    clean terrain (the player is still at the centre cell, not on it yet), mirroring
+    eval/probe_walkability_learn.py. This is the online build of the tile->function world model."""
+    if prev is None:
+        return
+    pcx, pcy = _PLAYER_CELL
+    ddx, ddy = _DELTA[direction]
+    tile = _tile_at(prev, pcx + ddx, pcy + ddy)
+    if tile is not None:
+        tmap.observe(TileFunctionMap.fingerprint(tile), label)
+
+
+def _predict_visible(tmap: TileFunctionMap, frame, cursor, cells: dict):
+    """ADVISORY appearance-based layer: for each visible cell NOT yet physically visited, predict its
+    function from its appearance (recognised from a tile-type touched elsewhere) and flag cells whose
+    appearance is novel (unseen -> an exploration target = the novelty gate). World coords.
+
+    Behaviour stays truth: this never overrides a confirmed wall (it only fills UNKNOWN cells), so it
+    is a prior the controller MAY use to skip re-bumping appearance-known walls (the 'don't walk every
+    cell' speedup) — wired in a later increment. The player cell is skipped (occluded by the sprite)."""
+    if frame is None:
+        return [], []
+    x, y = cursor
+    pcx, pcy = _PLAYER_CELL
+    preds, novel = [], []
+    for sr in range(_SCREEN_ROWS):
+        for sc in range(_SCREEN_COLS):
+            if (sc, sr) == _PLAYER_CELL:
+                continue
+            wx, wy = x + (sc - pcx), y + (sr - pcy)
+            c = cells.get((wx, wy))
+            if c is not None and c.get("visited"):
+                continue                       # ground truth already known here
+            tile = _tile_at(frame, sc, sr)
+            if tile is None:
+                continue
+            fn, conf, is_novel = tmap.classify(TileFunctionMap.fingerprint(tile))
+            if is_novel:
+                novel.append([wx, wy])
+            else:
+                preds.append([wx, wy, fn, round(conf, 2)])
+    return preds, novel
 
 
 def detect_mode(frame, white: int = 230, t: float = 0.15) -> str:
@@ -226,6 +287,7 @@ class OverworldPerceiver:
         m.setdefault("prev_frame", None)
         m.setdefault("steps", 0)
         m.setdefault("resync", False)
+        m.setdefault("tilemap", TileFunctionMap())   # online behaviour-labelled appearance->function map
         m["steps"] += 1
         cells = m["places"].setdefault(m["place"], {})   # the CURRENT place's map
 
@@ -302,6 +364,7 @@ class OverworldPerceiver:
             if axis_px < _TILE_PX / 2:         # negligible scroll -> we walked into a wall
                 cell["walls"].add(direction)
                 outcome = "blocked"
+                _observe_faced_tile(m["tilemap"], prev, direction, "blocked")
             else:
                 # Re-ground (2026-06-21 diagnosis): the occupancy was ADD-ONLY (walls never cleared), so a
                 # wall written at a phantom cell during Oak's cutscene boxed the agent in forever. A
@@ -319,6 +382,7 @@ class OverworldPerceiver:
                 cell = cells[(x, y)]
                 cell["walls"].discard(_BACK[direction])
                 outcome = "moved"
+                _observe_faced_tile(m["tilemap"], prev, direction, "walkable")
 
         # Motion-saliency (free NPC/ROI prior): when the camera was STATIC this step — we didn't
         # scroll (a blocked move or an A-press, |best-shift| < half a tile) — two consecutive frames
@@ -375,6 +439,11 @@ class OverworldPerceiver:
                     frontiers.append([cx, cy])
                     break
 
+        # Advisory appearance layer: from the online tile->function map, predict the function of
+        # visible cells we have NOT yet visited and flag cells whose appearance is NOVEL (unseen ->
+        # an exploration target). Additive to the open spatial_memory dict (no contract change);
+        # behavioural occupancy (walls) stays authoritative.
+        tile_predictions, novel_tiles = _predict_visible(m["tilemap"], frame, (x, y), cells)
         return SymbolicState(
             confidence=0.4,  # Step 2: keep the image attached; text-only is earned later
             context="overworld",
@@ -383,7 +452,9 @@ class OverworldPerceiver:
                             "walls_here": sorted(cell["walls"]),
                             "map": grid, "frontiers": frontiers, "rois": rois,
                             "place_portals": place_portals, "place_frontiers": place_frontiers,
-                            "places_known": len(m["places"])},
+                            "places_known": len(m["places"]),
+                            "tile_predictions": tile_predictions, "novel_tiles": novel_tiles,
+                            "tile_types_seen": len(m["tilemap"])},
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome,
                          "diff": round(shift_diff, 2), "tiles": tiles},
