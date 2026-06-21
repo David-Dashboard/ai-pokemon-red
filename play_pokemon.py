@@ -103,6 +103,16 @@ def main() -> int:
                          "aria's data dir wasn't reset (run reset_aria_memory.py --yes first) — under the "
                          "beta learning boundary (S3) aria owns within-run memory, so an un-reset start "
                          "silently leaks the prior run across the blank-every-run boundary.")
+    ap.add_argument("--vision-escalation", action="store_true",
+                    help="perception escalation: on a STUCK wake (cycle gate / stuck-breaker), call a "
+                         "STRONG vision model to GROUND the screen for the cheap agent. PAID, but cached "
+                         "per state + capped, so a healthy run makes zero calls. Off by default.")
+    ap.add_argument("--vision-url", default="http://localhost:4001",
+                    help="OpenAI-compatible endpoint for the vision-escalation model (the litellm gateway).")
+    ap.add_argument("--vision-model", default="vision-escalation",
+                    help="model name for perception escalation (a litellm model_name routing to e.g. Sonnet).")
+    ap.add_argument("--max-vision-calls", type=int, default=8,
+                    help="per-run cap on strong-VLM grounding calls (the paid-loop halt for escalation).")
     args = ap.parse_args()
 
     # Fail-loud freshness guard (S3 beta): a paid aria run must start on freshly-reset aria memory, or
@@ -162,9 +172,18 @@ def main() -> int:
                 print("\nSetup error:\n--brain hybrid needs --perception.\n", file=sys.stderr)
                 return 2
             from core.brains import ExploreBrain, HybridBrain
+            escalator = None
+            if args.vision_escalation:
+                from core.brains import _openai_complete
+                from core.vision_escalation import VisionEscalator
+                describe = _openai_complete(model=args.vision_model, url=args.vision_url,
+                                            api_key=args.llm_token or "sk-litellm-local")
+                escalator = VisionEscalator(describe, max_calls=args.max_vision_calls)
+                print(f"[guard] perception escalation ON -> {args.vision_model} @ {args.vision_url} "
+                      f"(<= {args.max_vision_calls} grounding calls/run, cached per state).")
             brain = HybridBrain(
                 ExploreBrain(agent_id, single_step=True, probe_interactables=True),
-                llm, advance_on_dialog=True)
+                llm, advance_on_dialog=True, escalator=escalator)
     elif args.brain == "explore":
         if not args.perception:
             print("\nSetup error:\n--brain explore needs --perception (it navigates on the "

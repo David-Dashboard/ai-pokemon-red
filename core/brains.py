@@ -320,7 +320,7 @@ class HybridBrain:
     was actually needed. The mode trigger is dormant until perception sets `context` (the CV sub-step)."""
 
     def __init__(self, autopilot, fallback, replan_after: int = 5,
-                 advance_on_dialog: bool = False) -> None:
+                 advance_on_dialog: bool = False, escalator=None) -> None:
         self.autopilot = autopilot
         self.fallback = fallback
         self.last_thought = ""
@@ -347,6 +347,12 @@ class HybridBrain:
         self._seen_states: set = set()
         self._since_novel = 0
         self._stuck = False
+        # Perception escalation (optional, off by default so agnostic worlds/tests are unchanged): on a
+        # STUCK wake, a strong VLM grounds the screen for the cheap agent. Pixels only; cached per state
+        # + per-run capped (a healthy run never calls it). The Pokémon drivers wire one in. core/ stays
+        # world-agnostic — the model call is injected (see core/vision_escalation.py).
+        self.escalator = escalator
+        self._cur_state_key = None     # (sig, screen_text) of the current frame — the escalator cache key
         self._last_sig = None
         self._last_action = None
         # feature #3: the disconfirm/surprise detector — when the agent makes no observable progress
@@ -387,6 +393,7 @@ class HybridBrain:
             self._seen_states.add((sig, txt))
             self._since_novel = 0
         self._stuck = self._since_novel >= _STUCK_STALE
+        self._cur_state_key = (sig, txt)   # escalator cache key: same stuck screen -> one VLM call
         # In a BATTLE the pose-based signature is frozen (the menu cursor isn't the world map), so every
         # turn looks like "no progress" even while the fight advances. Tallying that would mark the
         # confirm button (A — the primary battle action: advance text, pick FIGHT, choose a move) as a
@@ -466,6 +473,12 @@ class HybridBrain:
             # held case the cycle gate misses, e.g. the name-entry keyboard). Same bare-FACT seam.
             context = {**context, "stuck_note":
                        "Your last several actions on this screen produced no new result — you appear to be stuck on it."}
+        # Perception escalation: when stuck (cycling OR persisting), a strong VLM grounds the screen the
+        # cheap perceiver mislabeled/under-read (System-1 escalation tier). Cached per state + capped.
+        if self.escalator is not None and (why == "cycle" or self._stuck):
+            hint = self.escalator.ground(obs.data.get("screen_path"), self._cur_state_key)
+            if hint:
+                context = {**context, "vision_hint": hint}
         if self.transcript:   # hand over (and clear) the dialog text the LLM auto-advanced past
             context = {**context, "transcript": " / ".join(self.transcript)}
             self.transcript = []
@@ -718,6 +731,9 @@ class LLMButtonBrain:
         stuck = context.get("stuck_note")        # general stuck-breaker: persisting on a screen (HybridBrain)
         if stuck:
             feedback = (feedback + "\n" + stuck).strip()
+        vhint = context.get("vision_hint")       # perception escalation: a strong VLM's screen grounding
+        if vhint:
+            feedback = (feedback + "\nA closer look at the screen: " + vhint).strip()
         transcript = context.get("transcript")   # dialog text the harness auto-advanced past for you
         if transcript:
             feedback = (feedback + "\nText shown since your last decision (auto-advanced): "

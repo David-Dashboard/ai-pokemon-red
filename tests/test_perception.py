@@ -813,6 +813,50 @@ def test_hybrid_stuck_breaker_silent_when_cycle_note_covers_it():
     assert fb.cyc[-1] and fb.stk[-1] is None             # cycle fired; stuck channel silent
 
 
+# -- perception escalation: a strong VLM grounds a stuck screen for the cheap agent ----------------
+
+def test_hybrid_escalates_perception_on_a_stuck_wake():
+    """On a STUCK wake (a held screen the cheap perceiver under-read), HybridBrain asks the injected
+    VisionEscalator to ground it and surfaces that as vision_hint; a healthy wake never calls it."""
+    from core.brains import HybridBrain, _STUCK_STALE
+    from core.contracts import Observation
+
+    class _StubEscalator:
+        def __init__(self): self.calls = []
+        def ground(self, image_path, state_key):
+            self.calls.append((image_path, state_key))
+            return "grounding: a name-entry keyboard; try START"
+
+    class _Cap:
+        def __init__(self): self.last_thought, self.hints, self.goto = "", [], None
+        def decide(self, obs, tools, context):
+            self.hints.append(context.get("vision_hint"))
+            return None
+
+    def _battle_obs():
+        return Observation(data={"context": "battle", "screen_text": "", "screen_path": "f.png"},
+                           text="", agent_id="a", t=0.0)
+
+    esc, fb = _StubEscalator(), _Cap()
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True, escalator=esc)
+    h.decide(_ctx_obs("overworld"), [], {})              # healthy wake -> no escalation
+    assert len(esc.calls) == 0
+    for _ in range(_STUCK_STALE + 1):                    # persist on a held screen -> stuck
+        h.decide(_battle_obs(), [], {})
+    assert len(esc.calls) >= 1                            # escalation fired once stuck
+    assert esc.calls[-1][0] == "f.png"                   # the frame path was passed through
+    assert any(hh and "keyboard" in hh for hh in fb.hints)   # grounding surfaced as vision_hint
+
+
+def test_hybrid_no_escalation_without_an_escalator():
+    """Default (no escalator) is unchanged — agnostic worlds/tests never escalate."""
+    from core.brains import HybridBrain, _STUCK_STALE
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), advance_on_dialog=True)
+    for _ in range(_STUCK_STALE + 2):
+        h.decide(_ctx_obs("battle"), [], {})             # would be stuck, but no escalator -> no-op
+    assert h._stuck is True and h.escalator is None       # stuck detected; nothing to escalate to
+
+
 def test_hybrid_battle_text_when_woken_is_not_marked_dead_or_surprising():
     """Predicate-widen guard (the disconfirm/outcome skip): even when 'battle_text' WAKES (auto-advance
     off), the confirm button is never marked a dead 'avoid' action and no SURPRISE fires — battle

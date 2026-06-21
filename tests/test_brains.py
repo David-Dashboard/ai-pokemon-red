@@ -282,6 +282,21 @@ def test_llm_brain_surfaces_stuck_note():
     assert note in prompts[0]
 
 
+def test_llm_brain_surfaces_vision_hint():
+    """Perception-escalation grounding reaches the prompt: context['vision_hint'] is appended to
+    feedback, so the cheap agent decides with a strong VLM's read of the screen."""
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: start"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    hint = "a Gen-1 name-entry keyboard; there is no DONE tile — press START to confirm."
+    brain.decide(_obs(), [], {"vision_hint": hint})
+    assert hint in prompts[0]
+
+
 def test_llm_brain_ignores_unfilled_lesson_template():
     reply = "MOVE: up\nLESSON: <one short lesson>"
     brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)
