@@ -26,6 +26,14 @@ aria_memory_archives/
 # generated: rendered from the aria game constitution
 red_system_prompt.txt
 
+# --- Model weights / downloads: large binaries, regenerable, NEVER commit ---
+weights/
+*.pt
+*.onnx
+*.safetensors
+# isolated probe envs (torch/clip/yolo) — multi-hundred-MB, regenerable
+.venv-probe*/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
