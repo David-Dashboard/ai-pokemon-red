@@ -51,6 +51,13 @@ _ADVANCE_FUSE = 50
 # frames recur 10x; 3 visits trips at step ~416 (the trap ran uncaught to 463), while the legit Oak
 # intro (all-unique lines) and a held textbox (1 visit) never trip.
 _CYCLE_REVISITS = 3
+# General stuck-breaker (no-novelty): how many consecutive non-overworld DECISIONS with no NEW
+# (signature, screen_text) state seen before we tell System 2 it appears stuck. Catches a HELD stuck
+# screen the cycle gate misses — e.g. the name-entry keyboard (run 3: 44 identical frames, all 1
+# "visit" under rising-edge) — and a stuck menu, WITHOUT false-firing in a real battle (whose
+# narration keeps producing novel text, resetting the count). Conservative: between _CYCLE_REVISITS
+# (3) and the driver wake-watchdog (~40), so it nudges a recovery well before the run is halted.
+_STUCK_STALE = 12
 
 # Circuit breaker: halt after this many CONSECUTIVE failed model calls (the driver checks
 # brain.consec_api_errors). A persistent backend outage — e.g. aria/litellm returning the same
@@ -333,6 +340,13 @@ class HybridBrain:
                          or getattr(fallback, "agent_id", None) or "agent")
         self.outcome = OutcomeMemory()   # feature #1: learn which actions do nothing here
         self.novelty = NoveltyMemory()   # seen-states signal: detect a cycling dialog (auto-advance gate)
+        # General stuck-breaker (the seen-states principle, generalized past the dialog cycle gate): a
+        # seen-set of non-overworld (signature, screen_text) states + a count of decisions since the last
+        # NEW one. When it persists (a held stuck screen, e.g. the name-entry keyboard) the count climbs
+        # and we hand System 2 the bare fact; real progress (new battle narration, a new menu) resets it.
+        self._seen_states: set = set()
+        self._since_novel = 0
+        self._stuck = False
         self._last_sig = None
         self._last_action = None
         # feature #3: the disconfirm/surprise detector — when the agent makes no observable progress
@@ -360,6 +374,19 @@ class HybridBrain:
         nkey = (sig, txt) if (adv_ctx and txt) else None
         visits = self.novelty.observe(nkey)   # ALWAYS once per decide; observe(None) breaks a held run
         cycling = self.advance_on_dialog and nkey is not None and visits >= _CYCLE_REVISITS
+        # General stuck-breaker: count consecutive NON-overworld decisions with no NEW (sig, screen_text)
+        # state. A held stuck screen (the name-entry keyboard) keeps the same key -> the count climbs; a
+        # new battle line / new menu is novel -> resets to 0 (so a real fight never trips). Overworld
+        # 'stuck' is the autopilot/frontier's job, so it resets there. Keys on novelty, not the mode
+        # label, so it works even though the keyboard mis-reads as 'battle'.
+        if ctx_label == "overworld":
+            self._since_novel = 0
+        elif (sig, txt) in self._seen_states:
+            self._since_novel += 1
+        else:
+            self._seen_states.add((sig, txt))
+            self._since_novel = 0
+        self._stuck = self._since_novel >= _STUCK_STALE
         # In a BATTLE the pose-based signature is frozen (the menu cursor isn't the world map), so every
         # turn looks like "no progress" even while the fight advances. Tallying that would mark the
         # confirm button (A — the primary battle action: advance text, pick FIGHT, choose a move) as a
@@ -435,6 +462,10 @@ class HybridBrain:
             # decision; keeps thin steering out of core/).
             context = {**context, "cycle_note":
                        "You are repeating a state you have already seen — your last action made no progress."}
+        elif self._stuck:    # general stuck-breaker: PERSISTING on one screen with no new result (the
+            # held case the cycle gate misses, e.g. the name-entry keyboard). Same bare-FACT seam.
+            context = {**context, "stuck_note":
+                       "Your last several actions on this screen produced no new result — you appear to be stuck on it."}
         if self.transcript:   # hand over (and clear) the dialog text the LLM auto-advanced past
             context = {**context, "transcript": " / ".join(self.transcript)}
             self.transcript = []
@@ -684,6 +715,9 @@ class LLMButtonBrain:
         cycle = context.get("cycle_note")        # seen-states signal: cycling a state (HybridBrain detector)
         if cycle:
             feedback = (feedback + "\n" + cycle).strip()
+        stuck = context.get("stuck_note")        # general stuck-breaker: persisting on a screen (HybridBrain)
+        if stuck:
+            feedback = (feedback + "\n" + stuck).strip()
         transcript = context.get("transcript")   # dialog text the harness auto-advanced past for you
         if transcript:
             feedback = (feedback + "\nText shown since your last decision (auto-advanced): "

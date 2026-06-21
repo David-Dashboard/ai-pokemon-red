@@ -267,6 +267,21 @@ def test_llm_brain_surfaces_cycle_note():
     assert note in prompts[0]
 
 
+def test_llm_brain_surfaces_stuck_note():
+    """The general stuck-breaker fact reaches the prompt too: context['stuck_note'] is appended to
+    feedback (parallel to cycle_note), so System 2 knows it's persisting on a screen with no result."""
+    prompts: list[str] = []
+
+    def complete(prompt, image):
+        prompts.append(prompt)
+        return "MOVE: b"
+
+    brain = LLMButtonBrain("a", complete_fn=complete)
+    note = "Your last several actions on this screen produced no new result — you appear to be stuck on it."
+    brain.decide(_obs(), [], {"stuck_note": note})
+    assert note in prompts[0]
+
+
 def test_llm_brain_ignores_unfilled_lesson_template():
     reply = "MOVE: up\nLESSON: <one short lesson>"
     brain = LLMButtonBrain("a", complete_fn=lambda prompt, image: reply)

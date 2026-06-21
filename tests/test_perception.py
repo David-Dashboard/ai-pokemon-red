@@ -745,6 +745,74 @@ def test_hybrid_cycle_gate_off_when_auto_advance_disabled():
     assert all(n is None for n in fb.cycle_notes)                # never the cycle channel
 
 
+# -- general stuck-breaker (no-novelty): the HELD-screen case the cycle gate misses ----------------
+
+class _StuckCapture:
+    def __init__(self, call=None):
+        self._c, self.last_thought, self.stuck_notes, self.goto = call, "", [], None
+    def decide(self, obs, tools, context):
+        self.stuck_notes.append(context.get("stuck_note"))
+        return self._c
+
+
+def test_hybrid_stuck_breaker_fires_on_a_held_screen():
+    """Persisting on ONE non-overworld screen with no new state — the held name-entry keyboard (run 3:
+    44 identical `battle` frames, all 1 'visit' so the cycle gate stays silent) — hands System 2 a
+    pure-fact stuck_note once `_STUCK_STALE` decisions pass with nothing new."""
+    from core.brains import HybridBrain, _STUCK_STALE
+    fb = _StuckCapture()
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    for _ in range(_STUCK_STALE + 1):            # same battle screen, empty text -> held; wakes each time
+        h.decide(_ctx_obs("battle"), [], {})
+    assert fb.stuck_notes[0] is None             # early frames: not yet stuck
+    assert fb.stuck_notes[-1] and "stuck" in fb.stuck_notes[-1].lower()   # after _STUCK_STALE: the fact
+
+
+def test_hybrid_stuck_breaker_resets_on_new_battle_narration():
+    """A real fight keeps producing NOVEL narration, which resets the count — so the stuck-breaker
+    never false-fires mid-battle (the property that lets it ignore the mode label)."""
+    from core.brains import HybridBrain, _STUCK_STALE
+    fb = _StuckCapture()
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    for i in range(_STUCK_STALE * 2):
+        h.decide(_ctx_obs("battle"), [], {})                               # action menu (a wake)
+        h.decide(_dlg_obs(f"enemy used move {i}", context="battle_text"), [], {})  # novel narration -> reset
+    assert all(n is None for n in fb.stuck_notes)        # never trips while the fight is progressing
+
+
+def test_hybrid_stuck_breaker_resets_in_overworld():
+    """Overworld 'stuck' is the autopilot/frontier's job, so the breaker only watches non-overworld
+    screens and resets the moment the agent is back in the overworld."""
+    from core.brains import HybridBrain, _STUCK_STALE
+    h = HybridBrain(_StubBrain(None), _StubBrain(None, "llm"), advance_on_dialog=True)
+    for _ in range(_STUCK_STALE + 1):
+        h.decide(_ctx_obs("battle"), [], {})
+    assert h._stuck is True
+    h.decide(_ctx_obs("overworld"), [], {})              # back in the overworld
+    assert h._since_novel == 0 and h._stuck is False
+
+
+def test_hybrid_stuck_breaker_silent_when_cycle_note_covers_it():
+    """When the dialog cycle gate already fires (`why=='cycle'`), the stuck channel stays quiet — the
+    cycle_note covers that case; no double-noting."""
+    from core.brains import HybridBrain, _call, _CYCLE_REVISITS
+
+    class _Both:
+        def __init__(self, call):
+            self._c, self.last_thought, self.goto = call, "", None
+            self.cyc, self.stk = [], []
+        def decide(self, obs, tools, context):
+            self.cyc.append(context.get("cycle_note")); self.stk.append(context.get("stuck_note"))
+            return self._c
+
+    fb = _Both(_call("press_button", {"button": "a"}, "a"))
+    h = HybridBrain(_StubBrain(None), fb, advance_on_dialog=True)
+    a, b = _dlg_obs("which POKEMON?"), _dlg_obs("OAK: Now, ASH,")
+    for o in ([a, b] * (_CYCLE_REVISITS - 1) + [a]):
+        h.decide(o, [], {})
+    assert fb.cyc[-1] and fb.stk[-1] is None             # cycle fired; stuck channel silent
+
+
 def test_hybrid_battle_text_when_woken_is_not_marked_dead_or_surprising():
     """Predicate-widen guard (the disconfirm/outcome skip): even when 'battle_text' WAKES (auto-advance
     off), the confirm button is never marked a dead 'avoid' action and no SURPRISE fires — battle
