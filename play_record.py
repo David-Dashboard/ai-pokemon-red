@@ -161,6 +161,16 @@ def main() -> int:
                           "screen_text": sym.screen_text, "tile_types_seen": sm.get("tile_types_seen")},
         }) + "\n")
         oracle.flush()
+        # live HUD: flag a genuinely-NEW tileset (visible tiles mostly novel) so you know to densely
+        # sample its WALLS with TAB — wall data is what tests cross-tileset wall-prediction (the goal).
+        nov, pred = len(sm.get("novel_tiles") or []), len(sm.get("tile_predictions") or [])
+        if st["map_id"] != S.get("hud_map"):
+            S["hud_map"] = st["map_id"]
+            tag = "  ** NEW TILESET -> press TAB to auto-bump its walls **" if nov > pred else ""
+            print(f"  -> map {st['map_id']}: tile-types {len(mem.data.get('tilemap', []))}  "
+                  f"novel/known {nov}/{pred}{tag}")
+        elif step["n"] % 150 == 0:
+            print(f"  .. map {st['map_id']}: tile-types {len(mem.data.get('tilemap', []))}  novel/known {nov}/{pred}")
         step["n"] += 1
 
     if args.keys == "wasd":
