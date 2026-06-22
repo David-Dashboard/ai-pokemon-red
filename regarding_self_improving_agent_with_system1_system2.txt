@@ -1,0 +1,5 @@
+I Think one should be able to start with fresh memory and in the end:
+
+The skills should arguably converge to following set of skills:
+- Interact with ROI (requires ROI detection, BFS search and pathfinding to the object, and clicking A without invoking the agent)
+- etc

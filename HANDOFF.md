@@ -11,30 +11,45 @@ _Last updated: 2026-06-20._
 
 ## 1. Overall goal (the north star)
 
-This is **not** about beating Pokémon. Pokémon Red is the **first probe world** for the real goal:
+This is **not** about beating Pokémon. Pokémon Red is the **first probe world** for the real goal.
 
-> Build a **simple, generalizable** agent that acts on the world — generalizing across games and
-> eventually reality — that is **cheap** and works from the **screen**, not privileged state.
+**THE GOAL (canonical, 2026-06-22):**
+> Build **one agent — a fixed reasoning brain + a swappable perception layer — that completes human-given
+> tasks at human-grade competence using only the screen and human-grade controls, across increasingly
+> different worlds, cheaply, and without per-world training.**
 
-**The destination, sharpened (2026-06-20 planning session):** the generalizable agent is a **decoupled
-dual-process system** — `ai-aria` is the **BRAIN** (owns cognition + within-run memory; *authors its own
-System 1 policies*; **acts on the world through tool use**), and a **WORLD** (Pokémon here; the companion's
-digital life elsewhere) exposes **coarse skill-tools**. **System 1** drives cheaply; it defers **up to
-System 2** only on *necessity* (novelty / low-confidence) or *override* (a surprise preempts). Pokémon is the
-*entertaining testbed* for designing this harness — **not a game to beat**. The companion deployment already
-embodies this (it acts on its world via real tools); the game drifted to a text-advisor — the plan below
-realigns it. **The full multi-month arc (It1 Pokémon → It5 robot, + the orthogonal small-worker track) is
-pinned in [`ROADMAP.md`](ROADMAP.md).**
+**Unpacked into testable claims** (each separately checkable — that's what makes it a goal, not a vibe):
+1. **Capability — human-grade task success from the screen.** Pixels in, human-grade actions out (buttons, or
+   mouse/keyboard); **no privileged channel** (no RAM, no DOM, no accessibility tree, no API). Measured as
+   task-success-rate vs. a human baseline. ("Could pass for a human" is a *symptom* of clearing this bar,
+   never the objective — and we evaluate only on sanctioned/permitted targets.)
+2. **Constancy — the brain doesn't change.** A new world swaps only the **perceiver** (+ a per-world config/
+   constitution); the brain (`ai-aria`) is reused unchanged. Success = *how little changes outside the
+   perceiver.* This is the core claim and the one most likely to be false.
+3. **Generality — across two axes of increasingly-different worlds:**
+   - **Embodiment ladder** (one self, locomotion, learns from its own motion): 2D game → 3D game → sim robot
+     → physical robot.
+   - **Computer-use track** (mouse+keyboard+screen, indirect/many-entity control, no single self):
+     strategy/builder games (a safe, *scored* sandbox) → permitted desktop/web tasks. (Pixels-only is primary;
+     the a11y-tree is at most an optional second condition for productivity apps — never the thing we claim on.)
+4. **Cheap.** Free fast System 1 does routine work; the costly System 2 (LLM) wakes only at decisions.
+   Measured as cost/task and wakes/task, held low.
+
+**Falsified if:** constancy breaks (a new world forces brain edits or a new System-1 per genre); OR pixels-only
+can't reach human-grade where a privileged-channel version can; OR it only works on the easy slice and
+collapses on the held-out worlds. **The full multi-month arc (It1 Pokémon → It5 robot, + the computer-use
+track) is in [`ROADMAP.md`](ROADMAP.md).**
 
 **⇒ The repo-boundary CONTRACT is pinned in [`ARCHITECTURE.md`](ARCHITECTURE.md) (ADR-001, 2026-06-20) — read it
 and don't drift from it:** `ai-pokemon-red` = the WORLD INTERFACE + **System 1** (perception + reflexive fast
 loop + the oracle); `ai-aria` = the AGENT + **System 2** (deliberate reasoning + ALL memory + identity/
 constitution). They meet at ONE frozen seam (`SymbolicState` → agent; an intent → world). Research-grounded
 (SwiftSage; the 3-layer reactive/deliberative robotics architecture; "Distilling System 2 into System 1";
-Voyager). Only revise on an empirical surprise, as a new ADR. Other architecture detail:
+Voyager). Only revise on an empirical surprise, as a new ADR. **Methods, principles, preferences + drift
+tripwires:** [`reports/CONTEXT-BRIEFING.md`](reports/CONTEXT-BRIEFING.md). Other architecture detail:
 `ai-aria/PROMPT_ARCHITECTURE.md` + `memory/dual-process-architecture.md` + `knowledge-export/`.
 
-Four constraints held on purpose (they're what makes the result transfer):
+The invariants that make a win *count* (held on purpose — they're what makes the result transfer):
 - **Generalize** — find the *smallest* increments that let the *same* agent act in a *different*
   world. Avoid Pokémon-specific hacks. (The brain, **ai-aria**, is a fully decoupled HTTP service.)
 - **No ROM / privileged state** — plan from the **screen**. RAM exists only as a **non-leaking
@@ -92,15 +107,21 @@ Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build seq
   (b) David to download **Super Mario Land**; (c) human-nudge the RPG/menu games into gameplay + `C`
   checkpoint (dev: Gold, FF-Adventure, Cave-Noire, Sword-of-Hope, Tetris; held-out: Zelda, Crystalis, F-1)
   so auto-collection can resume from a gameplay state; then bulk-auto from checkpoints.
-- **3D GATE (cheap ViZDoom smoke, David chose to probe 3D this iteration):** `eval/vizdoom_smoke.py`
-  (`uv run --with vizdoom`) recorded `my_way_home` (700 steps, forward-biased; raw frames+actions+GT
-  pos/angle in `runs/vizdoom_mywayhome/`). PRELIMINARY: a dumb whole-frame frame-diff separates
-  advanced-vs-blocked on pure-forward steps at **83.7%** (blocked 13.1 vs advanced 36.3; baseline 67.8%;
-  corr +0.37) ⇒ behaviour=truth + cheap odometry *appears* to have 3D legs. **A 5-agent verification
-  workflow is running to confirm/refute** (threshold artifact? frame-diff = self-motion vs scene-noise?
-  optical-flow ceiling? scenario generality) → its verdict decides GREENLIGHT It3 (real 3D, ViZDoom) vs
-  DEFER as a clean-sheet build. ViZDoom installs cleanly headless (1.3.0, 120x160 RGB, GT position oracle).
-  3D is now IN the strategy (`reports/2026-06-22-cross-game-phase-plan.md`, "3D — now IN scope" section).
+- **3D GATE → GREENLIT It3 (verified, 2026-06-22):** `eval/vizdoom_smoke.py` (`uv run --with vizdoom`)
+  recorded `my_way_home` (700 steps; raw frames+actions+GT pos/angle in `runs/vizdoom_mywayhome/`). A
+  5-agent adversarial verification UPHELD the greenlight — and the headline got STRONGER: the smoke test
+  had an **off-by-one action-frame bug** (filtered pure-forward on action row *i*, but the *i-1→i* change
+  is caused by row *i-1*; now FIXED). Corrected (pure-forward n=424, majority 66.0%): advance-vs-blocked
+  **96.9%** (not 83.7%), corr **+0.59** (not +0.37). GT proof the bug was the limiter: under correct
+  alignment FORWARD→Δangle 0.000°(std0), LEFT→+10.36°, RIGHT→−9.62°. **REAL:** behaviour=truth holds in 3D
+  (clean) + a cheap pixels-only advance/stuck detector (survives 5-fold CV; brightness-residualized still
+  94.8% so it's NOT a lighting artifact). **HONEST FRAMING (don't overclaim):** binary advance/stuck +
+  turn-direction classifier, NOT metric odometry (graded-distance corr ≈ +0.02); whole-frame frame-diff
+  CANNOT tell rotation from translation → the real perceiver = **OPTICAL FLOW** (column-shift sign → turn
+  dir ~90–95%; expansion flow → advance; 2-feat → 98.3%). Reusable ceiling probe:
+  `eval/vizdoom_flow_ceiling.py`. Untested: corridor/room base-rate, dark-wall FNs (3.8%), non-random
+  policy, fwd+turn steps. ViZDoom installs cleanly headless (1.3.0, GT position oracle). Full verdict +
+  honest 3D section: `reports/2026-06-22-cross-game-phase-plan.md` ("3D — GREENLIT this iteration").
 - **PRIOR-ART scan** (`reports/2026-06-22-prior-art-scan.md`): closest = **Cradle** (screen-only general
   control, GPT-4o — its perception/object-localization limitation VALIDATES our perception-first thesis) +
   **Wild Visual Navigation / V-STRONG** (robotics behaviour-grounded traversability that generalizes — the
