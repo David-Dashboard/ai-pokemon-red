@@ -76,8 +76,25 @@ action-contract); INVARIANT (protect) = the brain + core learning + the Symbolic
 how LITTLE the brain changes. **Data strategy:** record the RAW substrate `(frame, exact buttons,
 next-frame, optional RAM)` game-agnostically, defer odometry/labeling to OFFLINE replay (don't bake the
 Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build sequence + full plan:**
-`reports/2026-06-22-cross-game-phase-plan.md`. **⇒ NEXT = build #1: the generalized RAW recorder**
-(any GB ROM → frames + buttons.jsonl; human + random-auto; no Pokémon-perceiver dependency).
+`reports/2026-06-22-cross-game-phase-plan.md`.
+
+**STATUS (2026-06-22, end of session — SAFE TO COMPACT):**
+- **Recorder BUILT** (`record.py`, task #13 done): game-agnostic, any GB ROM → `runs/<name>/{frame_*.png,
+  buttons.jsonl, meta.json, ram.bin?}`; modes `--mode auto` (headless random policy incl. Start) &
+  `--mode human` (SDL window, WASD/arrows, TAB=auto, C=checkpoint). Smoke-tested on Gold/Kirby/Zelda.
+- **12 ROMs extracted** to `roms/` (gitignored): Red, Gold, Crystalis, Gauntlet II, Zelda-LA, FF-Adventure,
+  Cave-Noire, Kirby, Metroid-II, F-1-Race, Sword-of-Hope-II, Tetris-Plus. (Colorization Red hack SKIPPED.)
+- **HELD-OUT split LOCKED** (`eval/dataset_split.py`, NEVER tune on these): one per axis = Crystalis
+  (follow), Zelda-LA (flip), **Super Mario Land (side — ROM NOT yet downloaded)**, F-1-Race (pseudo-3D).
+  Dev (9) = Red, Gold, Gauntlet II, FF-Adventure, Cave-Noire, Kirby, Metroid-II, Sword-of-Hope, Tetris.
+- **Collected (dev, auto):** Kirby×2, Metroid-II×2, Gauntlet-II×1 (raw frames+buttons+RAM in `runs/`).
+- **OPEN DECISIONS for next session:** (a) confirm Zelda held-out vs swap to dev (then hold out Cave-Noire);
+  (b) David to download **Super Mario Land**; (c) human-nudge the RPG/menu games into gameplay + `C`
+  checkpoint (dev: Gold, FF-Adventure, Cave-Noire, Sword-of-Hope, Tetris; held-out: Zelda, Crystalis, F-1)
+  so auto-collection can resume from a gameplay state; then bulk-auto from checkpoints.
+- **⇒ NEXT BUILD = the GENERALIZABLE ODOMETRY** — a camera-model detector (follow-scroll / static-sprite /
+  forced-scroll / fixed) + self-motion estimator, developed OFFLINE against the DEV corpus only, verified
+  on the held-out 4 via `eval/cross_game.py`. (David said "continue" → start this next session.)
 
 **⇒ (2026-06-22) — TASK #8 nav-speedup WIRED + closed-loop A/B (the offline ceiling did NOT
 translate; closed-loop earned its keep).** Wired the tile-map's advisory into the autopilot:
