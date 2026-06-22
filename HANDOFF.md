@@ -65,7 +65,21 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-22) — TASK #8 nav-speedup WIRED + closed-loop A/B (the offline ceiling did NOT
+**⇒ NEWEST (2026-06-22) — NEW PHASE: CROSS-GAME PERCEPTION GENERALIZATION (branch
+`feat/cross-game-perception`, off `feat/novelty-signal`).** The Pokémon tile-map line (tasks #7→#9→#8) is
+built, verified, fixed, and the speedup measured — now we test the real thesis: does the core + brain
+generalize to OTHER games? David downloaded a ladder of GB ROMs chosen so each isolates ONE new
+perception/odometry axis (web-verified catalog: `reports/2026-06-22-gb-perception-test-suite.md`; we own
+Red/Gold/Zelda-LA/Kirby; acquisition order Lolo→Zelda-Oracle→FF-Adventure→Crystalis→Metroid-II→Q*bert→
+F-1-Race→Sword-of-Hope-II). **Decomposition:** per-game = perceiver (odometry/affordance/mode/OCR/entity/
+action-contract); INVARIANT (protect) = the brain + core learning + the SymbolicState seam — success =
+how LITTLE the brain changes. **Data strategy:** record the RAW substrate `(frame, exact buttons,
+next-frame, optional RAM)` game-agnostically, defer odometry/labeling to OFFLINE replay (don't bake the
+Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build sequence + full plan:**
+`reports/2026-06-22-cross-game-phase-plan.md`. **⇒ NEXT = build #1: the generalized RAW recorder**
+(any GB ROM → frames + buttons.jsonl; human + random-auto; no Pokémon-perceiver dependency).
+
+**⇒ (2026-06-22) — TASK #8 nav-speedup WIRED + closed-loop A/B (the offline ceiling did NOT
 translate; closed-loop earned its keep).** Wired the tile-map's advisory into the autopilot:
 `ExploreBrain(use_predictions=, pred_min_conf=, skip_flat_pred=)` treats predicted-BLOCKED unvisited cells
 as SOFT-WALLS (skip the bump) with a two-pass FALLBACK (no useful frontier → ignore predictions & bump, so a
