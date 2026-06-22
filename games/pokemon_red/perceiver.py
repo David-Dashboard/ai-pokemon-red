@@ -169,11 +169,16 @@ def _predict_visible(tmap: TileFunctionMap, frame, cursor, cells: dict):
             tile = _tile_at(frame, sc, sr)
             if tile is None:
                 continue
-            fn, conf, is_novel = tmap.classify(TileFunctionMap.fingerprint(tile))
+            fp = TileFunctionMap.fingerprint(tile)
+            fn, conf, is_novel = tmap.classify(fp)
             if is_novel:
                 novel.append([wx, wy])
             else:
-                preds.append([wx, wy, fn, round(conf, 2)])
+                # 5th field = is_flat: a near-uniform tile whose function can't be trusted from looks
+                # (a flat dark tile may be a wall OR a doorway/stairs), so a consumer can choose not to
+                # act on flat predictions (ExploreBrain skip_flat) — the closed-loop A/B showed naive
+                # skipping of flat 'blocked' tiles strands the agent on look-alike critical paths.
+                preds.append([wx, wy, fn, round(conf, 2), TileFunctionMap.is_flat(fp)])
     return preds, novel
 
 

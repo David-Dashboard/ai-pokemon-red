@@ -157,10 +157,20 @@ class ExploreBrain:
         Single-stepping keeps every move one tile so the cursor stays synced with the world."""
 
     def __init__(self, agent_id: str, single_step: bool = False,
-                 probe_interactables: bool = False) -> None:
+                 probe_interactables: bool = False, use_predictions: bool = False,
+                 pred_min_conf: float = 0.0, skip_flat_pred: bool = False) -> None:
         self.agent_id = agent_id
         self.last_thought = ""
         self.single_step = single_step
+        # Use the tile->function map's advisory `tile_predictions` to SKIP cells predicted BLOCKED
+        # (soft-walls) instead of bumping them to discover they're walls — the navigation speedup.
+        # Off by default (agnostic worlds + the A/B baseline unchanged); the Pokémon drivers turn it on.
+        # `pred_min_conf` is the coverage<->safety dial (offline replay: default trust avoids ~76% of
+        # bumps at <1% wrong-skip; min_conf=0.9 ~74% at ~0.5%). A wrong skip only DELAYS via the fallback.
+        self.use_predictions = use_predictions
+        self.pred_min_conf = pred_min_conf
+        self.skip_flat_pred = skip_flat_pred   # don't act on FLAT 'blocked' predictions (a flat tile may
+                                               # be a doorway/stairs, not a wall — strands the agent if skipped)
         # When frontier exploration is exhausted, instead of immediately giving up (waking the LLM),
         # PROBE the surrounding walls for an interactable: an NPC / object / sign sits on a non-walkable
         # tile, so it reads as a wall and is never a frontier — the only way to find it from the screen
@@ -185,14 +195,28 @@ class ExploreBrain:
             if d:
                 self.last_thought = f"goto {tuple(goto[:2])} via {d}"
                 return self._move(d)
-        d = self._unexplored_dir(cur, cells)
-        if d:
-            self.last_thought = f"frontier here -> {d}"
-            return self._move(d)
-        d = self._bfs_first_step(cur, cells, {tuple(f) for f in sm.get("frontiers", [])})
-        if d:
-            self.last_thought = f"to nearest frontier via {d}"
-            return self._move(d)
+        # Predicted-blocked unvisited cells are SOFT-WALLS: skip them (saving the bump) — but only as a
+        # PRIOR. Pass 1 avoids them; if that leaves no frontier, pass 2 ignores predictions so a wrong
+        # skip only DELAYS a path (the agent bumps to confirm), never strands it. Behavioural walls (real
+        # bumps, in `cells`) stay authoritative either way. Default (no predictions) = the original pass.
+        pred_blocked = frozenset()
+        if self.use_predictions:
+            pred_blocked = frozenset(
+                (p[0], p[1]) for p in (sm.get("tile_predictions") or [])
+                if p[2] == "blocked" and p[3] >= self.pred_min_conf
+                and not (self.skip_flat_pred and len(p) > 4 and p[4]))
+        fset = {tuple(f) for f in sm.get("frontiers", [])}
+        for blocked in ((pred_blocked, frozenset()) if pred_blocked else (frozenset(),)):
+            tag = " (pred-aware)" if blocked else ""
+            d = self._unexplored_dir(cur, cells, blocked)
+            if d:
+                self.last_thought = f"frontier here -> {d}{tag}"
+                return self._move(d)
+            useful = {f for f in fset if self._unexplored_dir(f, cells, blocked)}
+            d = self._bfs_first_step(cur, cells, useful)
+            if d:
+                self.last_thought = f"to nearest frontier via {d}{tag}"
+                return self._move(d)
         # This room is fully explored — but the GLOBAL map may not be. Before probing or giving up,
         # route back through a known portal to a place that still has a frontier (the cross-place
         # explorer): exhaust the lab -> pop back to Pallet -> walk its remaining frontiers. General; it
@@ -280,13 +304,16 @@ class ExploreBrain:
         return _call("press_sequence", {"buttons": [d, "a"]}, self.agent_id)
 
     @staticmethod
-    def _unexplored_dir(cur, cells) -> Optional[str]:
+    def _unexplored_dir(cur, cells, pred_blocked=frozenset()) -> Optional[str]:
         walls = set(cells.get(cur, {}).get("walls", []))
         for d in ("up", "down", "left", "right"):
             if d in walls:
                 continue
             dx, dy = _DELTA[d]
-            nbr = cells.get((cur[0] + dx, cur[1] + dy))
+            nb = (cur[0] + dx, cur[1] + dy)
+            if nb in pred_blocked:           # soft-wall: don't walk into an appearance-predicted wall
+                continue
+            nbr = cells.get(nb)
             if nbr is None or not nbr.get("visited"):
                 return d
         return None

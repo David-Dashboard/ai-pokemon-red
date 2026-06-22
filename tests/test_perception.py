@@ -426,13 +426,15 @@ def test_scorer_walkability_confusion_and_escape():
 
 # -- ExploreBrain: local frontier autopilot (no LLM) --------------------------
 
-def _obs_with_map(pose, cells, frontiers, rois=None, area=None, portals=None, place_frontiers=None):
+def _obs_with_map(pose, cells, frontiers, rois=None, area=None, portals=None, place_frontiers=None,
+                  tile_predictions=None):
     from core.contracts import Observation
     return Observation(
         data={"pose": {"value": list(pose), "area": area},
               "spatial_memory": {"map": cells, "frontiers": frontiers, "rois": rois or [],
                                  "place_portals": portals or [],
-                                 "place_frontiers": place_frontiers or []}},
+                                 "place_frontiers": place_frontiers or [],
+                                 "tile_predictions": tile_predictions or []}},
         text="", agent_id="a", t=0.0)
 
 
@@ -481,6 +483,46 @@ def test_explore_returns_none_when_no_frontier_remains():
     from core.brains import ExploreBrain
     cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "down", "left", "right"]}]
     assert ExploreBrain("a").decide(_obs_with_map((0, 0), cells, []), [], {}) is None
+
+
+# -- prediction-aware exploration (task #8: skip appearance-known walls) --------
+
+def test_explore_skips_a_predicted_blocked_cell():
+    from core.brains import ExploreBrain
+    # from (0,0) both DOWN->(0,1) and RIGHT->(1,0) are open & unexplored; the map predicts (0,1) BLOCKED.
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left"]}]
+    obs = _obs_with_map((0, 0), cells, [[0, 0]], tile_predictions=[[0, 1, "blocked", 1.0]])
+    assert ExploreBrain("a").decide(obs, [], {}).args["buttons"][0] == "down"               # baseline bumps it
+    assert ExploreBrain("a", use_predictions=True).decide(obs, [], {}).args["buttons"][0] == "right"  # skips it
+
+
+def test_explore_prediction_is_a_prior_not_a_seal_fallback_bumps():
+    from core.brains import ExploreBrain
+    # ONLY down is open AND it's predicted blocked -> pass 1 finds nothing, the fallback bumps it to
+    # confirm (a wrong skip only DELAYS a path, never strands the agent).
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left", "right"]}]
+    obs = _obs_with_map((0, 0), cells, [[0, 0]], tile_predictions=[[0, 1, "blocked", 1.0]])
+    assert ExploreBrain("a", use_predictions=True).decide(obs, [], {}).args["buttons"][0] == "down"
+
+
+def test_explore_pred_min_conf_dial():
+    from core.brains import ExploreBrain
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left"]}]
+    obs = _obs_with_map((0, 0), cells, [[0, 0]], tile_predictions=[[0, 1, "blocked", 0.5]])
+    # a prediction BELOW the confidence dial is ignored (bumps); at/above it, skipped.
+    assert ExploreBrain("a", use_predictions=True, pred_min_conf=0.8).decide(obs, [], {}).args["buttons"][0] == "down"
+    assert ExploreBrain("a", use_predictions=True, pred_min_conf=0.4).decide(obs, [], {}).args["buttons"][0] == "right"
+
+
+def test_explore_skip_flat_pred_does_not_act_on_flat_predictions():
+    from core.brains import ExploreBrain
+    # down->(0,1) is predicted blocked AND FLAT (5th field True); right->(1,0) is open & unexplored.
+    # The closed-loop A/B showed trusting a FLAT 'blocked' strands the agent (a flat tile may be a doorway),
+    # so skip_flat_pred ignores it and bumps down to confirm; without the flag it skips down -> right.
+    cells = [{"x": 0, "y": 0, "visited": True, "walls": ["up", "left"]}]
+    obs = _obs_with_map((0, 0), cells, [[0, 0]], tile_predictions=[[0, 1, "blocked", 1.0, True]])
+    assert ExploreBrain("a", use_predictions=True).decide(obs, [], {}).args["buttons"][0] == "right"
+    assert ExploreBrain("a", use_predictions=True, skip_flat_pred=True).decide(obs, [], {}).args["buttons"][0] == "down"
 
 
 def test_explore_crosses_to_a_place_that_still_has_frontiers():

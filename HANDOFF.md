@@ -65,7 +65,24 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-22) — CHEAP HASH FIX LANDED (the indoor failure addressed without CLIP; branch
+**⇒ NEWEST (2026-06-22) — TASK #8 nav-speedup WIRED + closed-loop A/B (the offline ceiling did NOT
+translate; closed-loop earned its keep).** Wired the tile-map's advisory into the autopilot:
+`ExploreBrain(use_predictions=, pred_min_conf=, skip_flat_pred=)` treats predicted-BLOCKED unvisited cells
+as SOFT-WALLS (skip the bump) with a two-pass FALLBACK (no useful frontier → ignore predictions & bump, so a
+wrong skip DELAYS not strands) and the behavioural veto authoritative; the perceiver now tags each prediction
+`is_flat`. **Offline** (`eval/probe_navsave.py`, fixed recorded trajectory): skipping avoids **~76% of bumps
+@ <1% wrong-skip** — but that's a CEILING. **Closed-loop** (`eval/closed_loop_ab.py`, headless autopilot
+DRIVING the emulator, no LLM, path DIVERGES): **naive skipping STRANDS the agent** (42 vs 134 cells — it learns
+"dark tile=wall" from one bump then skips look-alike flat DOORWAYS/stairs and seals itself in). **`skip_flat`
+FIXES it:** no strand, explores MORE than baseline (160 vs 134 cells), bump-rate **27.9% → 18.0% (~35% fewer
+bumps/step)**. **Lesson: an offline metric on a FIXED trajectory overstates — only closed-loop (where the agent's
+own sparse map feeds back into its path) reveals the self-reinforcing strand; and don't trust FLAT-tile
+predictions for navigation (a flat tile may be a door).** Safe config = `use_predictions=True, skip_flat_pred=True`
+(NOT auto-enabled in the paid drivers — David opts in; defaults off, agnostic worlds unchanged). 277 tests.
+**⇒ NEXT: enable the safe config in the Pokémon drivers + a guarded PAID live run to confirm the speedup
+end-to-end (the first paid validation of the whole tile-map line); the It2+ CLIP arm stays deferred.**
+
+**⇒ (2026-06-22) — CHEAP HASH FIX LANDED (the indoor failure addressed without CLIP; branch
 `feat/novelty-signal`).** Folded a richer key into `core/tilemap.py`: **horizontal + VERTICAL gradient +
 a 4-bit brightness BUCKET**, with **structured matching** (intensity gated within ±1 band, Hamming tol on
 the 128-bit gradient only) + two consumer abstain knobs `predict(min_conf=, skip_flat=)`. Results

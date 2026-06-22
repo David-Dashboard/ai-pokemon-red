@@ -221,3 +221,15 @@ the frozen `core/contracts.py` is untouched (advisory rides the open `spatial_me
   (vertical structure + absolute brightness) recovered what we'd have paid CLIP/torch for, and the residual
   is now genuine physics (appearance can't tell a flat wall from a flat floor), exposed as a coverage⇄safety
   DIAL (skip_flat/min_conf) rather than hidden as confident error.** CLIP deferred to It2+/complex envs.
+- **2026-06-22 — task #8: the offline speedup ceiling did NOT survive closed-loop (a textbook offline↔online
+  gap).** Wired predictions into `ExploreBrain` (soft-walls + fallback + veto). `eval/probe_navsave.py` on a
+  FIXED recorded trajectory said skipping predicted-blocked cells avoids **76% of bumps @ <1% wrong-skip** —
+  looked like a slam-dunk. `eval/closed_loop_ab.py` (the autopilot actually DRIVING the emulator, so its path
+  diverges and its OWN sparse map feeds back) said otherwise: **naive skipping STRANDS the agent** (42 vs 134
+  cells) — it learns "dark tile = wall" from a single early bump, then skips look-alike FLAT doorways/stairs and
+  seals itself in (a self-reinforcing confirmation trap the fixed-trajectory probe can't show). **`skip_flat`
+  (don't trust flat-tile predictions — a flat tile may be a door) fixes it: no strand, explores MORE than
+  baseline (160 vs 134), bump-rate 27.9%→18.0% (~35% fewer bumps/step).** **Two lessons: (1) an offline metric
+  computed on a FIXED trajectory is a CEILING, not a forecast — when the policy's own outputs change its future
+  inputs (navigation, any closed loop), you MUST measure closed-loop; (2) the safe speedup is real but MODEST
+  (~35% bump-rate), far below the 76% ceiling, because only distinctly-textured walls can be skipped safely.**
