@@ -92,6 +92,14 @@ Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build seq
   (b) David to download **Super Mario Land**; (c) human-nudge the RPG/menu games into gameplay + `C`
   checkpoint (dev: Gold, FF-Adventure, Cave-Noire, Sword-of-Hope, Tetris; held-out: Zelda, Crystalis, F-1)
   so auto-collection can resume from a gameplay state; then bulk-auto from checkpoints.
+- **3D GATE (cheap ViZDoom smoke, David chose to probe 3D this iteration):** `eval/vizdoom_smoke.py`
+  (`uv run --with vizdoom`) recorded `my_way_home` (700 steps, forward-biased; raw frames+actions+GT
+  pos/angle in `runs/vizdoom_mywayhome/`). PRELIMINARY: a dumb whole-frame frame-diff separates
+  advanced-vs-blocked on pure-forward steps at **83.7%** (blocked 13.1 vs advanced 36.3; baseline 67.8%;
+  corr +0.37) ⇒ behaviour=truth + cheap odometry *appears* to have 3D legs. **A 5-agent verification
+  workflow is running to confirm/refute** (threshold artifact? frame-diff = self-motion vs scene-noise?
+  optical-flow ceiling? scenario generality) → its verdict decides GREENLIGHT It3 (real 3D, ViZDoom) vs
+  DEFER as a clean-sheet build. ViZDoom installs cleanly headless (1.3.0, 120x160 RGB, GT position oracle).
 - **⇒ NEXT BUILD = the GENERALIZABLE ODOMETRY** — a camera-model detector (follow-scroll / static-sprite /
   forced-scroll / fixed) + self-motion estimator, developed OFFLINE against the DEV corpus only, verified
   on the held-out 4 via `eval/cross_game.py`. (David said "continue" → start this next session.)
