@@ -40,6 +40,18 @@ See `reports/2026-06-22-gb-perception-test-suite.md` (web-verified): Lolo (fixed
 (flip-screen) → FF Adventure (flip+real-time) → Crystalis (real-time 8-way) → Metroid II (side-view 2D) →
 Q*bert (iso) → F-1 Race (pseudo-3D) → Sword of Hope II (first-person). We own Red/Gold/Zelda-LA/Kirby.
 
+## 3D — now IN scope this iteration (via a cheap gate; David's call)
+Rather than defer 3D blindly, we probe it cheaply NOW and let the result gate a full 3D iteration:
+- **Mechanism:** `eval/vizdoom_smoke.py` (ViZDoom `my_way_home`) tests whether behaviour=truth + a cheap
+  pixels-only self-motion signal survives 3D ego-motion. ViZDoom gives ground-truth position (the 3D
+  analog of GB RAM). **Preliminary:** frame-diff separates advanced-vs-blocked-by-wall at 83.7%
+  (baseline 67.8%) — looks positive; under adversarial verification.
+- **Gate rule:** if it HOLDS → GREENLIGHT It3 (real 3D on ViZDoom — optical-flow odometry + a 3D spatial
+  representation, NOT the tile→function grid) as the next iteration. If it COLLAPSES → 3D is a clean-sheet
+  perceiver, budgeted as its own iteration.
+- The 2D GB ladder stays THIS iteration's primary axis; 3D is the gated next rung. The GB pseudo-3D / FP /
+  iso games (F-1, Sword of Hope, Q*bert) remain the free 3D-adjacent proxies.
+
 ## Held-out verification split (anti-overfitting — `eval/dataset_split.py`)
 **HARD RULE: never develop/tune/calibrate against the HELD-OUT games; touch them only at final
 verification (`cross_game.py --test`).** One game per axis (dev keeps an example of each):

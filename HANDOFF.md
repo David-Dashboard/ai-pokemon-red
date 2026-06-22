@@ -100,6 +100,15 @@ Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build seq
   workflow is running to confirm/refute** (threshold artifact? frame-diff = self-motion vs scene-noise?
   optical-flow ceiling? scenario generality) → its verdict decides GREENLIGHT It3 (real 3D, ViZDoom) vs
   DEFER as a clean-sheet build. ViZDoom installs cleanly headless (1.3.0, 120x160 RGB, GT position oracle).
+  3D is now IN the strategy (`reports/2026-06-22-cross-game-phase-plan.md`, "3D — now IN scope" section).
+- **PRIOR-ART scan** (`reports/2026-06-22-prior-art-scan.md`): closest = **Cradle** (screen-only general
+  control, GPT-4o — its perception/object-localization limitation VALIDATES our perception-first thesis) +
+  **Wild Visual Navigation / V-STRONG** (robotics behaviour-grounded traversability that generalizes — the
+  analog of our tile→function map; they make embeddings work ONLINE where we found a hash beats CLIP).
+  Dual-process (SwiftSage/DPT-Agent) is well-trodden; cross-game generalists (NitroGen/GATO/PORTAL) use
+  big behaviour-cloning. **Our gap = cheap + screen-only + ONLINE/no-training + behaviour=truth + dual-
+  process + explicit cross-GAME held-out generalization.** Adopt: WVN online supervision, Cradle skill
+  curation; Avoid: GPT-4o-every-step, internet-scale behavior cloning.
 - **⇒ NEXT BUILD = the GENERALIZABLE ODOMETRY** — a camera-model detector (follow-scroll / static-sprite /
   forced-scroll / fixed) + self-motion estimator, developed OFFLINE against the DEV corpus only, verified
   on the held-out 4 via `eval/cross_game.py`. (David said "continue" → start this next session.)
