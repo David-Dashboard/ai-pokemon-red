@@ -77,7 +77,11 @@ def main():
     for i in range(1, len(rows)):
         act, gray, pos = rows[i]
         pact = rows[i - 1][0]
-        pure_fwd = act[iF] and not act[iL] and not act[iR]
+        # ACTION-FRAME ALIGNMENT (was off-by-one): pos/gray are logged BEFORE make_action, so the
+        # i-1 -> i transition (both dpos and fdiff) is caused by the action at row i-1 (pact), NOT i.
+        # Filtering on `act` mislabels steps and BLURS the signal (verified 2026-06-22: the bug
+        # under-reported accuracy 96.9% -> 83.7% and collapsed turn-direction to chance).
+        pure_fwd = pact[iF] and not pact[iL] and not pact[iR]
         if not pure_fwd:
             continue
         dpos = math.dist(pos, rows[i - 1][2])
@@ -105,7 +109,13 @@ def main():
         corr = float(np.corrcoef(dpos, fdiff)[0, 1])
         print(f"  best frame-diff threshold accuracy (advanced vs blocked): {best:.1%}")
         print(f"  corr(pos-change, frame-diff): {corr:+.2f}")
-        print("\nVERDICT: high separation/corr => behaviour=truth + cheap odometry HAS 3D legs (greenlight It3);"
+        # NOTE: this is a BINARY advance-vs-stuck detector, NOT metric odometry (graded distance
+        # carries ~no info: corr among only-moving steps ~= +0.02). And whole-frame frame-diff
+        # CANNOT tell rotation from translation -- for the real perceiver use OPTICAL FLOW
+        # (column-shift sign => turn direction; expansion flow => advance). See
+        # eval/vizdoom_flow_ceiling.py + reports/2026-06-22-cross-game-phase-plan.md.
+        print("\nVERDICT: high separation/corr => behaviour=truth + a cheap pixels-only advance/stuck"
+              "\n         signal HAS 3D legs (greenlight It3, build optical-flow ego-motion);"
               "\n         near-chance => 3D needs a heavier perceiver (defer to a clean-sheet iteration).")
 
 

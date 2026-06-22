@@ -40,17 +40,33 @@ See `reports/2026-06-22-gb-perception-test-suite.md` (web-verified): Lolo (fixed
 (flip-screen) → FF Adventure (flip+real-time) → Crystalis (real-time 8-way) → Metroid II (side-view 2D) →
 Q*bert (iso) → F-1 Race (pseudo-3D) → Sword of Hope II (first-person). We own Red/Gold/Zelda-LA/Kirby.
 
-## 3D — now IN scope this iteration (via a cheap gate; David's call)
-Rather than defer 3D blindly, we probe it cheaply NOW and let the result gate a full 3D iteration:
-- **Mechanism:** `eval/vizdoom_smoke.py` (ViZDoom `my_way_home`) tests whether behaviour=truth + a cheap
-  pixels-only self-motion signal survives 3D ego-motion. ViZDoom gives ground-truth position (the 3D
-  analog of GB RAM). **Preliminary:** frame-diff separates advanced-vs-blocked-by-wall at 83.7%
-  (baseline 67.8%) — looks positive; under adversarial verification.
-- **Gate rule:** if it HOLDS → GREENLIGHT It3 (real 3D on ViZDoom — optical-flow odometry + a 3D spatial
-  representation, NOT the tile→function grid) as the next iteration. If it COLLAPSES → 3D is a clean-sheet
-  perceiver, budgeted as its own iteration.
-- The 2D GB ladder stays THIS iteration's primary axis; 3D is the gated next rung. The GB pseudo-3D / FP /
-  iso games (F-1, Sword of Hope, Q*bert) remain the free 3D-adjacent proxies.
+## 3D — GREENLIT this iteration (cheap gate PASSED + adversarially verified; David's call)
+We probed 3D cheaply with `eval/vizdoom_smoke.py` (ViZDoom `my_way_home`; ground-truth position = the 3D
+analog of GB RAM), then ran a 5-agent adversarial verification. **Verdict: GREENLIGHT It3** — and the
+headline got STRONGER under scrutiny, not weaker.
+- **The smoke test had an off-by-one action-frame bug** (filtered "pure-forward" on action row *i*, but
+  the *i-1→i* frame/pos change is caused by the action at row *i-1*). Fixed in `vizdoom_smoke.py`.
+  Corrected numbers (pure-forward, n=424, majority 66.0%): **advance-vs-blocked 96.9%** (not the originally
+  reported 83.7%), corr(pos-change, frame-diff) **+0.59** (not +0.37). Ground-truth proof the alignment was
+  the limiter: under correct alignment MOVE_FORWARD→Δangle **0.000° (std 0)**, TURN_LEFT→+10.36°,
+  TURN_RIGHT→−9.62°; the bug collapsed those to noise.
+- **What's REAL:** (a) **behaviour=truth holds in 3D** — actions map cleanly/deterministically to pose
+  (this is the actual "does 3D have legs" question → clean yes); (b) a cheap pixels-only **advance/stuck
+  detector** (96.9%, survives honest 5-fold CV). Brightness is NOT the explanation (residualize on
+  brightness → still 94.8%).
+- **Honest framing (don't overclaim):** this is a **binary advance/stuck + turn-direction classifier, NOT
+  metric odometry.** Graded distance carries ~no info (corr ≈ +0.02). And whole-frame frame-diff CANNOT
+  tell rotation from translation (100% of high-frame-diff non-translating steps were pure rotations).
+- **The real-3D perceiver = OPTICAL FLOW, not scalar frame-diff.** Column-shift *sign* separates
+  TURN_LEFT vs TURN_RIGHT at ~90–95% (frame-diff can't do this at all); expansion/radial flow → advance
+  (frame-diff + expansion → 98.3%). Treat ego-motion as a discrete classifier (advance / turn-L / turn-R /
+  stuck). Reusable ceiling probe: `eval/vizdoom_flow_ceiling.py`.
+- **Untested before trusting broadly** (current evidence = one maze, forward-biased random policy): a
+  corridor/open-room scenario (different blocked base-rate + lighting coupling), low-contrast/dark-wall
+  approaches (3.8% false-negatives), an agent-driven (non-random) policy, and combined fwd+turn steps.
+- The 2D GB ladder stays THIS iteration's primary axis; It3 (real 3D on ViZDoom — optical-flow ego-motion +
+  a 3D spatial representation, NOT the tile→function grid) is the greenlit next rung. The GB pseudo-3D / FP /
+  iso games (F-1, Sword of Hope, Q*bert) remain free 3D-adjacent proxies.
 
 ## Held-out verification split (anti-overfitting — `eval/dataset_split.py`)
 **HARD RULE: never develop/tune/calibrate against the HELD-OUT games; touch them only at final

@@ -233,3 +233,26 @@ the frozen `core/contracts.py` is untouched (advisory rides the open `spatial_me
   computed on a FIXED trajectory is a CEILING, not a forecast — when the policy's own outputs change its future
   inputs (navigation, any closed loop), you MUST measure closed-loop; (2) the safe speedup is real but MODEST
   (~35% bump-rate), far below the 76% ceiling, because only distinctly-textured walls can be skipped safely.**
+
+## 2026-06-22 — 3D GATE verified → It3 GREENLIT; the smoke bug UNDER-reported the signal
+The cheap ViZDoom 3D gate (`eval/vizdoom_smoke.py`, `my_way_home`, GT-position oracle) was adversarially
+verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline got STRONGER under scrutiny.
+- **An off-by-one bug made the smoke test UNDER-report its own result.** pos/frame are logged BEFORE
+  `make_action`, so the *i-1→i* transition is caused by the action at row *i-1*, but the analysis filtered
+  "pure-forward" on row *i*. Fixing the alignment: advance-vs-blocked **83.7%→96.9%**, corr **+0.37→+0.59**.
+  GT proof the bug (not the signal) was the limiter: under correct alignment FORWARD→Δangle **0.000°(std0)**,
+  LEFT→+10.36°, RIGHT→−9.62°; the buggy alignment collapsed those to noise. **Lesson: when a logger records
+  state BEFORE the action, the action↔transition pairing is off-by-one — a quiet bug that blurs a real signal
+  into a marginal one. A contradicting verifier (lens 4) had it backwards; the GT angle test settled it.**
+- **What's REAL:** behaviour=truth holds in 3D (actions map cleanly/deterministically to pose) + a cheap
+  pixels-only advance/stuck detector (survives 5-fold CV; brightness-residualized still 94.8%, so it is NOT a
+  lighting artifact — which killed the strongest counter-claim).
+- **What to NOT overclaim:** it's a **binary advance/stuck + turn-direction classifier, NOT metric odometry**
+  (graded-distance corr ≈ +0.02). And **whole-frame frame-diff is a scalar — it cannot tell rotation from
+  translation** (100% of high-frame-diff non-translating steps were pure rotations). ⇒ the real-3D perceiver
+  must be **OPTICAL FLOW**: column-shift *sign* → turn direction (~90–95%; frame-diff can't do this at all);
+  expansion flow → advance (2-feat 98.3%). `eval/vizdoom_flow_ceiling.py` is the reusable ceiling probe.
+- **Process lesson (again):** name the signal honestly — "cheap 3D odometry" was the seductive overclaim; the
+  defensible claim is "behaviour=truth survives 3D + a cheap discrete ego-motion classifier exists." Same
+  discipline as the tile-map: pick the metric that matches the downstream use, and don't let a good scalar
+  number stand in for a capability (direction) it structurally cannot provide.
