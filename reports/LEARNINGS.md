@@ -209,3 +209,15 @@ the frozen `core/contracts.py` is untouched (advisory rides the open `spatial_me
   intensity bits) BEFORE the CLIP arm. **Process lesson: a good-looking generalisation number on the wrong
   hold-out unit is the classic self-deception — adversarially re-derive the hold-out, and pick the metric that
   matches the downstream cost (here: don't-walk-into-walls = wall-recall, not accuracy).**
+- **2026-06-22 — the cheap hash FIX worked (and the richer key was a strict win, not just a safety patch).**
+  Added VERTICAL gradient + a 4-bit brightness BUCKET to the dHash, with structured matching (intensity
+  gated ±1; Hamming tol on the gradient only) + `predict(min_conf=, skip_flat=)` knobs. The brightness
+  bucket is the all-zeros-alias cure: a flat DARK wall and flat LIGHT floor no longer share key 0.
+  **Unexpected bonus: temporal acc-when-known jumped 90.9% → 97.8%** (coverage held) — the alias wasn't
+  just a cross-tileset hazard, it was the dominant *within*-tileset error too, so killing it helped
+  everywhere. Indoor leave-one-TILESET-out wall-miscalls 449 → 297 (default) → **2 with `skip_flat`**; lab
+  leave-one-MAP-out flipped from confident-wrong (77.7%) to safe-novel (11% cov @ 98.9%). **Lesson: when a
+  cheap key fails, look for the lossy COLLISION before reaching for a heavier model — a few well-chosen bits
+  (vertical structure + absolute brightness) recovered what we'd have paid CLIP/torch for, and the residual
+  is now genuine physics (appearance can't tell a flat wall from a flat floor), exposed as a coverage⇄safety
+  DIAL (skip_flat/min_conf) rather than hidden as confident error.** CLIP deferred to It2+/complex envs.

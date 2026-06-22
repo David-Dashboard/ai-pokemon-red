@@ -1,8 +1,9 @@
 """TileFunctionMap tests (perception-architecture decision, 2026-06-21) — pure, numpy-only.
 
-Covers the agnostic appearance->function map: the perceptual-hash fingerprint (deterministic,
-brightness-invariant), behaviour-labelled observe/predict with confidence, self-correction,
-Hamming-tolerant recurrence matching, and the novelty gate. No torch / PIL / network.
+Covers the agnostic appearance->function map: the perceptual-hash fingerprint (H+V gradient +
+brightness bucket; deterministic, brightness-SENSITIVE by design), behaviour-labelled observe/predict
+with confidence, self-correction, structured tolerant matching (intensity gate + gradient Hamming),
+the novelty gate, and the min_conf / skip_flat abstain knobs. No torch / PIL / network.
 """
 from __future__ import annotations
 
@@ -14,16 +15,16 @@ from core.tilemap import TileFunctionMap
 
 
 def _tile(seed: int, lo: int = 0, hi: int = 255):
-    """A deterministic 16x16x3 tile; values in [lo,hi) so a brightness shift can avoid clipping."""
+    """A deterministic textured 16x16x3 tile."""
     return np.random.RandomState(seed).randint(lo, hi, size=(16, 16, 3)).astype(np.uint8)
 
 
 # -- fingerprint ---------------------------------------------------------------
 
-def test_fingerprint_is_a_deterministic_64bit_int():
+def test_fingerprint_is_a_deterministic_int():
     t = _tile(1)
     fp = TileFunctionMap.fingerprint(t)
-    assert isinstance(fp, int) and 0 <= fp < (1 << 64)
+    assert isinstance(fp, int) and fp >= 0
     assert fp == TileFunctionMap.fingerprint(t.copy())     # same pixels -> same hash
 
 
@@ -31,17 +32,36 @@ def test_fingerprint_distinguishes_different_tiles():
     assert TileFunctionMap.fingerprint(_tile(1)) != TileFunctionMap.fingerprint(_tile(2))
 
 
-def test_fingerprint_is_brightness_invariant():
-    # A uniform brightness/palette shift (no clipping) preserves the per-cell ordering, so the dHash
-    # is unchanged — the robustness that lets one tile-type survive minor animation/palette swaps.
-    t = _tile(3, lo=0, hi=180)
-    bright = np.clip(t.astype(int) + 30, 0, 255).astype(np.uint8)   # in-range -> no saturation
-    assert TileFunctionMap.fingerprint(t) == TileFunctionMap.fingerprint(bright)
+def test_fingerprint_distinguishes_flat_dark_from_flat_light():
+    # THE all-zeros-alias fix (verified 2026-06-21): both flat tiles have an empty gradient, so the
+    # old H-only dHash collapsed them to one key (0) and confidently mislabelled cross-tileset. The
+    # brightness bucket now keys them apart, and the intensity gate keeps them from matching.
+    dark = np.full((16, 16, 3), 40, dtype=np.uint8)
+    light = np.full((16, 16, 3), 200, dtype=np.uint8)
+    fd, fl = TileFunctionMap.fingerprint(dark), TileFunctionMap.fingerprint(light)
+    assert fd != fl
+    t = TileFunctionMap()
+    t.observe(fd, "blocked")
+    assert t.is_novel(fl)              # different brightness band -> NOT the same tile-type -> novel
+
+
+def test_fingerprint_captures_vertical_structure():
+    # top-half dark / bottom-half light: a vertical gradient with NO horizontal variation. The old
+    # H-only key gave both this and its up-down flip the same (all-zero) hash; the V plane separates them.
+    t = np.zeros((16, 16, 3), dtype=np.uint8)
+    t[8:, :, :] = 255
+    flipped = t[::-1].copy()           # same pixels & brightness, reversed up/down structure
+    assert TileFunctionMap.fingerprint(t) != TileFunctionMap.fingerprint(flipped)
 
 
 def test_fingerprint_accepts_grayscale_2d():
     g = np.random.RandomState(5).randint(0, 255, size=(16, 16)).astype(np.uint8)
     assert isinstance(TileFunctionMap.fingerprint(g), int)
+
+
+def test_is_flat_flags_near_uniform_tiles():
+    assert TileFunctionMap.is_flat(TileFunctionMap.fingerprint(np.full((16, 16, 3), 120, np.uint8)))
+    assert not TileFunctionMap.is_flat(TileFunctionMap.fingerprint(_tile(6)))   # textured -> not flat
 
 
 # -- observe / predict ---------------------------------------------------------
@@ -71,13 +91,32 @@ def test_predict_on_empty_map_is_none():
     assert TileFunctionMap().predict(12345) is None
 
 
-# -- Hamming tolerance (recurrence matching) -----------------------------------
+# -- abstain knobs (the coverage<->safety dial the navigation A/B sets) ---------
+
+def test_predict_min_conf_abstains_on_mixed_bucket():
+    t = TileFunctionMap()
+    fp = TileFunctionMap.fingerprint(_tile(30))
+    t.observe(fp, "walkable"); t.observe(fp, "walkable"); t.observe(fp, "blocked")   # conf 2/3
+    fn, conf = t.predict(fp)
+    assert fn == "walkable" and abs(conf - 2 / 3) < 1e-9        # default min_conf=0 -> predicts
+    assert t.predict(fp, min_conf=0.8) is None                 # below threshold -> abstain
+
+
+def test_predict_skip_flat_abstains_on_flat_tile():
+    fp = TileFunctionMap.fingerprint(np.full((16, 16, 3), 120, dtype=np.uint8))
+    t = TileFunctionMap()
+    t.observe(fp, "walkable")
+    assert t.predict(fp) == ("walkable", 1.0)                  # default: predicts
+    assert t.predict(fp, skip_flat=True) is None               # flat appearance -> abstain
+
+
+# -- structured tolerant matching (gradient Hamming; raw int keys) -------------
 
 def test_predict_matches_within_hamming_tolerance():
-    # observe/predict take raw int keys, so tolerance can be tested exactly without crafting pixels.
+    # observe/predict take raw int keys (intensity bucket 0), so gradient tolerance tests exactly.
     t = TileFunctionMap(tol=3)
     t.observe(0, "walkable")
-    assert t.predict(0b111) == ("walkable", 1.0)   # hamming 3 == tol -> match
+    assert t.predict(0b111) == ("walkable", 1.0)   # gradient hamming 3 == tol -> match
     assert t.predict(0b1111) is None               # hamming 4 > tol  -> novel
 
 

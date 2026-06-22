@@ -8,19 +8,29 @@ it everywhere* (no need to walk every cell to learn a room's layout).
 
 Why a cheap perceptual HASH, not a CLIP embedding (the empirical finding,
 `eval/probe_walkability_learn.py`): a behaviour-labelled CLIP store predicts walkability ~98% on
-a temporal split but COLLAPSES leave-one-map-out (held-out lab 26.9% < baseline) — the embedding
-captures *appearance, not function*, so it generalises walkability to a new tileset no better than
-chance. The ONE thing it does well — recognise near-identical RECURRING tiles — a perceptual hash
-does deterministically, for free, with no torch/GPU, and CI-testably. So: hash for the recurrence
-win; reserve an embedding's *distance* (elsewhere) only as a novelty signal.
+a temporal split but COLLAPSES leave-one-map-out — the embedding captures *appearance, not
+function*. The ONE thing it does well — recognise near-identical RECURRING tiles — a perceptual
+hash does deterministically, for free, no torch/GPU, CI-testably. So: hash for the recurrence win;
+reserve an embedding's *distance* (elsewhere) only as a novelty signal. **Hard limit (verified
+2026-06-21, leave-one-TILESET-out): NO appearance key — hash OR embedding — can predict a wall in a
+GENUINELY NEW tileset; appearance ≠ function across tilesets. So this map is a RECURRENCE +
+NOVELTY signal, never a cross-tileset function oracle; behaviour (a real bump) stays the authority.**
 
-This module is WORLD-AGNOSTIC by design (System-1 toolkit, `core/`): it takes a tile's pixels and
-a behavioural label and never knows about Pokémon, tile sizes, or screen geometry — the perceiver
-(`games/<world>/`) owns the extraction (which pixels are a tile, where the player faces). Behaviour
-is ground truth; predictions are ADVISORY (a fresh contradicting observation overrides a stale one,
-and the perceiver's occupancy `walls` — from real bumps — remain the authority). Per-run only
-(rebuilt each run, never persisted across runs — the learning-boundary law; persistence is the
-deferred It4 question). numpy-only: no torch, no PIL, no network.
+The fingerprint (keying scheme; verified-driven, 2026-06-21):
+- **Horizontal + Vertical gradient** (8×8 dHash each way, 128 bits): captures left-right AND up-down
+  structure (the V plane gave a free wall-recall gain on outdoor tilesets that the H-only key missed).
+- **Intensity bucket** (mean brightness, high bits, matched within ±1): so a flat DARK wall and a flat
+  LIGHT floor — which the old all-gradient-zero "all-zeros alias" collapsed into one key and confidently
+  mislabelled cross-tileset — now key apart. Brightness is INFORMATIVE here (4 fixed GB shades), so the
+  hash is deliberately brightness-SENSITIVE, not brightness-invariant.
+- `predict()` exposes two abstain knobs the consumer dials (the coverage⇄safety dial, set by the
+  navigation A/B): `min_conf` (ignore low-confidence/mixed buckets) and `skip_flat` (abstain on a
+  near-uniform low-texture tile — flat appearance genuinely can't be trusted to predict function).
+
+WORLD-AGNOSTIC by design (System-1 toolkit, `core/`): takes a tile's pixels + a behavioural label,
+knows nothing about Pokémon/tile-sizes/geometry — the perceiver (`games/<world>/`) owns extraction.
+Predictions are ADVISORY (a contradicting observation overrides; the perceiver's bump-derived `walls`
+stay authoritative). Per-run only (rebuilt each run; the learning-boundary law). numpy-only.
 """
 from __future__ import annotations
 
@@ -29,20 +39,25 @@ from typing import Optional
 
 import numpy as np
 
-# Default Hamming tolerance for "the same tile-type": two perceptual hashes within this many bit
-# flips are treated as one appearance. Crisp 4-shade GB tiles hash near-identically; a few flips
-# absorb animation (water/flowers) / sub-tile noise. CALIBRATED offline (eval/probe_tilemap.py, Q6/Q7,
-# 2026-06-21): settled faced-tiles already hash IDENTICALLY ~98% of the time, so exact match alone
-# captures most recurrence; same-cell animation spread is p90=5 while genuinely-different content sits
-# far away (max ~27). So 6 sits just above the animation band — it recovers the last ~2% of coverage
-# without inviting cross-tile collisions (accuracy was flat 92.5% across tol 0..12 on this data, the
-# residual being intrinsic tile/function ambiguity, NOT collisions — so a conservative tol is safest
-# for richer tilesets). Tunable per world.
-_DEFAULT_TOL = 6
+# Hamming tolerance applied to the 128-bit GRADIENT only (intensity is gated separately, below).
+# Two tiles whose gradients differ by ≤ this many bits AND whose brightness buckets are within ±1 are
+# treated as one appearance. GB tiles hash near-identically (exact match dominates); the small tol
+# absorbs animation (water/flowers) / sub-tile noise. Tunable per world (calibrated via
+# eval/probe_tilemap.py Q6/Q7 robustness sweep on the gradient spread).
+_DEFAULT_TOL = 8
+_GRAD_BITS = 128                       # 64 horizontal + 64 vertical gradient bits
+_GRAD_MASK = (1 << _GRAD_BITS) - 1
+_INTEN_TOL = 1                         # brightness buckets within ±1 count as the same band
+_FLAT_GRAD_BITS = 4                    # gradient popcount below this ⇒ a near-uniform (low-texture) tile
 
 
 def _hamming(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
+
+
+def _split(fp: int) -> tuple[int, int]:
+    """A fingerprint splits into (intensity_bucket, 128-bit gradient)."""
+    return fp >> _GRAD_BITS, fp & _GRAD_MASK
 
 
 def _pool(gray: np.ndarray, n: int = 8) -> np.ndarray:
@@ -77,17 +92,27 @@ class TileFunctionMap:
     # -- keying ---------------------------------------------------------------
     @staticmethod
     def fingerprint(tile: np.ndarray) -> int:
-        """A 64-bit perceptual hash of a tile (dHash with wrap-around columns).
+        """A perceptual hash: (intensity_bucket << 128) | (64-bit horizontal ⊕ 64-bit vertical dHash).
 
-        Grayscale (mean of RGB if 3-/4-channel), average-pool to 8×8, then set one bit per cell for
-        "is this cell brighter than the next column over" (wrap the last column to the first → exactly
-        64 bits). The comparison is RELATIVE, so the hash is invariant to a uniform brightness/palette
-        shift and tolerant to small animation; identical pixels always hash identically (deterministic)."""
+        Grayscale (mean of RGB if 3-/4-channel) → average-pool to 8×8 → one bit per cell for "brighter
+        than the next COLUMN" (64, wrap-around) and "brighter than the next ROW" (64, wrap-around), then
+        prepend a 4-bit mean-brightness bucket. Gradient bits are relative (tolerant to small animation);
+        the brightness bucket separates flat tiles of different shade (the all-zeros-alias fix). Identical
+        pixels always hash identically (deterministic)."""
         g = np.asarray(tile)
         g = g[..., :3].mean(axis=2) if g.ndim == 3 else g.astype(float)
         pooled = _pool(g, 8)
-        bits = pooled > np.roll(pooled, -1, axis=1)     # 8×8 bool: brighter than the next column
-        return int.from_bytes(np.packbits(bits.flatten()).tobytes(), "big")
+        h = pooled > np.roll(pooled, -1, axis=1)        # horizontal gradient (vs next column)
+        v = pooled > np.roll(pooled, -1, axis=0)        # vertical gradient (vs next row)
+        grad = int.from_bytes(np.packbits(np.concatenate([h.flatten(), v.flatten()])).tobytes(), "big")
+        inten = min(15, int(float(g.mean()) // 16))     # 0..15 brightness bucket (4 bits)
+        return (inten << _GRAD_BITS) | grad
+
+    @staticmethod
+    def is_flat(fp: int) -> bool:
+        """True if the tile is near-uniform / low-texture (gradient carries < `_FLAT_GRAD_BITS` bits) —
+        a flat appearance that genuinely can't be trusted to predict function (could be floor or wall)."""
+        return bin(fp & _GRAD_MASK).count("1") < _FLAT_GRAD_BITS
 
     # -- online build ---------------------------------------------------------
     def observe(self, fp: int, function: str) -> None:
@@ -98,11 +123,14 @@ class TileFunctionMap:
 
     # -- read (advisory) ------------------------------------------------------
     def _matches(self, fp: int) -> list[Counter]:
-        """All stored buckets whose key is within tolerance of `fp` (exact match has distance 0, so
-        it is always included). Empty ⇒ this appearance has never been seen ⇒ novel."""
+        """Stored buckets that are the same tile-type as `fp`: brightness within ±`_INTEN_TOL` AND
+        gradient Hamming ≤ tol (the intensity gate is what stops a flat dark wall matching a flat light
+        floor). Exact match short-circuits. Empty ⇒ never seen ⇒ novel."""
         if fp in self._tally:
             return [self._tally[fp]]            # exact-match fast path
-        return [c for k, c in self._tally.items() if _hamming(fp, k) <= self._tol]
+        qi, qg = _split(fp)
+        return [c for k, c in self._tally.items()
+                if abs((k >> _GRAD_BITS) - qi) <= _INTEN_TOL and _hamming(k & _GRAD_MASK, qg) <= self._tol]
 
     def classify(self, fp: int) -> tuple[Optional[str], float, bool]:
         """One-shot read used by the perceiver: returns (function, confidence, novel).
@@ -119,10 +147,19 @@ class TileFunctionMap:
         fn, cnt = agg.most_common(1)[0]
         return fn, cnt / sum(agg.values()), False
 
-    def predict(self, fp: int) -> Optional[tuple[str, float]]:
-        """The advised (function, confidence) for an appearance, or None if novel."""
+    def predict(self, fp: int, min_conf: float = 0.0, skip_flat: bool = False) -> Optional[tuple[str, float]]:
+        """The advised (function, confidence) for an appearance, or None if novel / abstained.
+
+        Two abstain knobs the consumer dials (the coverage⇄safety dial — set by the navigation A/B):
+        `min_conf` returns None when the matched bucket is below that confidence (a mixed/ambiguous
+        appearance); `skip_flat` returns None for a near-uniform low-texture tile (whose appearance
+        can't be trusted to predict function). Both default OFF so the bare prediction is unchanged."""
+        if skip_flat and TileFunctionMap.is_flat(fp):
+            return None
         fn, conf, novel = self.classify(fp)
-        return None if novel else (fn, conf)
+        if novel or conf < min_conf:
+            return None
+        return (fn, conf)
 
     def is_novel(self, fp: int) -> bool:
         """True iff no seen tile-type is within tolerance (the novelty gate's 'unknown → explore')."""

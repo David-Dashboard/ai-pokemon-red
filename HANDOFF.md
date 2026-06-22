@@ -65,7 +65,22 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-21 night) — TASK #9 cross-tileset hash test RUN + ADVERSARIALLY VERIFIED; headline
+**⇒ NEWEST (2026-06-22) — CHEAP HASH FIX LANDED (the indoor failure addressed without CLIP; branch
+`feat/novelty-signal`).** Folded a richer key into `core/tilemap.py`: **horizontal + VERTICAL gradient +
+a 4-bit brightness BUCKET**, with **structured matching** (intensity gated within ±1 band, Hamming tol on
+the 128-bit gradient only) + two consumer abstain knobs `predict(min_conf=, skip_flat=)`. Results
+(`eval/probe_tilemap.py` + `eval/_verify_tileset.py`, reproduced): **temporal acc-when-known 90.9% → 97.8%**
+(coverage held 98.6% — a strict win, the all-zeros alias is gone); leave-one-MAP-out lab flipped from
+confident-wrong 78.6%cov/77.7%acc → **11%cov/98.9%acc** (now reads NOVEL, safe); town wall-recall 84.7% →
+**89.9%**. Indoor leave-one-TILESET-out wall-miscalls **449 → 297** at default, **→ 2 with `skip_flat=True`**
+(295 flat collisions become "novel→explore"). The residual is the *physics* (appearance ≠ function
+cross-tileset; a flat tile can't be told wall-vs-floor by looks) — so it's a **coverage⇄safety DIAL**, not a
+bug. 277 tests. **CLIP DEFERRED** to It2+/complex environments (its real jobs: graded-novelty distance,
+semantic/entity ID, natural images — not GB walkability). **⇒ NEXT = task #8: navigation-speedup A/B** — wire
+predictions into the autopilot, set the abstain dial (min_conf/skip_flat) by the metric that matters
+(steps-saved vs wrong-bumps), behavioural veto stays authoritative.
+
+**⇒ (2026-06-21 night) — TASK #9 cross-tileset hash test RUN + ADVERSARIALLY VERIFIED; headline
 CORRECTED (branch `feat/novelty-signal`, pushed).** Ran the hash leave-one-MAP-out on the new data (8817
 faced-tiles, 10 runs) — it LOOKED great (Forest novel 3.3%, no map below baseline). A **5-agent verification
 workflow OVERTURNED the strong claim:** leave-one-MAP-out hid a failure because a held-out indoor map kept a

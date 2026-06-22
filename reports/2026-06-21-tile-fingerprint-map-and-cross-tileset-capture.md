@@ -26,6 +26,14 @@ are clean (98.9% RAM-agreement). **Corrected headline: strong RECURRENCE within 
 new tileset; NO indoor cross-tileset generalisation.** The hash still beats CLIP on the *same* leave-one-MAP-out
 protocol (lab 77.7% vs CLIP 26.9%), but neither was tested cross-tileset apples-to-apples. **Revised NEXT below.**
 
+**✅ FIX LANDED (2026-06-22):** the cheap fix worked — richer key (H+VERTICAL gradient + 4-bit brightness
+bucket; structured matching; `predict(min_conf=, skip_flat=)` knobs) in `core/tilemap.py`. **Temporal
+acc-when-known 90.9% → 97.8%** (coverage held — the all-zeros alias was the dominant *within*-tileset error
+too), lab leave-one-MAP-out flipped confident-wrong → safe-novel (11% cov / 98.9% acc), town wall-recall
+84.7% → 89.9%, indoor leave-one-TILESET-out wall-miscalls **449 → 297 → 2 with `skip_flat`**. The residual is
+physics (a flat tile can't be told wall-vs-floor by looks) — now a coverage⇄safety **dial** (set in task #8),
+not a confident lie. **CLIP deferred** to It2+/complex environments. 277 tests.
+
 ## Goal
 Execute the converged perception decision (`reports/2026-06-21-perception-architecture-decision.md`):
 give the agent an **online, behaviour-labelled `tile→function` world model keyed by a cheap perceptual
