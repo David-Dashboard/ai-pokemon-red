@@ -40,5 +40,18 @@ See `reports/2026-06-22-gb-perception-test-suite.md` (web-verified): Lolo (fixed
 (flip-screen) → FF Adventure (flip+real-time) → Crystalis (real-time 8-way) → Metroid II (side-view 2D) →
 Q*bert (iso) → F-1 Race (pseudo-3D) → Sword of Hope II (first-person). We own Red/Gold/Zelda-LA/Kirby.
 
+## Held-out verification split (anti-overfitting — `eval/dataset_split.py`)
+**HARD RULE: never develop/tune/calibrate against the HELD-OUT games; touch them only at final
+verification (`cross_game.py --test`).** One game per axis (dev keeps an example of each):
+- **Held-out:** Crystalis (follow / real-time-8way) · Zelda LA (flip) · Super Mario Land (side; ROM TBD) ·
+  F-1 Race (pseudo-3D).
+- **Dev (9):** Pokémon Red, Pokémon Gold, Gauntlet II · FF Adventure, Cave Noire · Kirby, Metroid II ·
+  Sword of Hope II, Tetris Plus.
+- Open fork: holding out Zelda is the most honest flip test; alternatively dev on Zelda and hold out
+  Cave Noire. Editable in `eval/dataset_split.py`.
+
 ## Status
-Branch created + prepared. **NEXT = build #1, the generalized raw recorder.**
+Branch created + prepared; generalized recorder BUILT (`record.py`). Auto-collected (dev): Kirby×2,
+Metroid II×2, Gauntlet II. Need a human nudge into gameplay (intro/name-entry): Gold, FF Adventure,
+Cave Noire, Sword of Hope, Tetris (dev) + Zelda, Crystalis, F-1 (held-out — data ok, just don't tune).
+**NEXT = build the generalizable odometry (camera-model detection) OFFLINE against the DEV corpus.**
