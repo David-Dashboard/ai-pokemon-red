@@ -1,0 +1,12 @@
+# Commit-time gate (catches EVERY commit — you in a terminal or Claude via the Bash tool).
+# One-time setup per clone:   uv run pre-commit install
+# Runs the full suite locally before a commit is recorded; CI re-runs it as the pre-merge gate.
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (full suite)
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true

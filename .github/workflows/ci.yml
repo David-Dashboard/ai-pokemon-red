@@ -1,0 +1,21 @@
+name: ci
+
+# The pre-merge gate: every push / PR runs the full test suite (incl. the architectural fitness
+# functions and the frozen-contract pin) on a clean cloud VM. Red here should block merge (enable
+# branch protection on main: Settings -> Branches -> require this check).
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Run test suite
+        # Pin a wheel-rich Python for CI (dev may run newer locally); tests need no ROM/PyBoy session.
+        run: uv run --python 3.12 pytest -q
