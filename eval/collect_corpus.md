@@ -64,3 +64,21 @@ NOTE: `--explore` only drives top-down games (Crystalis). Side-scrollers (SML), 
 (F-1, needs sustained accelerate) come out **LOW-MOTION → inconclusive** — that's the autonomous-control gap, not
 a perception failure. Do NOT hand-play them to "fix" it; that gap is the agent's job.
 
+## 7. RAM-GROUNDING (`--watch`) — true position oracle for the ego-motion estimator
+To validate ego-motion against TRUTH on non-Pokémon games, log known WRAM position bytes per step with
+`--watch name=HEXADDR,...` (world-agnostic: just reads `pb.memory[addr]`; the address is looked up per game on
+Data Crystal RAM maps). Validated end-to-end on Red (`x=0xD362,y=0xD361` tracked live position). Looked-up
+camera/position addresses:
+- **Metroid II:** `x_px=0xD027,x_scr=0xD028,y_px=0xD029,y_scr=0xD02A` (X/Y within area = world position).
+- **Kirby's Dream Land:** `scroll_x=0xD051` (the camera scroll register — exactly what `best_shift` estimates).
+- **Super Mario Land** (HELD-OUT — verification oracle only): `0xC202` is Mario *on-screen* X, NOT the level
+  scroll; find the scroll/level-X before relying on it.
+```
+# pair clean locomotion WITH the oracle (human play, since auto can't drive these):
+.venv-win/Scripts/python.exe record.py --rom "roms/Metroid II - Return of Samus (World).gb" --name metroid_play_ram --mode human --ram --watch x_px=0xD027,x_scr=0xD028,y_px=0xD029,y_scr=0xD02A
+.venv-win/Scripts/python.exe record.py --rom "roms/Kirby's Dream Land (USA, Europe).gb"     --name kirby_play_ram   --mode human --ram --watch scroll_x=0xD051
+```
+GBC games (Crystalis, Gold) have BANKED WRAM (0xD000–0xDFFF switches) — a single fixed address may be unreliable;
+prefer DMG titles or verify the bank. Undocumented ports (Gauntlet II GB, Cave Noire) → use an auto-address-finder
+(correlate `ram.bin` byte-deltas with the pressed direction) instead.
+

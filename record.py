@@ -129,11 +129,16 @@ def main() -> int:
                          "(odometry/camera-model data); implies smart-auto menu escape. Pair with --hold 16.")
     ap.add_argument("--keys", choices=["wasd", "arrows"], default="wasd", help="human movement layout")
     ap.add_argument("--ram", action="store_true", help="also dump raw 8KB WRAM per step (ram.bin)")
+    ap.add_argument("--watch", default="",
+                    help="comma-list of name=HEXADDR WRAM bytes to log per step as a position oracle, e.g. "
+                         "kirby 'scroll_x=0xD051' or metroid 'x_px=0xD027,x_scr=0xD028' (Data Crystal RAM maps). "
+                         "World-agnostic: just reads pb.memory[addr]; the address is looked up per game.")
     ap.add_argument("--sound", action="store_true", help="human mode audio")
     ap.add_argument("--hold", type=int, default=8)
     ap.add_argument("--settle", type=int, default=16)
     ap.add_argument("--sample-every", type=int, default=12, help="human mode: frames per recorded step")
     args = ap.parse_args()
+    watch = [(nm, int(ad, 16)) for nm, ad in (p.split("=") for p in args.watch.split(",") if p.strip())]
 
     # Prefix the run dir with today's date so data artifacts are sortable + self-identifying (unless the
     # caller already supplied a YYYY-MM-DD prefix). Keeps runs/ chronologically ordered.
@@ -164,9 +169,11 @@ def main() -> int:
     def record(buttons, mode):
         path = os.path.join(out, f"frame_{n['i']:06d}.png")
         pb.screen.image.save(path)
-        jf.write(json.dumps({"step": n["i"], "t": time.time(), "frame": pb.frame_count,
-                             "screen_path": path.replace("\\", "/"),
-                             "buttons": list(buttons), "mode": mode}) + "\n")
+        row = {"step": n["i"], "t": time.time(), "frame": pb.frame_count,
+               "screen_path": path.replace("\\", "/"), "buttons": list(buttons), "mode": mode}
+        if watch:
+            row["watch"] = {nm: int(pb.memory[ad]) for nm, ad in watch}
+        jf.write(json.dumps(row) + "\n")
         jf.flush()
         if rf is not None:
             rf.write(_grab_ram(pb) or bytes(8192))
