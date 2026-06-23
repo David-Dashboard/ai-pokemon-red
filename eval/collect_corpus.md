@@ -49,3 +49,18 @@ by dir name.
 .venv-win/Scripts/python.exe -m eval.corpus_activity runs/<run> ...   # sustained-gameplay gate (READY/THIN)
 .venv-win/Scripts/python.exe -m eval.probe_camera_model               # signatures + sib-mean + held-out Doom test
 ```
+
+## 6. HELD-OUT verification games — AUTONOMOUS ONLY (never human, never tuned on)
+The `dataset_split` held-out set (Crystalis / Zelda LA / SML / F-1 Race) is recorded **HANDS-OFF** — human input
+would defeat the zero-shot test and risk leakage. Same `--explore` policy as dev, no `--load-state`:
+```
+.venv-win/Scripts/python.exe record.py --rom "roms/Crystalis (USA).gbc"                              --name crystalis_explore --mode auto --explore --hold 16 --settle 4 --ram --steps 4000
+.venv-win/Scripts/python.exe record.py --rom "roms/Super Mario Land (World) (Rev 1).gb"             --name sml_explore       --mode auto --explore --hold 16 --settle 4 --ram --steps 4000
+.venv-win/Scripts/python.exe record.py --rom "roms/Legend of Zelda, The - Link's Awakening (U) (V1.2) [!].gb" --name zelda_explore --mode auto --explore --hold 16 --settle 4 --ram --steps 4000
+.venv-win/Scripts/python.exe record.py --rom "roms/F-1 Race (World).gb"                              --name f1race_explore    --mode auto --explore --hold 16 --settle 4 --ram --steps 4000
+```
+Then score zero-shot: `.venv-win/Scripts/python.exe -m eval.verify_heldout`
+NOTE: `--explore` only drives top-down games (Crystalis). Side-scrollers (SML), intro-gated (Zelda), and racers
+(F-1, needs sustained accelerate) come out **LOW-MOTION → inconclusive** — that's the autonomous-control gap, not
+a perception failure. Do NOT hand-play them to "fix" it; that gap is the agent's job.
+

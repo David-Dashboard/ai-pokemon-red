@@ -80,6 +80,24 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ NEWEST (2026-06-23, latest) — HELD-OUT VERIFICATION: per-run classifier generalizes zero-shot; the gate is
+autonomous CONTROL, not perception. Branch `feat/heldout-verification` (off `main`).** Built
+`eval/verify_heldout.py` — the per-RUN camera classifier (`[scrollPrev, A4, vshare]`) + a HANDS-OFF zero-shot test
+on the held-out set. Held-out games recorded AUTONOMOUSLY (`--explore`, NO human — human-playing a verification
+game defeats the zero-shot test + risks leakage).
+- **Dev per-run leave-one-unit-out = 7/7** (vs 45% per-frame — per-run aggregation is the closer; but near-
+  tautological: the features were chosen on these units. Real evidence is out-of-corpus).
+- **Held-out zero-shot (N=1 conclusive, by construction):** only **1 of 4 was drivable hands-off** — **Crystalis →
+  follow_scroll**, nearest by a **×1.8 margin** over side (win metric = class margin, NOT distance-from-corpus).
+  **SML / Zelda / F-1** are low-motion: INCONCLUSIVE if a scroller was predicted but the driver stalled (SML),
+  AMBIGUOUS if `fixed` (Zelda flip-screen may be correctly fixed; F-1's car never accelerated). They test the
+  DRIVER, not the perceiver — **F-1 `fixed` is NOT a perception concern.**
+- **The real bottleneck = autonomous CONTROL of non-top-down games** (a competent controller = the agent itself,
+  the project's end goal); camera-model PERCEPTION is verified-good where drivable. The HANDS-OFF discipline is
+  what surfaced this. Full record: `reports/2026-06-23-heldout-verification.md`; LEARNINGS (2026-06-23, 5th entry).
+- **⇒ NEXT unchanged: the generalizable ego-motion estimator** (fixed→none / 2D-scroll→`best_shift` / 3D→flow),
+  on the drivable games; held-out re-runs cleanly once autonomous control improves.
+
 **⇒ NEWEST (2026-06-23, latest) — ODOMETRY CORPUS REBUILT (locomotion fix) + DOOM HELD-OUT. Branch
 `feat/odometry-corpus` (off `main`).** Acted on the camera-model probe's corpus-limited verdict: a 4-agent
 diagnosis pinned the limiter to LOCOMOTION sparsity (jittery auto wiggles the avatar in place → camera never
