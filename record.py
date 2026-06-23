@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import datetime
 import json
 import os
 import random
+import re
 import time
 
 GB_BUTTONS = ("up", "down", "left", "right", "a", "b", "start", "select")
@@ -94,7 +96,9 @@ def _grab_ram(pb):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rom", required=True)
-    ap.add_argument("--name", required=True, help="dataset dir under runs/")
+    ap.add_argument("--name", required=True,
+                    help="dataset dir under runs/ (auto-prefixed with today's date 'YYYY-MM-DD_' "
+                         "unless --name already starts with a date)")
     ap.add_argument("--mode", choices=["auto", "human"], default="auto")
     ap.add_argument("--steps", type=int, default=3000, help="recorded steps (auto mode)")
     ap.add_argument("--seed", type=int, default=1)
@@ -110,7 +114,12 @@ def main() -> int:
     ap.add_argument("--sample-every", type=int, default=12, help="human mode: frames per recorded step")
     args = ap.parse_args()
 
-    out = os.path.join("runs", args.name)
+    # Prefix the run dir with today's date so data artifacts are sortable + self-identifying (unless the
+    # caller already supplied a YYYY-MM-DD prefix). Keeps runs/ chronologically ordered.
+    name = args.name
+    if not re.match(r"\d{4}-\d{2}-\d{2}[_-]", name):
+        name = f"{datetime.date.today().isoformat()}_{name}"
+    out = os.path.join("runs", name)
     os.makedirs(out, exist_ok=True)
 
     if args.mode == "human":
