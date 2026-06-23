@@ -403,3 +403,22 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   unfrozen `SymbolicState` seam; never touch `core/contracts.py`). ~2% A-miss is camera-pinned map edges
   (best_shift=0 despite a RAM move) — a real pixel-odometry limit, not a bug. Full record:
   `reports/2026-06-23-egomotion-probe-P1.md`.
+
+## 2026-06-23 — RAM-grounding toolkit + the CAMERA-vs-PLAYER distinction (cross-game ego-motion)
+- **What:** to RAM-ground ego-motion on non-Pokémon games (no position oracle), added `record.py --watch` (logs
+  known/found WRAM bytes to a SEPARATE `oracle.jsonl`, never the `buttons.jsonl` substrate) and
+  `eval/find_ram_addr.py` (auto-discovers the position register by correlating each WRAM byte's per-step delta
+  with the pressed direction — from `ram.bin`+buttons, no game knowledge). Addresses: Metroid/Kirby from Data
+  Crystal, Gauntlet `0xC286`/`0xC2C6` from the finder (confirmed via `--watch`).
+- **KEY INSIGHT (load-bearing for P2):** `best_shift` estimates **camera** motion; a RAM position register is the
+  **player** position. They agree ONLY when the camera FOLLOWS the player. On auto-Gauntlet, naive RAM-grounded
+  direction recovery was 33% — but **62% of RAM-moved steps were camera-STATIC** (player moved inside a fixed
+  screen / into walls); **on camera-scrolled steps it was 74%**. Pokémon hits 98% only because its overworld
+  always centers the player. So the honest cross-game metric is *recovery-on-camera-scrolled steps*, and the
+  ego-motion estimator's "how did I move" = camera self-motion, which is the agent's self-motion **iff** the
+  camera tracks the avatar (true for follow-scroll, NOT for fixed/flip or wall-pinned moments).
+- **Why it matters / how to apply:** a clean cross-game number needs camera-scroll-rich recordings — auto gives
+  that only for open follow-cameras (Pokémon overworld); mazes/side-scrollers need real navigation (human, or the
+  eventual agent). The autonomous analysis itself needs no human. Finder caveats: an 8-bit register ghosts in the
+  high byte of the u16 at addr-1 (excluded via `PAIR_MAX<256`, `u8` preferred, `med|d|` column); GBC banked WRAM
+  (0xD000-0xDFFF) makes fixed addresses unreliable — prefer DMG titles.
