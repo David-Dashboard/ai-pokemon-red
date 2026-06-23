@@ -66,9 +66,11 @@ class ModalAutoPolicy:
         # (advancing a dialog/title); rotate to the next move when nothing changed (step a menu).
         self.stalls += 1
         sig = modality_signals(prev_frame, curr_frame)
+        # `progressed` reuses the static cutoff (STATIC_EPS) as the "did the last move change the screen?"
+        # test; a sub-threshold blink reads as no-progress and so rotates to the next move (intended).
         progressed = sig is not None and sig["frame_diff"] >= STATIC_EPS
-        if progressed:
-            self._esc = 0
-        else:
+        if not progressed:        # last move stopped changing the screen -> rotate to the next move
             self._esc += 1
+        # on progress, KEEP self._esc: _escape[_esc] is the last-emitted move, so we repeat exactly the
+        # move that is still advancing the screen (the repeat-while-changing design described above).
         return mode, list(self._escape[self._esc % len(self._escape)])
