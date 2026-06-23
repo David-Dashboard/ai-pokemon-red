@@ -256,3 +256,36 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   defensible claim is "behaviour=truth survives 3D + a cheap discrete ego-motion classifier exists." Same
   discipline as the tile-map: pick the metric that matches the downstream use, and don't let a good scalar
   number stand in for a capability (direction) it structurally cannot provide.
+
+## 2026-06-23 — generalizable MODALITY detection + mode-aware AUTO-PLAY (the nudging crutch, removed for the common case)
+- **Why (David's steer):** the plan to widen the corpus by *nudging* (a human hand-playing each game past its
+  menus, then checkpointing) **contradicts the goal** — an agent that handles tasks from the screen should
+  handle menus itself. So the first build became a world-agnostic capability, not a data workaround:
+  `core/modality.py` (detect static/menu/gameplay from a frame pair + the buttons that produced it) +
+  `core/autoplay.py` (`ModalAutoPolicy`: gameplay→random breadth; otherwise an escape ladder) +
+  `record.py --smart-auto` + `eval/corpus_activity.py` (the readiness/validation gate). 21 new tests, 304 total.
+- **The detector generalizes on the RIGHT distinction, behaviorally grounded.** Pokémon anchor
+  (`--anchor runs/kanto1`, the one game with per-frame mode labels + RAM): **overworld+MOVED → "gameplay" 98%**;
+  frozen screens → "static". The *known buttons* ground it (a direction that moves the world = gameplay) —
+  the same trick as the 3D gate's FORWARD→Δangle≈0 proof, no GT needed.
+- **Menu CLASSIFICATION by appearance does NOT generalize — so don't build it.** On the anchor, menu/dialog/
+  battle read as low-confidence "gameplay" ~80–93% (Pokémon's white-panel cue is regional; a whole-frame
+  flatness signal misses text-on-panel UI, and a uniform game background — Space Invaders' black field — fools
+  it the other way). **This is the hash-cross-tileset lesson again:** an appearance classifier confidently
+  mislabels across domains. Fix = **handle menus BEHAVIORALLY, not by label**: the policy repeats an escape
+  move while it keeps changing the screen (advancing a dialog/title) and rotates when it stops (stepping a
+  menu) — robust to the label being wrong, and it can't be confidently-wrong the way a classifier can.
+- **Measured value, honestly bounded (cross-axis, `eval/corpus_activity.py`):** smart-auto flips Kirby from
+  random **THIN→READY (active 44%→62%)** from the same cold boot; Space Invaders (static-sprite), Gauntlet
+  (follow), Metroid (side) all reach gameplay (READY) — all 4 camera-model axes now have gameplay data. **But
+  it does NOT crack a hard scripted intro:** Pokémon Red cold-boot stays THIN with smart *or* random (active
+  ~35%, longest gameplay streak 5) — the name-entry keyboard needs a *goal-directed* sequence a cheap escape
+  ladder won't find. ⇒ hard RPG intros use the **checkpoint/LLM fallback** (Red already has
+  `runs/kanto1/checkpoint_02.state`), exactly the "rare residual" the plan anticipated.
+- **Metric caveat found by looking:** `active%` is confounded by **cutscenes** — Oak's animated intro reads as
+  "gameplay" because the screen is busy. So **`maxRun` (longest sustained gameplay streak)** is the better
+  "did it reach real play" signal; a high active% with a tiny maxRun = stuck in an animated intro, not playing.
+- **Architecture:** both modules are `core/` (world-agnostic, numpy-only), enforced by `test_import_boundaries`
+  (no `games/` import) + per-module AST checks; frozen `core/contracts.py` untouched (`SymbolicState.context`
+  already carries mode). The same `core/modality.py` is what a new world's perceiver reuses to set `context` —
+  so this is on the *constancy* critical path, not just a recorder hack. No ADR (additive System-1 building).
