@@ -80,7 +80,97 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-22) — NEW PHASE: CROSS-GAME PERCEPTION GENERALIZATION (branch
+**⇒ GIT/STATE (2026-06-23, end of session) — all of today's work is COMMITTED + PUSHED.**
+`feat/cross-game-perception` is on origin at `1a347df`, **3 commits ahead of `main`** (modality capability
+`f53096d` → appearance/OCR probe + ADR-001 inv#6 `c143230` → date-prefix recorder `1a347df`). **PR is NOT
+yet opened** — use the compare URL `https://github.com/David-Dashboard/ai-pokemon-red/compare/main...feat/cross-game-perception?expand=1`
+(`gh` is not installed here). **`MIGRATION.md` added** (move the project: clone + copy `runs/`(955M)/`roms/`/
+`CLAUDE.md`/repo-`.claude/`/home auto-memory; recreate venvs via `eval/requirements-probe.txt`). `record.py`
+now date-prefixes run dirs (`runs/YYYY-MM-DD_<name>`). The "UNCOMMITTED" notes in the blocks below are STALE.
+**NEXT unchanged ⇒ the ODOMETRY CORPUS + camera-model probe.**
+
+**⇒ NEWEST (2026-06-23, later) — APPEARANCE/OCR vs cheap modality classification: FAIR cross-game probe RUN;
+decision = STOP (cheap menu-detection is a dead end; behavioral handling stands). Branch
+`feat/cross-game-perception`, UNCOMMITTED.** David rejected the under-proven "appearance can't classify modality
+cross-game" claim and demanded the probe. `eval/probe_modality_appearance.py` (+ `eval/_modality_probe_run.py`,
+run under `.venv-probe4`): ~190 hand-labeled GAMEPLAY-vs-NOT frames, **leave-one-GAME-out (pokemon = ONE unit —
+leakage guard)**, comparing CLIP MobileCLIP2-S0 / OCR-text-amount / cheap-numpy / flat-only (numpy logistic +
+cosine centroid/kNN; balanced accuracy). **The test corrected BOTH sides:** CLIP **GENERALIZES for
+gameplay-vs-title** (mean **83%**, ~100% on kirby/metroid/gauntlet) → the blanket "appearance is useless" is
+**REFUTED**; **BUT** on the two real-menu folds it's near chance (**pokemon 55%, spaceinv 64%**) → menu/dialog/UI-
+vs-gameplay does **NOT** generalize cross-game (claim holds for the hard part); and **OCR-text-amount is a POOR
+menu cue** (40% mean, 0% Gauntlet — GB gameplay HUDs are text-heavy too, so "text=menu" is wrong; OCR's only value
+would be reading CONTENT to navigate, not classifying). Caveat: kirby/metroid/gauntlet had 1 boot NOT-frame so
+their ~100% is gameplay-recognition (MEAN optimistic); pokemon/spaceinv are the honest folds; small N.
+**DECISION (David): STOP** — a generalizable cheap menu-detector is a dead end; keep the **behavioral escape
+ladder** (easy titles) + **checkpoint/LLM fallback** (hard scripted intros like Red name-entry). Full record:
+`reports/LEARNINGS.md` (2026-06-23, 2nd entry). **NEXT unchanged ⇒ the ODOMETRY CORPUS + camera-model probe**
+(see the block below).
+
+**⇒ NEWEST (2026-06-23) — GENERALIZABLE MODALITY DETECTION + MODE-AWARE AUTO-PLAY (built + validated; the
+nudging crutch removed for the common case). Branch `feat/cross-game-perception`, UNCOMMITTED.** David
+redirected the odometry plan: instead of *nudging* (a human hand-playing each game past its menus to collect
+gameplay), build the capability the goal demands — an agent that handles menus from the screen itself.
+- **Built (all world-agnostic, `core/`, numpy-only; 21 new tests, 304 total green; frozen contract untouched —
+  `SymbolicState.context` already carries mode):** `core/modality.py` (`detect_modality(prev,curr,buttons) →
+  (static|menu|gameplay|unknown, conf)`), `core/autoplay.py` (`ModalAutoPolicy`: gameplay→random breadth;
+  else an escape ladder), `record.py --smart-auto` (opt-in; default random unchanged), `eval/corpus_activity.py`
+  (readiness/validation gate + `--anchor` Pokémon check).
+- **Validated (free, grounded):** Pokémon anchor (`--anchor runs/kanto1`): **overworld+MOVED → "gameplay" 98%**
+  (buttons ground it, no GT). Cross-axis (`corpus_activity`): smart-auto flips **Kirby random THIN→READY
+  (active 44%→62%)** cold-boot; Space Invaders (static-sprite, extracted from `roms/`), Gauntlet (follow),
+  Metroid (side) all READY → **all 4 camera-model axes now have gameplay data**.
+- **Honest limits (measured, not hidden):** (1) **menu *classification* by appearance does NOT generalize**
+  (anchor: menu/dialog/battle read as low-conf "gameplay"; the hash-cross-tileset lesson again) → menu
+  *handling* is **behavioral** (repeat an escape move while the screen changes, rotate when it stops), not
+  label-driven. (2) **smart-auto does NOT crack a hard scripted intro** — Red cold-boot stays THIN (name-entry
+  keyboard needs a goal-directed sequence) → hard RPGs use the **checkpoint/LLM fallback** (Red has
+  `runs/kanto1/checkpoint_02.state`), the "rare residual" the plan anticipated. (3) `active%` is inflated by
+  **cutscenes** (Oak's intro animates → "gameplay") → use **`maxRun`** (longest streak) as the "reached real
+  play" signal. Full record: `reports/LEARNINGS.md` (2026-06-23).
+- **⇒ NEXT (pick up here): build the ODOMETRY CORPUS, then the camera-model probe.** (a) Bulk-collect with
+  `record.py --mode auto --smart-auto --ram --steps 8000` cold-boot on the action games (Kirby, Metroid,
+  Gauntlet, Space Invaders, Tetris, Mortal Kombat — heavy background compute/disk, so confirm scope/step-count
+  with David first); checkpoint-resume the RPGs (Red from its checkpoint; Gold/FF-Adventure/Sword-of-Hope need
+  a one-time `--mode human` `C`-checkpoint = the rare residual). Gate each with `corpus_activity`. (b) Then the
+  **camera-model / odometry probe** (`eval/probe_camera_model.py`, design ready in the plan file): pixel-grained
+  2D shift+residual (generalize `perceiver._best_shift`), button-grounded A1 no-input / A2 sign / A3 residual /
+  A4 locality, honest model-class-separability verdict. Held-out (Zelda-LA/SML/Crystalis/F-1) stays untouched.
+
+**⇒ (2026-06-22 late) — GOAL CANONICALIZED + GOVERNANCE LAYER SHIPPED + INTEGRATED TO `main`. Next =
+START the generalizable-odometry build.** A planning/governance session (no game runs):
+- **Goal canonicalized** in §1 (ONE agent = fixed brain + swappable perceiver; human-grade task success from
+  the screen alone; two axes = embodiment ladder + **computer-use track** [strategy/builder games → permitted
+  desktop/web, pixels-only]; cheap; no per-world training; with falsification criteria). The portable "how we
+  work" doc is **`reports/CONTEXT-BRIEFING.md`** (methods/principles/preferences + **drift tripwires** +
+  progressive disclosure + Sense A/B + the self-improvement loop).
+- **Research grounding** (`reports/2026-06-22-plan-grounding-and-failure-modes.md` + research-takeaways +
+  prior-art scan): every component anchored in real systems (Voyager/Reflexion/Huang "LLMs can't self-correct"/
+  VO-SLAM/ObjectNav/computer-use) with failure modes. **Our verified findings independently match the
+  textbook** (3D: rotation+textureless = the classic monocular-VO failures = our frame-diff/dark-wall result;
+  spatial memory: ObjectNav "stuck in visually-similar-but-wrong regions" = our hash-alias + portal bug).
+- **Enforcement layer SHIPPED** (principles → automated, the drift-detection you asked for): **CI**
+  (`.github/workflows/ci.yml`, full suite on push/PR), **pre-commit** (full suite before every commit;
+  installed), **fitness tests** (`tests/test_import_boundaries.py` = core↛games + no-aria-import + games
+  isolated; `tests/test_no_ram_leak.py` = only role keys cross the seam). Claude hooks (SessionStart auto-orient
+  / PreCompact notes-reminder / PreToolUse commit-gate) live in **gitignored `.claude/`** (local tooling).
+- **Integrated:** `main` **fast-forwarded** to `a368195` (== feature, linear, no merge commit); 9 stale feature
+  branches deleted. **Unpushed** (main ahead of origin by 60). Open: `git push origin main` + enable branch
+  protection (require `ci`) when ready; remote `origin/feat/*` branches still exist (offered to prune).
+- **⇒ NEXT — the build starts now: GENERALIZABLE ODOMETRY.** A camera-model detector
+  (follow-scroll / static-sprite / forced-scroll / fixed) + self-motion estimator, developed **OFFLINE on the
+  DEV corpus only**, verified on the held-out 4 via `eval/cross_game.py`. **Per the 3D verdict: ego-motion is a
+  DISCRETE classifier built from OPTICAL FLOW** (column-shift sign → turn; expansion/radial flow → advance),
+  **NOT scalar frame-diff and NOT metric distance.** **FIRST STEP (cheap, grounding-first):** a *camera-model
+  detection probe* over the recorded DEV runs (Kirby×2, Metroid-II×2, Gauntlet-II exist) — can we classify each
+  game's camera model from raw `(frame, buttons, next-frame)` cheaply? — before building the estimator. Need
+  more dev games nudged into gameplay first (open items below). `record.py` is the substrate; `eval/cross_game.py`
+  + `eval/dataset_split.py` are the harness.
+- **Open data items:** download **Super Mario Land** (held-out side-scroller); human-nudge RPG/menu games into
+  gameplay + `C` checkpoint (Gold, FF-Adventure, Cave-Noire, Sword-of-Hope, Tetris) then bulk-auto; confirm
+  Zelda held-out vs swap to Cave-Noire (`eval/dataset_split.py`).
+
+**⇒ (2026-06-22) — NEW PHASE: CROSS-GAME PERCEPTION GENERALIZATION (branch
 `feat/cross-game-perception`, off `feat/novelty-signal`).** The Pokémon tile-map line (tasks #7→#9→#8) is
 built, verified, fixed, and the speedup measured — now we test the real thesis: does the core + brain
 generalize to OTHER games? David downloaded a ladder of GB ROMs chosen so each isolates ONE new

@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import datetime
 import json
 import os
 import random
+import re
 import time
 
 GB_BUTTONS = ("up", "down", "left", "right", "a", "b", "start", "select")
@@ -94,11 +96,16 @@ def _grab_ram(pb):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rom", required=True)
-    ap.add_argument("--name", required=True, help="dataset dir under runs/")
+    ap.add_argument("--name", required=True,
+                    help="dataset dir under runs/ (auto-prefixed with today's date 'YYYY-MM-DD_' "
+                         "unless --name already starts with a date)")
     ap.add_argument("--mode", choices=["auto", "human"], default="auto")
     ap.add_argument("--steps", type=int, default=3000, help="recorded steps (auto mode)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--load-state", default="")
+    ap.add_argument("--smart-auto", action="store_true",
+                    help="auto mode: use the world-agnostic modality detector + escape policy "
+                         "(core/) to get through titles/menus into gameplay (default: pure random)")
     ap.add_argument("--keys", choices=["wasd", "arrows"], default="wasd", help="human movement layout")
     ap.add_argument("--ram", action="store_true", help="also dump raw 8KB WRAM per step (ram.bin)")
     ap.add_argument("--sound", action="store_true", help="human mode audio")
@@ -107,7 +114,12 @@ def main() -> int:
     ap.add_argument("--sample-every", type=int, default=12, help="human mode: frames per recorded step")
     args = ap.parse_args()
 
-    out = os.path.join("runs", args.name)
+    # Prefix the run dir with today's date so data artifacts are sortable + self-identifying (unless the
+    # caller already supplied a YYYY-MM-DD prefix). Keeps runs/ chronologically ordered.
+    name = args.name
+    if not re.match(r"\d{4}-\d{2}-\d{2}[_-]", name):
+        name = f"{datetime.date.today().isoformat()}_{name}"
+    out = os.path.join("runs", name)
     os.makedirs(out, exist_ok=True)
 
     if args.mode == "human":
@@ -146,14 +158,26 @@ def main() -> int:
 
     if args.mode == "auto":
         rng = random.Random(args.seed)
+        policy = None
+        if args.smart_auto:
+            from core.autoplay import ModalAutoPolicy   # world-agnostic; only imported when asked
+            policy = ModalAutoPolicy(rng, auto_action)
+        prev_frame, last_buttons, mode = None, [], "auto"
         for i in range(args.steps):
-            act = auto_action(rng)
+            if policy is not None:
+                curr_frame = pb.screen.ndarray.copy()   # the screen we're about to act on
+                mode, act = policy.decide(prev_frame, curr_frame, last_buttons)
+            else:
+                act = auto_action(rng)
             for b in act:
                 pb.button(b, delay=args.hold)
             pb.tick(args.hold + args.settle, render=True)
             record(act, "auto")
+            if policy is not None:
+                prev_frame, last_buttons = curr_frame, act
             if i % 500 == 0:
-                print(f"[{args.name}] auto step {i}/{args.steps}", flush=True)
+                tag = f"  mode={mode} stalls={policy.stalls}" if policy is not None else ""
+                print(f"[{args.name}] auto step {i}/{args.steps}{tag}", flush=True)
     else:
         _run_human(pb, args, record)
 
