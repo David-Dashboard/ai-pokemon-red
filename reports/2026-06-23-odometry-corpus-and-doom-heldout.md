@@ -41,7 +41,11 @@ translation-residual pinned ~1.0 for every game). This session fixed the data an
   **turn** produces horizontal optical flow that looks like a 2D side-scroll **pan**, so the cheap whole-frame
   centroid does not flag 3D as a new camera model. (The original probe flagged it novel ×2.3 only because its
   side-scroll data was junk; good side-scroll data made 3D-turn ≈ side-pan.) **But the 3D ego-motion signal is
-  real** — pose-oracle anchor: turn L/R sign-separability **95%**, forward advance-corr **+0.47**.
+  real** — pose-oracle anchor: turn L/R sign-separability **95%**, forward advance-corr **+0.47**. *Caveat — this
+  anchor is IN-SAMPLE:* the flow proxies were designed on `my_way_home` (a dev scenario in PR #2), so it confirms
+  the 3D signal *exists*, not zero-shot 3D generalization — a true zero-shot 3D test needs a 2nd, never-seen ViZDoom
+  scenario. (`vizdoom_smoke.py` now `set_seed`s the engine, so this recording — hence the +0.47 — is reproducible
+  across machines; a prior *unseeded* recording gave +0.42.)
 
 ## What this establishes / what's deferred
 

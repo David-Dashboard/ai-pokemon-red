@@ -15,7 +15,11 @@ four camera/view challenges at once while dev still has an example of each axis:
 
 To ADJUST the split, edit HELDOUT below (substring-matched against the ROM filename AND the run-dir name,
 case-insensitive — some recorders, e.g. the ViZDoom 3D recorder, write no meta ROM).
-Alternative flip pick if you'd rather DEV on Zelda: swap "Link's Awakening" -> "Cave Noire".
+
+NOTE: Cave Noire is now a DEV `fixed` unit (single-screen rooms — walking moves a local sprite, the camera
+never scrolls). Do NOT also hold it out, or a dev run would be both dev and held-out (silent leakage).
+Taxonomy caveat: `fixed` lumps truly-fixed (Space Invaders) with flip-screen (Zelda LA — discrete screen
+transitions); fine for the current scroll-vs-fixed cut, but a finer split is future work.
 """
 from __future__ import annotations
 

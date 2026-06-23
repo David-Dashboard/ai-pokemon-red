@@ -362,7 +362,9 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
 - **Result:** `scrollPrev` cleanly separates SCROLL (21–58%) from FIXED (0–2%) cross-game; per-frame sib-mean
   29%→45%; fixed games classify 83–96%. **Honest limits:** follow-vs-side confused (both scroll), and held-out Doom
   is NOT flagged novel (×1.3, assigned scroll_side) — a 3D turn ≈ a 2D side-pan in whole-frame flow — though the 3D
-  ego-motion itself is oracle-verified (turn-sign 95%, advance-corr +0.47).
+  ego-motion itself is oracle-verified (turn-sign 95%, advance-corr +0.47, IN-SAMPLE — the flow proxies were built
+  on my_way_home; a true zero-shot 3D test needs a 2nd scenario). `vizdoom_smoke.py` now `set_seed`s the engine so
+  the recording is reproducible (a prior unseeded run gave +0.42 — the cross-machine review discrepancy).
 - **Why it matters / how to apply:** the locomotion fix was the unlock; cheap cues robustly tell scroll-from-fixed.
   Deferred (re-fit later, NOT bugs): a per-RUN classifier using scrollPrev/A4 (the per-FRAME centroid drowns in each
   scroller's non-scroll majority); axis-aware features for follow-vs-side; expansion/radial-flow to flag 3D distinct

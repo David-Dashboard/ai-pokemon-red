@@ -201,6 +201,7 @@ def gb_signature(trans):
     # scroll PREVALENCE: of the d-pad-pressed moved transitions, the fraction that are CLEAN rigid camera
     # scrolls (a real pan). The A3 MEDIAN washes out a minority of clean scrolls (pins to ~1.0 even when
     # 20-30% of moves pan); prevalence is the locomotion-robust cue the corpus diagnosis recommended.
+    # (residual<0.7 / shift>DIR_EPS are HAND-SET; the scroll-vs-fixed gap is wide -- 21-58% vs 0-2% -- so insensitive.)
     dp_moved = [t for t in moved if any(b in _GB_DIR for b in t["buttons"])]
     clean = [t for t in dp_moved if t["feats"]["residual"] < 0.7 and t["feats"]["shift_mag"] > DIR_EPS]
     scroll_prev = float(len(clean) / len(dp_moved)) if dp_moved else float("nan")
@@ -317,12 +318,16 @@ def held_out_test(dev_per_run):
         dist = {c: float(np.median(np.linalg.norm(Z - cents[c], axis=1))) for c in cents}
         nearest = min(dist, key=dist.get)
         novelty = dist[nearest] / (typ + 1e-9)
+        # novelty>=1.8 is HAND-SET; the separation is wide (a dev-typical fold is ~x1.0), so it's insensitive.
         flag = "NOVEL -> flagged NEW camera model" if novelty >= 1.8 else f"NOT novel -> assigned '{nearest}'"
         print(f"  {run} [{cclass}]: nearest dev class='{nearest}'  novelty x{novelty:.1f}  => {flag}")
         if source == "vizdoom":
             a = vizdoom_anchor(trans)
             print(f"     3D pose-oracle anchor: turn L/R sign-separability={a['turn_sign_sep']:.0%}  "
-                  f"forward advance-corr={a['fwd_expansion_corr']:+.2f}  (ego-motion signatures are real)")
+                  f"forward advance-corr={a['fwd_expansion_corr']:+.2f}  (ego-motion signal is real)")
+            print("     CAVEAT (in-sample): the flow proxies were DESIGNED on my_way_home (a dev scenario in")
+            print("     PR #2), so this confirms the 3D signal EXISTS here -- NOT zero-shot 3D generalization.")
+            print("     A true zero-shot 3D test needs a 2nd, never-seen ViZDoom scenario.")
 
 
 def main():
@@ -353,18 +358,7 @@ def main():
     print("  A4_loc = fraction of frame that moved (hi=global scroll, lo=local/fixed).  scrollPrev = fraction of")
     print("  D-pad moves that are CLEAN camera pans -- the locomotion-robust follow/side-vs-fixed cue.")
 
-    # ---- ViZDoom 3D anchor (pose oracle) ----
-    for run, cclass, source in runs:
-        if source != "vizdoom":
-            continue
-        a = vizdoom_anchor(per_run[run])
-        print(f"\n=== 3D ANCHOR ({run}, pose = non-leaking oracle) ===")
-        print(f"  turns: L n={a['nL']} flow_x={a['gt_turnL_flowx']:+.2f}  "
-              f"R n={a['nR']} flow_x={a['gt_turnR_flowx']:+.2f}  "
-              f"-> L/R sign SEPARABILITY={a['turn_sign_sep']:.0%} (in-sample, >=50% by construction; "
-              f"the flow_x mean gap is the real evidence)")
-        print(f"  forward: n={a['nF']}  corr(gt advance, expansion-flow)={a['fwd_expansion_corr']:+.2f}")
-        print("  (frame-diff alone CANNOT tell rotation from translation; column-shift sign + expansion can.)")
+    # (the ViZDoom 3D anchor lives in held_out_test now -- vizdoom is held-out, never in dev `runs`.)
 
     # ---- leave-one-UNIT(game)-out class separability ----
     rows, confusion = logo_separability(per_run)
