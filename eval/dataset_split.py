@@ -11,8 +11,10 @@ four camera/view challenges at once while dev still has an example of each axis:
   flip/static -> Zelda LA         (the canonical flip-screen; passing it UNSEEN is the strongest evidence)
   side-scroll -> Super Mario Land (dev keeps Kirby + Metroid II; test on an unseen 3rd side-scroller)
   other view  -> F-1 Race         (pseudo-3D — zero-shot new view)
+  3D / 1st-person -> Doom          (ViZDoom my_way_home — a NEW camera model entirely; zero-shot 3D test)
 
-To ADJUST the split, edit HELDOUT below (substring-matched against the ROM filename, case-insensitive).
+To ADJUST the split, edit HELDOUT below (substring-matched against the ROM filename AND the run-dir name,
+case-insensitive — some recorders, e.g. the ViZDoom 3D recorder, write no meta ROM).
 Alternative flip pick if you'd rather DEV on Zelda: swap "Link's Awakening" -> "Cave Noire".
 """
 from __future__ import annotations
@@ -26,6 +28,7 @@ HELDOUT = [
     "Link's Awakening",     # flip-screen (Zelda LA)
     "Super Mario Land",     # side-scroller (ROM to be added)
     "F-1 Race",             # pseudo-3D
+    "Doom",                 # 3D first-person (ViZDoom) -- matches the "vizdoom_*" run dir ("doom" substring)
 ]
 
 
@@ -45,8 +48,9 @@ def run_rom(run_dir: str) -> str:
 
 
 def is_heldout_run(run_dir: str) -> bool:
-    """True if a recorded run belongs to a held-out game (checks its meta.json ROM)."""
-    return is_heldout_rom(run_rom(run_dir))
+    """True if a recorded run belongs to a held-out game. Checks the meta.json ROM AND the run-dir name
+    (some recorders -- e.g. the ViZDoom 3D recorder -- write no meta ROM, so the dir name is the fallback)."""
+    return is_heldout_rom(run_rom(run_dir)) or is_heldout_rom(os.path.basename(run_dir.rstrip("/\\")))
 
 
 def partition(run_dirs):
