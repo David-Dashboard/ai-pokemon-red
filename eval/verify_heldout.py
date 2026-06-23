@@ -67,8 +67,10 @@ def main():
     mu, sd = X.mean(0), X.std(0) + 1e-6
     Z = (X - mu) / sd
     cents = _centroids(Z, y, range(len(X)))
-    typ = np.median([np.linalg.norm(Z[j] - cents[y[j]]) for j in range(len(X))])
     print("\n=== HELD-OUT zero-shot (per-run; NEVER tuned on) ===")
+    print("  WIN metric = nearest dev class is the EXPECTED one, by a clear MARGIN (runner-up dist / nearest dist).")
+    print("  Note: distance-FROM-corpus is high for every held-out game (they are new GAMES) -- that is NOT a")
+    print("  camera-model-novelty signal here; the margin BETWEEN classes is what carries the verdict.")
     for run, exp, src in HELDOUT_RUNS:
         if not glob.glob(os.path.join("runs", run, "frame_*.png")):   # junction dir may exist but be empty
             print(f"  {run.split('_')[1]:10s} (not recorded yet -- skip)")
@@ -76,16 +78,24 @@ def main():
         sig = gb_signature(load_run(run, src))
         sp = sig["scroll_prev"] if sig["scroll_prev"] == sig["scroll_prev"] else 0.0
         z = (np.array([sp, sig["A4_locality"], sig["vshare"]], float) - mu) / sd
-        d = {c: float(np.linalg.norm(z - cents[c])) for c in cents}
-        pred = min(d, key=d.get)
-        nov = d[pred] / (typ + 1e-9)
-        # DATA-QUALITY gate: if the autonomous driver produced almost no camera motion, the fold tests the
-        # DRIVER, not the classifier -> INCONCLUSIVE for any game that should scroll (e.g. F-1 never accelerates).
+        ranked = sorted((float(np.linalg.norm(z - cents[c])), c) for c in cents)
+        (d1, c1), (d2, c2) = ranked[0], ranked[1]
+        margin = d2 / (d1 + 1e-9)
+        # DATA-QUALITY gate. A SCROLL prediction with ~no camera motion is a contradiction -> the autonomous
+        # DRIVER stalled (INCONCLUSIVE). A FIXED prediction with ~no motion is CONSISTENT -> could be a genuinely
+        # fixed camera OR a stalled driver, can't tell hands-off (AMBIGUOUS) -- e.g. Zelda flip-screen reads
+        # fixed, which may be the right answer. (So low-motion != automatically a perception failure.)
         low_motion = sp < 0.05 and sig["A4_locality"] < 0.30
-        verdict = (f"expected {exp}: {'OK' if pred == exp else 'MISS'}") if exp else "no clean 2D class"
-        flags = (" [NOVEL]" if nov >= 1.8 else "") + (" [LOW-MOTION -> INCONCLUSIVE]" if low_motion else "")
-        print(f"  {run.split('_')[1]:10s} pred={pred:13s} nov x{nov:.1f}  A4={sig['A4_locality']:.2f} sp={sp:.0%}"
-              f"   ({verdict}){flags}")
+        if low_motion and c1 != "fixed":
+            status = "INCONCLUSIVE (predicted a scroller but the driver produced no motion)"
+        elif low_motion:
+            status = "AMBIGUOUS (fixed may be correct, or the driver stalled)"
+        elif exp:
+            status = f"{'OK' if c1 == exp else 'MISS'} (expected {exp})"
+        else:
+            status = "no clean 2D class"
+        print(f"  {run.split('_')[1]:10s} pred={c1:13s} margin x{margin:.1f} (over {c2})  A4={sig['A4_locality']:.2f} sp={sp:.0%}"
+              f"  -> {status}")
     return 0
 
 

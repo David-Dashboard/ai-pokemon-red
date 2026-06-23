@@ -85,11 +85,13 @@ autonomous CONTROL, not perception. Branch `feat/heldout-verification` (off `mai
 `eval/verify_heldout.py` — the per-RUN camera classifier (`[scrollPrev, A4, vshare]`) + a HANDS-OFF zero-shot test
 on the held-out set. Held-out games recorded AUTONOMOUSLY (`--explore`, NO human — human-playing a verification
 game defeats the zero-shot test + risks leakage).
-- **Dev per-run leave-one-unit-out = 7/7 = 100%** (vs 45% per-frame — per-run aggregation is the closer).
-- **Held-out zero-shot:** **Crystalis → follow_scroll ✓** (×2.1 novelty — correct + flagged a new game) is the
-  clean win. **SML / Zelda / F-1 → LOW-MOTION → INCONCLUSIVE**: `--explore` can't drive a side-scroller, get past
-  a flip-screen intro, or accelerate a racer, so those folds test the DRIVER, not the perceiver. **F-1 reading
-  `fixed` is NOT a perception concern** — the car never accelerated (no throttle in the auto policy).
+- **Dev per-run leave-one-unit-out = 7/7** (vs 45% per-frame — per-run aggregation is the closer; but near-
+  tautological: the features were chosen on these units. Real evidence is out-of-corpus).
+- **Held-out zero-shot (N=1 conclusive, by construction):** only **1 of 4 was drivable hands-off** — **Crystalis →
+  follow_scroll**, nearest by a **×1.8 margin** over side (win metric = class margin, NOT distance-from-corpus).
+  **SML / Zelda / F-1** are low-motion: INCONCLUSIVE if a scroller was predicted but the driver stalled (SML),
+  AMBIGUOUS if `fixed` (Zelda flip-screen may be correctly fixed; F-1's car never accelerated). They test the
+  DRIVER, not the perceiver — **F-1 `fixed` is NOT a perception concern.**
 - **The real bottleneck = autonomous CONTROL of non-top-down games** (a competent controller = the agent itself,
   the project's end goal); camera-model PERCEPTION is verified-good where drivable. The HANDS-OFF discipline is
   what surfaced this. Full record: `reports/2026-06-23-heldout-verification.md`; LEARNINGS (2026-06-23, 5th entry).
