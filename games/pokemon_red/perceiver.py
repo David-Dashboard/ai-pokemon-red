@@ -23,6 +23,7 @@ from typing import Optional
 
 import numpy as np
 
+from core.egomotion import best_shift
 from core.perception import JSON, PerceptMemory, SymbolicState
 from core.tilemap import TileFunctionMap
 
@@ -96,31 +97,15 @@ def _gray(frame):
 
 
 def _best_shift(a, b):
-    """Find the integer-tile translation that best aligns frame `b` back onto frame `a`, returning
-    (best_diff, (dx, dy)). Within a map the camera scrolls under a centered player, so frame N+1 is
-    frame N shifted by the move — SOME shift makes the overlap match (low best_diff). Across a warp the
-    whole scene cuts and NO shift aligns it (high best_diff). The winning shift's magnitude is also the
-    distance actually scrolled, so |shift| / tile = the true tiles moved (real odometry, not a fixed
-    one-tile guess). Pixels only — no RAM."""
-    H, W = a.shape
-    best_score, best_d, bsx, bsy = 1e9, 255.0, 0, 0
-    for dy in range(-_SHIFT_RANGE, _SHIFT_RANGE + 1, _TILE_PX):
-        for dx in range(-_SHIFT_RANGE, _SHIFT_RANGE + 1, _TILE_PX):
-            ay0, ay1 = max(0, dy), min(H, H + dy)
-            ax0, ax1 = max(0, dx), min(W, W + dx)
-            by0, by1 = max(0, -dy), min(H, H - dy)
-            bx0, bx1 = max(0, -dx), min(W, W - dx)
-            oa, ob = a[ay0:ay1, ax0:ax1], b[by0:by1, bx0:bx1]
-            if oa.size < 0.4 * H * W:           # require a meaningful overlap
-                continue
-            d = float(np.abs(oa - ob).mean())
-            # Tie-break toward the SMALLEST shift (a tiny magnitude penalty): on a flat/periodic patch
-            # many shifts tie on diff, and the true ego-motion is the minimal one (identical frames =>
-            # zero shift => "blocked", not a phantom corner jump).
-            score = d + 1e-3 * (abs(dx) + abs(dy))
-            if score < best_score:
-                best_score, best_d, bsx, bsy = score, d, dx, dy
-    return best_d, (bsx, bsy)
+    """The integer-tile translation that best aligns frame `b` back onto `a`, as (best_diff, (dx, dy)).
+    Within a map the camera scrolls under a centered player, so frame N+1 is frame N shifted by the move
+    — SOME shift matches (low best_diff); across a warp the scene cuts and NO shift aligns it (high
+    best_diff). The shift magnitude is the distance actually scrolled (|shift|/tile = tiles moved). The
+    tie_break biases toward the smallest aligning shift so identical frames give (0,0) = "blocked", not
+    a phantom corner jump. Thin wrapper over the world-agnostic core.egomotion.best_shift; the overworld
+    camera scrolls in whole tiles, hence step=_TILE_PX over +/-_SHIFT_RANGE px. Pixels only — no RAM."""
+    _, best_diff, dx, dy = best_shift(a, b, max_shift=_SHIFT_RANGE, step=_TILE_PX, tie_break=1e-3)
+    return best_diff, (dx, dy)
 
 
 def _tile_at(frame, sc: int, sr: int):
@@ -459,7 +444,8 @@ class OverworldPerceiver:
                             "place_portals": place_portals, "place_frontiers": place_frontiers,
                             "places_known": len(m["places"]),
                             "tile_predictions": tile_predictions, "novel_tiles": novel_tiles,
-                            "tile_types_seen": len(m["tilemap"])},
+                            "tile_types_seen": len(m["tilemap"]),
+                            "ego_motion": [sdx, sdy]},   # pixels-only camera self-motion (dir reliable)
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome,
                          "diff": round(shift_diff, 2), "tiles": tiles},

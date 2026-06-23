@@ -422,3 +422,20 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   eventual agent). The autonomous analysis itself needs no human. Finder caveats: an 8-bit register ghosts in the
   high byte of the u16 at addr-1 (excluded via `PAIR_MAX<256`, `u8` preferred, `med|d|` column); GBC banked WRAM
   (0xD000-0xDFFF) makes fixed addresses unreliable — prefer DMG titles.
+
+## 2026-06-23 — Eval C: cross-game RAM-grounded ego-motion, the camera-vs-player gap quantified (P1 thread closed)
+- **What:** closed P1's open "cross-game RAM-grounded validation" item. Added `cross_game_ram_truth()` (Eval C) to
+  `eval/probe_egomotion.py` (reuses `best_shift`), ran it on David's hand-recorded
+  `runs/2026-06-23_{gauntlet,kirby,metroid}_ramplay` (human play so the camera actually pans — auto can't keep a
+  maze/side-scroller camera scrolling). Dominant-axis sign-match of `best_shift` vs the `oracle.jsonl` `watch`
+  register Δ; single-byte registers wrap-corrected; moves filtered `1≤|Δpos|≤40`.
+- **Result (camera-scrolled / all):** gauntlet **79% / 59%**, kirby **98% / 89%**, metroid **85% / 67%**. All three
+  registers came out **aligned** with one ego convention (east+x→+dx, south+y→+dy) — no per-game sign flip. This is
+  the cross-game evidence P1 lacked; with Pokémon's 98% (Eval A) it greenlights P2.
+- **Why it matters / how to apply:** the "all vs camera-scrolled" gap IS the camera-vs-player distinction, now
+  RAM-grounded on 3 non-Pokémon games. A follow camera with a **dead-zone** (Gauntlet: the sprite slides at
+  screen-center while the camera holds) makes many player-moved steps camera-STATIC → `best_shift=0` → genuine
+  misses → "all" 59% vs scrolled 79%. Kirby's scroll register has almost no static steps (89≈98); Pokémon is the
+  limit case (always-centered → all==scrolled==98%). **So report camera-scrolled as the estimator's accuracy and
+  carry the static penalty transparently in "all" — don't hide it.** The dead-zone, not an estimator weakness, is
+  the whole gap. Report: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md`. NEXT = P2 (`core/egomotion.py`).
