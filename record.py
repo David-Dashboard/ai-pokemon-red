@@ -130,15 +130,20 @@ def main() -> int:
     ap.add_argument("--keys", choices=["wasd", "arrows"], default="wasd", help="human movement layout")
     ap.add_argument("--ram", action="store_true", help="also dump raw 8KB WRAM per step (ram.bin)")
     ap.add_argument("--watch", default="",
-                    help="comma-list of name=HEXADDR WRAM bytes to log per step as a position oracle, e.g. "
-                         "kirby 'scroll_x=0xD051' or metroid 'x_px=0xD027,x_scr=0xD028' (Data Crystal RAM maps). "
-                         "World-agnostic: just reads pb.memory[addr]; the address is looked up per game.")
+                    help="comma-list of name=HEXADDR WRAM bytes to log per step as a position oracle into a "
+                         "SEPARATE oracle.jsonl (never buttons.jsonl), e.g. kirby 'scroll_x=0xD051' or metroid "
+                         "'x_px=0xD027,x_scr=0xD028' (Data Crystal RAM maps). World-agnostic: reads pb.memory[addr].")
     ap.add_argument("--sound", action="store_true", help="human mode audio")
     ap.add_argument("--hold", type=int, default=8)
     ap.add_argument("--settle", type=int, default=16)
     ap.add_argument("--sample-every", type=int, default=12, help="human mode: frames per recorded step")
     args = ap.parse_args()
-    watch = [(nm, int(ad, 16)) for nm, ad in (p.split("=") for p in args.watch.split(",") if p.strip())]
+    watch = []
+    for p in (e.strip() for e in args.watch.split(",") if e.strip()):
+        if p.count("=") != 1 or not p.split("=", 1)[0].strip():
+            raise SystemExit(f"--watch entries must be name=HEXADDR; bad entry: {p!r}")
+        nm, ad = p.split("=", 1)
+        watch.append((nm.strip(), int(ad, 16)))
 
     # Prefix the run dir with today's date so data artifacts are sortable + self-identifying (unless the
     # caller already supplied a YYYY-MM-DD prefix). Keeps runs/ chronologically ordered.
@@ -164,17 +169,21 @@ def main() -> int:
 
     jf = open(os.path.join(out, "buttons.jsonl"), "a", encoding="utf-8")
     rf = open(os.path.join(out, "ram.bin"), "ab") if args.ram else None
+    # --watch's RAM oracle goes to a SEPARATE channel (oracle.jsonl), never into buttons.jsonl: buttons.jsonl +
+    # frames are the pixels+actions substrate the offline pipeline reads, so RAM must stay out of it (ADR-001).
+    of = open(os.path.join(out, "oracle.jsonl"), "a", encoding="utf-8") if watch else None
     n = {"i": 0}
 
     def record(buttons, mode):
         path = os.path.join(out, f"frame_{n['i']:06d}.png")
         pb.screen.image.save(path)
-        row = {"step": n["i"], "t": time.time(), "frame": pb.frame_count,
-               "screen_path": path.replace("\\", "/"), "buttons": list(buttons), "mode": mode}
-        if watch:
-            row["watch"] = {nm: int(pb.memory[ad]) for nm, ad in watch}
-        jf.write(json.dumps(row) + "\n")
+        jf.write(json.dumps({"step": n["i"], "t": time.time(), "frame": pb.frame_count,
+                             "screen_path": path.replace("\\", "/"),
+                             "buttons": list(buttons), "mode": mode}) + "\n")
         jf.flush()
+        if of is not None:                            # position oracle -> separate channel, not the substrate
+            of.write(json.dumps({"step": n["i"], "frame": pb.frame_count,
+                                 "watch": {nm: int(pb.memory[ad]) for nm, ad in watch}}) + "\n")
         if rf is not None:
             rf.write(_grab_ram(pb) or bytes(8192))
         n["i"] += 1
@@ -213,6 +222,8 @@ def main() -> int:
     jf.close()
     if rf is not None:
         rf.close()
+    if of is not None:
+        of.close()
     print(f"\nsaved {n['i']} steps to {out}/  (mode={args.mode})", flush=True)
     pb.stop(save=False)
     return 0
