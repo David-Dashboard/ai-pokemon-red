@@ -370,3 +370,18 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   scroller's non-scroll majority); axis-aware features for follow-vs-side; expansion/radial-flow to flag 3D distinct
   from side-pan. Corpus is gitignored — recipe in `eval/collect_corpus.md`. Full record:
   `reports/2026-06-23-odometry-corpus-and-doom-heldout.md`.
+
+## 2026-06-23 — held-out verification: per-run classifier generalizes; the gate is autonomous CONTROL, not perception
+- **What:** built `eval/verify_heldout.py` — the per-RUN camera classifier (`[scrollPrev, A4, vshare]`, the cheap
+  closer the per-FRAME centroid couldn't manage) + a HANDS-OFF zero-shot test on the held-out set (Crystalis /
+  Zelda / SML / F-1). Held-out games recorded AUTONOMOUSLY (`--explore`, no human) — human-playing a verification
+  game defeats the zero-shot test and risks leakage.
+- **Result:** dev per-run leave-one-unit-out **7/7 = 100%** (vs 45% per-frame). Held-out: **Crystalis → follow_scroll
+  ✓** (zero-shot, ×2.1 novelty — correct + flagged a new game) is the clean win. SML/Zelda/F-1 come out
+  **LOW-MOTION → INCONCLUSIVE**: `--explore` can't drive a side-scroller / past a flip-screen intro / a racer
+  (no throttle), so those folds test the DRIVER, not the perceiver.
+- **Why it matters / how to apply:** the per-run aggregation is validated and generalizes out-of-corpus where the
+  pipeline produces locomotion. **F-1 reading `fixed` is NOT a perception concern — the car never accelerated.**
+  The real bottleneck is autonomous CONTROL of non-top-down games (= the agent itself, the project's end goal) —
+  and the HANDS-OFF discipline is what surfaced it (hand-playing would have hidden it behind human skill). Full
+  record: `reports/2026-06-23-heldout-verification.md`. [[deciding-under-disagreement]]
