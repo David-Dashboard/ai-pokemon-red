@@ -318,3 +318,33 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   CLIP could serve as an "arrived-in-gameplay" gate (gameplay-vs-title is its strength), but cracking a hard
   scripted intro (Red name-entry) is a content-read/navigation task (OCR locate "END") or an LLM job, not
   classification. Menu *handling* stays behavioral + (for the hard residual) System-2.
+
+## 2026-06-23 — camera-model probe: 3D ego-motion is real (oracle-verified); 2D class-ID is corpus-limited
+- **What:** built `eval/probe_camera_model.py` (numpy+PIL, main `uv` env) — the measure-first step before a
+  generalizable odometry estimator. Per transition it computes cheap pixels-only motion features and four
+  **button-grounded** axes: A1 no-input (idle motion), A2 sign (D-pad→camera-shift consistency), A3 residual
+  (leftover after the best single 2D translation), A4 locality (global-vs-local change). Generalizes
+  `perceiver._best_shift` (kept game-agnostic) and reuses the ViZDoom flow proxies. DEV corpus = red×2 (top-down)
+  / kirby+metroid (side) / spaceinv+gauntlet (labeled "fixed") / vizdoom (3D, pose = non-leaking oracle).
+- **Timing gotcha (got it right this time):** GB recorder saves frame_i AFTER act_i ⇒ transition (i-1→i) caused
+  by buttons[**i**]; ViZDoom logs pose+buttons BEFORE acting ⇒ caused by buttons[**i-1**] (the exact off-by-one
+  that wrecked the early smoke test). Per-source timing or A2 is garbage.
+- **Result — the 3D piece is the real win, and it's ORACLE-VERIFIED:** turn direction from column-shift sign =
+  **95% L/R** (TURN_LEFT flow_x −10.79 vs TURN_RIGHT +14.45); forward advance vs expansion-flow **corr +0.42**
+  against ground-truth Δposition. Reproduces the flow-ceiling result: 3D odometry-as-discrete-classifier (turn-L
+  / turn-R / advance) has legs. Whole-frame frame-diff still can't separate rotation from translation; flow can.
+- **Result — 2D camera-CLASS classification is NOT yet demonstrated (sib-mean 31%), and the probe told us WHY
+  (the value of the run):** (1) **my own a-priori label was wrong — Gauntlet II is a follow-SCROLLER, not fixed**
+  (A4=0.86 whole-frame motion vs truly-fixed Space Invaders A4=0.19); the data corrected the taxonomy. (2)
+  **`red_smart1` is polluted** (A2=nan/A3=1.00/A1_fd=8.6 = stuck in Red's intro, not overworld — the known
+  smart-auto-can't-crack-hard-intro). (3) **`kirby_auto1` barely scrolls** (A4=0.08) so its signature is
+  unreliable, though where it DOES scroll the cue is textbook side-scroll (vshare=0.00, A2=1.00). Root cause is
+  the CORPUS (1–2 games/class, two singletons, recording quality, label error) — **not** the features: the
+  per-game signatures are interpretable; a naive thin-centroid cross-game classifier just can't extract a clean
+  class from them yet.
+- **Why it matters / how to apply:** the probe is a ready instrument; the gate to a real separability verdict is
+  the **odometry corpus** with the requirements this run defined — sustained-gameplay recordings (gate with
+  `corpus_activity`, drop menu-polluted runs), ≥2–3 games/class, correct camera-class labels (and likely a
+  coarser camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow}, which is what odometry
+  actually branches on). Full record: `reports/2026-06-23-camera-model-probe.md`. [[deciding-under-disagreement]]
+  — measure first, don't chase the LOGO number by re-tuning.
