@@ -111,11 +111,67 @@ def button_grounding():
         print(f"  {run.split('_')[1]:9s} [{cls:13s}] recover {score}   " + "  ".join(cells))
 
 
+# Cross-game RAM oracle (record.py --watch -> oracle.jsonl 'watch' field). Each entry: (run, X/Y extractor,
+# kind). kind 'single' = the byte wraps mod 256 (correct the wrap); 'combo' = screen*256+pixel is continuous.
+# Gauntlet = PLAYER (x,y), follow camera. Kirby = CAMERA scroll_x (side-scroller, scroll_y~0). Metroid = screen
+# + on-screen-pixel bytes -> a continuous world coord. Convention HYPOTHESIS (same as Pokemon eval A): the byte
+# INCREASES in the +dx/+dy direction; reported agreement that holds => no inversion, best_shift matches truth.
+CROSS_RUNS = [
+    ("gauntlet", "2026-06-23_gauntlet_ramplay", lambda w: (w["x"], w["y"]), "single"),
+    ("kirby",    "2026-06-23_kirby_ramplay",    lambda w: (w["scroll_x"], w["scroll_y"]), "single"),
+    ("metroid",  "2026-06-23_metroid_ramplay",  lambda w: (w["x_scr"] * 256 + w["x_px"], w["y_scr"] * 256 + w["y_px"]), "combo"),
+]
+
+
+def _wrapb(d):                       # single-byte register: a 255->0 step is -1, not +255
+    return ((d + 128) % 256) - 128
+
+
+def cross_game_ram_truth():
+    print("\n=== C. CROSS-GAME RAM GROUND-TRUTH (non-Pokemon --watch oracle; best_shift direction vs RAM move) ===")
+    print("  dominant-axis sign match, convention east(+x)->+dx south(+y)->+dy; moves filtered 1<=|dpos|<=40.")
+    print("  'scrolled' = steps where best_shift actually moved (|dx|>2 or |dy|>2); the honest follow-camera metric.")
+    for name, run, pf, kind in CROSS_RUNS:
+        path = os.path.join("runs", run, "oracle.jsonl")
+        if not os.path.exists(path):
+            continue
+        rows = [json.loads(l) for l in open(path, encoding="utf-8")]
+        agg = {"all": [0, 0], "scrolled": [0, 0]}
+        for a, b in zip(rows, rows[1:]):
+            xa, ya = pf(a["watch"]); xb, yb = pf(b["watch"])
+            ddx, ddy = xb - xa, yb - ya
+            if kind == "single":
+                ddx, ddy = _wrapb(ddx), _wrapb(ddy)
+            # dominant RAM axis (overworld/platformer moves are ~cardinal); skip wrap-ghosts and no-moves.
+            if abs(ddx) >= abs(ddy):
+                dd, axis = ddx, "x"
+            else:
+                dd, axis = ddy, "y"
+            if not (1 <= abs(dd) <= 40):
+                continue
+            fa = os.path.join("runs", run, f"frame_{a['step']:06d}.png")
+            fb = os.path.join("runs", run, f"frame_{b['step']:06d}.png")
+            if not (os.path.exists(fa) and os.path.exists(fb)):
+                continue
+            _, _, dx, dy = best_shift(_gray(fa), _gray(fb))
+            sh = dx if axis == "x" else dy
+            correct = sh != 0 and (sh > 0) == (dd > 0)
+            agg["all"][0] += int(correct); agg["all"][1] += 1
+            if abs(dx) > 2 or abs(dy) > 2:
+                agg["scrolled"][0] += int(correct); agg["scrolled"][1] += 1
+        a_ok, a_n = agg["all"]; s_ok, s_n = agg["scrolled"]
+        all_s = f"{a_ok}/{a_n}={a_ok / a_n:.0%}" if a_n else "n/a"
+        sc_s = f"{s_ok}/{s_n}={s_ok / s_n:.0%}" if s_n else "n/a"
+        print(f"  {name:9s} all {all_s:14s}  camera-scrolled {sc_s}")
+    print("  (RAM is the oracle, never an input. Human-recorded so the camera pans -> 'all' ~= 'scrolled'.)")
+
+
 def main():
     ram_truth()
     button_grounding()
-    print("\nReads: A = true odometry direction accuracy (RAM-grounded, Pokemon); B = cross-game generalization")
-    print("of the same cue with no RAM. Both are DIRECTION (sign), not metric distance (deferred).")
+    cross_game_ram_truth()
+    print("\nReads: A = odometry direction accuracy RAM-grounded on Pokemon; B = cross-game cue with NO RAM;")
+    print("C = cross-game RAM-grounded direction on 3 non-Pokemon games. All DIRECTION (sign), not metric (deferred).")
     return 0
 
 

@@ -35,6 +35,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from core.egomotion import best_shift as _core_best_shift
 from eval.vizdoom_flow_ceiling import expansion_flow, xcorr_shift_x  # reuse the 3D flow proxies
 
 # (run, camera_class, source). source picks the frame<->button timing (see module docstring).
@@ -94,20 +95,9 @@ def _gray(run, idx, _cache={}):
 
 def best_shift(a, b):
     """Best integer 2D translation aligning b onto a. Returns (frame_diff, best_diff, dx, dy).
-    Generalizes games/pokemon_red/perceiver._best_shift (kept game-agnostic here)."""
-    H, W = a.shape
-    fd = float(np.abs(a - b).mean())
-    best, bdx, bdy = fd, 0, 0
-    for dy in range(-MAX_SHIFT, MAX_SHIFT + 1, STEP):
-        for dx in range(-MAX_SHIFT, MAX_SHIFT + 1, STEP):
-            oa = a[max(0, dy):min(H, H + dy), max(0, dx):min(W, W + dx)]
-            ob = b[max(0, -dy):min(H, H - dy), max(0, -dx):min(W, W - dx)]
-            if oa.size < 0.4 * H * W:
-                continue
-            d = float(np.abs(oa - ob).mean())
-            if d < best:
-                best, bdx, bdy = d, dx, dy
-    return fd, best, bdx, bdy
+    Thin wrapper over the world-agnostic core.egomotion.best_shift with this probe's pixel-grained
+    search (MAX_SHIFT px, STEP stride; no tie-break -- the camera-class features want the raw argmin)."""
+    return _core_best_shift(a, b, max_shift=MAX_SHIFT, step=STEP)
 
 
 def frac_changed(a, b):

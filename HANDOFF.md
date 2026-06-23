@@ -80,6 +80,57 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ NEWEST (2026-06-23, latest) — CROSS-GAME RAM-GROUNDED EGO-MOTION (Eval C) DONE; the P1 cross-game thread is
+CLOSED. `best_shift` recovers self-motion DIRECTION on 3 NON-Pokémon games. `main` = `2e10e18`, 308 green; Eval C
++ report are LOCAL/UNCOMMITTED (see ⇒NEXT — needs a commit/PR, ask David first).**
+- **What's new:** `cross_game_ram_truth()` (Eval C) added to `eval/probe_egomotion.py`, reusing `best_shift`.
+  Ran on David's hand-recorded `runs/2026-06-23_{gauntlet,kirby,metroid}_ramplay` (665/419/947 frames, each with
+  a matching `oracle.jsonl` `watch` field). Report: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md`.
+- **Result (dominant-axis sign match vs RAM Δ; moves filtered `1≤|Δpos|≤40`; single-byte wrap-corrected):**
+
+  | game | all (incl. camera-static) | camera-scrolled (honest metric) |
+  |---|--:|--:|
+  | gauntlet (player x,y — follow, dead-zone) | 59% | **79%** |
+  | kirby (camera scroll_x — side, edge-locked) | 89% | **98%** |
+  | metroid (screen×256+pixel — room/side) | 67% | **85%** |
+
+  All 3 registers came out **aligned** with the ego convention (east+x→+dx, south+y→+dy) — no per-game sign flip.
+- **The "all vs camera-scrolled" gap IS the camera-vs-player insight, now cross-game + RAM-grounded:** `best_shift`
+  = CAMERA motion, a register = PLAYER motion; they agree only when the camera moves with the player. Gauntlet's
+  follow-camera dead-zone (sprite slides at screen-center, camera holds) makes many player-moved steps
+  camera-STATIC → `best_shift=0` → counted as misses → 59% "all" vs 79% scrolled. Kirby's scroll register has
+  almost no static steps (89≈98). Pokémon's 98% (Eval A) is the limit case: overworld always centers the player,
+  so its "all" == "scrolled". The dead-zone is the only thing between 59% and 98% — NOT an estimator weakness.
+  (This is the clean human-recorded version of the earlier autonomous-Gauntlet 33%/74% probe.)
+- **P2 DONE (built + verified, LOCAL/UNCOMMITTED):** extracted **`core/egomotion.py`** (world-agnostic, numpy-only
+  `best_shift(a,b,*,max_shift,step,min_overlap,tie_break)`) as the SINGLE source; **consolidated BOTH prior copies**
+  — `games/pokemon_red/perceiver._best_shift` (now a thin wrapper, `tie_break=1e-3`) and
+  `eval/probe_camera_model.best_shift` (thin wrapper, `tie_break=0`). Surfaced additively via the overworld
+  `SymbolicState.spatial_memory["ego_motion"]` (`core/contracts.py` UNTOUCHED). Verified
+  **behavior-preserving**: tests green AND Eval A/B/C numbers byte-identical to pre-refactor (the unification is
+  exact — `fd`-seed reproduces the probe at tie_break=0 and the perceiver at tie_break=1e-3; tie/seed edge cases
+  worked through). NOTE: `eval/_edge_confound.py` still has its own one-off `_best_shift` (out of scope — an
+  exploratory script, left alone).
+- **Review addressed (PR #7, reviewer's 3 items) — 312 green:** (1) the seam no longer exposes the raw pixel shift —
+  it emits a DIRECTION token via new `core.egomotion.direction(dx,dy)` (`spatial_memory["ego_motion"]` =
+  `"east"`/`"west"`/`"north"`/`"south"`/`"none"`, dominant axis) so the unreliable magnitude can't be over-read;
+  (2) the Eval C report + `core/egomotion` docstring now lead with BOTH numbers and label that "camera-scrolled"
+  conditions on `best_shift` having fired (so it also excludes the estimator's OWN false-negatives, not only the
+  dead-zone); (3) added a direct unit test `tests/test_egomotion.py` (exact-shift recovery / identical→(0,0) /
+  tie_break / direction). Gotcha fixed: `perceive()` has a local `direction = _dominant_dir(...)`, so the import is
+  aliased `ego_direction` to avoid the shadow.
+- **⇒ NEXT:**
+  1. **Commit + push/PR** (David commits/pushes only when asked — confirm first). Clean split into TWO PRs:
+     (a) Eval C — `eval/probe_egomotion.py` + `reports/2026-06-23-cross-game-ram-grounded-egomotion.md` (closes the
+     "cross-game pending" item from PR #5); (b) P2 — `core/egomotion.py` + the two thin-wrapper repoints +
+     `spatial_memory["ego_motion"]`.
+  2. **P3 (downstream): let System-2 (aria) actually USE `ego_motion`** + P4 end-to-end verify. Magnitude/metric
+     distance stays deferred (direction/sign is what's reliable). Held-out (Crystalis/Zelda/SML/F-1/Doom) stay
+     never-tuned-on; GBC banked WRAM (fixed addr unreliable) — prefer DMG titles; corpus gitignored (D:), regen via
+     `eval/collect_corpus.md` §7.
+- Reports: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md` + `2026-06-23-egomotion-probe-P1.md`;
+  LEARNINGS 2026-06-23 entries.
+
 **⇒ NEWEST (2026-06-23, latest) — P1 EGO-MOTION PROBE: 2D direction recovery is RAM-validated at 98%. Branch
 `feat/egomotion-probe` (off `main`).** First step of the generalizable ego-motion estimator (System-1 "how did I
 move"). `eval/probe_egomotion.py` (reuses `best_shift`) measures DIRECTION (sign) recovery; metric distance is
