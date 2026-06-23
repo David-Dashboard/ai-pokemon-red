@@ -79,6 +79,15 @@ camera/position addresses:
 .venv-win/Scripts/python.exe record.py --rom "roms/Kirby's Dream Land (USA, Europe).gb"     --name kirby_play_ram   --mode human --ram --watch scroll_x=0xD051
 ```
 GBC games (Crystalis, Gold) have BANKED WRAM (0xD000–0xDFFF switches) — a single fixed address may be unreliable;
-prefer DMG titles or verify the bank. Undocumented ports (Gauntlet II GB, Cave Noire) → use an auto-address-finder
-(correlate `ram.bin` byte-deltas with the pressed direction) instead.
+prefer DMG titles or verify the bank.
+
+**Undocumented games (no Data Crystal map) — auto-discover the address:** `eval/find_ram_addr.py` correlates each
+WRAM byte's per-step delta with the pressed direction (uses the recorded `ram.bin` + `buttons.jsonl`; no game
+knowledge). It needs a run where the avatar moved under clean presses (e.g. a `--explore` run with `--ram`).
+```
+uv run python -m eval.find_ram_addr runs/<run-with-ram.bin>     # ranked X/Y candidate addresses (consistency, n, range)
+```
+Pick the HIGH-consistency, HIGH-n, HIGH-range candidate, then confirm with `--watch`. Worked example (Gauntlet II,
+fully undocumented): finder → X `0xC286`, Y `0xC2C6` (100%, n>700); `--watch x=0xC286,y=0xC2C6` confirmed they
+track live movement (changed 146/299 steps).
 
