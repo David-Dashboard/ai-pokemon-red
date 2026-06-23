@@ -52,11 +52,15 @@ Gauntlet's 59% and Pokémon's 98% — not an estimator weakness.
 
 ## Conclusion
 
-- **`best_shift` recovers self-motion DIRECTION cross-game, RAM-grounded** — 79–98% on camera-scrolled steps
-  across 3 non-Pokémon games (follow, side-scroll, room), with no per-game tuning and one consistent ego
-  convention. This is the cross-game evidence P1 was missing; combined with Pokémon's 98% it greenlights P2.
-- **The honest metric for a follow camera is recovery-on-camera-scrolled-steps**, and the "all" number
-  transparently carries the camera-static penalty (don't hide it). Magnitude/metric distance stays deferred.
+- **`best_shift` recovers self-motion DIRECTION cross-game, RAM-grounded** — **59–89% overall, 79–98% on
+  camera-scrolled steps** across 3 non-Pokémon games (follow, side-scroll, room), no per-game tuning, one
+  consistent ego convention. This is the cross-game evidence P1 was missing; with Pokémon's 98% it greenlights P2.
+- **Carry BOTH numbers, and label the conditioning.** "camera-scrolled" conditions on `best_shift` having fired
+  (`|shift|>2`), so it excludes the estimator's **own false-negatives** (a real camera scroll read as 0), not
+  *only* the camera dead-zone — this metric cannot separate the two. The **"all" floor (59/89/67%)** is the
+  unconditioned number and stays equally prominent. (To actually attribute the gap one would need, on the
+  `best_shift=0` steps, a per-game model of when the camera *should* have panned — we don't have it, so we don't
+  claim it.) Magnitude/metric distance stays deferred — direction (sign) is the reliable output.
 - This is an `eval/` measurement, not an estimator change — P2 (extract `core/egomotion.py`) is unchanged and
   greenlit.
 

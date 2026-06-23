@@ -1,11 +1,14 @@
 """Ego-motion (System-1 "how did I move"): the integer 2D pixel translation that best aligns two
 consecutive grayscale frames = the camera's self-motion. World-agnostic; numpy only.
 
-Validated direction-recovery in eval/probe_egomotion.py: Pokemon RAM-grounded 98%, and cross-game
-79-98% on camera-scrolled steps (gauntlet/kirby/metroid). DIRECTION (sign) is what's reliable; metric
-distance is NOT (the camera-model probe showed it; deferred). The estimate is CAMERA motion, which is
-the agent's self-motion iff the camera follows the avatar (true for follow-scroll; a follow camera's
-dead-zone, or a fixed/flip camera, decouples them).
+Validated direction-recovery in eval/probe_egomotion.py: Pokemon RAM-grounded 98%; cross-game
+(gauntlet/kirby/metroid) 59-89% OVERALL and 79-98% on camera-scrolled steps. The camera-scrolled number
+conditions on best_shift itself having fired (|shift|>2), so it excludes the estimator's OWN false
+negatives (a real scroll read as 0), not only the camera dead-zone -- the "overall" floor is the
+unconditioned number; keep both in view. DIRECTION (sign) is what's reliable; metric distance is NOT
+(the camera-model probe showed it; deferred). The estimate is CAMERA motion, which is the agent's
+self-motion iff the camera follows the avatar (true for follow-scroll; a follow camera's dead-zone, or
+a fixed/flip camera, decouples them).
 
 Single source for what were two copies: eval/probe_camera_model.best_shift (game-agnostic, the probes)
 and games/pokemon_red/perceiver._best_shift (the live overworld odometry). tie_break=0 reproduces the
@@ -43,3 +46,14 @@ def best_shift(a, b, *, max_shift, step, min_overlap=0.4, tie_break=0.0):
             if score < best_score:
                 best_score, best_diff, bdx, bdy = score, d, dx, dy
     return fd, best_diff, bdx, bdy
+
+
+def direction(dx, dy):
+    """The RELIABLE output of best_shift: ego-motion DIRECTION as a cardinal token. Magnitude is NOT
+    reliable -- callers must not read dx,dy as metric distance, so the seam exposes only this token.
+    Ego convention: +dx=east, +dy=south. Dominant axis; horizontal wins an exact tie; (0,0)->"none"."""
+    if dx == 0 and dy == 0:
+        return "none"
+    if abs(dx) >= abs(dy):
+        return "east" if dx > 0 else "west"
+    return "south" if dy > 0 else "north"

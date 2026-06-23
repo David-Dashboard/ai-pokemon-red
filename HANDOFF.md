@@ -106,11 +106,19 @@ CLOSED. `best_shift` recovers self-motion DIRECTION on 3 NON-Pokémon games. `ma
   `best_shift(a,b,*,max_shift,step,min_overlap,tie_break)`) as the SINGLE source; **consolidated BOTH prior copies**
   — `games/pokemon_red/perceiver._best_shift` (now a thin wrapper, `tie_break=1e-3`) and
   `eval/probe_camera_model.best_shift` (thin wrapper, `tie_break=0`). Surfaced additively via the overworld
-  `SymbolicState.spatial_memory["ego_motion"] = [sdx, sdy]` (`core/contracts.py` UNTOUCHED). Verified
-  **behavior-preserving**: 308 tests green AND Eval A/B/C numbers byte-identical to pre-refactor (the unification is
+  `SymbolicState.spatial_memory["ego_motion"]` (`core/contracts.py` UNTOUCHED). Verified
+  **behavior-preserving**: tests green AND Eval A/B/C numbers byte-identical to pre-refactor (the unification is
   exact — `fd`-seed reproduces the probe at tie_break=0 and the perceiver at tie_break=1e-3; tie/seed edge cases
   worked through). NOTE: `eval/_edge_confound.py` still has its own one-off `_best_shift` (out of scope — an
   exploratory script, left alone).
+- **Review addressed (PR #7, reviewer's 3 items) — 312 green:** (1) the seam no longer exposes the raw pixel shift —
+  it emits a DIRECTION token via new `core.egomotion.direction(dx,dy)` (`spatial_memory["ego_motion"]` =
+  `"east"`/`"west"`/`"north"`/`"south"`/`"none"`, dominant axis) so the unreliable magnitude can't be over-read;
+  (2) the Eval C report + `core/egomotion` docstring now lead with BOTH numbers and label that "camera-scrolled"
+  conditions on `best_shift` having fired (so it also excludes the estimator's OWN false-negatives, not only the
+  dead-zone); (3) added a direct unit test `tests/test_egomotion.py` (exact-shift recovery / identical→(0,0) /
+  tie_break / direction). Gotcha fixed: `perceive()` has a local `direction = _dominant_dir(...)`, so the import is
+  aliased `ego_direction` to avoid the shadow.
 - **⇒ NEXT:**
   1. **Commit + push/PR** (David commits/pushes only when asked — confirm first). Clean split into TWO PRs:
      (a) Eval C — `eval/probe_egomotion.py` + `reports/2026-06-23-cross-game-ram-grounded-egomotion.md` (closes the

@@ -24,6 +24,7 @@ from typing import Optional
 import numpy as np
 
 from core.egomotion import best_shift
+from core.egomotion import direction as ego_direction
 from core.perception import JSON, PerceptMemory, SymbolicState
 from core.tilemap import TileFunctionMap
 
@@ -445,7 +446,9 @@ class OverworldPerceiver:
                             "places_known": len(m["places"]),
                             "tile_predictions": tile_predictions, "novel_tiles": novel_tiles,
                             "tile_types_seen": len(m["tilemap"]),
-                            "ego_motion": [sdx, sdy]},   # pixels-only camera self-motion (dir reliable)
+                            # pixels-only camera self-motion as a DIRECTION token (cardinal/none); the
+                            # raw shift magnitude is unreliable so it is deliberately NOT surfaced here.
+                            "ego_motion": ego_direction(sdx, sdy)},
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome,
                          "diff": round(shift_diff, 2), "tiles": tiles},
