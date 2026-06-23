@@ -80,14 +80,73 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ GIT/STATE (2026-06-23, end of session) — all of today's work is COMMITTED + PUSHED.**
-`feat/cross-game-perception` is on origin at `1a347df`, **3 commits ahead of `main`** (modality capability
-`f53096d` → appearance/OCR probe + ADR-001 inv#6 `c143230` → date-prefix recorder `1a347df`). **PR is NOT
-yet opened** — use the compare URL `https://github.com/David-Dashboard/ai-pokemon-red/compare/main...feat/cross-game-perception?expand=1`
-(`gh` is not installed here). **`MIGRATION.md` added** (move the project: clone + copy `runs/`(955M)/`roms/`/
-`CLAUDE.md`/repo-`.claude/`/home auto-memory; recreate venvs via `eval/requirements-probe.txt`). `record.py`
-now date-prefixes run dirs (`runs/YYYY-MM-DD_<name>`). The "UNCOMMITTED" notes in the blocks below are STALE.
-**NEXT unchanged ⇒ the ODOMETRY CORPUS + camera-model probe.**
+**⇒ GIT/STATE (2026-06-23) — PR #1 MERGED to `main`; camera-model probe on its own branch. ANOTHER MACHINE
+PICKS UP HERE.**
+- **`main` = `3ecb853`** (PR #1 merged): the modality/auto-play foundation (`f53096d`), appearance/OCR probe +
+  ADR-001 inv#6 calibrated-deferral (`c143230`), date-prefix recorder (`1a347df`), MIGRATION.md + probe-venv
+  reqs (`df76b65`), and the autoplay escape-ladder fix (`9874034`). `feat/cross-game-perception` is now merged
+  and stale — safe to delete.
+- **Branch `feat/camera-model-probe`** (rebased onto `main`; **1 commit** = the probe + report + this HANDOFF):
+  `eval/probe_camera_model.py`, `reports/2026-06-23-camera-model-probe.md`. PR #2 not opened yet.
+
+**▶ HOW A FRESH SESSION (e.g. the desktop) PICKS UP:**
+1. `git fetch origin && git checkout feat/camera-model-probe` (or merge it to `main` first; it's 1 clean commit).
+2. **Local-only artifacts must be present** (NOT in git — see `MIGRATION.md`): `roms/` (the GB ROMs) and `runs/`
+   (the recorded corpus + `runs/kanto1/checkpoint_02.state`). Needed to record new data and to re-run the probe.
+3. `uv sync` (main env). **The recorder AND the camera-model probe run in the MAIN env (numpy+PIL only) — you do
+   NOT need `.venv-probe4`** (that's only for the CLIP/OCR appearance probe).
+4. Sanity: `uv run pytest -q` (expect 304 green) and `uv run python -m eval.probe_camera_model` (reproduces the
+   table below on the existing corpus).
+
+**▶ NEXT = BUILD THE ODOMETRY CORPUS, THEN RE-RUN THE PROBE (David greenlit running the heavy collection on the
+desktop).** The probe defined exactly what the corpus needs: sustained gameplay + ≥2–3 games per camera class +
+correct labels. Corrected dev taxonomy & targets:
+- **follow_scroll** (camera tracks the avatar across a larger map): Pokémon Red, Pokémon Gold, **Gauntlet II**
+  (multidir — was mislabeled "fixed"), Cave Noire.
+- **side_scroll**: Kirby, Metroid II.   **fixed**: Space Invaders, **Tetris Plus** (the needed 2nd truly-fixed game).
+- **fp3d**: ViZDoom my_way_home (a 2nd 3D scene is a later add).
+- **Held-out — NEVER record-for-dev/tuning** (final verification only): Crystalis, Zelda LA, Super Mario Land, F-1 Race.
+
+Heavy-compute collection (cold-boot action games; `record.py` auto-prefixes the run dir with today's date):
+```
+uv run python record.py --rom "roms/Gauntlet II (USA, Europe).gb"            --name gauntlet_auto --mode auto --smart-auto --ram --steps 8000
+uv run python record.py --rom "roms/Kirby's Dream Land (USA, Europe).gb"     --name kirby_auto    --mode auto --smart-auto --ram --steps 8000
+uv run python record.py --rom "roms/Metroid II - Return of Samus (World).gb" --name metroid_auto  --mode auto --smart-auto --ram --steps 8000
+uv run python record.py --rom "roms/Space Invaders (USA) (SGB Enhanced).gb"  --name spaceinv_auto --mode auto --smart-auto --ram --steps 8000
+uv run python record.py --rom "roms/Tetris Plus (USA, Europe) (SGB Enhanced).gb" --name tetris_auto --mode auto --smart-auto --ram --steps 8000
+```
+RPGs need to START in real gameplay (smart-auto can't cross a hard scripted intro) → checkpoint-resume:
+```
+uv run python record.py --rom roms/PokemonRed.gb --name red_resume --mode auto --smart-auto --ram --steps 8000 --load-state runs/kanto1/checkpoint_02.state
+```
+Gold/Cave-Noire: make a checkpoint ONCE (`--mode human`, play into gameplay, press `C`), then `--load-state` it.
+Gate every run for sustained gameplay (drop menu-polluted ones): `uv run python -m eval.corpus_activity --max-frames 2000`.
+Then update the `RUNS` list + camera-class labels in `eval/probe_camera_model.py` and **re-run** it for the
+cross-game separability verdict. (Heavy disk/CPU: ~8 runs × 8000 steps; trim step-count/games if needed.)
+
+**⇒ NEWEST (2026-06-23, latest) — CAMERA-MODEL PROBE BUILT + RUN (offline, free). 3D ego-motion is REAL and
+ORACLE-VERIFIED; 2D camera-class ID is CORPUS-limited, not feature-limited.** `eval/probe_camera_model.py`
+(numpy+PIL, main `uv` env): per transition, cheap pixels-only motion features + four **button-grounded** axes
+(A1 no-input / A2 sign / A3 residual / A4 locality), with **per-source frame↔button timing** (GB: transition
+i-1→i caused by buttons[i]; ViZDoom: buttons[i-1] — the off-by-one fixed). DEV corpus = red×2 / kirby+metroid /
+spaceinv+gauntlet / vizdoom (pose = non-leaking oracle).
+- **3D (the win): turn-direction from column-shift sign = 95% L/R SEPARABILITY** (in-sample, ≥50% by
+  construction — the real evidence is the flow_x mean gap: TURN_LEFT −10.79 vs TURN_RIGHT +14.45);
+  **forward advance vs expansion-flow corr +0.42** against ground-truth Δpos. Reproduces the flow-ceiling result;
+  ego-motion-as-discrete-classifier has legs.
+- **2D: cross-game camera-CLASS classification NOT yet demonstrated (leave-one-UNIT-out sib-mean 44%; Pokémon =
+  ONE unit so topdown is a singleton) — but the probe diagnosed WHY,
+  and it's the CORPUS:** (1) my a-priori label was wrong — **Gauntlet II is a follow-SCROLLER, not fixed**
+  (A4=0.86 vs truly-fixed Space Invaders A4=0.19); (2) **`red_smart1` is polluted** (stuck in Red's intro, not
+  overworld); (3) **`kirby_auto1` barely scrolls** (A4=0.08). The per-game signatures are interpretable; a thin
+  1–2-games/class centroid classifier just can't extract a clean class yet.
+- **⇒ NEXT (refined by this probe): build the ODOMETRY CORPUS with these requirements, THEN re-run the probe:**
+  (a) **sustained-gameplay** recordings only — gate with `eval/corpus_activity.py`, drop menu-polluted runs,
+  checkpoint-resume RPGs into real gameplay; (b) **≥2–3 games per camera class** (esp. a 2nd truly-fixed game,
+  eventually a 2nd 3D scene) so class-ID is testable for every class; (c) **correct camera-class labels** (and
+  likely a coarser camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow} — what odometry
+  actually branches on). Heavy compute/disk → **confirm corpus scope/step-count with David first.** Full record:
+  `reports/2026-06-23-camera-model-probe.md`; LEARNINGS (2026-06-23, 3rd entry).
 
 **⇒ NEWEST (2026-06-23, later) — APPEARANCE/OCR vs cheap modality classification: FAIR cross-game probe RUN;
 decision = STOP (cheap menu-detection is a dead end; behavioral handling stands). Branch
