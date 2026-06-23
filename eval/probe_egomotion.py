@@ -59,7 +59,9 @@ def ram_truth():
             if not (os.path.exists(fa) and os.path.exists(fb)):
                 continue
             _, _, dx, dy = best_shift(_gray(fa), _gray(fb))
-            if abs(ddx) >= abs(ddy):                       # dominant RAM axis = horizontal
+            # Score the DOMINANT RAM axis only (overworld moves are ~cardinal); a near-diagonal whose MINOR
+            # axis sign is wrong still counts correct -- fine for 4-directional movement, stated for honesty.
+            if abs(ddx) >= abs(ddy):                       # dominant axis = horizontal
                 correct = dx != 0 and (dx > 0) == (ddx > 0)
             else:                                          # vertical
                 correct = dy != 0 and (dy > 0) == (ddy > 0)

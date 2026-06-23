@@ -7,11 +7,19 @@ camera-model classifier is the router (which branch); the estimator computes the
 `eval/probe_camera_model.py`). Direction (sign) only — metric distance is deferred (the camera-model probe
 showed it's unreliable).
 
+**Scope (read first):** the 98% headline is **single-game** — RAM ground truth exists only for Pokémon, so it
+validates `best_shift` recovers direction *on Pokémon*. Cross-game (Eval B, button-grounded) is
+**partial/inconclusive** (clean on Metroid, recording-limited elsewhere); RAM-grounded cross-game validation is
+**pending clean `--watch` recordings (PR #6)**. So P2 is greenlit on "98%-Pokémon + clean-recording cross-game
+signal," NOT "ego-motion validated cross-game."
+
 ## Results
 
 **A. RAM ground-truth (Pokémon Gen-1 overworld; the only corpus with a position oracle): 98%.**
 On ~1618 same-map, non-battle steps where RAM `(x,y)` actually moved, `best_shift(prev,curr)`'s `(dx,dy)`
-points the way the avatar moved (east+x→+dx, south+y→+dy):
+points the way the avatar moved (east+x→+dx, south+y→+dy), scored on the **dominant RAM axis** (a step counts
+correct if the larger-magnitude axis's sign matches — fine for 4-directional overworld; a near-diagonal with the
+minor axis wrong still counts):
 
 | run | n | direction-recovery |
 |---|--:|--:|
