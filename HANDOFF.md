@@ -80,6 +80,15 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ GIT/STATE (2026-06-23, end of session) — all of today's work is COMMITTED + PUSHED.**
+`feat/cross-game-perception` is on origin at `1a347df`, **3 commits ahead of `main`** (modality capability
+`f53096d` → appearance/OCR probe + ADR-001 inv#6 `c143230` → date-prefix recorder `1a347df`). **PR is NOT
+yet opened** — use the compare URL `https://github.com/David-Dashboard/ai-pokemon-red/compare/main...feat/cross-game-perception?expand=1`
+(`gh` is not installed here). **`MIGRATION.md` added** (move the project: clone + copy `runs/`(955M)/`roms/`/
+`CLAUDE.md`/repo-`.claude/`/home auto-memory; recreate venvs via `eval/requirements-probe.txt`). `record.py`
+now date-prefixes run dirs (`runs/YYYY-MM-DD_<name>`). The "UNCOMMITTED" notes in the blocks below are STALE.
+**NEXT unchanged ⇒ the ODOMETRY CORPUS + camera-model probe.**
+
 **⇒ NEWEST (2026-06-23, later) — APPEARANCE/OCR vs cheap modality classification: FAIR cross-game probe RUN;
 decision = STOP (cheap menu-detection is a dead end; behavioral handling stands). Branch
 `feat/cross-game-perception`, UNCOMMITTED.** David rejected the under-proven "appearance can't classify modality
