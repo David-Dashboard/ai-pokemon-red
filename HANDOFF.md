@@ -80,6 +80,21 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ NEWEST (2026-06-23, latest) — P1 EGO-MOTION PROBE: 2D direction recovery is RAM-validated at 98%. Branch
+`feat/egomotion-probe` (off `main`).** First step of the generalizable ego-motion estimator (System-1 "how did I
+move"). `eval/probe_egomotion.py` (reuses `best_shift`) measures DIRECTION (sign) recovery; metric distance is
+deferred.
+- **A. RAM ground-truth** (Pokémon Gen-1, ~1618 overworld RAM-moved steps): `best_shift` (dx,dy) matches RAM
+  Δ(x,y) **98%** (per-run 97–100%). The estimator's direction recovery is validated against truth.
+- **B. button-grounding** (cross-game 2D-scroll, no RAM): partial — metroid 2/2 clean, kirby 1/2, gauntlet 2/4,
+  gold n<5 (escape-ladder-polluted: Gold reads "menu" to the Red-tuned detector). Cross-game cue holds on clean
+  recordings; recording-quality-limited otherwise (same control/data theme as the held-out work).
+- **⇒ NEXT = P2: extract `core/egomotion.py`** (world-agnostic, reuse `best_shift`, consolidate the duplicate
+  `games/pokemon_red/perceiver._best_shift`); surface additively via `spatial_memory["ego_motion"]` (unfrozen
+  `SymbolicState` seam — never touch `core/contracts.py`). Then P3 perceiver integration / P4 verify. Full
+  record: `reports/2026-06-23-egomotion-probe-P1.md`; LEARNINGS (2026-06-23, 6th entry); plan in the approved
+  P1 plan file.
+
 **⇒ NEWEST (2026-06-23, latest) — HELD-OUT VERIFICATION: per-run classifier generalizes zero-shot; the gate is
 autonomous CONTROL, not perception. Branch `feat/heldout-verification` (off `main`).** Built
 `eval/verify_heldout.py` — the per-RUN camera classifier (`[scrollPrev, A4, vshare]`) + a HANDS-OFF zero-shot test
