@@ -330,11 +330,14 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   by buttons[**i**]; ViZDoom logs pose+buttons BEFORE acting ⇒ caused by buttons[**i-1**] (the exact off-by-one
   that wrecked the early smoke test). Per-source timing or A2 is garbage.
 - **Result — the 3D piece is the real win, and it's ORACLE-VERIFIED:** turn direction from column-shift sign =
-  **95% L/R** (TURN_LEFT flow_x −10.79 vs TURN_RIGHT +14.45); forward advance vs expansion-flow **corr +0.42**
-  against ground-truth Δposition. Reproduces the flow-ceiling result: 3D odometry-as-discrete-classifier (turn-L
-  / turn-R / advance) has legs. Whole-frame frame-diff still can't separate rotation from translation; flow can.
-- **Result — 2D camera-CLASS classification is NOT yet demonstrated (sib-mean 31%), and the probe told us WHY
-  (the value of the run):** (1) **my own a-priori label was wrong — Gauntlet II is a follow-SCROLLER, not fixed**
+  **95% L/R sign SEPARABILITY** (in-sample, ≥50% by construction — the real evidence is the flow_x mean gap:
+  TURN_LEFT −10.79 vs TURN_RIGHT +14.45); forward advance vs expansion-flow **corr +0.42** against ground-truth
+  Δposition. Reproduces the flow-ceiling result: 3D odometry-as-discrete-classifier (turn-L / turn-R / advance)
+  has legs. Whole-frame frame-diff still can't separate rotation from translation; flow can.
+- **Result — 2D camera-CLASS classification is NOT yet demonstrated (leave-one-UNIT-out sib-mean 44%; Pokémon =
+  ONE unit, mirroring the appearance probe, so red_random1/red_smart1 can't recognize each other and topdown is
+  a singleton — a PR-#2-review fix from the earlier mislabeled 31%), and the probe told us WHY (the value of the
+  run):** (1) **my own a-priori label was wrong — Gauntlet II is a follow-SCROLLER, not fixed**
   (A4=0.86 whole-frame motion vs truly-fixed Space Invaders A4=0.19); the data corrected the taxonomy. (2)
   **`red_smart1` is polluted** (A2=nan/A3=1.00/A1_fd=8.6 = stuck in Red's intro, not overworld — the known
   smart-auto-can't-crack-hard-intro). (3) **`kirby_auto1` barely scrolls** (A4=0.08) so its signature is

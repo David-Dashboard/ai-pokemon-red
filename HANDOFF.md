@@ -130,10 +130,12 @@ ORACLE-VERIFIED; 2D camera-class ID is CORPUS-limited, not feature-limited.** `e
 (A1 no-input / A2 sign / A3 residual / A4 locality), with **per-source frame↔button timing** (GB: transition
 i-1→i caused by buttons[i]; ViZDoom: buttons[i-1] — the off-by-one fixed). DEV corpus = red×2 / kirby+metroid /
 spaceinv+gauntlet / vizdoom (pose = non-leaking oracle).
-- **3D (the win): turn-direction from column-shift sign = 95%** (TURN_LEFT flow_x −10.79, TURN_RIGHT +14.45);
+- **3D (the win): turn-direction from column-shift sign = 95% L/R SEPARABILITY** (in-sample, ≥50% by
+  construction — the real evidence is the flow_x mean gap: TURN_LEFT −10.79 vs TURN_RIGHT +14.45);
   **forward advance vs expansion-flow corr +0.42** against ground-truth Δpos. Reproduces the flow-ceiling result;
   ego-motion-as-discrete-classifier has legs.
-- **2D: cross-game camera-CLASS classification NOT yet demonstrated (sib-mean 31%) — but the probe diagnosed WHY,
+- **2D: cross-game camera-CLASS classification NOT yet demonstrated (leave-one-UNIT-out sib-mean 44%; Pokémon =
+  ONE unit so topdown is a singleton) — but the probe diagnosed WHY,
   and it's the CORPUS:** (1) my a-priori label was wrong — **Gauntlet II is a follow-SCROLLER, not fixed**
   (A4=0.86 vs truly-fixed Space Invaders A4=0.19); (2) **`red_smart1` is polluted** (stuck in Red's intro, not
   overworld); (3) **`kirby_auto1` barely scrolls** (A4=0.08). The per-game signatures are interpretable; a thin

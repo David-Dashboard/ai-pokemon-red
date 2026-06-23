@@ -38,6 +38,11 @@ if ROOT not in sys.path:
 from eval.vizdoom_flow_ceiling import expansion_flow, xcorr_shift_x  # reuse the 3D flow proxies
 
 # (run, camera_class, source). source picks the frame<->button timing (see module docstring).
+# NOTE on labels: these are the AS-RUN a-priori labels for the same-data probe. The probe itself found
+# one is WRONG -- Gauntlet II is a follow-SCROLLER, not "fixed" (A4=0.86 whole-frame motion vs truly-fixed
+# Space Invaders 0.19). Kept as-is to reproduce the original run; the rebuilt-corpus re-run should adopt
+# the report's corrected camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow}.
+# See reports/2026-06-23-camera-model-probe.md.
 RUNS = [
     ("red_random1",     "scroll_topdown", "gb"),
     ("red_smart1",      "scroll_topdown", "gb"),
@@ -48,6 +53,18 @@ RUNS = [
     ("vizdoom_mywayhome", "fp3d",         "vizdoom"),
 ]
 CLASSES = ["scroll_topdown", "scroll_side", "fixed", "fp3d"]
+
+# Same-GAME runs are ONE unit -> we leave-one-UNIT-out, NOT one-run-out, so a held-out game is never
+# "recognized" from a same-game sibling (red_random1/red_smart1 are both Pokemon Red). Mirrors the
+# appearance probe's UNIT dict. A class counts as a genuine cross-game test only if >=2 DIFFERENT units
+# share it; a class with a single unit is a SINGLETON (no sibling) -> reported as novelty, excluded from
+# the cross-game mean.
+UNIT = {
+    "red_random1": "pokemon", "red_smart1": "pokemon",
+    "kirby_auto1": "kirby", "metroid_auto1": "metroid",
+    "spaceinv_smart1": "spaceinv", "gauntlet_auto1": "gauntlet",
+    "vizdoom_mywayhome": "vizdoom",
+}
 
 NW, NH = 128, 112        # normalize every frame to this (grayscale) so GB & ViZDoom are comparable
 MAX_SHIFT, STEP = 18, 2  # 2D translation search (pixels on the normalized frame)
@@ -201,56 +218,62 @@ def vizdoom_anchor(trans):
     lr = L + R
     ylr = np.array([0] * len(L) + [1] * len(R))          # 0=LEFT 1=RIGHT
     flow = np.array([t["feats"]["flow_x"] for t in lr])
-    sign_acc = max((( flow > 0).astype(int) == ylr).mean(),
+    # In-sample SEPARABILITY, not a held-out accuracy: max() picks whichever sign convention scores higher
+    # on this same data, so it is >=50% by construction (a ceiling). The convincing evidence is the gap in
+    # the per-class flow_x means (TURN_LEFT vs TURN_RIGHT), reported alongside.
+    sign_sep = max((( flow > 0).astype(int) == ylr).mean(),
                    ((flow <= 0).astype(int) == ylr).mean()) if len(lr) else float("nan")
     # forward: advance (gt pos moved) should raise the expansion score
     fmoved = np.array([posdelta(t) for t in F]) if F else np.array([])
     fexp = np.array([t["feats"]["expansion"] for t in F]) if F else np.array([])
     exp_corr = float(np.corrcoef(fmoved, fexp)[0, 1]) if len(fmoved) > 2 else float("nan")
     return {"nL": len(L), "nR": len(R), "nF": len(F),
-            "turn_sign_acc": float(sign_acc),
+            "turn_sign_sep": float(sign_sep),
             "gt_turnL_flowx": float(np.mean([t["feats"]["flow_x"] for t in L])) if L else float("nan"),
             "gt_turnR_flowx": float(np.mean([t["feats"]["flow_x"] for t in R])) if R else float("nan"),
             "fwd_expansion_corr": exp_corr}
 
 
-# ---------- leave-one-GAME-out class separability (nearest standardized class centroid) ----------
+# ---------- leave-one-UNIT(game)-out class separability (nearest standardized class centroid) ----------
 
 def logo_separability(per_run):
-    games = [r[0] for r in RUNS]
+    """Hold out one GAME (unit) at a time -- ALL its runs go to test, none to train -- so a class with a
+    single game (topdown=pokemon, 3d=vizdoom) is a true SINGLETON (no sibling to memorize from) and only
+    classes spanning >=2 DIFFERENT games (side, fixed) count as genuine cross-game tests."""
+    runs = [r[0] for r in RUNS]
     cls = {r[0]: r[1] for r in RUNS}
-    X = {g: np.array([feat_vector(t["feats"]) for t in per_run[g]], float) for g in games}
-    rows = []  # (game, true_cls, pred_cls, novelty_ratio, is_singleton)
+    unit = {r[0]: UNIT[r[0]] for r in RUNS}
+    X = {g: np.array([feat_vector(t["feats"]) for t in per_run[g]], float) for g in runs}
+    units = sorted(set(unit.values()))
+    unit_cls = {unit[r]: cls[r] for r in runs}                  # each unit's runs share a class here
+    cls_units = {c: sum(1 for u in unit_cls if unit_cls[u] == c) for c in unit_cls.values()}
+    rows = []  # (unit, true_cls, pred_cls, novelty_ratio, is_singleton, acc)
     confusion = {c: {c2: 0 for c2 in CLASSES} for c in CLASSES}
-    for held in games:
-        tr_games = [g for g in games if g != held]
-        Xtr = np.vstack([X[g] for g in tr_games])
+    for held_u in units:
+        tr_runs = [r for r in runs if unit[r] != held_u]       # NO same-game run leaks into train
+        te_runs = [r for r in runs if unit[r] == held_u]
+        Xtr = np.vstack([X[r] for r in tr_runs])
         mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-6
-        cents, spreads = {}, {}
-        for g in tr_games:
-            c = cls[g]
-            Z = (X[g] - mu) / sd
-            cents.setdefault(c, []).append(Z.mean(0))
+        cents = {}
+        for r in tr_runs:
+            cents.setdefault(cls[r], []).append(((X[r] - mu) / sd).mean(0))
         for c in cents:
             cents[c] = np.mean(cents[c], axis=0)
-        # typical within-train distance to own centroid (for the novelty ratio)
-        allZ = (Xtr - mu) / sd
-        typ = np.median([np.linalg.norm(z - cents[cls[g]]) for g in tr_games
-                         for z in (X[g] - mu) / sd])
-        Zh = (X[held] - mu) / sd
+        # typical within-train per-point distance to own-class centroid (for the novelty ratio)
+        typ = np.median([np.linalg.norm(z - cents[cls[r]]) for r in tr_runs
+                         for z in (X[r] - mu) / sd])
+        Zh = np.vstack([(X[r] - mu) / sd for r in te_runs])
         cnames = list(cents.keys())
         d = np.stack([np.linalg.norm(Zh - cents[c], axis=1) for c in cnames], axis=1)
-        pred_idx = d.argmin(1)
-        pred = [cnames[i] for i in pred_idx]
-        true_c = cls[held]
-        is_singleton = sum(1 for g in games if cls[g] == true_c) == 1
-        # majority predicted class for the held-out game
+        pred = [cnames[i] for i in d.argmin(1)]
+        true_c = unit_cls[held_u]
+        is_singleton = cls_units[true_c] == 1
         vals, cnts = np.unique(pred, return_counts=True)
         pred_c = vals[cnts.argmax()]
         novelty = float(np.median(d.min(1)) / (typ + 1e-9))
         for p in pred:
             confusion[true_c][p] += 1
-        rows.append((held, true_c, pred_c, novelty, is_singleton,
+        rows.append((held_u, true_c, pred_c, novelty, is_singleton,
                      float((np.array(pred) == true_c).mean())))
     return rows, confusion
 
@@ -290,14 +313,16 @@ def main():
         print(f"\n=== 3D ANCHOR ({run}, pose = non-leaking oracle) ===")
         print(f"  turns: L n={a['nL']} flow_x={a['gt_turnL_flowx']:+.2f}  "
               f"R n={a['nR']} flow_x={a['gt_turnR_flowx']:+.2f}  "
-              f"-> L/R sign acc={a['turn_sign_acc']:.0%}")
+              f"-> L/R sign SEPARABILITY={a['turn_sign_sep']:.0%} (in-sample, >=50% by construction; "
+              f"the flow_x mean gap is the real evidence)")
         print(f"  forward: n={a['nF']}  corr(gt advance, expansion-flow)={a['fwd_expansion_corr']:+.2f}")
         print("  (frame-diff alone CANNOT tell rotation from translation; column-shift sign + expansion can.)")
 
-    # ---- leave-one-GAME-out class separability ----
+    # ---- leave-one-UNIT(game)-out class separability ----
     rows, confusion = logo_separability(per_run)
-    print("\n=== LEAVE-ONE-GAME-OUT CAMERA-CLASS SEPARABILITY (nearest standardized centroid) ===")
-    print(f"{'held-out game':18}{'true class':15}{'predicted':15}{'per-frame acc':>14}{'note':>22}")
+    print("\n=== LEAVE-ONE-UNIT(GAME)-OUT CAMERA-CLASS SEPARABILITY (nearest standardized centroid) ===")
+    print("(same-game runs = ONE unit: pokemon = red_random1 + red_smart1, so topdown has no cross-game sibling)")
+    print(f"{'held-out unit':18}{'true class':15}{'predicted':15}{'per-frame acc':>14}{'note':>22}")
     sib_accs = []
     for held, true_c, pred_c, novelty, singleton, acc in rows:
         note = f"SINGLETON novelty x{novelty:.1f}" if singleton else ("OK" if pred_c == true_c else "MISS")

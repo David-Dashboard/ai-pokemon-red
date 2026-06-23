@@ -21,12 +21,14 @@ timing per source — otherwise A2 (sign) is garbage.
 ## TL;DR
 
 - ✅ **3D ego-motion signatures are REAL and oracle-verified.** Turn direction from column-shift sign:
-  **95% L/R accuracy** (TURN_LEFT mean flow_x −10.79, TURN_RIGHT +14.45). Forward advance vs expansion-flow:
-  **corr +0.42** against ground-truth position change. Reproduces the prior flow-ceiling result. (Whole-frame
-  frame-diff alone *cannot* tell rotation from translation; column-shift sign + radial expansion can.)
+  **95% L/R separability** (in-sample, ≥50% by construction — the convincing evidence is the per-class flow_x
+  mean gap: TURN_LEFT −10.79 vs TURN_RIGHT +14.45). Forward advance vs expansion-flow: **corr +0.42** against
+  ground-truth position change. Reproduces the prior flow-ceiling result. (Whole-frame frame-diff alone *cannot*
+  tell rotation from translation; column-shift sign + radial expansion can.)
 - ✅ **The per-game button-grounded SIGNATURES are interpretable and mostly correct** where the recording is
   real gameplay (the descriptive core — see table).
-- ⚠️ **Cross-game camera-CLASS classification is NOT yet demonstrated** (sibling-class mean per-frame acc 31%).
+- ⚠️ **Cross-game camera-CLASS classification is NOT yet demonstrated** (sibling-class mean per-frame acc 44%,
+  over the only classes spanning ≥2 different games: side kirby↔metroid, fixed spaceinv↔gauntlet).
   The probe is a sound instrument; the limiter is the CORPUS, and the probe told us exactly how:
   (1) a class-label error, (2) non-gameplay recordings, (3) too few games per class.
 
@@ -62,13 +64,22 @@ fraction of frame that moved (hi=global/scroll, lo=local/fixed).
   (the known "smart-auto can't crack a hard scripted intro"), not overworld walking.
 - **`kirby_auto1` exercises little sustained scroll** (A4=0.08) — the cold-boot auto policy doesn't run far,
   so its signature is unreliable despite the correct cue when it does scroll.
-- **Result:** LOGO camera-class separability is weak (sib-mean 31%; spaceinv/gauntlet both predict "fixed"
-  ~72–77%, but that's the mislabeled pair agreeing with itself; kirby→top-down 0%, metroid→fixed 28%).
-  Singletons (top-down=red, 3d=vizdoom) MUST miss under LOGO by construction (no same-class training game);
-  the 3d singleton lands far from all known centroids (novelty ×2.3) = correctly flagged as a NEW camera model.
-- **Root cause is the corpus, not the features:** 1–2 games/class (two singletons), recording quality, and the
-  label error. A naive cross-game centroid classifier can't extract a clean class from this; the per-game
-  signatures can.
+- **Result:** leave-one-UNIT(game)-out camera-class separability is weak (sib-mean **44%** over the classes that
+  span ≥2 different games — spaceinv/gauntlet both predict "fixed" 77%/72%, but that's the mislabeled pair
+  agreeing with itself; kirby→top-down 0%, metroid→fixed 28%). Singletons (top-down=pokemon, 3d=vizdoom) MUST
+  miss by construction (no same-class training game) → reported as novelty: the **3d singleton lands far from all
+  known centroids (novelty ×2.3) = correctly flagged as a NEW camera model**, but the **top-down singleton does
+  NOT (novelty ×1.0)** — Pokémon's rigid-scroll motion overlaps the 2D-scroll/fixed feature space, so it blends
+  in rather than flagging novel (honest negative; a finer feature or a 2nd top-down game would be needed).
+- **Methodology fix (caught in review of PR #2):** the hold-out is leave-one-**UNIT**-out, not per-run —
+  `red_random1`/`red_smart1` are the **same game** (Pokémon), so counting them as two cross-game units folded
+  same-game memorization into the mean (the earlier 31% mislabeled topdown as having a "sibling"). Pokémon is now
+  one unit (mirrors the appearance probe's `UNIT` dict), so the cross-game mean covers exactly side+fixed and
+  topdown is correctly a singleton. This compounds at the rebuilt corpus (Red + Gold are both Pokémon → still one
+  domain for top-down).
+- **Root cause is the corpus, not the features:** ≤2 games/class (three singletons after de-duping Pokémon),
+  recording quality, and the label error. A naive cross-game centroid classifier can't extract a clean class from
+  this; the per-game signatures can.
 
 ## Honest scope
 
