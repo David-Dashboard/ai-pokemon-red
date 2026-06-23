@@ -64,3 +64,34 @@ NOTE: `--explore` only drives top-down games (Crystalis). Side-scrollers (SML), 
 (F-1, needs sustained accelerate) come out **LOW-MOTION → inconclusive** — that's the autonomous-control gap, not
 a perception failure. Do NOT hand-play them to "fix" it; that gap is the agent's job.
 
+## 7. RAM-GROUNDING (`--watch`) — true position oracle for the ego-motion estimator
+To validate ego-motion against TRUTH on non-Pokémon games, log known WRAM position bytes per step with
+`--watch name=HEXADDR,...` → written to a **separate `oracle.jsonl`** (kept out of `buttons.jsonl`, the
+pixels+actions substrate, so RAM never co-mingles with it). World-agnostic: just reads `pb.memory[addr]`; the
+address is looked up per game on Data Crystal RAM maps. Validated end-to-end on Red (`x=0xD362,y=0xD361` tracked
+live position). `--watch` reads ONE byte per name, so a 1-byte register wraps every 256 (the offline consumer
+compares consecutive values and expects occasional wraps); a 16-bit position needs its two named bytes combined
+offline. Looked-up camera/position addresses:
+- **Metroid II:** `x_px=0xD027,x_scr=0xD028,y_px=0xD029,y_scr=0xD02A` (X/Y within area = world position).
+- **Kirby's Dream Land:** `scroll_x=0xD051` (the camera scroll register — exactly what `best_shift` estimates).
+- **Super Mario Land** (HELD-OUT — verification oracle only): `0xC202` is Mario *on-screen* X, NOT the level
+  scroll; find the scroll/level-X before relying on it.
+```
+# pair clean locomotion WITH the oracle (human play, since auto can't drive these):
+.venv-win/Scripts/python.exe record.py --rom "roms/Metroid II - Return of Samus (World).gb" --name metroid_play_ram --mode human --ram --watch x_px=0xD027,x_scr=0xD028,y_px=0xD029,y_scr=0xD02A
+.venv-win/Scripts/python.exe record.py --rom "roms/Kirby's Dream Land (USA, Europe).gb"     --name kirby_play_ram   --mode human --ram --watch scroll_x=0xD051
+```
+GBC games (Crystalis, Gold) have BANKED WRAM (0xD000–0xDFFF switches) — a single fixed address may be unreliable;
+prefer DMG titles or verify the bank.
+
+**Undocumented games (no Data Crystal map) — auto-discover the address:** `eval/find_ram_addr.py` correlates each
+WRAM byte's per-step delta with the pressed direction (uses the recorded `ram.bin` + `buttons.jsonl`; no game
+knowledge). It needs a run where the avatar moved under clean presses (e.g. a `--explore` run with `--ram`).
+```
+uv run python -m eval.find_ram_addr runs/<run-with-ram.bin>   # ranked X/Y candidates: consistency, n, med|d|, range
+```
+Pick a **u8** with HIGH consistency, HIGH n, and **SMALL `med|d|`** (a real position moves in small steps; a u16
+with `med|d|≈256` is an 8-bit ghost in the high byte — the tool already excludes/out-ranks those). Then confirm
+with `--watch`. Worked example (Gauntlet II, fully undocumented): finder → X `0xC286`, Y `0xC2C6` (u8, 100%,
+n>700, med|d|≈7); `--watch x=0xC286,y=0xC2C6` confirmed they track live movement (changed 146/299 steps).
+
