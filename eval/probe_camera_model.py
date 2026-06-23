@@ -3,11 +3,11 @@ CAMERA MODEL a game uses, on a game never tuned on? This is the measure-first st
 generalizable odometry/ego-motion estimator (the System-1 "how did I move" sense the agent needs as the
 worlds climb 2D -> 3D -> reality).
 
-The four camera classes in the DEV corpus:
-  scroll_topdown  red (Pokemon)        camera scrolls under a centered player; D-pad -> global 2D shift
-  scroll_side     kirby, metroid       horizontal scroll dominant; D-pad -> mostly-horizontal shift
-  fixed           spaceinv, gauntlet   no camera scroll; only a LOCAL sprite moves; global shift ~ 0
-  fp3d            vizdoom my_way_home   non-rigid optical flow; turn = uniform column shift, advance = expansion
+The camera classes in the REBUILT DEV corpus (2026-06-23; sustained-gameplay, >=2 distinct games each):
+  follow_scroll   red (Pokemon), gauntlet  camera tracks a centered avatar across a larger map; D-pad -> global 2D shift
+  scroll_side     kirby, metroid           horizontal scroll dominant; D-pad -> mostly-horizontal shift
+  fixed           spaceinv, tetris         no camera scroll; only a LOCAL sprite moves; global shift ~ 0
+  (fp3d           vizdoom my_way_home       non-rigid optical flow -- the separate, oracle-verified 3D track; omitted here)
 
 Per transition (prev -> cur) we compute cheap numpy motion features and the four button-grounded axes:
   A1  no-input    what moves when NO button is pressed (idle animation / auto-scroll baseline)
@@ -38,32 +38,35 @@ if ROOT not in sys.path:
 from eval.vizdoom_flow_ceiling import expansion_flow, xcorr_shift_x  # reuse the 3D flow proxies
 
 # (run, camera_class, source). source picks the frame<->button timing (see module docstring).
-# NOTE on labels: these are the AS-RUN a-priori labels for the same-data probe. The probe itself found
-# one is WRONG -- Gauntlet II is a follow-SCROLLER, not "fixed" (A4=0.86 whole-frame motion vs truly-fixed
-# Space Invaders 0.19). Kept as-is to reproduce the original run; the rebuilt-corpus re-run should adopt
-# the report's corrected camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow}.
-# See reports/2026-06-23-camera-model-probe.md.
+# REBUILT CORPUS (2026-06-23): the original probe was corpus-limited (few games/class, a label error, and --
+# crucially -- LOCOMOTION-STARVED auto recordings: the jittery policy wiggled the avatar in place so the camera
+# never panned). Fix: gold via record.py --explore (direction-persistent walk); the harder scrollers
+# (gauntlet/kirby/metroid) + cavenoire via HUMAN play (--mode human) -- a person produces the sustained walking
+# the auto policies can't (a held direction just walks a side-scroller into a wall). Labels are data-corrected:
+# Gauntlet II is a top-down FOLLOW-scroller; Cave Noire is FIXED-screen (single-screen rooms -- walking moves a
+# local sprite, the camera never scrolls). fixed arcade games (spaceinv/tetris) keep their auto runs (no camera
+# to scroll, policy irrelevant). vizdoom (Doom, 3D first-person) is HELD-OUT -- never in dev; scored zero-shot.
 RUNS = [
-    ("red_random1",     "scroll_topdown", "gb"),
-    ("red_smart1",      "scroll_topdown", "gb"),
-    ("kirby_auto1",     "scroll_side",    "gb"),
-    ("metroid_auto1",   "scroll_side",    "gb"),
-    ("spaceinv_smart1", "fixed",          "gb"),
-    ("gauntlet_auto1",  "fixed",          "gb"),
-    ("vizdoom_mywayhome", "fp3d",         "vizdoom"),
+    ("2026-06-23_gold_explore",   "follow_scroll", "gb"),
+    ("2026-06-23_gauntlet_play",  "follow_scroll", "gb"),
+    ("2026-06-23_kirby_play",     "scroll_side",   "gb"),
+    ("2026-06-23_metroid_play",   "scroll_side",   "gb"),
+    ("2026-06-23_spaceinv_auto",  "fixed",         "gb"),
+    ("2026-06-23_tetris_auto",    "fixed",         "gb"),
+    ("2026-06-23_cavenoire_play", "fixed",         "gb"),
+    ("vizdoom_mywayhome",         "fp3d",          "vizdoom"),  # HELD-OUT (dataset_split) -- zero-shot 3D test
 ]
-CLASSES = ["scroll_topdown", "scroll_side", "fixed", "fp3d"]
+CLASSES = ["follow_scroll", "scroll_side", "fixed"]   # DEV classes; fp3d (Doom) is the held-out zero-shot test
 
-# Same-GAME runs are ONE unit -> we leave-one-UNIT-out, NOT one-run-out, so a held-out game is never
-# "recognized" from a same-game sibling (red_random1/red_smart1 are both Pokemon Red). Mirrors the
-# appearance probe's UNIT dict. A class counts as a genuine cross-game test only if >=2 DIFFERENT units
-# share it; a class with a single unit is a SINGLETON (no sibling) -> reported as novelty, excluded from
-# the cross-game mean.
+# Same-GAME runs are ONE unit -> leave-one-UNIT-out, NOT one-run-out (never recognize a held-out game from a
+# same-game sibling). Here every game is a distinct unit. A class is a genuine cross-game test only if >=2
+# DIFFERENT units share it; a single-unit class is a SINGLETON (no sibling) -> reported as novelty, excluded
+# from the cross-game mean.
 UNIT = {
-    "red_random1": "pokemon", "red_smart1": "pokemon",
-    "kirby_auto1": "kirby", "metroid_auto1": "metroid",
-    "spaceinv_smart1": "spaceinv", "gauntlet_auto1": "gauntlet",
-    "vizdoom_mywayhome": "vizdoom",
+    "2026-06-23_gold_explore": "gold", "2026-06-23_gauntlet_play": "gauntlet",
+    "2026-06-23_kirby_play": "kirby", "2026-06-23_metroid_play": "metroid",
+    "2026-06-23_spaceinv_auto": "spaceinv", "2026-06-23_tetris_auto": "tetris",
+    "2026-06-23_cavenoire_play": "cavenoire", "vizdoom_mywayhome": "doom",
 }
 
 NW, NH = 128, 112        # normalize every frame to this (grayscale) so GB & ViZDoom are comparable
@@ -195,8 +198,16 @@ def gb_signature(trans):
     # A3 residual + A4 locality on moving transitions
     a3 = np.median([t["feats"]["residual"] for t in moved]) if moved else float("nan")
     a4 = np.median([t["feats"]["frac_changed"] for t in moved]) if moved else float("nan")
+    # scroll PREVALENCE: of the d-pad-pressed moved transitions, the fraction that are CLEAN rigid camera
+    # scrolls (a real pan). The A3 MEDIAN washes out a minority of clean scrolls (pins to ~1.0 even when
+    # 20-30% of moves pan); prevalence is the locomotion-robust cue the corpus diagnosis recommended.
+    # (residual<0.7 / shift>DIR_EPS are HAND-SET; the scroll-vs-fixed gap is wide -- 21-58% vs 0-2% -- so insensitive.)
+    dp_moved = [t for t in moved if any(b in _GB_DIR for b in t["buttons"])]
+    clean = [t for t in dp_moved if t["feats"]["residual"] < 0.7 and t["feats"]["shift_mag"] > DIR_EPS]
+    scroll_prev = float(len(clean) / len(dp_moved)) if dp_moved else float("nan")
     return {"A1_fd": a1_fd, "A1_shift": a1_sh, "A2_coupling": a2_coupling, "vshare": vshare,
-            "A3_residual": a3, "A4_locality": a4, "n_none": len(none), "n_moved": len(moved)}
+            "A3_residual": a3, "A4_locality": a4, "scroll_prev": scroll_prev,
+            "n_none": len(none), "n_moved": len(moved)}
 
 
 # ---------- ViZDoom ground-truth anchor (validate the 3D signatures, pose = non-leaking oracle) ----------
@@ -240,11 +251,11 @@ def logo_separability(per_run):
     """Hold out one GAME (unit) at a time -- ALL its runs go to test, none to train -- so a class with a
     single game (topdown=pokemon, 3d=vizdoom) is a true SINGLETON (no sibling to memorize from) and only
     classes spanning >=2 DIFFERENT games (side, fixed) count as genuine cross-game tests."""
-    runs = [r[0] for r in RUNS]
+    runs = [r[0] for r in RUNS if r[0] in per_run]   # dev runs only (held-out games aren't loaded in main)
     cls = {r[0]: r[1] for r in RUNS}
     unit = {r[0]: UNIT[r[0]] for r in RUNS}
     X = {g: np.array([feat_vector(t["feats"]) for t in per_run[g]], float) for g in runs}
-    units = sorted(set(unit.values()))
+    units = sorted({unit[r] for r in runs})          # dev units only
     unit_cls = {unit[r]: cls[r] for r in runs}                  # each unit's runs share a class here
     cls_units = {c: sum(1 for u in unit_cls if unit_cls[u] == c) for c in unit_cls.values()}
     rows = []  # (unit, true_cls, pred_cls, novelty_ratio, is_singleton, acc)
@@ -278,6 +289,47 @@ def logo_separability(per_run):
     return rows, confusion
 
 
+def held_out_test(dev_per_run):
+    """Zero-shot HELD-OUT test: score each held-out game against centroids built ONLY from the dev games.
+    A camera model the probe never saw in dev (Doom = 3D first-person) SHOULD land FAR from every dev-class
+    centroid -> correctly flagged NOVEL (a new camera model), not silently forced into a 2D bucket. For a 3D
+    run we also print the pose-oracle anchor (turn-sign separability + advance-corr) that proves the ego-motion
+    signatures are real. This is the only place a held-out game is touched -- never in dev (dataset_split)."""
+    from eval.dataset_split import is_heldout_run
+    held = [r for r in RUNS if is_heldout_run(os.path.join("runs", r[0]))]
+    dev = [r for r in RUNS if not is_heldout_run(os.path.join("runs", r[0]))]
+    if not held:
+        return
+    X = {r[0]: np.array([feat_vector(t["feats"]) for t in dev_per_run[r[0]]], float) for r in dev}
+    mu, sd = np.vstack(list(X.values())).mean(0), np.vstack(list(X.values())).std(0) + 1e-6
+    cls = {r[0]: r[1] for r in dev}
+    cents = {}
+    for r in dev:
+        cents.setdefault(cls[r[0]], []).append(((X[r[0]] - mu) / sd).mean(0))
+    for c in cents:
+        cents[c] = np.mean(cents[c], axis=0)
+    typ = np.median([np.linalg.norm(z - cents[cls[r[0]]]) for r in dev for z in (X[r[0]] - mu) / sd])
+    print("\n=== HELD-OUT ZERO-SHOT TEST (never used in dev; reserved by dataset_split) ===")
+    print(f"  a NEW camera model should land FAR from every dev-class centroid ({', '.join(sorted(cents))}) =>")
+    print("  flagged NOVEL (new camera model), not silently forced into a 2D bucket.")
+    for run, cclass, source in held:
+        trans = load_run(run, source)
+        Z = (np.array([feat_vector(t["feats"]) for t in trans], float) - mu) / sd
+        dist = {c: float(np.median(np.linalg.norm(Z - cents[c], axis=1))) for c in cents}
+        nearest = min(dist, key=dist.get)
+        novelty = dist[nearest] / (typ + 1e-9)
+        # novelty>=1.8 is HAND-SET; the separation is wide (a dev-typical fold is ~x1.0), so it's insensitive.
+        flag = "NOVEL -> flagged NEW camera model" if novelty >= 1.8 else f"NOT novel -> assigned '{nearest}'"
+        print(f"  {run} [{cclass}]: nearest dev class='{nearest}'  novelty x{novelty:.1f}  => {flag}")
+        if source == "vizdoom":
+            a = vizdoom_anchor(trans)
+            print(f"     3D pose-oracle anchor: turn L/R sign-separability={a['turn_sign_sep']:.0%}  "
+                  f"forward advance-corr={a['fwd_expansion_corr']:+.2f}  (ego-motion signal is real)")
+            print("     CAVEAT (in-sample): the flow proxies were DESIGNED on my_way_home (a dev scenario in")
+            print("     PR #2), so this confirms the 3D signal EXISTS here -- NOT zero-shot 3D generalization.")
+            print("     A true zero-shot 3D test needs a 2nd, never-seen ViZDoom scenario.")
+
+
 def main():
     from eval.dataset_split import is_heldout_run
     runs = [r for r in RUNS if not is_heldout_run(os.path.join("runs", r[0]))]
@@ -293,35 +345,25 @@ def main():
 
     # ---- per-game button-grounded signature table (GB) ----
     print("\n=== PER-GAME CAMERA SIGNATURE (button-grounded) ===")
-    print(f"{'game':18}{'class':15}{'A1_fd':>7}{'A1_sh':>7}{'A2_coup':>8}{'vshare':>8}"
-          f"{'A3_res':>8}{'A4_loc':>8}")
+    print(f"{'game':14}{'class':15}{'A2_coup':>8}{'vshare':>7}{'A3med':>7}{'A4_loc':>7}"
+          f"{'scrollPrev':>11}{'nMoved':>7}")
     for run, cclass, source in runs:
         if source != "gb":
             continue
         s = gb_signature(per_run[run])
-        print(f"{run:18}{cclass:15}{s['A1_fd']:>7.1f}{s['A1_shift']:>7.1f}{s['A2_coupling']:>8.2f}"
-              f"{s['vshare']:>8.2f}{s['A3_residual']:>8.2f}{s['A4_locality']:>8.2f}")
-    print("  A1_fd/A1_sh = motion with NO button (idle).  A2_coup = D-pad->shift consistency (0..1, hi=scroll).")
-    print("  vshare = vertical share of scroll (hi=topdown, lo=side).  A3_res = best-2D-translation residual")
-    print("  (lo=rigid scroll).  A4_loc = fraction of frame that moved (hi=global/scroll, lo=local/fixed).")
+        print(f"{run.replace('2026-06-23_', ''):14}{cclass:15}{s['A2_coupling']:>8.2f}{s['vshare']:>7.2f}"
+              f"{s['A3_residual']:>7.2f}{s['A4_locality']:>7.2f}{s['scroll_prev']:>10.0%}{s['n_moved']:>7}")
+    print("  A2_coup = D-pad->shift consistency (0..1, hi=scroll).  vshare = vertical scroll share (hi=topdown).")
+    print("  A3med = MEDIAN 2D-translation residual (degenerate ~1.0 when clean scrolls are a minority).")
+    print("  A4_loc = fraction of frame that moved (hi=global scroll, lo=local/fixed).  scrollPrev = fraction of")
+    print("  D-pad moves that are CLEAN camera pans -- the locomotion-robust follow/side-vs-fixed cue.")
 
-    # ---- ViZDoom 3D anchor (pose oracle) ----
-    for run, cclass, source in runs:
-        if source != "vizdoom":
-            continue
-        a = vizdoom_anchor(per_run[run])
-        print(f"\n=== 3D ANCHOR ({run}, pose = non-leaking oracle) ===")
-        print(f"  turns: L n={a['nL']} flow_x={a['gt_turnL_flowx']:+.2f}  "
-              f"R n={a['nR']} flow_x={a['gt_turnR_flowx']:+.2f}  "
-              f"-> L/R sign SEPARABILITY={a['turn_sign_sep']:.0%} (in-sample, >=50% by construction; "
-              f"the flow_x mean gap is the real evidence)")
-        print(f"  forward: n={a['nF']}  corr(gt advance, expansion-flow)={a['fwd_expansion_corr']:+.2f}")
-        print("  (frame-diff alone CANNOT tell rotation from translation; column-shift sign + expansion can.)")
+    # (the ViZDoom 3D anchor lives in held_out_test now -- vizdoom is held-out, never in dev `runs`.)
 
     # ---- leave-one-UNIT(game)-out class separability ----
     rows, confusion = logo_separability(per_run)
     print("\n=== LEAVE-ONE-UNIT(GAME)-OUT CAMERA-CLASS SEPARABILITY (nearest standardized centroid) ===")
-    print("(same-game runs = ONE unit: pokemon = red_random1 + red_smart1, so topdown has no cross-game sibling)")
+    print("(same-game runs = ONE unit; here every class has >=2 distinct units -> all folds are genuine cross-game tests)")
     print(f"{'held-out unit':18}{'true class':15}{'predicted':15}{'per-frame acc':>14}{'note':>22}")
     sib_accs = []
     for held, true_c, pred_c, novelty, singleton, acc in rows:
@@ -336,17 +378,28 @@ def main():
         print(f"{c:16}" + "".join(f"{confusion[c][c2] / tot:>11.0%}" for c2 in CLASSES))
 
     sib_mean = float(np.mean(sib_accs)) if sib_accs else float("nan")
+    from collections import Counter
+    ucls = {UNIT[r[0]]: r[1] for r in runs}          # unit -> class
+    cls_n = Counter(ucls.values())
+    sib_classes = sorted(c for c, n in cls_n.items() if n >= 2)
+    singletons = sorted(c for c, n in cls_n.items() if n == 1)
     print("\n=== VERDICT ===")
-    print(f"- CROSS-GAME class recognition (classes WITH a sibling: side kirby<->metroid, fixed "
-          f"spaceinv<->gauntlet): mean per-frame acc {sib_mean:.0%} on games held out entirely.")
-    print("- SINGLETON classes (topdown=red, 3d=vizdoom) have no same-class training game, so LOGO must "
-          "MISS them by construction; the honest signal is the novelty ratio (held-out lands FAR from "
-          "every known class = correctly flagged as a NEW camera model, not confidently mis-assigned).")
+    print(f"- CROSS-GAME class recognition (classes WITH a sibling: {', '.join(sib_classes) or 'none'}): "
+          f"mean per-frame acc {sib_mean:.0%} on games held out entirely.")
+    if singletons:
+        print(f"- SINGLETON classes ({', '.join(singletons)}) have no same-class training game, so LOGO must "
+              "MISS them by construction; the honest signal is the novelty ratio (held-out lands FAR from "
+              "every known class = correctly flagged as a NEW camera model, not confidently mis-assigned).")
+    else:
+        print("- No singleton classes: every class has >=2 distinct units, so every fold is a genuine cross-game test.")
     print("- The per-game signature table is the descriptive core: A2/vshare/A3/A4 should cluster by class.")
-    print("- 3D anchor confirms the ego-motion signatures are REAL (turn = column-shift sign; advance = "
-          "expansion), grounded against the ViZDoom pose oracle -- not coincidence.")
-    print(f"  Honest scope: {len(runs)} runs, 1-2 games/class, ~{N_SAMPLE} transitions each; frames "
-          "normalized to 128x112 (ViZDoom aspect distorted). Decisive on THESE, not the held-out four.")
+    if any(r[2] == "vizdoom" for r in runs):
+        print("- 3D anchor confirms the ego-motion signatures are REAL (turn = column-shift sign; advance = "
+              "expansion), grounded against the ViZDoom pose oracle -- not coincidence.")
+    print(f"  Honest scope: {len(runs)} runs / {len(ucls)} units, ~{N_SAMPLE} transitions each; frames "
+          "normalized to 128x112. Decisive on THESE units, not the held-out games.")
+
+    held_out_test(per_run)
     return 0
 
 

@@ -351,3 +351,22 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   coarser camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow}, which is what odometry
   actually branches on). Full record: `reports/2026-06-23-camera-model-probe.md`. [[deciding-under-disagreement]]
   — measure first, don't chase the LOGO number by re-tuning.
+
+## 2026-06-23 — odometry corpus rebuild (locomotion fix) + Doom held-out: scroll-vs-fixed separates, finer cuts don't (yet)
+- **What:** acted on the camera-model probe's "corpus-limited" verdict. A 4-agent diagnosis pinned the limiter to
+  LOCOMOTION sparsity (the jittery auto policy wiggles the avatar in place; the camera never pans; the A3 residual
+  pins ~1.0). Fix: new opt-in `record.py --explore` (direction-persistent walk, `--hold 16`) for top-down games +
+  HUMAN play (`--mode human`) for side-scrollers (they need run+jump — auto can't; `--explore` walks them into a
+  wall and gets STUCK at 99% static). Added `scrollPrev` (fraction of D-pad moves that are CLEAN camera pans) and a
+  held-out zero-shot test; registered **Doom (ViZDoom) as held-out**.
+- **Result:** `scrollPrev` cleanly separates SCROLL (21–58%) from FIXED (0–2%) cross-game; per-frame sib-mean
+  29%→45%; fixed games classify 83–96%. **Honest limits:** follow-vs-side confused (both scroll), and held-out Doom
+  is NOT flagged novel (×1.3, assigned scroll_side) — a 3D turn ≈ a 2D side-pan in whole-frame flow — though the 3D
+  ego-motion itself is oracle-verified (turn-sign 95%, advance-corr +0.47, IN-SAMPLE — the flow proxies were built
+  on my_way_home; a true zero-shot 3D test needs a 2nd scenario). `vizdoom_smoke.py` now `set_seed`s the engine so
+  the recording is reproducible (a prior unseeded run gave +0.42 — the cross-machine review discrepancy).
+- **Why it matters / how to apply:** the locomotion fix was the unlock; cheap cues robustly tell scroll-from-fixed.
+  Deferred (re-fit later, NOT bugs): a per-RUN classifier using scrollPrev/A4 (the per-FRAME centroid drowns in each
+  scroller's non-scroll majority); axis-aware features for follow-vs-side; expansion/radial-flow to flag 3D distinct
+  from side-pan. Corpus is gitignored — recipe in `eval/collect_corpus.md`. Full record:
+  `reports/2026-06-23-odometry-corpus-and-doom-heldout.md`.

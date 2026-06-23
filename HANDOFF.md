@@ -80,6 +80,24 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ NEWEST (2026-06-23, latest) — ODOMETRY CORPUS REBUILT (locomotion fix) + DOOM HELD-OUT. Branch
+`feat/odometry-corpus` (off `main`).** Acted on the camera-model probe's corpus-limited verdict: a 4-agent
+diagnosis pinned the limiter to LOCOMOTION sparsity (jittery auto wiggles the avatar in place → camera never
+pans → A3 residual ~1.0). Fixes: new opt-in `record.py --explore` (direction-persistent walk, `--hold 16`) +
+HUMAN play (`--mode human`) for side-scrollers (auto can't run+jump; `--explore` gets them stuck). Added
+`scrollPrev` to the probe + a held-out zero-shot test; **Doom (ViZDoom) registered HELD-OUT** in `dataset_split`
+(matched by run-dir name — the 3D recorder writes no meta ROM).
+- **`scrollPrev` cleanly separates SCROLL (21–58%) vs FIXED (0–2%)** cross-game; per-frame sib-mean 29%→45%;
+  fixed classifies 83–96%. Follow-vs-side still confused (both scroll). **Held-out Doom NOT flagged novel**
+  (×1.3 → scroll_side: a 3D turn ≈ a 2D side-pan in whole-frame flow) — but 3D ego-motion is oracle-verified
+  (turn-sign 95%, advance-corr +0.47).
+- **Corpus is gitignored (lives on D:); regenerate via `eval/collect_corpus.md`.** Full record:
+  `reports/2026-06-23-odometry-corpus-and-doom-heldout.md`; LEARNINGS (2026-06-23, 4th entry).
+- **⇒ NEXT = build the generalizable ego-motion / odometry estimator** (the System-1 "how did I move" the probe
+  was measuring readiness for): a per-camera-class branch (fixed→none; 2D-scroll→best-shift dx,dy; 3D→optical-flow
+  turn+advance), developed on the dev corpus, verified on the held-out games incl. Doom. Cheaper sub-step first:
+  the per-RUN `scrollPrev`/`A4` classifier to close the camera-model verdict.
+
 **⇒ GIT/STATE (2026-06-23) — PR #1 MERGED to `main`; camera-model probe on its own branch. ANOTHER MACHINE
 PICKS UP HERE.**
 - **`main` = `3ecb853`** (PR #1 merged): the modality/auto-play foundation (`f53096d`), appearance/OCR probe +

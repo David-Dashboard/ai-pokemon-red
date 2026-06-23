@@ -86,6 +86,24 @@ def auto_action(rng: random.Random) -> list:
     return []
 
 
+def make_explore_action(rng: random.Random, p_continue: float = 0.8, p_interact: float = 0.07):
+    """A direction-PERSISTENT gameplay action for camera/odometry data: hold ONE direction across many
+    steps so a follow/side camera actually SCROLLS. (auto_action re-rolls a fresh random direction every
+    step, so the avatar wiggles in place and the camera never pans -- the locomotion-sparsity the
+    camera-model probe diagnosed.) Re-rolls the direction ~(1-p_continue) of steps; occasionally taps A/B
+    to interact / advance a bump. Pair with a longer --hold (>= one tile-step, ~16) so each step completes
+    a tile move."""
+    st = {"d": rng.choice(["up", "down", "left", "right"])}
+
+    def act(r: random.Random) -> list:
+        if r.random() < p_interact:
+            return [r.choice(["a", "b"])]
+        if r.random() > p_continue:
+            st["d"] = r.choice(["up", "down", "left", "right"])
+        return [st["d"]]
+    return act
+
+
 def _grab_ram(pb):
     try:
         return bytes(pb.memory[0xC000:0xE000])      # 8 KB WRAM (current bank); pixels-agnostic oracle
@@ -106,6 +124,9 @@ def main() -> int:
     ap.add_argument("--smart-auto", action="store_true",
                     help="auto mode: use the world-agnostic modality detector + escape policy "
                          "(core/) to get through titles/menus into gameplay (default: pure random)")
+    ap.add_argument("--explore", action="store_true",
+                    help="auto mode: direction-PERSISTENT walk for sustained camera scrolls "
+                         "(odometry/camera-model data); implies smart-auto menu escape. Pair with --hold 16.")
     ap.add_argument("--keys", choices=["wasd", "arrows"], default="wasd", help="human movement layout")
     ap.add_argument("--ram", action="store_true", help="also dump raw 8KB WRAM per step (ram.bin)")
     ap.add_argument("--sound", action="store_true", help="human mode audio")
@@ -159,9 +180,10 @@ def main() -> int:
     if args.mode == "auto":
         rng = random.Random(args.seed)
         policy = None
-        if args.smart_auto:
+        if args.smart_auto or args.explore:
             from core.autoplay import ModalAutoPolicy   # world-agnostic; only imported when asked
-            policy = ModalAutoPolicy(rng, auto_action)
+            gameplay = make_explore_action(rng) if args.explore else auto_action
+            policy = ModalAutoPolicy(rng, gameplay)
         prev_frame, last_buttons, mode = None, [], "auto"
         for i in range(args.steps):
             if policy is not None:

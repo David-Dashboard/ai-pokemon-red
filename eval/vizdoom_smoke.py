@@ -34,6 +34,7 @@ def main():
     g.set_screen_format(vzd.ScreenFormat.RGB24)
     g.set_available_game_variables([vzd.GameVariable.POSITION_X, vzd.GameVariable.POSITION_Y,
                                     vzd.GameVariable.ANGLE])
+    g.set_seed(1)   # seed the ENGINE (not just the policy) so the recording is reproducible across machines
     g.init()
     BTN = [str(b).split(".")[-1] for b in g.get_available_buttons()]  # TURN_LEFT/RIGHT, MOVE_FORWARD,...
     iF, iL, iR = BTN.index("MOVE_FORWARD"), BTN.index("TURN_LEFT"), BTN.index("TURN_RIGHT")
