@@ -58,6 +58,19 @@ boundary. This ADR fixes the boundary.
 5. **General vs. game-specific, every fix.** When a run exposes a problem, classify the fix: a **general
    agent** improvement → `ai-aria`; a **world** improvement → `ai-pokemon-red` (perception / System 1).
    The payoff of the gym is the *general* improvements.
+6. **Calibrated deferral — System 1 never *decides* what it can't decide reliably.** What belongs in System 1
+   is set by **reliability × value**, not "perception vs planning": System 1 owns work that is BOTH high-value
+   to do cheaply (it runs every step) AND that it can do *reliably* (deterministic / positive-ID) — movement/
+   odometry, static-vs-changed, auto-advancing **positively-identified** routine dialog. A genuine **decision**,
+   or **low confidence**, **defers up to System 2** — a menu is the agent's to read and decide; forcing a cheap
+   System-1 classifier to do it is brain-dead decision-taking. The dangerous failure is System 1 being
+   **confidently wrong** (the hash cross-tileset wall-recall collapse; a menu misread as gameplay); the safe
+   default is **wake-when-unsure** (over-waking costs a little; under-waking corrupts behaviour). So build cheap
+   System-1 parts as a **gate** — handle reliable routine free, escalate otherwise — **never as a replacement
+   for System-2 judgment.** *Evidence:* the 2026-06-23 appearance/OCR probe (`eval/probe_modality_appearance.py`)
+   — cheap perception cannot classify menus cross-game (pokemon 55% / spaceinv 64% balanced-acc), so menu
+   *decisions* belong in System 2; cost stays bounded because decisions are rare vs routine steps. (Sharpens
+   invariant #1.)
 
 ## Research grounding (this is well-trodden, not invented here)
 - **Dual-process agents:** SwiftSage (Lin et al., NeurIPS 2023) — a fast *Swift* (System 1, small model) +

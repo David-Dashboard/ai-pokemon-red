@@ -80,6 +80,24 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ NEWEST (2026-06-23, later) — APPEARANCE/OCR vs cheap modality classification: FAIR cross-game probe RUN;
+decision = STOP (cheap menu-detection is a dead end; behavioral handling stands). Branch
+`feat/cross-game-perception`, UNCOMMITTED.** David rejected the under-proven "appearance can't classify modality
+cross-game" claim and demanded the probe. `eval/probe_modality_appearance.py` (+ `eval/_modality_probe_run.py`,
+run under `.venv-probe4`): ~190 hand-labeled GAMEPLAY-vs-NOT frames, **leave-one-GAME-out (pokemon = ONE unit —
+leakage guard)**, comparing CLIP MobileCLIP2-S0 / OCR-text-amount / cheap-numpy / flat-only (numpy logistic +
+cosine centroid/kNN; balanced accuracy). **The test corrected BOTH sides:** CLIP **GENERALIZES for
+gameplay-vs-title** (mean **83%**, ~100% on kirby/metroid/gauntlet) → the blanket "appearance is useless" is
+**REFUTED**; **BUT** on the two real-menu folds it's near chance (**pokemon 55%, spaceinv 64%**) → menu/dialog/UI-
+vs-gameplay does **NOT** generalize cross-game (claim holds for the hard part); and **OCR-text-amount is a POOR
+menu cue** (40% mean, 0% Gauntlet — GB gameplay HUDs are text-heavy too, so "text=menu" is wrong; OCR's only value
+would be reading CONTENT to navigate, not classifying). Caveat: kirby/metroid/gauntlet had 1 boot NOT-frame so
+their ~100% is gameplay-recognition (MEAN optimistic); pokemon/spaceinv are the honest folds; small N.
+**DECISION (David): STOP** — a generalizable cheap menu-detector is a dead end; keep the **behavioral escape
+ladder** (easy titles) + **checkpoint/LLM fallback** (hard scripted intros like Red name-entry). Full record:
+`reports/LEARNINGS.md` (2026-06-23, 2nd entry). **NEXT unchanged ⇒ the ODOMETRY CORPUS + camera-model probe**
+(see the block below).
+
 **⇒ NEWEST (2026-06-23) — GENERALIZABLE MODALITY DETECTION + MODE-AWARE AUTO-PLAY (built + validated; the
 nudging crutch removed for the common case). Branch `feat/cross-game-perception`, UNCOMMITTED.** David
 redirected the odometry plan: instead of *nudging* (a human hand-playing each game past its menus to collect
