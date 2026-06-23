@@ -387,3 +387,19 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   The real bottleneck is autonomous CONTROL of non-top-down games (= the agent itself, the project's end goal) —
   and the HANDS-OFF discipline is what surfaced it (hand-playing would have hidden it behind human skill). Full
   record: `reports/2026-06-23-heldout-verification.md`. [[deciding-under-disagreement]]
+
+## 2026-06-23 — P1 ego-motion probe: 2D direction recovery is RAM-validated at 98% (measure-first)
+- **What:** first step of the generalizable ego-motion estimator (System-1 "how did I move"). `eval/probe_egomotion.py`
+  (reuses `best_shift`) measures DIRECTION (sign) recovery two ways — metric distance deferred (camera-model probe
+  showed it's unreliable). **A. RAM ground-truth** (Pokémon Gen-1 `fix*`/`explore_bench`, ~1618 RAM-moved overworld
+  steps): does `best_shift` (dx,dy) match RAM Δ(x,y)? **B. button-grounding** (cross-game 2D-scroll, no RAM, clean
+  scrolls, per-class): does each pressed direction give the expected shift?
+- **Result:** **A = 98%** (per-run 97–100%) — the estimator's direction recovery is solidly validated against truth
+  (consistent with the prior drift work). **B partial:** metroid 2/2 (clean side-scroll L/R), kirby 1/2, gauntlet
+  2/4, gold n<5 (escape-ladder-polluted — Gold trips the Red-tuned modality detector → reads "menu"). Cross-game
+  cue HOLDS where the recording is clean; recording-quality-limited otherwise (same control/data theme).
+- **Why it matters / how to apply:** greenlights P2 — extract `core/egomotion.py` (world-agnostic, reuse `best_shift`,
+  consolidate the duplicate `perceiver._best_shift`), surface additively via `spatial_memory["ego_motion"]` (the
+  unfrozen `SymbolicState` seam; never touch `core/contracts.py`). ~2% A-miss is camera-pinned map edges
+  (best_shift=0 despite a RAM move) — a real pixel-odometry limit, not a bug. Full record:
+  `reports/2026-06-23-egomotion-probe-P1.md`.
