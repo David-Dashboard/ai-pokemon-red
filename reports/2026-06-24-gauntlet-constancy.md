@@ -39,6 +39,11 @@ commanded space) recovered 0.02. Command-space pose loses diagonals; ego-space p
   non-leaking-oracle wall to Gauntlet (RAM sentinels never surface in the obs).
 - **Thin prompt** — `GAUNTLET_SYSTEM` is identity + controls + goal, same THINK/MOVE/GOTO contract as Pokémon;
   no Gauntlet strategy. The strong form of constancy (only surface config changes).
+- **Behavioral (navigation)** — the unchanged `ExploreBrain` *did* navigate Gauntlet off the perceiver's pixel
+  map (RAM-confirmed; see the closed-loop finding below). Where it underperformed, the fix was PERCEIVER-side
+  (the dead-zone false-walls), never a brain edit — the architecture working as designed. So: **structural
+  constancy fully demonstrated; behavioral navigation demonstrated**, with a now-largely-fixed perceiver
+  residual (not a constancy break).
 
 ## Closed-loop finding: the camera dead-zone false-walls (+ the fix)
 
@@ -66,11 +71,12 @@ dial). **CORE-PROMOTION CANDIDATE:** the robustness is general — lift it to a 
 when a 2nd world's perceiver needs it (Pokémon, always-centered, does not).
 
 ## Open / next (logged, not silently worked around)
-- **Stronger demo:** `ScriptedBrain` mashes through the title but explores little. The `ExploreBrain`
-  navigation demo (brain's pathfinder driving the maze, reading the perceiver's map) needs a **gameplay
-  save-state** to start past Gauntlet's title/hero-select (the autopilot only moves, so it can't pass the
-  intro) — the same "hard scripted intro" residual seen in Pokémon name-entry. Capture a `--window` checkpoint
-  once, then `--brain explore`.
+- **The `ExploreBrain` navigation demo is DONE — autonomously, no human.** `ScriptedBrain` mashes past the
+  title (the autopilot only moves, so it can't pass the intro — the "hard scripted intro" residual), then the
+  driver saves a checkpoint (`--save-state`) and `--brain explore --init-state` navigates from it. That run is
+  what surfaced the dead-zone bug above. **Residual:** `_WALL_CONFIRM` doesn't fully eliminate phantom walls
+  (the dead-zone's pixels-only limit) — addressed by the core-promotion follow-up (a shared foreground-motion
+  perceiver helper).
 - **8-way exploration** via a 4-cardinal `ExploreBrain` is a constancy risk to WATCH (don't edit `core/`): if
   cardinals explore too slowly, the fix is prompt-driven diagonal sequences from the LLM, not a core edit.
 - Side-scrollers (Kirby/Metroid) remain Phase 2 (a different pose model + timing control).
@@ -78,4 +84,5 @@ when a 2nd world's perceiver needs it (Pokémon, always-centered, does not).
 ## Verification
 - `eval/replay_gauntlet_pose.py` → perceiver pose vs RAM oracle (83% / 0.02).
 - `play_gauntlet.py --brain scripted` → end-to-end loop on the ROM, `core/` untouched.
-- `uv run pytest -q` → green incl. `tests/test_gauntlet.py` (no-leak wall + perceiver smoke).
+- `uv run pytest -q` → green incl. `tests/test_gauntlet.py` (no-leak wall + the dead-zone wall-confirmation /
+  moved-blocked-unknown transitions, on synthetic frames so the novel logic runs in CI).

@@ -99,9 +99,10 @@ class GauntletPerceiver:
             if max(abs(sdx), abs(sdy)) >= _MOVE_PX:        # camera scrolled -> the move landed
                 cell["walls"].discard(direction)
                 noscroll.pop(((x, y), direction), None)    # a confirmed move clears any tentative count
-                # Step the cursor by the EGO direction (actual camera motion) not the button: Gauntlet
-                # is 8-way, so a diagonal press moves both axes -- ego tracks the true displacement and
-                # matches the pose-drift gate (commanded-only dropped a diagonal axis -> drift). Wall
+                # Step the cursor by the EGO direction (best_shift's dominant axis), not the last-pressed
+                # button token. Still exactly one cardinal cell per move -- but on an 8-way diagonal press
+                # ego picks the axis that ACTUALLY scrolled, where the commanded token picks whichever
+                # direction was pressed last (the mismatch that drove the 0.31->0.02 drift). Wall
                 # bookkeeping stays in COMMANDED space (you know which way you pressed).
                 step = _EGO2DIR.get(ego, direction)
                 dx, dy = _DELTA[step]

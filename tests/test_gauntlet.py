@@ -7,9 +7,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from core.perception import StubPerceiver, SymbolicState
+from core.perception import PerceptMemory, StubPerceiver, SymbolicState
 from games.gauntlet.plugin import GauntletPlugin
-from games.gauntlet.perceiver import GauntletPerceiver
+from games.gauntlet.perceiver import GauntletPerceiver, _WALL_CONFIRM
 from tests.test_pokemon_red import FakeEmulator
 
 ALLOWED_SEAM_KEYS = set(SymbolicState(confidence=0.0, context="gameplay").to_dict())
@@ -62,11 +62,55 @@ def test_ram_sentinel_values_do_not_appear(agent_obs):
     assert not leaked, f"a RAM sentinel value leaked into the agent's Observation: {leaked}"
 
 
-def test_perceiver_emits_a_well_formed_pose():
+def test_perceiver_emits_a_well_formed_pose(tmp_path):
     emu = FakeEmulator()
     emu._screen = np.zeros((144, 160, 4), dtype="uint8")
-    plugin = GauntletPlugin(emulator=emu, out_dir="runs/_t", perceiver=GauntletPerceiver())
+    plugin = GauntletPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=GauntletPerceiver())
     data = plugin.observe("a").data
     assert data["context"] in ("gameplay", "static", "menu", "unknown")
     assert data["pose"]["value"] == [0, 0]           # dead-reckoning starts at the origin
     assert data["spatial_memory"]["kind"] == "occupancy-grid"
+
+
+# -- the novel odometry logic (the dead-zone wall-confirmation), driven by synthetic frames so it runs in
+# CI (the headline drift/coverage numbers are validated off-repo against gitignored corpora). --
+
+def _shifted_canvas():
+    """A textured canvas + two 144x160 windows offset 16px horizontally: a detectable camera scroll."""
+    c = np.random.RandomState(7).randint(0, 255, (144, 176, 3), dtype="uint8")
+    return c[:, :160], c[:, 16:176]     # (still, scrolled)
+
+
+def test_camera_scroll_is_a_move_and_steps_the_pose_one_cell():
+    p, mem = GauntletPerceiver(), PerceptMemory()
+    still, scrolled = _shifted_canvas()
+    p.perceive(still, mem, {"last_action": "right"})        # bootstrap (prev frame)
+    s = p.perceive(scrolled, mem, {"last_action": "right"})  # a real shift -> moved
+    assert s.last_action["outcome"] == "moved"
+    x, y = s.pose["value"]
+    assert abs(x) + abs(y) == 1                              # advanced exactly one cell
+
+
+def test_no_scroll_seals_a_wall_only_after_persistent_confirmation():
+    p, mem = GauntletPerceiver(), PerceptMemory()
+    still, _ = _shifted_canvas()
+    p.perceive(still, mem, {"last_action": "up"})           # bootstrap
+    for _ in range(_WALL_CONFIRM - 1):                      # identical frames => no scroll, but TENTATIVE
+        s = p.perceive(still, mem, {"last_action": "up"})
+        assert s.last_action["outcome"] == "unknown"
+        assert "up" not in s.spatial_memory["walls_here"], "sealed a phantom wall before confirmation"
+    s = p.perceive(still, mem, {"last_action": "up"})       # the confirming attempt seals it
+    assert s.last_action["outcome"] == "blocked"
+    assert "up" in s.spatial_memory["walls_here"]
+
+
+def test_a_confirmed_move_clears_a_pending_no_scroll_count():
+    p, mem = GauntletPerceiver(), PerceptMemory()
+    still, scrolled = _shifted_canvas()
+    p.perceive(still, mem, {"last_action": "right"})        # bootstrap
+    for _ in range(_WALL_CONFIRM - 1):                      # build a tentative count (no wall yet)
+        p.perceive(still, mem, {"last_action": "right"})
+    assert mem.data["noscroll"].get(((0, 0), "right")) == _WALL_CONFIRM - 1
+    s = p.perceive(scrolled, mem, {"last_action": "right"})  # a real move clears the pending count
+    assert s.last_action["outcome"] == "moved"
+    assert ((0, 0), "right") not in mem.data["noscroll"]
