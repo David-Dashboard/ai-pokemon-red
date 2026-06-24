@@ -40,6 +40,8 @@ WHERE the change is, not how much* — was tested in `eval/probe_spatial_move.py
 |---|--:|--:|
 | whole-frame diff (the current move signal) | (n_real=1) | 0.86 |
 | **grid max-cell change** (max per-cell mean-abs diff, 8×8 grid) | (n_real=1) | **0.99** |
+| **per-cell SSIM** (1 − min-cell SSIM) | (n_real=1) | **0.99** |
+| per-cell SSIM, structure-term only | (n_real=1) | 0.98 |
 | sprite-centroid direction (background-subtraction tracking) | 0.84 | 0.75 |
 
 A real move spikes ONE cell (the sprite region, median 91) while idle flicker only musters ~20; whole-frame
@@ -48,12 +50,18 @@ information IS there — the earlier probe measured it dilutively. **A CNN is NO
 of pixel-diff, ~free in numpy — consistent with this repo's "plain hash beats CLIP on pixel-art"). The
 fancier directional sprite-tracking was WORSE (0.75) — flicker drags the centroid.
 
-**But grid-max is not a complete fix.** Tuned on the human set (threshold 58): 98% of real moves kept, 4% of
-bumps phantom — but on the corridor RUNAWAY the phantom rate only drops 100% → **25%** (the corridor's intense
-flicker spikes cells to 82–91, into the real-move range). At 25% a sustained runaway still drifts, ~4× slower.
+**Per-cell SSIM was tested (the research said its structure term should ignore intensity flicker) and TIES
+grid-max — it does not beat it** (AUC 0.99, same ~33% runaway residual). The corridor's animation changes
+*structure*, not just intensity, so SSIM fires on it too. ⇒ use the simpler grid-max; SSIM is not worth the
+extra computation.
 
-⇒ **Revised fix: grid-max as the per-step move signal (4× fewer phantoms, no CNN) PLUS the behavioral
-backstop below for the residual runaway.** Not either/or — both, and each needs closed-loop validation.
+**No per-step appearance signal is a complete fix.** Threshold tuned on the human set (98% real-moves kept),
+applied to the corridor RUNAWAY: grid-max and SSIM both leave **~25–33% residual phantom** (threshold-dependent;
+the corridor's flicker spikes cells into the real-move range). At that rate a sustained runaway still drifts,
+~3–4× slower. The tail is **irreducible by per-step appearance** — confirmed across pixel-diff, grid-max, and SSIM.
+
+⇒ **Revised fix: grid-max as the per-step move signal (3–4× fewer phantoms, no CNN/deps) PLUS the behavioral
+backstop below for the residual runaway.** Not either/or — both, each closed-loop validated.
 
 ## Implication — a behavioral backstop is still needed (grid-max alone leaves a 25% tail)
 Per-step perception is much better with grid-max but still imperfect under intense flicker, so the perceiver
