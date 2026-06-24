@@ -439,3 +439,32 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   limit case (always-centered → all==scrolled==98%). **So report camera-scrolled as the estimator's accuracy and
   carry the static penalty transparently in "all" — don't hide it.** The dead-zone, not an estimator weakness, is
   the whole gap. Report: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md`. NEXT = P2 (`core/egomotion.py`).
+
+## 2026-06-24 — CONSTANCY across 3 camera classes; the dead-zone false-walls; the foreground-motion primitive
+- **What:** built the first SECOND/THIRD-world perceivers and ran the existing brain end-to-end — the project's
+  biggest claim, "swap only the perceiver; reuse the brain." `games/gauntlet/` (follow-scroll, PR #9) +
+  `games/cave_noire/` (fixed camera, PR #10), both emitting the role-named `SymbolicState`; `ExploreBrain`/
+  `Gateway`/`run_episode` reused UNCHANGED. core/ untouched, no RAM leak (fitness wall extended per world).
+- **Result:** constancy demonstrated on 3 camera classes (Pokémon follow-CENTERED / Gauntlet follow-SCROLL /
+  Cave Noire FIXED), brain code identical. Two deep findings:
+  1. **The camera DEAD-ZONE false-walls (Gauntlet).** The offline pose gate passed (0.02 drift) but the
+     closed-loop `ExploreBrain` gave up early: **95% of `blocked` outcomes were real moves the follow-camera hid**
+     (player slides, camera holds, `best_shift≈0` → "no scroll = wall" sealed phantom walls). General, not a
+     Gauntlet quirk — camera-static share of real moves = Gauntlet 24% / Metroid 19% / Kirby 9% / Pokémon ~0%
+     (always-centered = immune). Fix `_WALL_CONFIRM=3` (seal only after N persistent no-scrolls): moves +73%,
+     phantom walls −40%. Bug was PERCEIVER-side; the brain did the right thing with a corrupted map.
+  2. **The foreground-motion primitive (Cave Noire / the fixed-camera class).** `best_shift` = camera/background
+     motion; its COMPLEMENT is the camera-compensated RESIDUAL = FOREGROUND (sprite) motion, which recovers the
+     move when the camera is blind (AUC 0.86 Cave Noire / 0.76 Gauntlet). `move = camera scrolled OR foreground
+     residual high` covers follow + fixed + dead-zone cameras. Cheap (frame-diff, no CLIP). Offline-validated on
+     Cave Noire (99%/0.06 vs the finder-found RAM oracle).
+- **Why it matters / how to apply:** when a new world underperformed, the fix lived in the SWAPPABLE perceiver,
+  never the brain — the architecture working as designed. Method lessons reinforced: **measure-first saved a
+  wasted build** (Cave Noire turned out fixed-camera, not the assumed follow-scroll — caught before building);
+  **offline metric overstates, closed-loop reveals the strand** (the dead-zone was invisible to the pose gate);
+  **pose in EGO space beats command space** (dominant-axis stepping, 0.31→0.02 drift). **NEXT (part 2):** the 3
+  lean perceivers are byte-identical except (a) move signal and (b) direction source → extract a shared `core/`
+  occupancy-grid perceiver parameterized by `move_signal(prev,cur,action)->(moved,direction)`; that also folds in
+  the foreground+best_shift combination (fixing dead-zone + the Cave-Noire false-MOVE asymmetry) and a
+  `core/grid.py`. Cave Noire's LIVE run is still unbuilt. Reports: `reports/2026-06-24-gauntlet-constancy.md`,
+  `2026-06-24-cave-noire-fixed-camera.md`.
