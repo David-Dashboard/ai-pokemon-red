@@ -1,8 +1,10 @@
-"""Thin PyBoy wrapper for Gauntlet II — the ONLY module in this package that imports PyBoy.
+"""Thin PyBoy wrapper for the lean Game Boy worlds — the ONLY core module that imports PyBoy.
 
-A near-copy of games/pokemon_red/emulator.py with the Gen-1 map-WARP fade machinery removed (Gauntlet is
-one continuous level, no fade warps). Copied, not imported: a game package may not import a sibling
-(tests/test_import_boundaries.py). Targets PyBoy >= 2.0; supply your own legally-obtained ROM.
+The generic GB world interface (the constancy infra): press/tick/read/screen/state + wall-clock pacing
+behind a small `Emulator` Protocol, so the perception plugin is unit-testable against a `FakeEmulator`
+with no ROM and no PyBoy installed. Lifted from games/gauntlet/emulator.py the second time it was needed
+(Gauntlet + Cave Noire) — Pokémon keeps its own emulator (it adds a Gen-1 map-warp fade layer on top of
+this). Targets PyBoy >= 2.0; supply your own legally-obtained ROM.
 """
 from __future__ import annotations
 
@@ -10,8 +12,7 @@ import os
 import time
 from typing import Optional, Protocol
 
-# The seven inputs a Game Boy exposes (a/b + start/select + d-pad). Gauntlet uses the d-pad to move and
-# b to FIRE; a/start advance the title/hero-select.
+# The seven inputs a Game Boy exposes (a/b + start/select + d-pad). No L/R shoulders on the original.
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 
 _GB_FPS = 59.7275
@@ -56,7 +57,7 @@ class PyBoyEmulator:
                  record_fps: int = 30, record_scale: int = 3):
         if not os.path.exists(rom_path):
             raise FileNotFoundError(
-                f"ROM not found: {rom_path}\nSupply your own legally-obtained Gauntlet II (.gb) ROM.")
+                f"ROM not found: {rom_path}\nSupply your own legally-obtained (.gb) ROM.")
         if not headless:
             ensure_sdl_dll_path()
         try:

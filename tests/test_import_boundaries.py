@@ -7,6 +7,8 @@ Enforced:
   1. `core/` is WORLD-AGNOSTIC — nothing in core/ may import `games/`.
   2. The BRAIN is DECOUPLED — nothing in this repo may import `aria` / `ai_aria` (it's an HTTP service).
   3. GAMES are ISOLATED — a game package may not import a sibling game package.
+  4. NO OSSIFICATION — a lean game package may not carry its own emulator/plugin (shared world-interface
+     infra lives in core/; a per-world copy is the duplication the toolkit-of-primitives thesis forbids).
 """
 from __future__ import annotations
 
@@ -76,3 +78,22 @@ def test_games_are_isolated_from_each_other():
             if segs[0] == "games" and len(segs) >= 2 and segs[1] != own:
                 bad.append(f"{py.relative_to(ROOT)} imports {mod} (sibling game)")
     assert not bad, "a game package must not import a sibling game package:\n" + "\n".join(bad)
+
+
+# Lean worlds (everything but Pokémon, the rich outlier) reuse the shared emulator/plugin from core/.
+# A per-world emulator.py/plugin.py is the "specifics ossify in the perceiver" drift (INSIGHTS §2):
+# the signal to LIFT the shared part to core/, not to copy a sibling. The tripwire for that.
+_INFRA_OK = {"pokemon_red"}          # keeps its own emulator (fade layer) + plugin (reward/battle)
+
+
+def test_lean_games_do_not_carry_their_own_infra():
+    games_dir = ROOT / "games"
+    bad = []
+    for pkg in games_dir.iterdir():
+        if not pkg.is_dir() or pkg.name in _INFRA_OK or pkg.name == "__pycache__":
+            continue
+        for infra in ("emulator.py", "plugin.py"):
+            if (pkg / infra).exists():
+                bad.append(f"games/{pkg.name}/{infra}")
+    assert not bad, ("lean game packages must reuse core/ infra, not copy it (lift to core/, don't "
+                     "duplicate — INSIGHTS §2):\n" + "\n".join(bad))

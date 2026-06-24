@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from core.perception import PerceptMemory, StubPerceiver, SymbolicState
-from games.gauntlet.plugin import GauntletPlugin
+from games.gauntlet import GauntletPlugin
 from games.gauntlet.perceiver import GauntletPerceiver, _WALL_CONFIRM
 from tests.test_pokemon_red import FakeEmulator
 
@@ -110,7 +110,7 @@ def test_a_confirmed_move_clears_a_pending_no_scroll_count():
     p.perceive(still, mem, {"last_action": "right"})        # bootstrap
     for _ in range(_WALL_CONFIRM - 1):                      # build a tentative count (no wall yet)
         p.perceive(still, mem, {"last_action": "right"})
-    assert mem.data["noscroll"].get(((0, 0), "right")) == _WALL_CONFIRM - 1
+    assert mem.data["blocked_attempts"].get(((0, 0), "right")) == _WALL_CONFIRM - 1
     s = p.perceive(scrolled, mem, {"last_action": "right"})  # a real move clears the pending count
     assert s.last_action["outcome"] == "moved"
-    assert ((0, 0), "right") not in mem.data["noscroll"]
+    assert ((0, 0), "right") not in mem.data["blocked_attempts"]

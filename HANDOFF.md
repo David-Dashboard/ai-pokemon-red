@@ -80,9 +80,34 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
-**⇒ NEWEST (2026-06-24) — CONSTANCY VALIDATED ACROSS 3 WORLDS / 3 CAMERA CLASSES (brain + `core/` UNCHANGED).
-`main` has Pokémon + Gauntlet + Cave Noire perceivers; PRs #7/#8/#9/#10 ALL MERGED; no open PRs. NEXT = part-2
-core extraction (now unblocked).**
+**⇒ NEWEST (2026-06-24, part-2) — SHARED PERCEPTION INFRA LIFTED TO `core/`; Gauntlet + Cave Noire are now
+THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR branch
+(`feat/core-perceiver-extraction`); 334 tests green; both replay oracles unchanged (behavior-preserving).**
+- **The ossification debt is paid (INSIGHTS §2).** The occupancy-grid perceiver, the GB emulator, and the
+  perception-only plugin were duplicated 3× across `games/`; they now live ONCE in `core/`: `core/grid.py`
+  (DIRS/DELTA/BACK/EGO2DIR/DIR2EGO), `core/gb_emulator.py` (the generic PyBoy wrapper), `core/perception_plugin.py`
+  (`PerceptionPlugin` — perception-only, watch→oracle, injectable flavor text), `core/grid_perceiver.py`
+  (`GridPerceiver` + a `MoveSignal` strategy: `CameraScrollSignal` / `ForegroundSignal`). Gauntlet + Cave Noire
+  perceivers/`__init__` are now ~25-line config (move signal + calibration + prompt). Pokémon stays the rich
+  OUTLIER (place-graph/tilemap + reward/battle/fade) — deliberately not migrated. Deleted `games/gauntlet/{emulator,plugin}.py`.
+- **Anti-drift GUARDRAIL (the lesson David forced).** The drift = building world #2/#3 by copying the Pokémon
+  package instead of lifting primitives. New tripwire `tests/test_import_boundaries.py::test_lean_games_do_not_carry_their_own_infra`
+  (no `emulator.py`/`plugin.py` outside `pokemon_red`) + a "primitive ossification" row in CONTEXT-BRIEFING's
+  drift table + a laziness-ladder line in CLAUDE.md ("copying a sibling file = the lift signal").
+- **Cave Noire live closed-loop CLOSED (the unfinished half of PR #10).** `play_cave_noire.py` + the no-RAM-leak
+  sentinel wall in `tests/test_cave_noire.py`. The unchanged `ExploreBrain`/`core/` drove Cave Noire IN-CAVERN
+  (constancy demonstrated live on the 3rd world); of 4 perceiver-"moved" steps, 4/4 were RAM-real, **0 phantom**
+  — the feared false-MOVE asymmetry did NOT bite, so NO symmetric-confirmation change was made (measure-first;
+  it stays a flagged watch-item).
+- **⇒ OPEN — autonomous deep-dungeon nav is gated on a hand-played save-state.** Cave Noire is a hub-and-spoke
+  JP fan-translation; the random `ScriptedBrain` (60%-A, built for Pokémon dialog) can't purposefully traverse
+  the cavern-select menus, and the watch registers (`x=0xC504 y=0xC503`) only track once genuinely walking
+  in-cavern (frozen at the hub). ExploreBrain from a random-mashed entry dead-ended in 16 steps (RAM-consistent
+  walls — a real cramped pocket, not a perceiver bug). NEXT: David plays a clean in-cavern save-state →
+  `--init-state` → a longer ExploreBrain run for the definitive autonomous-nav + false-MOVE-asymmetry check.
+
+**⇒ PRIOR (2026-06-24) — CONSTANCY VALIDATED ACROSS 3 WORLDS / 3 CAMERA CLASSES (brain + `core/` UNCHANGED).
+`main` had Pokémon + Gauntlet + Cave Noire perceivers; PRs #7/#8/#9/#10 ALL MERGED. (part-2 core extraction, above, now done.)**
 - **The thesis ("swap only the perceiver; reuse the brain") is demonstrated on 3 camera classes, brain code
   untouched:** Pokémon (follow-CENTERED, the original), **Gauntlet** (follow-SCROLL, PR #9), **Cave Noire**
   (FIXED camera, PR #10). The existing `ExploreBrain`/`Gateway`/`run_episode` drive each via only a new

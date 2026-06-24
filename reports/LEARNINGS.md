@@ -6,6 +6,30 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-06-24 — part-2: lifting per-world perception into a shared `core/` (the ossification fix)
+- **What:** the occupancy-grid perceiver, the GB emulator, and the perception-only plugin had been duplicated
+  3× (Pokémon → Gauntlet → Cave Noire by *copying*). Lifted the shared body to `core/` — `core/grid.py`,
+  `core/gb_emulator.py`, `core/perception_plugin.py` (`PerceptionPlugin`), `core/grid_perceiver.py`
+  (`GridPerceiver` + a `MoveSignal` strategy). Gauntlet + Cave Noire shrank to ~25-line config; Pokémon stays
+  the rich outlier. Both replay oracles unchanged (Gauntlet 57→83%/0.02, Cave Noire 99→85%/0.06) ⇒ pure refactor.
+- **Learning — the thesis names its own failure mode, and a tripwire must enforce it.** INSIGHTS §2 says the
+  durable asset is *primitives in `core/` + thin per-world config*, with the discipline to **lift on the 2nd
+  use**. We had instead let specifics ossify into per-game copies — caught only by David's skepticism. A
+  principle without a detector rots: added `test_lean_games_do_not_carry_their_own_infra` (no `emulator.py`/
+  `plugin.py` outside `pokemon_red`) so the next copy-instead-of-lift fails CI. The drift-tripwire table had a
+  row for *constancy* (too-little-shared) but none for *ossification* (too-much-per-world) — now it does.
+- **Learning — the unit of reuse is the CAMERA CLASS, not the game.** Gauntlet (follow-scroll) and Cave Noire
+  (fixed) share the grid pose model and differ in exactly two primitives — the move signal (camera-scroll vs
+  foreground-residual) and the step source (ego token vs commanded button). Both expressed as a one-method
+  `MoveSignal`; zero `if game==…` in the base. Side-scrollers/3D will need a *different* base (toolkit growth),
+  not per-game bespoke — and Pokémon's richer perceiver legitimately stays separate.
+- **Cave Noire live loop CLOSED + a measure-first non-change.** The unchanged `ExploreBrain`/`core/` drove
+  Cave Noire in-cavern (constancy, live, world #3). The feared false-MOVE asymmetry (a move trusted on one
+  foreground frame) did NOT bite — 4/4 perceiver-moves were RAM-real, 0 phantom — so no symmetric-confirmation
+  fix was added (don't fix what the data says isn't broken). **Blocker surfaced honestly:** a blind random
+  masher can't traverse the JP hub-and-spoke menus to a sustained controllable dungeon, and the watch registers
+  only track once walking in-cavern; the definitive autonomous-nav run needs a hand-played in-cavern save-state.
+
 ## Iteration 01 — baseline: small LLM on raw pixels
 - **What:** decoupled aria as the brain (`--backend aria`), repurposed the companion into "Red", ran Haiku on raw 160×144 frames.
 - **Result:** stuck in the first room; **confabulated** (invented NPCs from furniture, mislabeled the bedroom "Oak's Lab", and wrote a *fabricated* "I exited the lab" into long-term memory).
