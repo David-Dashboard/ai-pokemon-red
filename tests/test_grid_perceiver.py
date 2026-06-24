@@ -75,21 +75,21 @@ def test_no_foreground_seals_a_wall_only_after_confirmation():
 
 
 # -- the MoveSignal strategies as units (pin the thresholds + the combined branch the perceiver tests
-# can't easily drive). The residual numbers come from eval/probe_foreground_motion (MOVED~2.9/STUCK~0.7). --
+# can't easily drive). The grid-max numbers come from eval/probe_spatial_move (real med 91 / stuck med 20). --
 
-def test_foreground_threshold_brackets_the_probe_medians():
-    sig = ForegroundSignal(move_px=2.0, fg_move=1.5)   # 1.5 sits between STUCK~0.7 and MOVED~2.9
-    no_cam = dict(commanded_dir="up", ego_token="none", sdx=0, sdy=0)
-    assert sig(best_diff=2.9, **no_cam).moved is True, "a MOVED-magnitude residual must step"
-    assert sig(best_diff=0.7, **no_cam).moved is False, "a STUCK-magnitude residual must not step"
-    assert sig(best_diff=1.5, **no_cam).moved is True, "the threshold itself is inclusive"
-    assert sig(best_diff=1.49, **no_cam).moved is False
+def test_foreground_grid_threshold_brackets_the_probe_medians():
+    sig = ForegroundSignal(move_px=2.0, fg_grid=58.0)   # 58 sits between STUCK~20 and MOVED~91 (grid-max)
+    no_cam = dict(commanded_dir="up", ego_token="none", sdx=0, sdy=0, best_diff=0.0)
+    assert sig(grid_max=91.0, **no_cam).moved is True, "a MOVED-magnitude cell spike must step"
+    assert sig(grid_max=20.0, **no_cam).moved is False, "a STUCK-magnitude cell spike must not step"
+    assert sig(grid_max=58.0, **no_cam).moved is True, "the threshold itself is inclusive"
+    assert sig(grid_max=57.9, **no_cam).moved is False
 
 
-def test_foreground_combined_scroll_and_residual_steps_by_ego_not_command():
+def test_foreground_combined_scroll_steps_by_ego_not_command():
     # When the camera ALSO scrolled (follow-ish frame), the ego axis wins over the commanded button.
-    sig = ForegroundSignal(move_px=2.0, fg_move=1.5)
-    r = sig(commanded_dir="up", ego_token="east", sdx=16, sdy=0, best_diff=50.0)
+    sig = ForegroundSignal(move_px=2.0, fg_grid=58.0)
+    r = sig(commanded_dir="up", ego_token="east", sdx=16, sdy=0, best_diff=0.0, grid_max=0.0)
     assert r.moved is True
     assert r.step_dir == "right", "scrolled => step by the ego (scrolled) axis, not the commanded 'up'"
     assert r.ego_motion == "east"

@@ -79,5 +79,23 @@ must NOT confidently dead-reckon a long chain on it. Two non-perception levers, 
 Both are calibrated-deferral, not "be confidently wrong with a better threshold." A perceiver-only threshold
 fix is explicitly NOT pursued — the data says it can't work.
 
+## FIX IMPLEMENTED + CLOSED-LOOP VALIDATED (2026-06-24)
+Both parts landed in `core/grid_perceiver.py`:
+- **Grid-max move signal** (`ForegroundSignal`, `fg_grid=58`): the per-step move signal is now max per-cell
+  change (`grid_max_change()`), not the whole-frame residual. Cave Noire wires it (`_FG_GRID=58`).
+- **No-progress backstop** (`_RUN_GUARD=4, _PROG_W=4, _PROG_MIN=4.0`): a sustained same-direction run whose
+  screen hasn't changed over the last 4 steps is demoted to a no-move → the existing wall-confirmation seals
+  it. Gated on a long run so it never fires on normal play.
+
+Results:
+- **Closed loop (the corridor runaway state):** perceiver "moves" 70→**4**, phantom **65→0**, pose ran away
+  to `[0,-70]` → stays sane at `[-1,-3]` (4 real moves, 4 walls correctly sealed). **The runaway is gone.**
+- **Offline replay (human recording):** drift **0.06→0.02** (far fewer phantom steps accumulate); net-dir
+  W=1 99→92%, W=40 85→84% (grid-max is more selective — a little per-step recall for much less drift).
+- **Gauntlet: unchanged** (57→83% / 0.02) — backstop inert (camera-scroll = progress); `CameraScrollSignal`
+  ignores grid-max. 338 tests green.
+
 ## Reproduce
-`uv run python -m eval.probe_phantom_move` (needs the two gitignored corpora).
+- `uv run python -m eval.probe_phantom_move` · `... probe_spatial_move` (need the two gitignored corpora).
+- Fix closed-loop: `uv run python play_cave_noire.py --steps 200 --brain explore --init-state <in-cavern.state>`
+  then score `oracle.jsonl` `outcome=="moved"` vs the `watch` x/y delta.
