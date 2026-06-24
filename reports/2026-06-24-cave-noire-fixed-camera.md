@@ -43,9 +43,18 @@ turn-based 4-dir gives an exact commanded direction. The fixed-camera pose model
 - Perceiver + probe + offline validation here; `tests/test_cave_noire.py` locks the foreground-move logic.
   **Live closed-loop run is NOT done yet** (plugin/emulator/driver + `ExploreBrain`) — the real test that
   caught Gauntlet's dead-zone; Cave Noire's single-screen dungeon may stress frontier-exploration.
+- **Live-run watch-items (the offline replay can't surface these):**
+  - **False-MOVE asymmetry** (the inverse of Gauntlet's false-wall): a wall needs `_WALL_CONFIRM` persistent
+    no-moves to seal, but a move is trusted on a *single* foreground frame, so a lone idle-animation flicker
+    (AUC 0.86 → ~14% confusable) can false-step the pose into a phantom cell. Candidate fix at the live run:
+    symmetric move-confirmation (persist the foreground 2 frames) or a higher `_FG_MOVE`, closed-loop validated.
+  - **No-leak wall test must ship with the plugin** — `test_cave_noire.py` covers perceiver logic only (no
+    plugin yet, so no leak surface). When `CaveNoirePlugin` lands it gets the same RAM-sentinel wall the
+    Gauntlet plugin has (`watch` RAM → `oracle.jsonl` only).
 - **Next (after the Gauntlet PR lands):** extract foreground-motion to a shared `core/` perceiver helper and
   migrate BOTH Gauntlet (fixing its dead-zone) and Cave Noire onto it — together, to avoid a one-user
-  abstraction.
+  abstraction. (Both PR reviews converge on the same design: a shared occupancy-grid perceiver parameterized
+  by a `move_signal(prev, cur, action) -> (moved, direction)` strategy.)
 
 ## Verification
 - `uv run python -m eval.find_ram_addr runs/2026-06-23_cavenoire_explore` → the X/Y registers.

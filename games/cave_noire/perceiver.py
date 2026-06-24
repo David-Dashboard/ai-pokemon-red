@@ -86,6 +86,13 @@ class CaveNoirePerceiver:
         cell["visited"] = True
         outcome, moved_dir = "unknown", "none"
         if direction and not first:
+            # ASYMMETRY (live-run watch-item): a wall needs _WALL_CONFIRM persistent no-moves to seal, but a
+            # MOVE is trusted on a SINGLE foreground frame. Idle animation (torches/enemies) raises the
+            # residual while stuck (AUC 0.86 -> ~14% confusable), so a lone flicker can false-step the pose
+            # into a phantom cell -- the inverse of Gauntlet's false-WALL. Offline drift (0.06) tolerates it;
+            # the closed loop may not. Candidate fix -- symmetric move-confirmation (persist the foreground
+            # 2 frames) or a higher _FG_MOVE -- is deferred to the live run, where it can be closed-loop
+            # validated (the offline replay can't surface it; same offline-overstates lesson Gauntlet hit).
             if scrolled or foreground:                 # the move landed (camera scrolled OR sprite moved)
                 cell["walls"].discard(direction)
                 nomove.pop(((x, y), direction), None)

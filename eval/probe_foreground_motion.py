@@ -44,7 +44,7 @@ def _auc(moved, stuck):
     if not moved or not stuck:
         return None
     m = np.array(moved); s = np.array(stuck)
-    wins = sum((m[:, None] > s[None, :]).sum() for _ in [0])
+    wins = (m[:, None] > s[None, :]).sum()
     ties = (m[:, None] == s[None, :]).sum()
     return (wins + 0.5 * ties) / (len(m) * len(s))
 
