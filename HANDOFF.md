@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-20._
+_Last updated: 2026-06-25._
 
 ---
 
@@ -79,6 +79,32 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 ## 2. Current status (2026-06-21)
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
+
+**⇒ NEWEST (2026-06-25) — THE CAVE NOIRE FALSE-MOVE RUNAWAY IS FIXED + SHIPPED (PR #13, squash-merged to `main`
+2026-06-24 as `06dc9dd`; 341 tests green, re-confirmed 2026-06-25). This SUPERSEDES the part-2 ⇒FOUND/⇒OPEN items
+below — the false-MOVE blocker is CLEARED; the only remaining open item for autonomous deep-dungeon nav is a
+NAVIGATION GOAL.**
+- **The fix = two parts, both in `core/grid_perceiver.py`, both closed-loop validated (NOT either/or).** The
+  part-2 ⇒FOUND guess (a "structural translation-check") was REFINED by a measure-first probe
+  (`eval/probe_phantom_move.py` + `eval/probe_spatial_move.py`, RAM = oracle): (1) **grid-max move signal** — the
+  per-step signal is now the max per-cell change on an 8×8 grid (`ForegroundSignal(fg_grid=58)`; Cave Noire wires
+  `_FG_GRID=58`), which localizes the sprite spike the whole-frame residual DILUTES (AUC **0.99 vs 0.86**, pure
+  numpy, no deps — David's "measure WHERE the change is, not how much," minus the CNN); (2) **no-progress backstop**
+  (`_RUN_GUARD=4, _PROG_W=4, _PROG_MIN=4.0`) — grid-max still leaves a ~33% runaway tail no per-step pixel signal
+  can catch, so a sustained same-direction run that isn't visually progressing is demoted to a no-move → the
+  existing wall-confirmation seals it. Constants grounded on the corridor regime (stuck p90 3.86 < 4.0 < real p10
+  6.45); false-wall rate measured 1.5%.
+- **Results:** closed-loop corridor phantom **65→0**, pose `[0,-70]`→`[-1,-3]` (runaway gone); offline replay drift
+  **0.06→0.02** (better); Gauntlet unchanged (backstop inert — camera-scroll = progress). The probe rejected the
+  fancy options (CNN/embedding = invariance machine, OOD on pixel-art; per-cell SSIM ties grid-max, no win) —
+  survey in `reports/2026-06-24-visual-embedding-models-survey.md`. Full record: `reports/2026-06-24-phantom-move-probe.md`.
+- **Open caveat (carried, not blocking):** `_FG_GRID=58` and the 0.99 AUC derive from a SINGLE human recording;
+  generalization to a different dungeon / flicker level / session is unvalidated — treat 58 as a calibration
+  constant to re-check on new corpora. The closed-loop corridor is `n_real=1` for discriminability (it validates
+  the phantom RATE, not separability).
+- **⇒ NEXT — autonomous deep-dungeon nav now needs only a NAVIGATION GOAL** for the `ExploreBrain` (the false-MOVE
+  blocker is cleared); a hand-played in-cavern save-state (`human_play.py` → `--init-state`) is the entry point and
+  exists.
 
 **⇒ NEWEST (2026-06-24, part-2) — SHARED PERCEPTION INFRA LIFTED TO `core/`; Gauntlet + Cave Noire are now
 THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR branch
