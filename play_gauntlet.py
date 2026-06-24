@@ -7,6 +7,7 @@ ExploreBrain / Gateway / run_episode the Pokemon driver uses, pointed at the Gau
 from __future__ import annotations
 
 import argparse
+import os
 import uuid
 
 from core.brains import ExploreBrain, ScriptedBrain
@@ -25,13 +26,18 @@ def main() -> int:
                     help="scripted = no-API smoke (mashes through the title, exercises the loop); "
                          "explore = the frontier autopilot that reads the perceiver's occupancy map")
     ap.add_argument("--window", action="store_true", help="show the SDL2 window (default headless)")
+    ap.add_argument("--init-state", default=None,
+                    help="load a gameplay save-state (skip the title/hero-select so ExploreBrain can navigate)")
+    ap.add_argument("--save-state", default=None,
+                    help="write the emulator state at the end (capture a gameplay checkpoint to reuse)")
+    ap.add_argument("--seed", type=int, default=0, help="ScriptedBrain seed (vary the warmup landing spot)")
     args = ap.parse_args()
 
     agent_id = f"agent-{uuid.uuid4()}"
     plugin = GauntletPlugin(rom_path=args.rom, out_dir=args.out, headless=not args.window,
-                            perceiver=GauntletPerceiver(),
+                            init_state=args.init_state, perceiver=GauntletPerceiver(),
                             watch={"x": 0xC286, "y": 0xC2C6})   # RAM -> oracle log ONLY (scoring)
-    brain = (ScriptedBrain(agent_id) if args.brain == "scripted"
+    brain = (ScriptedBrain(agent_id, seed=args.seed) if args.brain == "scripted"
              else ExploreBrain(agent_id, single_step=True))   # the SAME core brains as Pokemon
     gateway = Gateway(plugin, GAUNTLET_SANDBOX)
 
@@ -47,6 +53,10 @@ def main() -> int:
     print(f"Gauntlet constancy run: {args.brain} brain, {args.steps} steps -> {args.out}")
     try:
         summary = run_episode(gateway, plugin, brain, agent_id, max_steps=args.steps, on_step=on_step)
+        if args.save_state:
+            os.makedirs(os.path.dirname(args.save_state) or ".", exist_ok=True)
+            plugin.save_state(args.save_state)
+            print(f"saved state -> {args.save_state}")
     finally:
         plugin.close()
     print(f"\nDone. calls={summary['steps']}  events={summary['event_counts']}")

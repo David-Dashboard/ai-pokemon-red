@@ -33,6 +33,15 @@ _EGO2DIR = {"east": "right", "west": "left", "south": "down", "north": "up"}  # 
 _NW, _NH = 128, 112        # normalize frames for best_shift (same as eval/probe_camera_model)
 _MAX_SHIFT, _STEP = 18, 2  # 2D translation search (px on the normalized frame)
 _MOVE_PX = 2.0             # camera-shift magnitude above which we actually scrolled (moved, not bumped)
+# Persistent-wall confirmation. A follow camera has a DEAD-ZONE: the hero can move while the camera holds
+# (best_shift~0), so a single no-scroll is NOT a wall. Measured cross-game on RAM-grounded recordings:
+# 24% (Gauntlet) / 19% (Metroid) / 9% (Kirby) of real moves are camera-static -> live, ~95% of naive
+# "blocked" calls were really moves, which sealed phantom walls and boxed the autopilot in. A TRUE wall
+# fails to scroll on EVERY attempt; a dead-zone slide is transient (the camera soon catches up = a move,
+# which clears the count). So only seal after N persistent no-scroll attempts from the same cell+dir.
+# CORE-PROMOTION CANDIDATE: this robustness is general (every non-centered camera) -- lift it to a shared
+# core perceiver helper once a 2nd world's perceiver needs it (Pokemon's always-centered camera does not).
+_WALL_CONFIRM = 3
 
 
 def _dominant_dir(action: Optional[str]) -> Optional[str]:
@@ -61,6 +70,7 @@ class GauntletPerceiver:
         m = memory.data
         m.setdefault("cursor", (0, 0))
         cells = m.setdefault("cells", {})
+        noscroll = m.setdefault("noscroll", {})   # (cell, dir) -> consecutive no-scroll attempts
         ctx = context or {}
         action = ctx.get("last_action")
         direction = _dominant_dir(action)
@@ -88,6 +98,7 @@ class GauntletPerceiver:
         if direction and not first:
             if max(abs(sdx), abs(sdy)) >= _MOVE_PX:        # camera scrolled -> the move landed
                 cell["walls"].discard(direction)
+                noscroll.pop(((x, y), direction), None)    # a confirmed move clears any tentative count
                 # Step the cursor by the EGO direction (actual camera motion) not the button: Gauntlet
                 # is 8-way, so a diagonal press moves both axes -- ego tracks the true displacement and
                 # matches the pose-drift gate (commanded-only dropped a diagonal axis -> drift). Wall
@@ -100,9 +111,14 @@ class GauntletPerceiver:
                 cell["walls"].discard(_BACK[direction])
                 m["cursor"] = (x, y)
                 outcome = "moved"
-            else:                                          # commanded a move, nothing scrolled -> wall
-                cell["walls"].add(direction)
-                outcome = "blocked"
+            else:                                          # no scroll: a WALL or a dead-zone slide
+                key = ((x, y), direction)
+                noscroll[key] = noscroll.get(key, 0) + 1
+                if noscroll[key] >= _WALL_CONFIRM:         # persistent -> a real wall, seal it
+                    cell["walls"].add(direction)
+                    outcome = "blocked"
+                else:
+                    outcome = "unknown"                    # tentative: don't seal a phantom dead-zone wall
 
         m["prev_full"], m["prev_norm"] = cur_full, cur_norm
 

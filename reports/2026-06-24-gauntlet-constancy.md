@@ -40,6 +40,31 @@ commanded space) recovered 0.02. Command-space pose loses diagonals; ego-space p
 - **Thin prompt** — `GAUNTLET_SYSTEM` is identity + controls + goal, same THINK/MOVE/GOTO contract as Pokémon;
   no Gauntlet strategy. The strong form of constancy (only surface config changes).
 
+## Closed-loop finding: the camera dead-zone false-walls (+ the fix)
+
+The offline pose gate passed (drift 0.02), but the closed loop exposed a perceiver bug the gate couldn't —
+the same shape as the earlier Pokémon "offline metric overstates; closed-loop reveals the strand" lesson.
+
+`ExploreBrain` (loaded from an autonomous gameplay checkpoint — `ScriptedBrain` mashes past the title, no
+human) **navigated** (RAM-confirmed motion) but gave up early. Diagnosis across **5 runs / 4 maze starts**:
+**95% of all `blocked` outcomes (70 of 74) were real moves the camera DEAD-ZONE hid** — the hero moved (RAM
+changed) but the follow-camera didn't scroll (`best_shift≈0`), so the naive "no scroll ⇒ wall" idiom sealed
+phantom walls and boxed the autopilot in. The brain did the right thing with a corrupted map → the bug is
+PERCEIVER-side, not `core/`.
+
+**It's general, not a Gauntlet quirk** (measured on the RAM-grounded recordings — no new perceivers needed):
+fraction of real moves that are camera-static = **Gauntlet 24% / Metroid 19% / Kirby 9% / Pokémon ~0%**.
+Pokémon is the immune outlier *because* it always centers the player — the only reason "no scroll ⇒ wall" has
+worked for us. So this is a general flaw in that idiom for any non-centered camera.
+
+**Fix (perceiver-side, `_WALL_CONFIRM=3`):** a true wall fails to scroll on *every* attempt; a dead-zone slide
+is transient (the camera soon catches up = a move, which clears the count). So seal a wall only after N
+persistent no-scroll attempts from the same cell+direction. Validated on the same 5 checkpoints: real-world
+traversal (RAM span) up in **all 5** runs, total moves **129→223 (+73%)**, phantom walls **70→42 (−40%)**.
+Not fully eliminated (the dead-zone is a fundamental pixels-only limit; `_WALL_CONFIRM` is a coverage/accuracy
+dial). **CORE-PROMOTION CANDIDATE:** the robustness is general — lift it to a shared `core/` perceiver helper
+when a 2nd world's perceiver needs it (Pokémon, always-centered, does not).
+
 ## Open / next (logged, not silently worked around)
 - **Stronger demo:** `ScriptedBrain` mashes through the title but explores little. The `ExploreBrain`
   navigation demo (brain's pathfinder driving the maze, reading the perceiver's map) needs a **gameplay
