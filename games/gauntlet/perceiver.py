@@ -97,19 +97,20 @@ class GauntletPerceiver:
         outcome = "unknown"
         if direction and not first:
             if max(abs(sdx), abs(sdy)) >= _MOVE_PX:        # camera scrolled -> the move landed
-                cell["walls"].discard(direction)
-                noscroll.pop(((x, y), direction), None)    # a confirmed move clears any tentative count
-                # Step the cursor by the EGO direction (best_shift's dominant axis), not the last-pressed
-                # button token. Still exactly one cardinal cell per move -- but on an 8-way diagonal press
-                # ego picks the axis that ACTUALLY scrolled, where the commanded token picks whichever
-                # direction was pressed last (the mismatch that drove the 0.31->0.02 drift). Wall
-                # bookkeeping stays in COMMANDED space (you know which way you pressed).
+                noscroll.pop(((x, y), direction), None)    # the COMMANDED dir worked -> clear its no-scroll count
+                # Step by the EGO direction (best_shift's dominant axis), not the last-pressed token. Still
+                # exactly one cardinal cell -- but on an 8-way diagonal press ego picks the axis that ACTUALLY
+                # scrolled (the commanded token picks whichever was pressed last; that mismatch drove the
+                # 0.31->0.02 drift). ASSUMPTION: ego's dominant axis == the true displacement (holds at 0.02
+                # drift). Keep the WALL bookkeeping in the SAME ego space as the cursor so they can't desync
+                # when ego != commanded (clearing a commanded-space wall while stepping in ego would).
                 step = _EGO2DIR.get(ego, direction)
+                cell["walls"].discard(step)                # the cell we left is open the way we MOVED
                 dx, dy = _DELTA[step]
                 x, y = x + dx, y + dy                       # one press = one cell (magnitude deferred)
                 cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
                 cell["visited"] = True
-                cell["walls"].discard(_BACK[direction])
+                cell["walls"].discard(_BACK[step])         # the cell we entered is open back the way we came
                 m["cursor"] = (x, y)
                 outcome = "moved"
             else:                                          # no scroll: a WALL or a dead-zone slide
