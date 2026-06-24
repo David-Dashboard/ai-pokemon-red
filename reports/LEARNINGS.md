@@ -6,6 +6,30 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-06-24 — part-2: lifting per-world perception into a shared `core/` (the ossification fix)
+- **What:** the occupancy-grid perceiver, the GB emulator, and the perception-only plugin had been duplicated
+  3× (Pokémon → Gauntlet → Cave Noire by *copying*). Lifted the shared body to `core/` — `core/grid.py`,
+  `core/gb_emulator.py`, `core/perception_plugin.py` (`PerceptionPlugin`), `core/grid_perceiver.py`
+  (`GridPerceiver` + a `MoveSignal` strategy). Gauntlet + Cave Noire shrank to ~25-line config; Pokémon stays
+  the rich outlier. Both replay oracles unchanged (Gauntlet 57→83%/0.02, Cave Noire 99→85%/0.06) ⇒ pure refactor.
+- **Learning — the thesis names its own failure mode, and a tripwire must enforce it.** INSIGHTS §2 says the
+  durable asset is *primitives in `core/` + thin per-world config*, with the discipline to **lift on the 2nd
+  use**. We had instead let specifics ossify into per-game copies — caught only by David's skepticism. A
+  principle without a detector rots: added `test_lean_games_do_not_carry_their_own_infra` (no `emulator.py`/
+  `plugin.py` outside `pokemon_red`) so the next copy-instead-of-lift fails CI. The drift-tripwire table had a
+  row for *constancy* (too-little-shared) but none for *ossification* (too-much-per-world) — now it does.
+- **Learning — the unit of reuse is the CAMERA CLASS, not the game.** Gauntlet (follow-scroll) and Cave Noire
+  (fixed) share the grid pose model and differ in exactly two primitives — the move signal (camera-scroll vs
+  foreground-residual) and the step source (ego token vs commanded button). Both expressed as a one-method
+  `MoveSignal`; zero `if game==…` in the base. Side-scrollers/3D will need a *different* base (toolkit growth),
+  not per-game bespoke — and Pokémon's richer perceiver legitimately stays separate.
+- **Cave Noire live loop CLOSED + a measure-first non-change.** The unchanged `ExploreBrain`/`core/` drove
+  Cave Noire in-cavern (constancy, live, world #3). The feared false-MOVE asymmetry (a move trusted on one
+  foreground frame) did NOT bite — 4/4 perceiver-moves were RAM-real, 0 phantom — so no symmetric-confirmation
+  fix was added (don't fix what the data says isn't broken). **Blocker surfaced honestly:** a blind random
+  masher can't traverse the JP hub-and-spoke menus to a sustained controllable dungeon, and the watch registers
+  only track once walking in-cavern; the definitive autonomous-nav run needs a hand-played in-cavern save-state.
+
 ## Iteration 01 — baseline: small LLM on raw pixels
 - **What:** decoupled aria as the brain (`--backend aria`), repurposed the companion into "Red", ran Haiku on raw 160×144 frames.
 - **Result:** stuck in the first room; **confabulated** (invented NPCs from furniture, mislabeled the bedroom "Oak's Lab", and wrote a *fabricated* "I exited the lab" into long-term memory).
@@ -439,3 +463,32 @@ verified by a 5-agent workflow. Verdict: **GREENLIGHT It3** — and the headline
   limit case (always-centered → all==scrolled==98%). **So report camera-scrolled as the estimator's accuracy and
   carry the static penalty transparently in "all" — don't hide it.** The dead-zone, not an estimator weakness, is
   the whole gap. Report: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md`. NEXT = P2 (`core/egomotion.py`).
+
+## 2026-06-24 — CONSTANCY across 3 camera classes; the dead-zone false-walls; the foreground-motion primitive
+- **What:** built the first SECOND/THIRD-world perceivers and ran the existing brain end-to-end — the project's
+  biggest claim, "swap only the perceiver; reuse the brain." `games/gauntlet/` (follow-scroll, PR #9) +
+  `games/cave_noire/` (fixed camera, PR #10), both emitting the role-named `SymbolicState`; `ExploreBrain`/
+  `Gateway`/`run_episode` reused UNCHANGED. core/ untouched, no RAM leak (fitness wall extended per world).
+- **Result:** constancy demonstrated on 3 camera classes (Pokémon follow-CENTERED / Gauntlet follow-SCROLL /
+  Cave Noire FIXED), brain code identical. Two deep findings:
+  1. **The camera DEAD-ZONE false-walls (Gauntlet).** The offline pose gate passed (0.02 drift) but the
+     closed-loop `ExploreBrain` gave up early: **95% of `blocked` outcomes were real moves the follow-camera hid**
+     (player slides, camera holds, `best_shift≈0` → "no scroll = wall" sealed phantom walls). General, not a
+     Gauntlet quirk — camera-static share of real moves = Gauntlet 24% / Metroid 19% / Kirby 9% / Pokémon ~0%
+     (always-centered = immune). Fix `_WALL_CONFIRM=3` (seal only after N persistent no-scrolls): moves +73%,
+     phantom walls −40%. Bug was PERCEIVER-side; the brain did the right thing with a corrupted map.
+  2. **The foreground-motion primitive (Cave Noire / the fixed-camera class).** `best_shift` = camera/background
+     motion; its COMPLEMENT is the camera-compensated RESIDUAL = FOREGROUND (sprite) motion, which recovers the
+     move when the camera is blind (AUC 0.86 Cave Noire / 0.76 Gauntlet). `move = camera scrolled OR foreground
+     residual high` covers follow + fixed + dead-zone cameras. Cheap (frame-diff, no CLIP). Offline-validated on
+     Cave Noire (99%/0.06 vs the finder-found RAM oracle).
+- **Why it matters / how to apply:** when a new world underperformed, the fix lived in the SWAPPABLE perceiver,
+  never the brain — the architecture working as designed. Method lessons reinforced: **measure-first saved a
+  wasted build** (Cave Noire turned out fixed-camera, not the assumed follow-scroll — caught before building);
+  **offline metric overstates, closed-loop reveals the strand** (the dead-zone was invisible to the pose gate);
+  **pose in EGO space beats command space** (dominant-axis stepping, 0.31→0.02 drift). **NEXT (part 2):** the 3
+  lean perceivers are byte-identical except (a) move signal and (b) direction source → extract a shared `core/`
+  occupancy-grid perceiver parameterized by `move_signal(prev,cur,action)->(moved,direction)`; that also folds in
+  the foreground+best_shift combination (fixing dead-zone + the Cave-Noire false-MOVE asymmetry) and a
+  `core/grid.py`. Cave Noire's LIVE run is still unbuilt. Reports: `reports/2026-06-24-gauntlet-constancy.md`,
+  `2026-06-24-cave-noire-fixed-camera.md`.

@@ -80,6 +80,83 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
 
+**⇒ NEWEST (2026-06-24, part-2) — SHARED PERCEPTION INFRA LIFTED TO `core/`; Gauntlet + Cave Noire are now
+THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR branch
+(`feat/core-perceiver-extraction`, PR #12); 338 tests green; both OFFLINE replay oracles re-run post-refactor
+and unchanged → behavior-preserving on the oracle (verbatim output committed in
+`reports/2026-06-24-part2-replay-revalidation.md`). Closed-loop surfaced a real defect the replay masks (below).**
+- **The ossification debt is paid (INSIGHTS §2).** The occupancy-grid perceiver, the GB emulator, and the
+  perception-only plugin were duplicated 3× across `games/`; they now live ONCE in `core/`: `core/grid.py`
+  (DIRS/DELTA/BACK/EGO2DIR/DIR2EGO), `core/gb_emulator.py` (the generic PyBoy wrapper), `core/perception_plugin.py`
+  (`PerceptionPlugin` — perception-only, watch→oracle, injectable flavor text), `core/grid_perceiver.py`
+  (`GridPerceiver` + a `MoveSignal` strategy: `CameraScrollSignal` / `ForegroundSignal`). Gauntlet + Cave Noire
+  perceivers/`__init__` are now ~25-line config (move signal + calibration + prompt). Pokémon stays the rich
+  OUTLIER (place-graph/tilemap + reward/battle/fade) — deliberately not migrated. Deleted `games/gauntlet/{emulator,plugin}.py`.
+- **Anti-drift GUARDRAIL (the lesson David forced).** The drift = building world #2/#3 by copying the Pokémon
+  package instead of lifting primitives. New tripwire `tests/test_import_boundaries.py::test_lean_games_do_not_carry_their_own_infra`
+  (no `emulator.py`/`plugin.py` outside `pokemon_red`) + a "primitive ossification" row in CONTEXT-BRIEFING's
+  drift table + a laziness-ladder line in CLAUDE.md ("copying a sibling file = the lift signal").
+- **Cave Noire live closed-loop wired (the unfinished half of PR #10).** `play_cave_noire.py` + the no-RAM-leak
+  sentinel wall in `tests/test_cave_noire.py`. The unchanged `ExploreBrain`/`core/` ran the Cave Noire stack
+  end-to-end IN-CAVERN — i.e. the ARCHITECTURAL constancy (brain code untouched when adding a world) holds by
+  construction. **Task-level success is NOT shown** (a handful of confirmed moves, then dead-end / phantom
+  runaway) — see the OPEN item.
+- **⇒ FOUND (closed-loop) — the false-MOVE asymmetry BITES; a fix is the next follow-up (NOT in PR #12).**
+  Two ExploreBrain runs from hand-played in-cavern save-states, scored vs the RAM oracle (`x=0xC504 y=0xC503`):
+  open corridor **65 of 70** perceiver-"moves" were PHANTOM (idle animation pushed the foreground residual over
+  `_FG_MOVE=1.5`; pose dead-reckoned to `[0,-70]` while the player was pinned at a wall); tight pocket 2/3.
+  (An earlier N=4 run showed 0 phantom — but P(0|bug)≈0.86⁴≈0.55, statistical noise; that "did-not-bite" claim
+  is RETRACTED.) **Measure-first probe killed the easy fixes:** real vs phantom residual INVERT and interleave
+  across runs (real `{2.1,2.5}` < idle-phantom `{3.8}` < real `{6.0}` ≪ big-event phantom `{57,71}`), so no
+  static threshold/band separates; `context==gameplay` catches only the menu phantom. The reliable fix is
+  STRUCTURAL (translation-direction check or move-persistence confirmation, the twin of wall-confirmation) —
+  its own probe + closed-loop validation. Evidence: `reports/2026-06-24-part2-replay-revalidation.md`.
+- **⇒ OPEN — autonomous deep-dungeon nav** still needs the false-MOVE fix above + a navigation goal. The random
+  `ScriptedBrain` can't traverse the JP hub menus to reach a cavern (watch registers frozen at the hub); a
+  hand-played in-cavern save-state (`human_play.py` → `--init-state`) is the entry point and now exists.
+
+**⇒ PRIOR (2026-06-24) — CONSTANCY VALIDATED ACROSS 3 WORLDS / 3 CAMERA CLASSES (brain + `core/` UNCHANGED).
+`main` had Pokémon + Gauntlet + Cave Noire perceivers; PRs #7/#8/#9/#10 ALL MERGED. (part-2 core extraction, above, now done.)**
+- **The thesis ("swap only the perceiver; reuse the brain") is demonstrated on 3 camera classes, brain code
+  untouched:** Pokémon (follow-CENTERED, the original), **Gauntlet** (follow-SCROLL, PR #9), **Cave Noire**
+  (FIXED camera, PR #10). The existing `ExploreBrain`/`Gateway`/`run_episode` drive each via only a new
+  `games/<world>/` perceiver+plugin + a thin prompt. No RAM leak (fitness wall extended per world); import
+  boundary green; frozen `core/contracts.py` intact.
+- **Gauntlet (PR #9, merged) — follow-scroll, pose from `best_shift` camera motion.** Live closed-loop run
+  (autonomous: `ScriptedBrain` mashes past the title → `--save-state` → `--brain explore`) NAVIGATED
+  (RAM-confirmed) but surfaced the **camera DEAD-ZONE false-walls**: 95% of `blocked` outcomes were real moves
+  the follow-camera hid (`best_shift≈0` when the player slides in the dead-zone). Fix `_WALL_CONFIRM=3`
+  (seal a wall only after N persistent no-scrolls): traversal up in all 5 runs, moves +73%, phantom walls −40%.
+  Pose stepped in EGO space (best_shift dominant axis, not last-pressed token: 0.31→0.02 drift); walls now
+  bookkept in the SAME ego space (desync fix). `eval/replay_gauntlet_pose` = 83% heading / 0.02 drift.
+- **Cave Noire (PR #10, merged) — FIXED camera, pose from FOREGROUND motion (the missing half of ego-motion).**
+  `find_ram_addr` found player regs X=`0xC504` Y=`0xC503`; `best_shift` is 99% camera-static there (fixed cam),
+  so the Gauntlet recipe maps nothing. **`eval/probe_foreground_motion`:** the camera-compensated RESIDUAL
+  (best_shift's `best_diff`) is FOREGROUND/sprite motion — it separates a real move from a wall-bump when the
+  camera is blind (AUC **0.86** Cave Noire / **0.76** Gauntlet). It's the COMPLEMENT to `best_shift`:
+  `move = camera scrolled OR foreground residual high`. Camera-static share of real moves: Gauntlet 24% /
+  Metroid 19% / Kirby 9% / Pokémon ~0% (always-centered = immune, why this never bit before). Cave Noire
+  perceiver = Gauntlet structure with the move signal swapped to foreground + direction from the commanded
+  button (4-dir turn-based). `eval/replay_cave_noire_pose` = **99%(W1)→85%(W40) net-dir, 0.06 drift** (offline).
+  **Live closed-loop run NOT done** (no plugin/emulator/driver yet).
+- **⇒ NEXT — PART 2 (now UNBLOCKED; both PR reviews endorse the exact design):** extract a SHARED `core/`
+  occupancy-grid perceiver base parameterized by a **`move_signal(prev, cur, action) -> (moved, direction)`**
+  strategy, and migrate the lean new perceivers onto it. The 3 new-style perceivers are **byte-identical except
+  (a) the move signal** (camera-scroll vs foreground-residual) **and (b) the direction source** (ego token vs
+  commanded button) — everything else (occupancy grid, frontiers, `_WALL_CONFIRM`, `affordances`, `_grays`,
+  `_dominant_dir`, `_DIRS`/`_DELTA`/`_BACK`, `SymbolicState` assembly, the stripped emulator/plugin/`_render_symbolic`)
+  is duplicated 3×. The extraction also resolves the **dead-zone + false-move residuals** (the move_signal can
+  combine best_shift + foreground), the **copy-drift**, and `_DIRS`/`_DELTA` → a `core/grid.py`. (Pokémon's
+  perceiver stays separate — it has the richer place-graph/tilemap; the shared base is for the lean perceivers.)
+- **Live-run watch-items (carry forward):** (1) **Cave Noire live closed-loop** is the unfinished half — build
+  plugin/emulator/driver + `ExploreBrain`; **false-MOVE asymmetry** (a move is trusted on a single foreground
+  frame while a wall needs 3 → idle animation can false-step; candidate fix = symmetric move-confirmation, to be
+  CLOSED-LOOP validated); **`CaveNoirePlugin` must ship the no-leak RAM-sentinel test** like Gauntlet's. (2)
+  Gauntlet 8-way exploration via a 4-cardinal `ExploreBrain` (fix via LLM diagonal sequences, NOT a `core/` edit).
+- **Reports:** `reports/2026-06-24-gauntlet-constancy.md`, `2026-06-24-cave-noire-fixed-camera.md`. Side-scrollers
+  (Kirby/Metroid, 1D/warps) + 3D (Doom) remain later phases. Guardrails unchanged (held-out never tuned; corpus
+  gitignored on D:; GBC banked WRAM).
+
 **⇒ NEWEST (2026-06-23, latest) — CROSS-GAME RAM-GROUNDED EGO-MOTION (Eval C) DONE; the P1 cross-game thread is
 CLOSED. `best_shift` recovers self-motion DIRECTION on 3 NON-Pokémon games. `main` = `2e10e18`, 308 green; Eval C
 + report are LOCAL/UNCOMMITTED (see ⇒NEXT — needs a commit/PR, ask David first).**

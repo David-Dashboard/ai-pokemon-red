@@ -1,10 +1,11 @@
-"""GauntletPlugin — the Gauntlet II world as a GamePlugin (perception-only; the SECOND world).
+"""PerceptionPlugin — a perception-only GamePlugin for the lean worlds (the constancy infra).
 
-A stripped copy of games/pokemon_red/plugin.py: NO RAM in the observation (Gauntlet is perception-only,
-so a perceiver is required), no reward tracker, no map-warp/fade handling, no Gen-1 battle settling. The
-agent sees a `SymbolicState` (pixels-derived); RAM, if a `watch` map is supplied, goes ONLY to oracle.jsonl
-for offline scoring and NEVER into Observation.data (the no-leak rule, structural). Emulator is injected,
-so the class is exercisable with a FakeEmulator and no ROM.
+Lifted from games/gauntlet/plugin.py the second time it was needed (Gauntlet + Cave Noire): NO RAM in the
+observation (a perceiver is required), no reward tracker, no map-warp/fade handling, no Gen-1 battle
+settling. The agent sees a `SymbolicState` (pixels-derived); RAM, if a `watch` map is supplied, goes ONLY
+to oracle.jsonl for offline scoring and NEVER into Observation.data (the no-leak rule, structural). The
+emulator is injected, so the class is exercisable with a FakeEmulator and no ROM. The only per-world bits
+are flavor text (button descriptions + the render header) — injected, not subclassed.
 """
 from __future__ import annotations
 
@@ -14,19 +15,24 @@ import time
 from typing import Optional
 
 from core.contracts import Event, Observation, ToolCall, ToolResult, ToolSpec
+from core.gb_emulator import BUTTONS, Emulator, PyBoyEmulator
 from core.perception import PerceptMemory, Perceiver
 
-from .emulator import BUTTONS, Emulator, PyBoyEmulator
+_DEFAULT_BUTTON_DESC = ("Press one Game Boy button (a, b, start, select, up, down, left, right). "
+                        "The d-pad moves; A/B act; START advances menus/titles.")
+_DEFAULT_SEQUENCE_DESC = ("Press several buttons in order in one call — efficient for walking a few "
+                          "steps. Diagonals are two presses (e.g. up then left).")
+_DEFAULT_RENDER_HEADER = "Top-down maze exploration. Perception is approximate; a screenshot is attached."
 
 
-class GauntletPlugin:
-    """One live Gauntlet II session driven through button-press tool calls. Perception-only."""
+class PerceptionPlugin:
+    """One live perception-only Game Boy session driven through button-press tool calls."""
 
     def __init__(
         self,
         rom_path: Optional[str] = None,
         emulator: Optional[Emulator] = None,
-        out_dir: str = "runs/gauntlet",
+        out_dir: str = "runs/perception",
         headless: bool = True,
         init_state: Optional[str] = None,
         perceiver: Optional[Perceiver] = None,
@@ -35,9 +41,12 @@ class GauntletPlugin:
         record_path: Optional[str] = None,
         record_fps: int = 30,
         record_scale: int = 3,
+        button_desc: str = _DEFAULT_BUTTON_DESC,
+        sequence_desc: str = _DEFAULT_SEQUENCE_DESC,
+        render_header: str = _DEFAULT_RENDER_HEADER,
     ) -> None:
         if perceiver is None:
-            raise ValueError("GauntletPlugin is perception-only — pass a perceiver")
+            raise ValueError("PerceptionPlugin is perception-only — pass a perceiver")
         if emulator is None:
             if rom_path is None:
                 raise ValueError("provide either rom_path or an emulator instance")
@@ -57,6 +66,9 @@ class GauntletPlugin:
         self._oracle_path = os.path.join(self.out_dir, "oracle.jsonl")
         self._watch = dict(watch or {})        # name -> WRAM addr; RAM goes to the oracle log ONLY
         self._last_action: Optional[str] = None  # fed to the perceiver for odometry
+        self._button_desc = button_desc
+        self._sequence_desc = sequence_desc
+        self._render_header = render_header
 
     # -- GamePlugin surface --------------------------------------------------
 
@@ -65,8 +77,7 @@ class GauntletPlugin:
         return [
             ToolSpec(
                 name="press_button",
-                description=("Press one Game Boy button (a, b, start, select, up, down, left, right). "
-                             "The d-pad walks; B fires; A/START advance the title/hero-select."),
+                description=self._button_desc,
                 schema={"type": "object",
                         "properties": {"button": button_enum,
                                        "hold_frames": {"type": "integer", "minimum": 1, "maximum": 120}},
@@ -75,8 +86,7 @@ class GauntletPlugin:
             ),
             ToolSpec(
                 name="press_sequence",
-                description=("Press several buttons in order in one call — efficient for walking a few "
-                             "steps. Diagonals are two presses (e.g. up then left)."),
+                description=self._sequence_desc,
                 schema={"type": "object",
                         "properties": {"buttons": {"type": "array", "items": button_enum, "maxItems": 16}},
                         "required": ["buttons"]},
@@ -156,7 +166,7 @@ class GauntletPlugin:
         pose = sym.pose or {}
         sm = sym.spatial_memory or {}
         la = sym.last_action or {}
-        lines = ["Top-down maze exploration. Perception is approximate; a screenshot is attached."]
+        lines = [self._render_header]
         if pose.get("value") is not None:
             lines.append(f"Your position (dead-reckoned, approximate): {tuple(pose['value'])}.")
         action, outcome = la.get("action"), la.get("outcome")

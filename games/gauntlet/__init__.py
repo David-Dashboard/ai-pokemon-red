@@ -1,15 +1,20 @@
 """Gauntlet II world package (the SECOND world, for the constancy test).
 
-Ships the GamePlugin + perceiver + sandbox + a THIN system prompt. The brain (`core/`) is reused
-UNCHANGED — only this per-world package and its prompt differ. Imports only `core/` + its own modules
-(never a sibling game): the import-boundary wall.
+Ships per-world CONFIG only: the sandbox, a THIN system prompt, and a `GauntletPlugin` (the shared
+`core.perception_plugin.PerceptionPlugin` wired with Gauntlet's flavor text). The brain (`core/`) and the
+world-interface infra (emulator + plugin body) are reused UNCHANGED — only this config and the perceiver
+differ. Imports only `core/` + its own modules (never a sibling game): the import-boundary wall.
 """
+from core.perception_plugin import PerceptionPlugin
 from core.permissions import Allowlist
-
-from .plugin import GauntletPlugin
 
 # The sandbox: exactly the in-game button tools (same shape as Pokemon's; the semantics differ, not the code).
 GAUNTLET_SANDBOX = Allowlist({"press_button", "press_sequence", "wait"})
+
+_BUTTON_DESC = ("Press one Game Boy button (a, b, start, select, up, down, left, right). "
+                "The d-pad walks; B fires; A/START advance the title/hero-select.")
+_SEQUENCE_DESC = ("Press several buttons in order in one call — efficient for walking a few steps. "
+                  "Diagonals are two presses (e.g. up then left).")
 
 # A THIN per-world prompt: identity + controls + goal only (NO game-specific strategy — keeping it thin is
 # the constancy result we want). Reuses the exact THINK/MOVE/GOTO contract the parser depends on.
@@ -24,5 +29,16 @@ GAUNTLET_SYSTEM = (
     "GOTO: x y   (optional) send yourself to a known map cell (coordinates are shown when available); "
     "a free pathfinder then walks you there over the next steps."
 )
+
+
+class GauntletPlugin(PerceptionPlugin):
+    """The shared perception-only plugin with Gauntlet's flavor text (the d-pad walks; B fires)."""
+
+    def __init__(self, **kwargs) -> None:
+        kwargs.setdefault("out_dir", "runs/gauntlet")
+        kwargs.setdefault("button_desc", _BUTTON_DESC)
+        kwargs.setdefault("sequence_desc", _SEQUENCE_DESC)
+        super().__init__(**kwargs)
+
 
 __all__ = ["GauntletPlugin", "GAUNTLET_SANDBOX", "GAUNTLET_SYSTEM"]
