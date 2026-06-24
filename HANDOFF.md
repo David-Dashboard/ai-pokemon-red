@@ -76,9 +76,13 @@ The invariants that make a win *count* (held on purpose — they're what makes t
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn`.
 
-## 2. Current status (2026-06-21)
+## 2. Current status (newest block first; the live state is the TOP block)
 
-**⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
+**⇒ Read the TOP block first — this section is append-on-top (newest → oldest; the dates below descend).**
+
+**⇒ Picking this up COLD? `git fetch origin`, then check `origin/main` + `gh pr list --state all` BEFORE trusting
+local branch state. A squash-merge orphans the source branch's commits, so a branch that looks "N commits ahead of
+main" can already be fully merged (this nearly produced a duplicate PR of already-shipped work).**
 
 **⇒ NEWEST (2026-06-25) — THE CAVE NOIRE FALSE-MOVE RUNAWAY IS FIXED + SHIPPED (PR #13, squash-merged to `main`
 2026-06-24 as `06dc9dd`; 341 tests green, re-confirmed 2026-06-25). This SUPERSEDES the part-2 ⇒FOUND/⇒OPEN items
