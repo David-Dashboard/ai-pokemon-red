@@ -32,9 +32,32 @@ Windowed/median signals score AUC 0.99 *within* the corridor only because a *sus
 separable there; on the general case (isolated bumps amid real motion) they fall to ~0.62. **Confirmed: the
 foreground residual's AUC-0.86 ceiling is the best per-step pixel signal, and it is not enough.**
 
-## Implication — the fix is behavioral (and already has homes in the architecture)
-Per-step perception can't reliably tell move from stuck here, so the perceiver must NOT confidently
-dead-reckon a long chain on it. Two non-perception levers, both already in the design:
+## UPDATE — localizing the change (grid-max) recovers most of the signal (corrects the claim below)
+The "no cheap pixel signal" conclusion was measured on WHOLE-FRAME magnitude. David's counter — *measure
+WHERE the change is, not how much* — was tested in `eval/probe_spatial_move.py` and is largely right:
+
+| signal | corridor AUC | human-recording AUC (n=2106) |
+|---|--:|--:|
+| whole-frame diff (the current move signal) | (n_real=1) | 0.86 |
+| **grid max-cell change** (max per-cell mean-abs diff, 8×8 grid) | (n_real=1) | **0.99** |
+| sprite-centroid direction (background-subtraction tracking) | 0.84 | 0.75 |
+
+A real move spikes ONE cell (the sprite region, median 91) while idle flicker only musters ~20; whole-frame
+averaging dilutes the sprite's strong local change into the static background, grid-max preserves it. So the
+information IS there — the earlier probe measured it dilutively. **A CNN is NOT needed** (plain per-cell max
+of pixel-diff, ~free in numpy — consistent with this repo's "plain hash beats CLIP on pixel-art"). The
+fancier directional sprite-tracking was WORSE (0.75) — flicker drags the centroid.
+
+**But grid-max is not a complete fix.** Tuned on the human set (threshold 58): 98% of real moves kept, 4% of
+bumps phantom — but on the corridor RUNAWAY the phantom rate only drops 100% → **25%** (the corridor's intense
+flicker spikes cells to 82–91, into the real-move range). At 25% a sustained runaway still drifts, ~4× slower.
+
+⇒ **Revised fix: grid-max as the per-step move signal (4× fewer phantoms, no CNN) PLUS the behavioral
+backstop below for the residual runaway.** Not either/or — both, and each needs closed-loop validation.
+
+## Implication — a behavioral backstop is still needed (grid-max alone leaves a 25% tail)
+Per-step perception is much better with grid-max but still imperfect under intense flicker, so the perceiver
+must NOT confidently dead-reckon a long chain on it. Two non-perception levers, both already in the design:
 1. **Progress watchdog (recommended).** The harm is the *runaway*, not the single ambiguous move. The system
    already has `play_loop.py`'s "halt when no real progress for N steps" (LEARNINGS iter-03). The corridor
    runaway IS no-progress: many "moves" in one direction, no new frontier reached, frames staying in a tiny
