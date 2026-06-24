@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import numpy as np
 
-from core.grid_perceiver import (CameraScrollSignal, ForegroundSignal, GridPerceiver, WALL_CONFIRM)
+from core.grid_perceiver import (CameraScrollSignal, ForegroundSignal, GridPerceiver, WALL_CONFIRM,
+                                 _RUN_GUARD)
 from core.perception import PerceptMemory
 
 
 def _rng_frame(seed):
     return np.random.RandomState(seed).randint(0, 255, (144, 160, 3), dtype="uint8")
+
+
+def _spiked(base):
+    """A copy with one block forced bright: a big LOCAL grayscale change (grid-max fires) but it's the SAME
+    scene returning -- the flicker that fakes a move. Pairing base<->spiked alternates with zero NET progress."""
+    b = base.copy()
+    b[0:36, 0:40] = 255
+    return b
 
 
 def _shifted_canvas():
@@ -93,6 +102,43 @@ def test_foreground_combined_scroll_steps_by_ego_not_command():
     assert r.moved is True
     assert r.step_dir == "right", "scrolled => step by the ego (scrolled) axis, not the commanded 'up'"
     assert r.ego_motion == "east"
+
+
+# -- the no-progress backstop (the residual grid-max can't catch: a flicker-loop that spikes a cell every
+# step while the player is pinned). A sustained same-dir run with no NET visual progress is demoted. --
+
+def test_backstop_demotes_a_same_direction_run_with_no_net_progress():
+    base = _rng_frame(20)
+    flick = _spiked(base)                                   # base<->flick: grid-max fires, zero net progress
+    p, mem = GridPerceiver(ForegroundSignal()), PerceptMemory()
+    p.perceive(base, mem, {"last_action": "up"})           # bootstrap
+    seq = [flick, base, flick, base]                        # every step grid-max fires (a "move" candidate)
+    outcomes = [p.perceive(f, mem, {"last_action": "up"}).last_action["outcome"] for f in seq]
+    assert outcomes[:_RUN_GUARD - 1] == ["moved"] * (_RUN_GUARD - 1), "early moves in the run must land"
+    assert outcomes[_RUN_GUARD - 1] != "moved", "the run hit _RUN_GUARD with no net progress -> demoted"
+    assert mem.data["cursor"][1] == -(_RUN_GUARD - 1), "the pose stopped advancing at the demotion"
+
+
+def test_backstop_does_not_fire_while_genuinely_progressing():
+    # 6 same-direction moves through ALWAYS-NEW frames (real travel): high net progress -> never demoted.
+    p, mem = GridPerceiver(ForegroundSignal()), PerceptMemory()
+    p.perceive(_rng_frame(0), mem, {"last_action": "up"})  # bootstrap
+    outcomes = [p.perceive(_rng_frame(i), mem, {"last_action": "up"}).last_action["outcome"]
+                for i in range(1, 7)]
+    assert outcomes == ["moved"] * 6, "a progressing run must not be demoted by the backstop"
+
+
+def test_backstop_run_resets_on_a_direction_change():
+    base = _rng_frame(20); flick = _spiked(base)
+    p, mem = GridPerceiver(ForegroundSignal()), PerceptMemory()
+    p.perceive(base, mem, {"last_action": "up"})
+    # alternate directions so no single-direction run reaches _RUN_GUARD -> backstop never fires
+    dirs = ["up", "left", "up", "left", "up", "left", "up"]
+    frames = [flick, base, flick, base, flick, base, flick]
+    outcomes = [p.perceive(f, mem, {"last_action": d}).last_action["outcome"]
+                for f, d in zip(frames, dirs)]
+    assert "moved" in outcomes and all(o == "moved" for o in outcomes), \
+        "direction changes reset the run -> no demotion despite no net progress"
 
 
 def test_camera_scroll_below_threshold_does_not_move_but_surfaces_ego():

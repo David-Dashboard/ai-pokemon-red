@@ -44,6 +44,11 @@ WHERE the change is, not how much* — was tested in `eval/probe_spatial_move.py
 | per-cell SSIM, structure-term only | (n_real=1) | 0.98 |
 | sprite-centroid direction (background-subtraction tracking) | 0.84 | 0.75 |
 
+**The 0.99 AUC is the HUMAN-RECORDING column only (n=2106).** The corridor column is `n_real=1` — a
+single-positive AUC is statistically void, so the corridor validates only the false-positive (phantom) rate,
+not discriminability. Discriminability rests on the human recording; the corridor proves the runaway is
+*reduced*, not that the signal is separable there.
+
 A real move spikes ONE cell (the sprite region, median 91) while idle flicker only musters ~20; whole-frame
 averaging dilutes the sprite's strong local change into the static background, grid-max preserves it. So the
 information IS there — the earlier probe measured it dilutively. **A CNN is NOT needed** (plain per-cell max
@@ -63,21 +68,33 @@ the corridor's flicker spikes cells into the real-move range). At that rate a su
 ⇒ **Revised fix: grid-max as the per-step move signal (3–4× fewer phantoms, no CNN/deps) PLUS the behavioral
 backstop below for the residual runaway.** Not either/or — both, each closed-loop validated.
 
-## Implication — a behavioral backstop is still needed (grid-max alone leaves a 25% tail)
-Per-step perception is much better with grid-max but still imperfect under intense flicker, so the perceiver
-must NOT confidently dead-reckon a long chain on it. Two non-perception levers, both already in the design:
-1. **Progress watchdog (recommended).** The harm is the *runaway*, not the single ambiguous move. The system
-   already has `play_loop.py`'s "halt when no real progress for N steps" (LEARNINGS iter-03). The corridor
-   runaway IS no-progress: many "moves" in one direction, no new frontier reached, frames staying in a tiny
-   visual neighborhood. A watchdog that detects sustained no-progress and forces a re-plan / seals the
-   direction caps the damage without needing per-step move/stuck classification. Within-run, harness-owned →
-   learning-boundary clean.
-2. **Confidence-deferral (ADR-001 inv-6).** On a fixed camera (no corroborating camera scroll), a foreground
-   move is low-reliability; the perceiver should mark such pose updates UNCERTAIN / low-confidence so nothing
-   downstream trusts a long dead-reckoned chain. (Pairs with the `confidence=0.4` placeholder TODO.)
+## The backstop — a longer-horizon no-progress check, in the perceiver
+Grid-max still leaves a tail no per-step signal can catch, so a SUSTAINED same-direction run that isn't
+visually progressing is demoted to a no-move (the existing wall-confirmation then seals it). Two honest
+corrections to an earlier draft of this report (the review caught both):
+- **It is not a separate "behavioral vs threshold" category.** Once the logic accumulates state to apply a
+  longer-horizon test, it *is* a threshold — just over a window instead of one frame. The clean line the
+  earlier draft drew ("a perceiver-only threshold fix can't work") was wrong; grid-max IS a per-step
+  threshold fix and it does most of the work. Claim retracted.
+- **It lives in `core/grid_perceiver.py`, not `play_loop.py`.** An earlier draft recommended the driver. The
+  perceiver is the cohesive home: it already owns "did I move" + the occupancy map + wall-confirmation, and
+  the backstop just feeds the same wall-confirmation — keeping the driver world-agnostic. The perceiver is
+  System-1 (ADR-001), so this stays harness-side and learning-boundary clean. State hygiene: the same-dir run
+  counter resets on any non-gameplay frame, so a menu can't carry a stale run across.
 
-Both are calibrated-deferral, not "be confidently wrong with a better threshold." A perceiver-only threshold
-fix is explicitly NOT pursued — the data says it can't work.
+**Grounding the constants (the review asked; these are measured, not guessed):**
+- `_PROG_MIN=4.0` at the K=4 window: on the **corridor** (the runaway regime where the backstop operates)
+  stuck p90 = **3.86** < 4.0 < real p10 = **6.45** — a clean gap. (On the human recording real/stuck K=4
+  overlap, 2.95 vs 2.73 — but the backstop is gated on a ≥4 same-direction *move*-run, which the human hits on
+  only **50 / 2106** steps, so the overlap rarely matters; the replay confirms no regression.)
+- **False-wall rate = 1.5%** (10 of 660 real moves sealed) when replaying the human recording through the new
+  perceiver — the W=1 recall dip (99→92%) does NOT compound into material false walls, because sealing needs 3
+  consecutive misses at the *same* cell+dir. Consistent with the replay drift *improving* (0.06→0.02).
+
+**Open caveat (not yet addressed):** `_FG_GRID=58` and the 0.99 AUC are both derived from the single human
+recording; generalization to a different dungeon / flicker level / session is unvalidated (the closed-loop
+runaway test uses a *different* save-state, a partial held-out, but same game+session). Treat 58 as a
+calibration constant to re-check on new corpora.
 
 ## FIX IMPLEMENTED + CLOSED-LOOP VALIDATED (2026-06-24)
 Both parts landed in `core/grid_perceiver.py`:
@@ -85,17 +102,22 @@ Both parts landed in `core/grid_perceiver.py`:
   change (`grid_max_change()`), not the whole-frame residual. Cave Noire wires it (`_FG_GRID=58`).
 - **No-progress backstop** (`_RUN_GUARD=4, _PROG_W=4, _PROG_MIN=4.0`): a sustained same-direction run whose
   screen hasn't changed over the last 4 steps is demoted to a no-move → the existing wall-confirmation seals
-  it. Gated on a long run so it never fires on normal play.
+  it. Gated on a long run so it never fires on normal play. Unit-tested (demotion, progressing-run no-fire,
+  direction-change reset) in `tests/test_grid_perceiver.py`.
 
 Results:
 - **Closed loop (the corridor runaway state):** perceiver "moves" 70→**4**, phantom **65→0**, pose ran away
   to `[0,-70]` → stays sane at `[-1,-3]` (4 real moves, 4 walls correctly sealed). **The runaway is gone.**
 - **Offline replay (human recording):** drift **0.06→0.02** (far fewer phantom steps accumulate); net-dir
-  W=1 99→92%, W=40 85→84% (grid-max is more selective — a little per-step recall for much less drift).
-- **Gauntlet: unchanged** (57→83% / 0.02) — backstop inert (camera-scroll = progress); `CameraScrollSignal`
-  ignores grid-max. 338 tests green.
+  W=1 99→92%, W=40 85→84% (grid-max is more selective — a little per-step recall for much less drift);
+  false-wall rate 1.5% (above).
+- **Gauntlet: re-run this session, unchanged** (57→83% / 0.02) — backstop inert (camera-scroll = progress);
+  `CameraScrollSignal` ignores grid-max. 341 tests green.
 
 ## Reproduce
 - `uv run python -m eval.probe_phantom_move` · `... probe_spatial_move` (need the two gitignored corpora).
 - Fix closed-loop: `uv run python play_cave_noire.py --steps 200 --brain explore --init-state <in-cavern.state>`
   then score `oracle.jsonl` `outcome=="moved"` vs the `watch` x/y delta.
+- **Reproducibility caveat:** the corpora (`runs/2026-06-23_cavenoire_explore`, the corridor save-state) are
+  gitignored (RAM/ROM-derived), so the headline numbers are not reproducible from committed artifacts alone —
+  the standing constraint for all oracle-grounded work here. `<in-cavern.state>` is a `human_play.py` capture.

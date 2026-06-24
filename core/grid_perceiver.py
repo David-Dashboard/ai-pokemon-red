@@ -145,6 +145,8 @@ class GridPerceiver:
         else:
             toks = [t for t in str(action or "").replace("+", " ").split() if t]
             label, _ = detect_modality(m["prev_full"], cur_full, toks)
+        if label != "gameplay":          # a menu/transition breaks a movement run (no-progress backstop state)
+            m["run"] = (None, 0)
 
         # ego-motion primitives: best translation aligning prev->cur (camera) + the residual (foreground)
         # + the localized per-cell max change (the move signal that beats whole-frame on a fixed camera).
