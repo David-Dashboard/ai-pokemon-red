@@ -192,6 +192,10 @@ class GridPerceiver:
 
         raw_ref = ctx.get("frame_path", "") if frame is not None else ""
         return SymbolicState(
+            # FIXED PLACEHOLDER: the lean grid perceivers don't yet compute a calibrated confidence
+            # (carried over verbatim from the Gauntlet/Cave Noire perceivers). ADR-001 inv-6 wants this
+            # meaningful before `confidence` gates deferral; a per-cell coverage/outcome-derived value is
+            # a follow-up. Until then it is a constant and brains must not read it as calibrated.
             confidence=0.4,
             context=label,
             pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": 0},

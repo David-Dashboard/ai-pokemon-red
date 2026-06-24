@@ -72,3 +72,31 @@ def test_no_foreground_seals_a_wall_only_after_confirmation():
         assert "up" not in s.spatial_memory["walls_here"], "sealed a phantom wall too early"
     s = p.perceive(still, mem, {"last_action": "up"})       # the confirming attempt
     assert "up" in s.spatial_memory["walls_here"]
+
+
+# -- the MoveSignal strategies as units (pin the thresholds + the combined branch the perceiver tests
+# can't easily drive). The residual numbers come from eval/probe_foreground_motion (MOVED~2.9/STUCK~0.7). --
+
+def test_foreground_threshold_brackets_the_probe_medians():
+    sig = ForegroundSignal(move_px=2.0, fg_move=1.5)   # 1.5 sits between STUCK~0.7 and MOVED~2.9
+    no_cam = dict(commanded_dir="up", ego_token="none", sdx=0, sdy=0)
+    assert sig(best_diff=2.9, **no_cam).moved is True, "a MOVED-magnitude residual must step"
+    assert sig(best_diff=0.7, **no_cam).moved is False, "a STUCK-magnitude residual must not step"
+    assert sig(best_diff=1.5, **no_cam).moved is True, "the threshold itself is inclusive"
+    assert sig(best_diff=1.49, **no_cam).moved is False
+
+
+def test_foreground_combined_scroll_and_residual_steps_by_ego_not_command():
+    # When the camera ALSO scrolled (follow-ish frame), the ego axis wins over the commanded button.
+    sig = ForegroundSignal(move_px=2.0, fg_move=1.5)
+    r = sig(commanded_dir="up", ego_token="east", sdx=16, sdy=0, best_diff=50.0)
+    assert r.moved is True
+    assert r.step_dir == "right", "scrolled => step by the ego (scrolled) axis, not the commanded 'up'"
+    assert r.ego_motion == "east"
+
+
+def test_camera_scroll_below_threshold_does_not_move_but_surfaces_ego():
+    sig = CameraScrollSignal(move_px=2.0)
+    r = sig(commanded_dir="up", ego_token="none", sdx=1, sdy=0, best_diff=4.0)  # sub-threshold drift
+    assert r.moved is False and r.step_dir is None
+    assert r.ego_motion == "none"   # the raw ego token is surfaced regardless of the move decision

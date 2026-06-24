@@ -86,14 +86,36 @@ def test_games_are_isolated_from_each_other():
 _INFRA_OK = {"pokemon_red"}          # keeps its own emulator (fade layer) + plugin (reward/battle)
 
 
-def test_lean_games_do_not_carry_their_own_infra():
+def _lean_game_dirs():
     games_dir = ROOT / "games"
-    bad = []
     for pkg in games_dir.iterdir():
-        if not pkg.is_dir() or pkg.name in _INFRA_OK or pkg.name == "__pycache__":
-            continue
-        for infra in ("emulator.py", "plugin.py"):
-            if (pkg / infra).exists():
-                bad.append(f"games/{pkg.name}/{infra}")
+        if pkg.is_dir() and pkg.name not in _INFRA_OK and pkg.name != "__pycache__":
+            yield pkg
+
+
+def test_lean_games_do_not_carry_their_own_infra():
+    bad = [f"games/{pkg.name}/{infra}"
+           for pkg in _lean_game_dirs()
+           for infra in ("emulator.py", "plugin.py") if (pkg / infra).exists()]
     assert not bad, ("lean game packages must reuse core/ infra, not copy it (lift to core/, don't "
                      "duplicate — INSIGHTS §2):\n" + "\n".join(bad))
+
+
+# The filename check above only proves the two files just removed are gone. The PRINCIPLE is broader:
+# a lean perceiver must be THIN CONFIG over the shared core base, not an inlined copy of the body. A
+# duplicated GridPerceiver/best_shift/occupancy-grid body would be hundreds of lines; a config is tens.
+# Budget guards the principle without prescribing a specific base (a future camera class gets its own).
+_LEAN_PERCEIVER_MAX_LINES = 80
+
+
+def test_lean_perceivers_are_thin_config_not_an_inlined_body():
+    fat = []
+    for pkg in _lean_game_dirs():
+        perc = pkg / "perceiver.py"
+        if not perc.exists():
+            continue
+        n = sum(1 for _ in perc.read_text(encoding="utf-8", errors="replace").splitlines())
+        if n > _LEAN_PERCEIVER_MAX_LINES:
+            fat.append(f"games/{pkg.name}/perceiver.py is {n} lines (> {_LEAN_PERCEIVER_MAX_LINES})")
+    assert not fat, ("a lean perceiver must be thin config over a core/ base, not an inlined body "
+                     "(lift the shared part — INSIGHTS §2):\n" + "\n".join(fat))

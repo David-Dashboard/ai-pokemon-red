@@ -4,8 +4,11 @@ Gauntlet is one continuous top-down maze with a FOLLOW camera, so the move signa
 (`best_shift`) and the pose steps by the ego (scrolled) axis — the CameraScrollSignal. The whole
 occupancy-grid body (grid/walls/frontiers/wall-confirmation/SymbolicState) is the shared
 `core.grid_perceiver.GridPerceiver`; this file is just the per-world move signal + calibration.
-Validated by eval/probe_pose_drift.py (drift ~0.02, net-heading 87% on the RAM oracle) and
-eval/replay_gauntlet_pose.py (83% heading / 0.02 drift). Pixels only; RAM never touched.
+Validated two ways on the RAM oracle (both gitignored-corpus, see reports/2026-06-24-part2-replay-revalidation.md):
+`eval/probe_pose_drift.py` (windowed net-heading agreement ~87%, drift ~0.02) and the stricter
+`eval/replay_gauntlet_pose.py` (net-dir at W=40 = 83%, drift 0.02). The two numbers differ because they
+aggregate over different windows/segments, not because the perceiver disagrees with itself. Pixels only;
+RAM never touched.
 """
 from __future__ import annotations
 

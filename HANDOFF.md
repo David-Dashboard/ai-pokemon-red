@@ -82,7 +82,9 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 
 **⇒ NEWEST (2026-06-24, part-2) — SHARED PERCEPTION INFRA LIFTED TO `core/`; Gauntlet + Cave Noire are now
 THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR branch
-(`feat/core-perceiver-extraction`); 334 tests green; both replay oracles unchanged (behavior-preserving).**
+(`feat/core-perceiver-extraction`, PR #12); 338 tests green; both OFFLINE replay oracles re-run post-refactor
+and unchanged → behavior-preserving on the oracle (verbatim output committed in
+`reports/2026-06-24-part2-replay-revalidation.md`). Closed-loop surfaced a real defect the replay masks (below).**
 - **The ossification debt is paid (INSIGHTS §2).** The occupancy-grid perceiver, the GB emulator, and the
   perception-only plugin were duplicated 3× across `games/`; they now live ONCE in `core/`: `core/grid.py`
   (DIRS/DELTA/BACK/EGO2DIR/DIR2EGO), `core/gb_emulator.py` (the generic PyBoy wrapper), `core/perception_plugin.py`
@@ -94,17 +96,24 @@ THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR
   package instead of lifting primitives. New tripwire `tests/test_import_boundaries.py::test_lean_games_do_not_carry_their_own_infra`
   (no `emulator.py`/`plugin.py` outside `pokemon_red`) + a "primitive ossification" row in CONTEXT-BRIEFING's
   drift table + a laziness-ladder line in CLAUDE.md ("copying a sibling file = the lift signal").
-- **Cave Noire live closed-loop CLOSED (the unfinished half of PR #10).** `play_cave_noire.py` + the no-RAM-leak
-  sentinel wall in `tests/test_cave_noire.py`. The unchanged `ExploreBrain`/`core/` drove Cave Noire IN-CAVERN
-  (constancy demonstrated live on the 3rd world); of 4 perceiver-"moved" steps, 4/4 were RAM-real, **0 phantom**
-  — the feared false-MOVE asymmetry did NOT bite, so NO symmetric-confirmation change was made (measure-first;
-  it stays a flagged watch-item).
-- **⇒ OPEN — autonomous deep-dungeon nav is gated on a hand-played save-state.** Cave Noire is a hub-and-spoke
-  JP fan-translation; the random `ScriptedBrain` (60%-A, built for Pokémon dialog) can't purposefully traverse
-  the cavern-select menus, and the watch registers (`x=0xC504 y=0xC503`) only track once genuinely walking
-  in-cavern (frozen at the hub). ExploreBrain from a random-mashed entry dead-ended in 16 steps (RAM-consistent
-  walls — a real cramped pocket, not a perceiver bug). NEXT: David plays a clean in-cavern save-state →
-  `--init-state` → a longer ExploreBrain run for the definitive autonomous-nav + false-MOVE-asymmetry check.
+- **Cave Noire live closed-loop wired (the unfinished half of PR #10).** `play_cave_noire.py` + the no-RAM-leak
+  sentinel wall in `tests/test_cave_noire.py`. The unchanged `ExploreBrain`/`core/` ran the Cave Noire stack
+  end-to-end IN-CAVERN — i.e. the ARCHITECTURAL constancy (brain code untouched when adding a world) holds by
+  construction. **Task-level success is NOT shown** (a handful of confirmed moves, then dead-end / phantom
+  runaway) — see the OPEN item.
+- **⇒ FOUND (closed-loop) — the false-MOVE asymmetry BITES; a fix is the next follow-up (NOT in PR #12).**
+  Two ExploreBrain runs from hand-played in-cavern save-states, scored vs the RAM oracle (`x=0xC504 y=0xC503`):
+  open corridor **65 of 70** perceiver-"moves" were PHANTOM (idle animation pushed the foreground residual over
+  `_FG_MOVE=1.5`; pose dead-reckoned to `[0,-70]` while the player was pinned at a wall); tight pocket 2/3.
+  (An earlier N=4 run showed 0 phantom — but P(0|bug)≈0.86⁴≈0.55, statistical noise; that "did-not-bite" claim
+  is RETRACTED.) **Measure-first probe killed the easy fixes:** real vs phantom residual INVERT and interleave
+  across runs (real `{2.1,2.5}` < idle-phantom `{3.8}` < real `{6.0}` ≪ big-event phantom `{57,71}`), so no
+  static threshold/band separates; `context==gameplay` catches only the menu phantom. The reliable fix is
+  STRUCTURAL (translation-direction check or move-persistence confirmation, the twin of wall-confirmation) —
+  its own probe + closed-loop validation. Evidence: `reports/2026-06-24-part2-replay-revalidation.md`.
+- **⇒ OPEN — autonomous deep-dungeon nav** still needs the false-MOVE fix above + a navigation goal. The random
+  `ScriptedBrain` can't traverse the JP hub menus to reach a cavern (watch registers frozen at the hub); a
+  hand-played in-cavern save-state (`human_play.py` → `--init-state`) is the entry point and now exists.
 
 **⇒ PRIOR (2026-06-24) — CONSTANCY VALIDATED ACROSS 3 WORLDS / 3 CAMERA CLASSES (brain + `core/` UNCHANGED).
 `main` had Pokémon + Gauntlet + Cave Noire perceivers; PRs #7/#8/#9/#10 ALL MERGED. (part-2 core extraction, above, now done.)**
