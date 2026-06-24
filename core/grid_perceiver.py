@@ -28,6 +28,23 @@ from core.perception import JSON, PerceptMemory, SymbolicState
 WALL_CONFIRM = 3           # seal a wall only after N persistent no-move attempts (dead-zone/idle is transient)
 _NW, _NH = 128, 112        # normalize frames for best_shift (same as eval/probe_camera_model)
 _MAX_SHIFT, _STEP = 18, 2  # 2D translation search (px on the normalized frame)
+_GRID = 8                  # per-cell change grid (eval/probe_spatial_move): a real move spikes ONE cell
+# no-progress backstop: a per-step pixel signal can't fully separate a real move from a stuck flicker-loop
+# (eval/probe_phantom_move: ~33% of corridor wall-bumps still spike a cell), so a sustained same-direction
+# run that isn't VISUALLY progressing is a phantom runaway -> demote to no-move and let wall-confirm seal it.
+# Gated on a long same-dir run so it never fires on normal exploration.
+_RUN_GUARD, _PROG_W, _PROG_MIN = 4, 4, 4.0
+
+
+def grid_max_change(prev_norm, cur_norm) -> float:
+    """Max per-cell mean-abs change (8x8 grid): localizes a sprite move the whole-frame mean washes out.
+    AUC 0.99 vs 0.86 whole-frame for move-vs-stuck (eval/probe_spatial_move)."""
+    if prev_norm is None or cur_norm is None:
+        return 0.0
+    d = np.abs(cur_norm - prev_norm)
+    nh, nw = d.shape
+    ch, cw = nh // _GRID, nw // _GRID
+    return float(d[:ch * _GRID, :cw * _GRID].reshape(_GRID, ch, _GRID, cw).mean(axis=(1, 3)).max())
 
 
 @dataclass(frozen=True)
@@ -41,7 +58,7 @@ class MoveResult:
 class MoveSignal(Protocol):
     """Decides move/step/ego from the (base-computed) ego-motion primitives. The only per-world part."""
     def __call__(self, *, commanded_dir: Optional[str], ego_token: str,
-                 sdx: int, sdy: int, best_diff: float) -> MoveResult: ...
+                 sdx: int, sdy: int, best_diff: float, grid_max: float) -> MoveResult: ...
 
 
 class CameraScrollSignal:
@@ -50,7 +67,7 @@ class CameraScrollSignal:
     def __init__(self, move_px: float = 2.0) -> None:
         self.move_px = move_px
 
-    def __call__(self, *, commanded_dir, ego_token, sdx, sdy, best_diff) -> MoveResult:
+    def __call__(self, *, commanded_dir, ego_token, sdx, sdy, best_diff, grid_max=0.0) -> MoveResult:
         # Step by the EGO axis (best_shift's dominant axis), not the last-pressed token: on an 8-way
         # diagonal press ego picks the axis that ACTUALLY scrolled (the 0.31->0.02 drift fix). Surface the
         # raw ego token regardless of whether it cleared the move threshold.
@@ -60,17 +77,20 @@ class CameraScrollSignal:
 
 
 class ForegroundSignal:
-    """Fixed-camera worlds (Cave Noire): the screen never scrolls, so the move signal is the camera-
-    compensated RESIDUAL (best_diff) = foreground/sprite motion. Direction is the commanded button (the
-    game is turn-based, command == move); camera-scroll is kept as a rarely-firing fallback."""
+    """Fixed-camera worlds (Cave Noire): the screen never scrolls, so the move signal is FOREGROUND motion.
+    The per-step signal is GRID-MAX (max per-cell change) -- a real sprite move spikes one cell, where the
+    whole-frame residual gets diluted by the static background (AUC 0.99 vs 0.86, eval/probe_spatial_move;
+    a CNN/embedding was tested and is no better -- invariance machines forgive the small change we want).
+    Direction is the commanded button (turn-based, command == move); camera-scroll is a rarely-firing
+    fallback. The residual tail it can't separate is caught by the base's no-progress backstop."""
 
-    def __init__(self, move_px: float = 2.0, fg_move: float = 1.5) -> None:
+    def __init__(self, move_px: float = 2.0, fg_grid: float = 58.0) -> None:
         self.move_px = move_px
-        self.fg_move = fg_move
+        self.fg_grid = fg_grid
 
-    def __call__(self, *, commanded_dir, ego_token, sdx, sdy, best_diff) -> MoveResult:
+    def __call__(self, *, commanded_dir, ego_token, sdx, sdy, best_diff, grid_max=0.0) -> MoveResult:
         scrolled = max(abs(sdx), abs(sdy)) >= self.move_px
-        if scrolled or best_diff >= self.fg_move:
+        if scrolled or grid_max >= self.fg_grid:
             step = EGO2DIR.get(ego_token, commanded_dir) if scrolled else commanded_dir
             return MoveResult(True, step, DIR2EGO.get(step, "none"))
         return MoveResult(False, None, "none")
@@ -125,12 +145,16 @@ class GridPerceiver:
         else:
             toks = [t for t in str(action or "").replace("+", " ").split() if t]
             label, _ = detect_modality(m["prev_full"], cur_full, toks)
+        if label != "gameplay":          # a menu/transition breaks a movement run (no-progress backstop state)
+            m["run"] = (None, 0)
 
-        # ego-motion primitives: best translation aligning prev->cur (camera) + the residual (foreground).
-        best_diff, sdx, sdy = 0.0, 0, 0
+        # ego-motion primitives: best translation aligning prev->cur (camera) + the residual (foreground)
+        # + the localized per-cell max change (the move signal that beats whole-frame on a fixed camera).
+        best_diff, sdx, sdy, grid_max = 0.0, 0, 0, 0.0
         if not first and cur_norm is not None:
             _, best_diff, sdx, sdy = best_shift(m["prev_norm"], cur_norm,
                                                 max_shift=self.max_shift, step=self.step, tie_break=1e-3)
+            grid_max = grid_max_change(m["prev_norm"], cur_norm)
         ego_token = direction(sdx, sdy)
 
         x, y = m["cursor"]
@@ -139,12 +163,27 @@ class GridPerceiver:
         outcome, ego_motion = "unknown", "none"
         if not first:
             res = self.move_signal(commanded_dir=commanded_dir, ego_token=ego_token,
-                                   sdx=sdx, sdy=sdy, best_diff=best_diff)
+                                   sdx=sdx, sdy=sdy, best_diff=best_diff, grid_max=grid_max)
             ego_motion = res.ego_motion
+            moved, step_dir = res.moved, res.step_dir
+            if moved and step_dir and commanded_dir:
+                # no-progress backstop: track the consecutive same-direction run and whether the screen has
+                # actually changed over the last _PROG_W steps. A long run that isn't progressing = a phantom
+                # runaway (idle flicker faking grid-max moves at a wall) -> demote to no-move; wall-confirm seals it.
+                run_dir, run_len = m.get("run", (None, 0))
+                run_len = run_len + 1 if step_dir == run_dir else 1
+                m["run"] = (step_dir, run_len)
+                recent = m.get("recent_norms", [])
+                prog = (float(np.abs(cur_norm - recent[-_PROG_W]).mean())
+                        if cur_norm is not None and len(recent) >= _PROG_W else None)
+                if run_len >= _RUN_GUARD and prog is not None and prog < _PROG_MIN:
+                    moved, step_dir = False, None          # not actually getting anywhere -> treat as no-move
+            elif not (moved and step_dir):
+                m["run"] = (None, 0)
             if commanded_dir:
-                if res.moved and res.step_dir:             # the commanded move landed
+                if moved and step_dir:                      # the commanded move landed
                     blocked.pop(((x, y), commanded_dir), None)
-                    step = res.step_dir
+                    step = step_dir
                     cell["walls"].discard(step)            # the cell we left is open the way we MOVED
                     dx, dy = DELTA[step]
                     x, y = x + dx, y + dy                   # one press = one cell (magnitude deferred)
@@ -161,6 +200,10 @@ class GridPerceiver:
                         outcome = "blocked"
 
         m["prev_full"], m["prev_norm"] = cur_full, cur_norm
+        if cur_norm is not None:                 # rolling frame buffer for the no-progress backstop
+            recent = m.setdefault("recent_norms", [])
+            recent.append(cur_norm)
+            del recent[:-(_PROG_W + 1)]
 
         # affordances: open (non-wall) directions, unexplored first.
         open_unexplored, open_all = [], []
