@@ -48,6 +48,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from core.brains import ExploreBrain        # noqa: E402  (the free System-1 autopilot)
 from core.contracts import ToolCall         # noqa: E402
 from core.gateway import Gateway            # noqa: E402
+from core.gb_emulator import BUTTONS        # noqa: E402  (cheap import — no PyBoy; for the static tool list)
 from games.cave_noire import CAVE_NOIRE_SANDBOX, CaveNoirePlugin  # noqa: E402
 from games.cave_noire.perceiver import CaveNoirePerceiver         # noqa: E402
 
@@ -93,6 +94,32 @@ _REMEMBER_TOOL = {
                     "Within-run only: forgotten when the session ends (that's intentional)."),
     "inputSchema": {"type": "object", "properties": {"lesson": {"type": "string"}}, "required": ["lesson"]},
 }
+# Static action-tool specs (mirror games/cave_noire's PerceptionPlugin.tools()) so `tools/list` can answer
+# WITHOUT booting the emulator — the emulator is built lazily on the first tool CALL (see main()). This keeps
+# the `initialize`/`tools/list` handshake instant so the MCP client doesn't time out waiting on a PyBoy boot.
+_BUTTON_ENUM = {"type": "string", "enum": list(BUTTONS)}
+_PRESS_BUTTON_TOOL = {
+    "name": "press_button",
+    "description": "Move one tile (up/down/left/right) or act with `a` (interact / pick up).",
+    "inputSchema": {"type": "object",
+                    "properties": {"button": _BUTTON_ENUM,
+                                   "hold_frames": {"type": "integer", "minimum": 1, "maximum": 120}},
+                    "required": ["button"]},
+}
+_PRESS_SEQUENCE_TOOL = {
+    "name": "press_sequence",
+    "description": "Press several buttons in order (4-directional, no diagonals), e.g. [\"up\",\"up\",\"left\"].",
+    "inputSchema": {"type": "object",
+                    "properties": {"buttons": {"type": "array", "items": _BUTTON_ENUM, "maxItems": 16}},
+                    "required": ["buttons"]},
+}
+_WAIT_TOOL = {
+    "name": "wait",
+    "description": "Advance the game without input — let an animation finish.",
+    "inputSchema": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}}},
+}
+_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL,
+                 _PRESS_BUTTON_TOOL, _PRESS_SEQUENCE_TOOL, _WAIT_TOOL]
 
 
 def _send(msg: dict) -> None:
@@ -245,8 +272,14 @@ def main() -> int:
                          "reason from the symbolic view (the perception seam), not read pixels.")
     args = ap.parse_args()
 
-    world = World(args)
-    tools = world.tools()
+    # LAZY: do NOT boot the emulator here. `initialize`/`tools/list` must answer instantly or the MCP client
+    # times out the startup handshake and marks the server "not connected". The World (PyBoy) is built on the
+    # first tool CALL, which the client waits on as a normal request (no startup timeout).
+    _world: list = [None]
+    def world():
+        if _world[0] is None:
+            _world[0] = World(args)
+        return _world[0]
 
     for line in sys.stdin:                       # newline-delimited JSON-RPC (the MCP stdio transport)
         if line and ord(line[0]) == 0xFEFF:      # tolerate a leading BOM on the first message
@@ -269,11 +302,11 @@ def main() -> int:
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "ai-pokemon-red-world", "version": "0.3.0"}}})
         elif method == "tools/list":
-            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": tools}})
+            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": _STATIC_TOOLS}})
         elif method == "tools/call":
             p = msg.get("params") or {}
             try:
-                content = world.call(p.get("name", ""), p.get("arguments") or {})
+                content = world().call(p.get("name", ""), p.get("arguments") or {})
                 _send({"jsonrpc": "2.0", "id": mid, "result": {"content": content}})
             except Exception as e:               # a tool error is an observation, not a crash (invariant 4)
                 _send({"jsonrpc": "2.0", "id": mid,
