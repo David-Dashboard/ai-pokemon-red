@@ -110,7 +110,9 @@ class World:
                   "Top-down dungeon exploration. You perceive only this symbolic view — reason from it.")
         self.plugin = CaveNoirePlugin(rom_path=args.rom, out_dir=args.out, headless=True,
                                       init_state=args.init_state, perceiver=CaveNoirePerceiver(),
-                                      watch={"x": 0xC504, "y": 0xC503},  # RAM -> oracle.jsonl ONLY, never the wire
+                                      # RAM -> oracle.jsonl ONLY, never the wire. hp (0xD389) is the ADR-002
+                                      # gate's life oracle (Phase A: uniquely matches visible HP 7@f100/10@f500).
+                                      watch={"x": 0xC504, "y": 0xC503, "hp": 0xD389},
                                       render_header=header)
         self.gw = Gateway(self.plugin, CAVE_NOIRE_SANDBOX)
         self.explore = ExploreBrain(_AGENT, single_step=True)   # Cave Noire is turn-based: one press/move

@@ -88,6 +88,15 @@ DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `
 **▶ STARTING WORK? The active task is the ADR-002 GATE PROBE (see (B) + ⇒NEXT below). Before writing ANY code,
 read `reports/2026-06-25-adr-002-ontology-discovery.md` — §9 (the gate) and §11 (anti-drift tripwires). The MCP
 harness (A) is DONE and verified — do not rebuild it. Do not start the re-architecture until the gate PASSES.**
+
+**▶ PHASE A DONE (2026-06-25) — `reports/2026-06-25-phase-a-hud-grounding-precheck.md`. The gate's SHAPE is
+CONFIRMED: HUD = DIGITS visible during gameplay ("HP 8/10 ENEMY 1/3 B 2F") → `read_text` is right, life
+groundable continuously; the LIFE ORACLE EXISTS, found `0xD389` (uniquely matches visible HP 7@f100/10@f500),
+now wired `watch={...,"hp":0xD389}` (oracle.jsonl only). Decoys are FREE (enemy/floor counters). REMAINING RISK
+= Check 2: a pixels-only consequence INDEPENDENT of the HP digits is NOT yet isolated (HP deltas are often
+menu/transition-confounded) → Phase B/C. TESTS NOW RUN VIA A REAL CLAUDE OVER MCP (`world_mcp.py`, not scripted
+brains): the Claude brain hypothesizes "region R = my life" through the tools; its detector is scored vs the
+`hp` oracle. Next = Phase B (operationalize §9's metric/threshold), then Phase C (build `read_text`/`whats_changed`/`consequence`).**
 - **(A) S4 MCP server — `world_mcp.py` (PR #16, open).** Exposes Cave Noire as an MCP stdio server (stdlib, NO
   new dep) so a FRESH Claude Code instance is the System-2 brain (ADR-001 S4 realized). Tools: `observe`
   (symbolic-only — no pixels) · `explore`+`goto` (free System-1 autopilot; dual-process — woken at decisions,
