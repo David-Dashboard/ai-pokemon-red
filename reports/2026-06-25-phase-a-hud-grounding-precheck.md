@@ -16,10 +16,13 @@ be scored.**
 
 ## Check 3 — the life RAM oracle EXISTS and is found: `0xD389` (GREEN, reproducible)
 - Scanning `ram.bin` for the byte that reads **7 at frame 100** (visible HP 7/10) **AND 10 at frame 500**
-  (visible 10/10) returns **exactly one** address: **`0xD389` = current HP**. Reproduce with the committed
-  scan: `uv run python -m eval.find_hp_addr <run> --anchors 100:7 500:10` → `0xD389`, distinct values
-  `{0,2,4,5,7,8,10,15}`, behaviourally steps down on damage. Plausible max-HP regs: `0xD08B`/`0xD589` (read 10
+  (visible 10/10) returns **exactly one** address: **`0xD389` = current HP** (distinct values over the full run
+  `{0,2,4,5,7,8,10,15}`, behaviourally steps down on damage). Plausible max-HP regs: `0xD08B`/`0xD589` (read 10
   at both, few distinct) — not needed (max is the displayed "/10").
+- **Reproducible from a clean checkout** via a committed 18 KB fixture (the two anchor frames + their
+  screenshots — no full corpus needed): `uv run python -m eval.find_hp_addr eval/fixtures/cavenoire_hp_oracle
+  --anchors 0:7 1:10` → `['0xD389']`. (The full-run distribution above needs the gitignored recording; the
+  fixture proves the *uniqueness-against-the-anchors* claim, which is the load-bearing one.)
 - **Caveat (the byte reads above its max):** max HP = 10, but the byte hits **15 on 4 of 4000 frames**
   (`477,478,561,645` — all at screen transitions). That's 0.1% transient garbage (mid-transition reads), not a
   steady second meaning, so `0xD389` is a clean-enough oracle **if scoring clamps to "valid only when ≤ max"**

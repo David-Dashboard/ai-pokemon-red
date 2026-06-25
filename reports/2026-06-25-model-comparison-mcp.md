@@ -12,12 +12,22 @@ confounded by a world strand-bug, so it is NOT a clean model ranking** — recor
   same 20-decision comparison task, same brief.
 - **Models:** Opus 4.8 · Sonnet 4.6 · Haiku 4.5. Scored with `eval/score_mcp_runs.py`.
 
-## Results (RAM ground truth)
+## Results (RAM ground truth) — ILLUSTRATIVE, NOT a reproducible benchmark
+> ⚠️ **Do not cite these as a model ranking, and do not expect to reproduce them from a clean checkout.** The
+> source `runs/2026-06-25_cavenoire_mcp_*/oracle.jsonl` are **gitignored local artifacts** (not committed —
+> raw-data policy), so the re-score command below is a *local* convenience, dead on a fresh clone. The numbers
+> are a one-off snapshot of a **confounded** task (see below). They are kept only for the retrospective.
+
 | model | cells | steps | moved | blocked | wall% | real-move% | hp end/min | dmg | self-reported |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|---|
 | **opus** | 7 | 46 | 8 | 15 | 65% | 50% | 7/7 | 0 | 9 cells, **7 decisions**, 1.3 cells/dec |
 | **sonnet** | 8 | 75 | 10 | 24 | 71% | 50% | 7/7 | 0 | 10 cells, 0.5 cells/dec |
 | **haiku** | 7 | 49 | 8 | 13 | 62% | 50% | 7/7 | 0 | 9 cells, 1.0 cells/dec |
+
+**The identical `real-move% = 50%` across all three is an artifact, not a finding** — it's the common-ceiling
+signature of three agents trapped in the *same* sealed pocket bouncing the *same* walls, not a per-model
+measurement. By the same token "sonnet flailed most (75 steps)" and "sonnet was most persistent" are
+indistinguishable on this data; read the qualitative notes as weak signal, not a verdict.
 
 ## The confound (why this is not a ranking)
 **All three were trapped identically:** the first `explore` auto-walked each into a sealed, walled-off
@@ -51,4 +61,5 @@ Each `runs/2026-06-25_cavenoire_mcp_{opus,sonnet,haiku}/` holds the full record 
   copied here for co-located review. Future runs: copy the newest `.jsonl` from there, or launch the brain with
   `claude -p --output-format stream-json > <out>/transcript.jsonl`.)
 
-Re-score: `uv run python -m eval.score_mcp_runs <dirs> --labels opus,sonnet,haiku`.
+Re-score (local only — the run dirs are gitignored, so this is dead on a fresh clone):
+`uv run python -m eval.score_mcp_runs <dirs> --labels opus,sonnet,haiku`.

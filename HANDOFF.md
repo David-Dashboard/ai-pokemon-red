@@ -114,8 +114,9 @@ harness (A) is DONE and verified — do not rebuild it. Do not start the re-arch
 **▶ PHASE A DONE (2026-06-25) — `reports/2026-06-25-phase-a-hud-grounding-precheck.md`. 2 of 3 gate
 pre-conditions met; the gate's SHAPE is NOT yet confirmed (Check 2 is the keystone and is AMBER). GREEN: HUD =
 DIGITS visible during gameplay ("HP 8/10 ENEMY 1/3 B 2F") → `read_text` is right, life groundable continuously;
-the LIFE ORACLE EXISTS, found `0xD389` (the unique byte matching visible HP 7@f100/10@f500 — reproduce via
-`eval/find_hp_addr.py`; caveat: reads 15 on 4/4000 transition frames, single-run → clamp to ≤max when scoring),
+the LIFE ORACLE EXISTS, found `0xD389` (the unique byte matching visible HP 7@f100/10@f500 — reproduce from a
+clean checkout via the committed fixture `eval/find_hp_addr eval/fixtures/cavenoire_hp_oracle --anchors 0:7 1:10`;
+caveat: reads 15 on 4/4000 transition frames, single-run → clamp to ≤max when scoring),
 now wired `watch={...,"hp":0xD389}` (oracle.jsonl only). Decoys (enemy/floor counters) are *enumerable* but not
 usable until Check 2. AMBER/keystone = Check 2: a pixels-only consequence INDEPENDENT of the HP digits is NOT
 isolated (≥1 of 29 HP-drops is transition-confounded; frequency unmeasured) → without it §9's decoy-rejection

@@ -130,10 +130,25 @@ _PRESS_SEQUENCE_TOOL = {
 _WAIT_TOOL = {
     "name": "wait",
     "description": "Advance the game without input — let an animation finish.",
-    "inputSchema": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}}},
+    "inputSchema": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}},
+                    "required": []},
 }
-_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL,
-                 _PRESS_BUTTON_TOOL, _PRESS_SEQUENCE_TOOL, _WAIT_TOOL]
+# The action tools are mirrored from the live plugin; `assert_action_tools_fresh()` enforces they stay in sync
+# (the observe/explore/goto/remember tools are defined HERE and used by both, so they cannot drift).
+_ACTION_TOOLS = [_PRESS_BUTTON_TOOL, _PRESS_SEQUENCE_TOOL, _WAIT_TOOL]
+_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL, *_ACTION_TOOLS]
+
+
+def assert_action_tools_fresh(plugin) -> None:
+    """Lazy-boot safety net: `tools/list` answers from _STATIC_TOOLS *before* the plugin is booted, so the static
+    action specs could silently drift from what the plugin actually accepts (a renamed param, a changed `maximum`,
+    an added tool). Compare by NAME + SCHEMA — the load-bearing part the brain builds requests from; descriptions
+    are intentionally generic across --game and are not compared. Fail LOUD rather than mislead the brain."""
+    want = {t["name"]: t["inputSchema"] for t in _ACTION_TOOLS}
+    got = {s.name: s.schema for s in plugin.tools(_AGENT)}
+    if want != got:
+        raise SystemExit("world_mcp._STATIC_TOOLS action specs are STALE vs the live plugin (name/schema drift) — "
+                         f"update _ACTION_TOOLS to match.\n  static: {want}\n  live:   {got}")
 
 
 def _send(msg: dict) -> None:
@@ -301,7 +316,9 @@ def main() -> int:
     _world: list = [None]
     def world():
         if _world[0] is None:
-            _world[0] = World(args)
+            w = World(args)
+            assert_action_tools_fresh(w.plugin)   # catch _STATIC_TOOLS drift on first boot (fail loud, never silent)
+            _world[0] = w
         return _world[0]
 
     for line in sys.stdin:                       # newline-delimited JSON-RPC (the MCP stdio transport)

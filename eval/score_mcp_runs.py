@@ -37,8 +37,10 @@ def _score(run):
         oc = (r.get("perceived") or {}).get("outcome")
         if oc == "moved":
             moved += 1
-            if prev and (abs(_wrap(w.get("x", 0) - prev.get("x", 0))) +
-                         abs(_wrap(w.get("y", 0) - prev.get("y", 0)))) != 0:
+            # confirm a "move" against RAM position ONLY when both rows carry x/y — defaulting a missing coord to
+            # 0 (e.g. a game whose watch omits position) would fabricate a displacement and count a non-move (B5).
+            if prev and {"x", "y"} <= w.keys() and {"x", "y"} <= prev.keys() and \
+                    (abs(_wrap(w["x"] - prev["x"])) + abs(_wrap(w["y"] - prev["y"]))) != 0:
                 real_move += 1
         elif oc == "blocked":
             blocked += 1
@@ -46,7 +48,13 @@ def _score(run):
             unknown += 1
         if w:
             prev = w
-    dmg = sum(1 for a, b in zip(hp, hp[1:]) if -4 <= b - a < 0)
+    # damage = HP decrease between consecutive VALID readings. Filter readings above the display max first (those
+    # are the transient transition spikes — see the Phase A report, F3) instead of bounding the delta with a magic
+    # number. NOTE: transition-confounded HP drops are NOT separated here — that's the open gate problem (Check 2),
+    # deliberately not hidden inside the scorer. _MAX_HP is Cave Noire's displayed max.
+    _MAX_HP = 10
+    clean = [v for v in hp if v <= _MAX_HP]
+    dmg = sum(1 for a, b in zip(clean, clean[1:]) if b < a)
     return {
         "steps": len(rows),
         "cells": len(cells),                 # distinct ground-truth tiles visited (RAM) = exploration coverage
