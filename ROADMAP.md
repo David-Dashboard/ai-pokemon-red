@@ -4,6 +4,8 @@ _The durable, version-controlled statement of where this project is going. Pinne
 Companion docs: [`HANDOFF.md`](HANDOFF.md) (current status + the near-term plan), `ai-aria/PROMPT_ARCHITECTURE.md`
 (the prompt/brain architecture). Last painted: 2026-06-20._
 
+_**Proposed revisions under evaluation (NOT yet adopted, gated on the ADR-002 probe):** `reports/2026-06-25-roadmap-v2-discovery-loop.md` + the design backlog `reports/2026-06-25-design-backlog-future-experiments.md`. This document (ADR-001) stands until that gate PASSES._
+
 ## The one bet
 
 We are **not** building six agents. We are building **one brain** and testing whether a single abstraction —

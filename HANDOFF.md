@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-20._
+_Last updated: 2026-06-25._
 
 ---
 
@@ -76,9 +76,83 @@ The invariants that make a win *count* (held on purpose — they're what makes t
 
 The whole framework is one small loop: `perceive → recall → decide → act → observe outcome → learn`.
 
-## 2. Current status (2026-06-21)
+## 2. Current status (newest block first — read the TOP block)
 
-**⇒ LATEST (2026-06-21) — read this first; the blocks below are layered history.**
+**⇒ Read the TOP block first — this section is append-on-top (newest → oldest). Picking up COLD? `git fetch` +
+check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
+source branch's commits → "N ahead of main" can mean already-merged).**
+
+**⇒ NEWEST (2026-06-25) — TWO THINGS: (A) the S4 MCP HARNESS IS BUILT + END-TO-END VERIFIED; (B) a MAJOR NEW
+DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `main` via PR #16 (harness) + PR #17 (direction).**
+
+**▶ STARTING WORK? The active task is the ADR-002 GATE PROBE (see (B) + ⇒NEXT below). Before writing ANY code,
+read `reports/2026-06-25-adr-002-ontology-discovery.md` — §9 (the gate) and §11 (anti-drift tripwires). The MCP
+harness (A) is DONE and verified — do not rebuild it. Do not start the re-architecture until the gate PASSES.**
+- **(A) S4 MCP server — `world_mcp.py` (PR #16, open).** Exposes Cave Noire as an MCP stdio server (stdlib, NO
+  new dep) so a FRESH Claude Code instance is the System-2 brain (ADR-001 S4 realized). Tools: `observe`
+  (symbolic-only — no pixels) · `explore`+`goto` (free System-1 autopilot; dual-process — woken at decisions,
+  not every tile) · `press_*`/`wait` · `remember` (within-run lessons) + a wakes-per-progress (cells/decision)
+  cost signal. No-leak (RAM → oracle.jsonl only). **4 adversarial reviews, all findings addressed.** END-TO-END
+  VERIFIED: a real MCP-client session ran handshake→tools→decision-loop→world-responds, 0 protocol errors, on an
+  OPEN cavern (`runs/cn_open.state`, hand-captured + verified; cells/decision climbs as `explore` covers ground).
+  Launcher (a clean-slate fresh-Claude-Code brain) lives OUTSIDE the repo: `../aria-mcp-test/` (`.mcp.json` +
+  thin brief), wired to `cn_open.state`. **To run it: open a fresh Claude Code in `../aria-mcp-test/`, approve
+  the `cave-noire-world` server, say "observe, then explore."**
+- **(B) ADR-002 (PROPOSED, GATED) — `reports/2026-06-25-adr-002-ontology-discovery.md`. The direction; NOT yet
+  built.** Move the hand-code/learn boundary DOWN: a small fixed `core/` **sensorimotor floor** (change · motion ·
+  ego-motion · blob-segment · track · recognition-hash · glyph-read · emit-input · action↔effect · **consequence
+  detector**) + a per-world ontology the **BRAIN hypothesizes** from priors and **BEHAVIOUR grounds** (=truth),
+  compiled to System-1 skills. Seam → **queryable** (interrogate perception). Constancy → **the loop, not the
+  schema**. Existence proof: the tile→function map already does this for walkability. **ADR-001 stays Accepted
+  until grounded.** Memory: `architecture-v2-ontology-discovery`.
+- **⇒ NEXT (agreed sequence):** (1) **roadmap/plan v2 — DRAFTED (PROPOSED, gated):**
+  `reports/2026-06-25-roadmap-v2-discovery-loop.md` — recasts the per-world UNIT from *"hand-build a perceiver"* to
+  *"run the discovery loop"* (the ladder/discontinuities/invariants are unchanged); 4 rungs, gate-first (Rung 0 =
+  the probe; PASS→promote, FAIL→fall back to ADR-001 cheap). Does NOT touch `ROADMAP.md`. (2) **minimal e2e = THE
+  GATE PROBE (Rung 0 — the active build)** — evolve `world_mcp.py` into the sensorium
+  (add `read_text` + `whats_changed` + a `consequence` signal + a thin hypothesize/confirm surface), then run the
+  **HUD-grounding probe**: brain hypothesizes *"region R = my life"*, **SCORE its grounded life-detector vs the
+  RAM oracle** as it plays. PASS → promote ADR-002 + generalize to entities; FAIL → the direction dies cheap.
+- **⇒ DON'T DRIFT (full tripwire table: ADR-002 §11):** GATE FIRST — build / promote / claim NOTHING until the
+  HUD probe PASSES vs the oracle. Build the discovery **LOOP, not a bespoke Cave Noire combat perceiver** (that
+  per-game pattern is the exact drift ADR-002 kills). Only the **2–3 primitives the gate needs**, not the whole
+  floor. ADR-002 stays **PROPOSED** — do NOT overwrite `ARCHITECTURE.md`/`ROADMAP.md`. The `consequence` signal
+  is **pixels-only** (oracle = scorer, never a sense, never the grounding signal). Within-run only (blank every
+  run). Keep `world_mcp.py` symbolic-only — no screenshot-to-brain.
+- **⇒ DESIGN BACKLOG (2026-06-25 brainstorm — future visits/experiments, all gate-sequenced):**
+  `reports/2026-06-25-design-backlog-future-experiments.md` — the senses toolbox, `focus`/foveated attention, the
+  spatial scratchpad (L1 grounded / L2 hypothesis), entity-via-motion, the fit-method-to-data law, and the PARKED
+  It3+ items (action-chunking + VLA distillation, "time-in-world → speed"). Includes the cheap-probe list. Nothing
+  there is a build order — it's all behind the Rung-0 gate.
+- **OPEN PRs/issues:** PR #16 (`world_mcp.py`) · issue #15 (false-MOVE backstop residual: fixed-lag-4, blind to
+  period-3 animation). PR #14's false-MOVE-shipped HANDOFF block was **folded into this doc** (the block directly
+  below) and #14 closed. For David's merge/triage.
+
+**⇒ (2026-06-25) — THE CAVE NOIRE FALSE-MOVE RUNAWAY IS FIXED + SHIPPED (PR #13, squash-merged to `main`
+2026-06-24 as `06dc9dd`; 341 tests green, re-confirmed 2026-06-25). SUPERSEDES the part-2 ⇒FOUND/⇒OPEN items
+below — the false-MOVE blocker is CLEARED.**
+- **The fix = two parts, both in `core/grid_perceiver.py`, both closed-loop validated (NOT either/or).** The
+  part-2 ⇒FOUND guess (a "structural translation-check") was REFINED by a measure-first probe
+  (`eval/probe_phantom_move.py` + `eval/probe_spatial_move.py`, RAM = oracle): (1) **grid-max move signal** — the
+  per-step signal is now the max per-cell change on an 8×8 grid (`ForegroundSignal(fg_grid=58)`; Cave Noire wires
+  `_FG_GRID=58`), which localizes the sprite spike the whole-frame residual DILUTES (AUC **0.99 vs 0.86**, pure
+  numpy, no deps — "measure WHERE the change is, not how much," minus the CNN); (2) **no-progress backstop**
+  (`_RUN_GUARD=4, _PROG_W=4, _PROG_MIN=4.0`) — grid-max still leaves a ~33% runaway tail no per-step pixel signal
+  can catch, so a sustained same-direction run that isn't visually progressing is demoted to a no-move → the
+  existing wall-confirmation seals it. Constants grounded on the corridor regime (stuck p90 3.86 < 4.0 < real p10
+  6.45); false-wall rate measured 1.5%.
+- **Results:** closed-loop corridor phantom **65→0**, pose `[0,-70]`→`[-1,-3]` (runaway gone); offline replay drift
+  **0.06→0.02** (better); Gauntlet unchanged (backstop inert — camera-scroll = progress). The probe rejected the
+  fancy options (CNN/embedding = invariance machine, OOD on pixel-art; per-cell SSIM ties grid-max, no win) —
+  survey in `reports/2026-06-24-visual-embedding-models-survey.md`. Full record: `reports/2026-06-24-phantom-move-probe.md`.
+- **Open caveat (carried, not blocking):** `_FG_GRID=58` and the 0.99 AUC derive from a SINGLE human recording;
+  generalization to a different dungeon / flicker level / session is unvalidated — treat 58 as a calibration
+  constant to re-check on new corpora. The closed-loop corridor is `n_real=1` for discriminability (it validates
+  the phantom RATE, not separability).
+- **Nav goal now PARKED** behind the ADR-002 gate (the active NEXT is the TOP block's gate probe). The false-MOVE
+  blocker is cleared; a hand-played in-cavern save-state (`human_play.py` → `--init-state`) exists if nav is revisited.
+
+**⇒ (2026-06-21 and earlier) — layered history below; the TOP block above is current.**
 
 **⇒ NEWEST (2026-06-24, part-2) — SHARED PERCEPTION INFRA LIFTED TO `core/`; Gauntlet + Cave Noire are now
 THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR branch
