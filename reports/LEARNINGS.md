@@ -6,6 +6,33 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-06-25 — S4 MCP harness (the WORLD as an MCP server) + four sharp-edge fixes
+- **What:** built `world_mcp.py` — a stdlib MCP stdio server wrapping Cave Noire so a fresh Claude Code instance
+  IS the System-2 brain (ADR-001's S4, realized). Symbolic-only, dual-process, no-leak; verified end-to-end by a
+  real MCP client (handshake→tools→decision-loop→world-responds, 0 protocol errors). See `reports/2026-06-25-adr-002-ontology-discovery.md` for the direction this unblocked.
+- **Learning — MCP stdio on Windows has two silent JSON-RPC killers, both at the byte layer.** (1) Windows
+  decodes stdin as **cp1252**, not UTF-8, so any non-ASCII byte makes `json.loads` throw and the `initialize`
+  reply never comes — fix: `sys.stdin.reconfigure(encoding="utf-8")`. (2) The first line can carry a **UTF-8 BOM**
+  (`0xFEFF`) that `json.loads` rejects — strip it (`if line and ord(line[0]) == 0xFEFF: line = line[1:]`). Both are
+  genuine production-correctness bugs, not test artifacts. Also: PyBoy/SDL banners print to **fd 1** and corrupt
+  the stream — redirect at the fd level (`os.dup2(2, 1); sys.stdout = sys.stderr`), not just by reassigning
+  `sys.stdout`.
+- **Learning — a squash-merge ORPHANS the source branch's commits, so `main..HEAD` lies.** Local
+  `feat/false-move-fix` showed "N ahead of main" and looked unmerged — but PR #13 had been **squash-merged**, which
+  creates a NEW commit on main and leaves the branch's original commits unreachable. Nearly shipped a duplicate PR.
+  The reliable check is content, not topology: `git fetch` then `git diff <branch> origin/main` (empty ⇒ already
+  merged). Now the standing rule at the top of HANDOFF §2.
+- **Learning — PowerShell here-strings mangle embedded double-quotes passed to native commands.** `gh pr create`
+  and `git commit` both failed when the body/message (a here-string) contained `"`. Fix: write the body to a temp
+  `.md` and use `--body-file` / `-F`; keep commit messages quote-free ASCII. Related: `2>&1` on a native command in
+  PS 5.1 wraps stderr as ErrorRecords and **flips `$?` to false even on exit 0** — never gate the next step on `$?`
+  after a native call that writes stderr (e.g. `git push`).
+- **Learning — a Linux `.venv` on Windows can brick every uv-backed hook.** A stale `.venv/lib64` symlink (a
+  reparse point Windows can't delete) made `uv run` fail, which silently blocked the PreToolUse commit-gate hook
+  (Bash tool dead all session) AND the PreCompact hook (`/compact` blocked). Fix: `cmd /c rmdir .venv\lib64`,
+  delete `.venv`, `uv sync` to rebuild a clean Windows env. Symptom (a hook erroring on an unrelated command) is far
+  from the cause (a broken venv) — check the venv first when uv-backed hooks misfire after switching OS.
+
 ## 2026-06-24 — part-2: lifting per-world perception into a shared `core/` (the ossification fix)
 - **What:** the occupancy-grid perceiver, the GB emulator, and the perception-only plugin had been duplicated
   3× (Pokémon → Gauntlet → Cave Noire by *copying*). Lifted the shared body to `core/` — `core/grid.py`,
