@@ -49,8 +49,22 @@ from core.brains import ExploreBrain        # noqa: E402  (the free System-1 aut
 from core.contracts import ToolCall         # noqa: E402
 from core.gateway import Gateway            # noqa: E402
 from core.gb_emulator import BUTTONS        # noqa: E402  (cheap import — no PyBoy; for the static tool list)
-from games.cave_noire import CAVE_NOIRE_SANDBOX, CaveNoirePlugin  # noqa: E402
-from games.cave_noire.perceiver import CaveNoirePerceiver         # noqa: E402
+
+import importlib                            # noqa: E402  (worlds loaded by --game from GAMES — game-agnostic)
+
+# Per-world registry so this harness serves ANY world via `--game`, not just Cave Noire. Each entry is the
+# import paths + the per-world bits (default ROM, the RAM `watch` for the SCORING oracle — never on the wire).
+# Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
+GAMES = {
+    "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
+                   "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoirePerceiver",
+                   "rom": "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
+                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xD389}},   # hp = ADR-002 gate life oracle
+    "gauntlet": {"pkg": "games.gauntlet", "plugin": "GauntletPlugin", "sandbox": "GAUNTLET_SANDBOX",
+                 "perceiver_mod": "games.gauntlet.perceiver", "perceiver": "GauntletPerceiver",
+                 "rom": "roms/Gauntlet II (USA, Europe).gb",
+                 "watch": {"x": 0xC286, "y": 0xC2C6}},
+}
 
 _AGENT = "mcp-brain"
 _PROTOCOL = "2024-11-05"
@@ -128,21 +142,26 @@ def _send(msg: dict) -> None:
 
 
 class World:
-    """One live perception-only Cave Noire session, driven through the existing Gateway + plugin."""
+    """One live perception-only session for the chosen `--game`, driven through the Gateway + plugin."""
 
     def __init__(self, args) -> None:
+        spec = GAMES[args.game]
+        pkg = importlib.import_module(spec["pkg"])
+        Plugin = getattr(pkg, spec["plugin"])
+        sandbox = getattr(pkg, spec["sandbox"])
+        Perceiver = getattr(importlib.import_module(spec["perceiver_mod"]), spec["perceiver"])
         self.with_screenshot = bool(args.with_screenshot)
-        header = ("Top-down dungeon exploration. Perception is approximate; a screenshot is attached."
+        header = ("Top-down exploration. Perception is approximate; a screenshot is attached."
                   if self.with_screenshot else
-                  "Top-down dungeon exploration. You perceive only this symbolic view — reason from it.")
-        self.plugin = CaveNoirePlugin(rom_path=args.rom, out_dir=args.out, headless=True,
-                                      init_state=args.init_state, perceiver=CaveNoirePerceiver(),
-                                      # RAM -> oracle.jsonl ONLY, never the wire. hp (0xD389) is the ADR-002
-                                      # gate's life oracle (Phase A: uniquely matches visible HP 7@f100/10@f500).
-                                      watch={"x": 0xC504, "y": 0xC503, "hp": 0xD389},
-                                      render_header=header)
-        self.gw = Gateway(self.plugin, CAVE_NOIRE_SANDBOX)
-        self.explore = ExploreBrain(_AGENT, single_step=True)   # Cave Noire is turn-based: one press/move
+                  "Top-down exploration. You perceive only this symbolic view — reason from it.")
+        record_path = os.path.join(args.out, "session.mp4") if args.record else None
+        os.makedirs(args.out, exist_ok=True)   # the recorder opens <out>/session.mp4 before the plugin makedirs
+        self.plugin = Plugin(rom_path=args.rom or spec["rom"], out_dir=args.out, headless=True,
+                             init_state=args.init_state, perceiver=Perceiver(),
+                             watch=spec["watch"],   # RAM -> oracle.jsonl ONLY, never the wire (incl. the hp oracle)
+                             render_header=header, record_path=record_path)
+        self.gw = Gateway(self.plugin, sandbox)
+        self.explore = ExploreBrain(_AGENT, single_step=True)   # turn-based / one press = one move
         # within-run self-improvement state (discarded at process end — the learning-boundary law)
         self.lessons: list[str] = []
         self.decisions = 0       # your LLM wakes (press/goto/explore) — the cost the north star keeps LOW
@@ -263,10 +282,14 @@ class World:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="MCP (stdio) server exposing Cave Noire as tools.")
-    ap.add_argument("--rom", default="roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb")
-    ap.add_argument("--init-state", default="runs/cn_human.state")
-    ap.add_argument("--out", default="runs/mcp_cave_noire")
+    ap = argparse.ArgumentParser(description="MCP (stdio) server exposing a Game Boy world as tools.")
+    ap.add_argument("--game", default="cave_noire", choices=sorted(GAMES),
+                    help="which world to serve (registry in world_mcp.py)")
+    ap.add_argument("--rom", default=None, help="ROM path; defaults to the chosen game's ROM")
+    ap.add_argument("--init-state", default=None, help="gameplay save-state to boot from")
+    ap.add_argument("--out", default="runs/mcp_world")
+    ap.add_argument("--record", action="store_true",
+                    help="record an MP4 of the session to <out>/session.mp4 (needs imageio + imageio-ffmpeg)")
     ap.add_argument("--with-screenshot", action="store_true",
                     help="DEBUG ONLY: also return the raw frame image. Off by default — the brain is meant to "
                          "reason from the symbolic view (the perception seam), not read pixels.")
@@ -317,6 +340,13 @@ def main() -> int:
             _send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "Invalid Request: no method"}})
         else:
             _send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}})
+
+    # client disconnected (stdin EOF) -> stop the emulator and FINALIZE the --record MP4 (imageio needs close()).
+    if _world[0] is not None:
+        try:
+            _world[0].plugin.close()
+        except Exception:
+            pass
     return 0
 
 

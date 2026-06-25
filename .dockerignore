@@ -1,0 +1,19 @@
+# Keep the image small + ROM/data out of it. Only core/, games/, world_mcp.py are COPYed (see Dockerfile).
+roms/
+runs/
+.venv
+.venv-win
+.venv-probe*
+.git
+.github
+.pytest_cache
+**/__pycache__/
+*.pyc
+reports/
+tests/
+eval/
+knowledge-export/
+*.md
+*.txt
+*.state
+roms
