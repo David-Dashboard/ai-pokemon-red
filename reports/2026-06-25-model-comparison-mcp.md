@@ -1,0 +1,65 @@
+# 2026-06-25 — Opus vs Sonnet vs Haiku as the System-2 brain (dockerized MCP world)
+
+First end-to-end model comparison on the new harness. **The harness is validated; the comparison itself is
+confounded by a world strand-bug, so it is NOT a clean model ranking** — recorded honestly.
+
+## Setup
+- **World:** `world_mcp.py` (Cave Noire) as an MCP **stdio** server, run as a **Docker container**
+  (`docker run -i`) — a clean spawn that fixed the Windows `python.exe` MCP-spawn failure. RAM (`x,y,hp`
+  via `watch`, hp=`0xD389`) is the scoring oracle, logged to `oracle.jsonl`, **never on the wire**.
+- **Brain:** each model = a **headless Claude Code** instance (`claude -p`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `--allowedTools mcp__cave-noire-world` so it can ONLY touch the 7 game tools). Same `cn_open.state`,
+  same 20-decision comparison task, same brief.
+- **Models:** Opus 4.8 · Sonnet 4.6 · Haiku 4.5. Scored with `eval/score_mcp_runs.py`.
+
+## Results (RAM ground truth) — ILLUSTRATIVE, NOT a reproducible benchmark
+> ⚠️ **Do not cite these as a model ranking, and do not expect to reproduce them from a clean checkout.** The
+> source `runs/2026-06-25_cavenoire_mcp_*/oracle.jsonl` are **gitignored local artifacts** (not committed —
+> raw-data policy), so the re-score command below is a *local* convenience, dead on a fresh clone. The numbers
+> are a one-off snapshot of a **confounded** task (see below). They are kept only for the retrospective.
+
+| model | cells | steps | moved | blocked | wall% | real-move% | hp end/min | dmg | self-reported |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|---|
+| **opus** | 7 | 46 | 8 | 15 | 65% | 50% | 7/7 | 0 | 9 cells, **7 decisions**, 1.3 cells/dec |
+| **sonnet** | 8 | 75 | 10 | 24 | 71% | 50% | 7/7 | 0 | 10 cells, 0.5 cells/dec |
+| **haiku** | 7 | 49 | 8 | 13 | 62% | 50% | 7/7 | 0 | 9 cells, 1.0 cells/dec |
+
+**The identical `real-move% = 50%` across all three is an artifact, not a finding** — it's the common-ceiling
+signature of three agents trapped in the *same* sealed pocket bouncing the *same* walls, not a per-model
+measurement. By the same token "sonnet flailed most (75 steps)" and "sonnet was most persistent" are
+indistinguishable on this data; read the qualitative notes as weak signal, not a verdict.
+
+## The confound (why this is not a ranking)
+**All three were trapped identically:** the first `explore` auto-walked each into a sealed, walled-off
+pocket they could not leave — so the coverage numbers are ~equal (7–8 cells) because everyone hit the
+*same wall*. **Opus diagnosed it and flagged it unprompted:** *"this looks like an environment/seam bug —
+autopilot stranded me in a fully-walled pocket with the listed frontiers unreachable and the start cell
+mislabeled unexplored — so this isn't a clean comparability data point."* (Frontiers listed-but-unreachable
++ start cell mislabeled-unexplored = a perceiver/occupancy-map bug, likely the dead-reckoning-drift family
+in the cramped `cn_open.state`.)
+
+## Qualitative signal (despite the confound)
+- **Opus** — sharpest: **7 decisions**, recognized the trap fastest, **root-caused it correctly**, stopped
+  cleanly instead of flailing.
+- **Sonnet** — flailed most (75 steps, 24 wall-bumps), spent its budget diagnosing/recovering.
+- **Haiku** — gave up ("failed catastrophically"), least insight.
+
+Even on a broken task, Opus led on efficiency + diagnosis. But the cells numbers are too close + the task
+too broken to call a winner.
+
+## What's needed for a clean comparison
+The blocker is the **world, not the model**: `cn_open.state` + the explore/perceiver interaction strands the
+agent. Re-run after either (a) capturing a more-open in-cavern start state, or (b) fixing the strand bug Opus
+flagged (frontiers-unreachable / start-cell-mislabeled). Until then, no model ranking is defensible.
+
+## Raw data + per-session memory (retrospective)
+Each `runs/2026-06-25_cavenoire_mcp_{opus,sonnet,haiku}/` holds the full record of that session:
+- **`oracle.jsonl`** — the world/RAM record per step (pose, hp, perceived outcome). + frames.
+- **`run.log`** — the brain's final narration / report.
+- **`transcript.jsonl`** — the **FULL brain transcript**: every turn, each tool call + result, and the
+  `remember` lessons it authored. (Claude Code auto-persists these in `~/.claude/projects/E--…-aria-mcp-test/`;
+  copied here for co-located review. Future runs: copy the newest `.jsonl` from there, or launch the brain with
+  `claude -p --output-format stream-json > <out>/transcript.jsonl`.)
+
+Re-score (local only — the run dirs are gitignored, so this is dead on a fresh clone):
+`uv run python -m eval.score_mcp_runs <dirs> --labels opus,sonnet,haiku`.

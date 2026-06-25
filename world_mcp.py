@@ -48,8 +48,23 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from core.brains import ExploreBrain        # noqa: E402  (the free System-1 autopilot)
 from core.contracts import ToolCall         # noqa: E402
 from core.gateway import Gateway            # noqa: E402
-from games.cave_noire import CAVE_NOIRE_SANDBOX, CaveNoirePlugin  # noqa: E402
-from games.cave_noire.perceiver import CaveNoirePerceiver         # noqa: E402
+from core.gb_emulator import BUTTONS        # noqa: E402  (cheap import — no PyBoy; for the static tool list)
+
+import importlib                            # noqa: E402  (worlds loaded by --game from GAMES — game-agnostic)
+
+# Per-world registry so this harness serves ANY world via `--game`, not just Cave Noire. Each entry is the
+# import paths + the per-world bits (default ROM, the RAM `watch` for the SCORING oracle — never on the wire).
+# Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
+GAMES = {
+    "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
+                   "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoirePerceiver",
+                   "rom": "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
+                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xD389}},   # hp = ADR-002 gate life oracle
+    "gauntlet": {"pkg": "games.gauntlet", "plugin": "GauntletPlugin", "sandbox": "GAUNTLET_SANDBOX",
+                 "perceiver_mod": "games.gauntlet.perceiver", "perceiver": "GauntletPerceiver",
+                 "rom": "roms/Gauntlet II (USA, Europe).gb",
+                 "watch": {"x": 0xC286, "y": 0xC2C6}},
+}
 
 _AGENT = "mcp-brain"
 _PROTOCOL = "2024-11-05"
@@ -93,6 +108,47 @@ _REMEMBER_TOOL = {
                     "Within-run only: forgotten when the session ends (that's intentional)."),
     "inputSchema": {"type": "object", "properties": {"lesson": {"type": "string"}}, "required": ["lesson"]},
 }
+# Static action-tool specs (mirror games/cave_noire's PerceptionPlugin.tools()) so `tools/list` can answer
+# WITHOUT booting the emulator — the emulator is built lazily on the first tool CALL (see main()). This keeps
+# the `initialize`/`tools/list` handshake instant so the MCP client doesn't time out waiting on a PyBoy boot.
+_BUTTON_ENUM = {"type": "string", "enum": list(BUTTONS)}
+_PRESS_BUTTON_TOOL = {
+    "name": "press_button",
+    "description": "Move one tile (up/down/left/right) or act with `a` (interact / pick up).",
+    "inputSchema": {"type": "object",
+                    "properties": {"button": _BUTTON_ENUM,
+                                   "hold_frames": {"type": "integer", "minimum": 1, "maximum": 120}},
+                    "required": ["button"]},
+}
+_PRESS_SEQUENCE_TOOL = {
+    "name": "press_sequence",
+    "description": "Press several buttons in order (4-directional, no diagonals), e.g. [\"up\",\"up\",\"left\"].",
+    "inputSchema": {"type": "object",
+                    "properties": {"buttons": {"type": "array", "items": _BUTTON_ENUM, "maxItems": 16}},
+                    "required": ["buttons"]},
+}
+_WAIT_TOOL = {
+    "name": "wait",
+    "description": "Advance the game without input — let an animation finish.",
+    "inputSchema": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}},
+                    "required": []},
+}
+# The action tools are mirrored from the live plugin; `assert_action_tools_fresh()` enforces they stay in sync
+# (the observe/explore/goto/remember tools are defined HERE and used by both, so they cannot drift).
+_ACTION_TOOLS = [_PRESS_BUTTON_TOOL, _PRESS_SEQUENCE_TOOL, _WAIT_TOOL]
+_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL, *_ACTION_TOOLS]
+
+
+def assert_action_tools_fresh(plugin) -> None:
+    """Lazy-boot safety net: `tools/list` answers from _STATIC_TOOLS *before* the plugin is booted, so the static
+    action specs could silently drift from what the plugin actually accepts (a renamed param, a changed `maximum`,
+    an added tool). Compare by NAME + SCHEMA — the load-bearing part the brain builds requests from; descriptions
+    are intentionally generic across --game and are not compared. Fail LOUD rather than mislead the brain."""
+    want = {t["name"]: t["inputSchema"] for t in _ACTION_TOOLS}
+    got = {s.name: s.schema for s in plugin.tools(_AGENT)}
+    if want != got:
+        raise SystemExit("world_mcp._STATIC_TOOLS action specs are STALE vs the live plugin (name/schema drift) — "
+                         f"update _ACTION_TOOLS to match.\n  static: {want}\n  live:   {got}")
 
 
 def _send(msg: dict) -> None:
@@ -101,19 +157,26 @@ def _send(msg: dict) -> None:
 
 
 class World:
-    """One live perception-only Cave Noire session, driven through the existing Gateway + plugin."""
+    """One live perception-only session for the chosen `--game`, driven through the Gateway + plugin."""
 
     def __init__(self, args) -> None:
+        spec = GAMES[args.game]
+        pkg = importlib.import_module(spec["pkg"])
+        Plugin = getattr(pkg, spec["plugin"])
+        sandbox = getattr(pkg, spec["sandbox"])
+        Perceiver = getattr(importlib.import_module(spec["perceiver_mod"]), spec["perceiver"])
         self.with_screenshot = bool(args.with_screenshot)
-        header = ("Top-down dungeon exploration. Perception is approximate; a screenshot is attached."
+        header = ("Top-down exploration. Perception is approximate; a screenshot is attached."
                   if self.with_screenshot else
-                  "Top-down dungeon exploration. You perceive only this symbolic view — reason from it.")
-        self.plugin = CaveNoirePlugin(rom_path=args.rom, out_dir=args.out, headless=True,
-                                      init_state=args.init_state, perceiver=CaveNoirePerceiver(),
-                                      watch={"x": 0xC504, "y": 0xC503},  # RAM -> oracle.jsonl ONLY, never the wire
-                                      render_header=header)
-        self.gw = Gateway(self.plugin, CAVE_NOIRE_SANDBOX)
-        self.explore = ExploreBrain(_AGENT, single_step=True)   # Cave Noire is turn-based: one press/move
+                  "Top-down exploration. You perceive only this symbolic view — reason from it.")
+        record_path = os.path.join(args.out, "session.mp4") if args.record else None
+        os.makedirs(args.out, exist_ok=True)   # the recorder opens <out>/session.mp4 before the plugin makedirs
+        self.plugin = Plugin(rom_path=args.rom or spec["rom"], out_dir=args.out, headless=True,
+                             init_state=args.init_state, perceiver=Perceiver(),
+                             watch=spec["watch"],   # RAM -> oracle.jsonl ONLY, never the wire (incl. the hp oracle)
+                             render_header=header, record_path=record_path)
+        self.gw = Gateway(self.plugin, sandbox)
+        self.explore = ExploreBrain(_AGENT, single_step=True)   # turn-based / one press = one move
         # within-run self-improvement state (discarded at process end — the learning-boundary law)
         self.lessons: list[str] = []
         self.decisions = 0       # your LLM wakes (press/goto/explore) — the cost the north star keeps LOW
@@ -234,17 +297,29 @@ class World:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="MCP (stdio) server exposing Cave Noire as tools.")
-    ap.add_argument("--rom", default="roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb")
-    ap.add_argument("--init-state", default="runs/cn_human.state")
-    ap.add_argument("--out", default="runs/mcp_cave_noire")
+    ap = argparse.ArgumentParser(description="MCP (stdio) server exposing a Game Boy world as tools.")
+    ap.add_argument("--game", default="cave_noire", choices=sorted(GAMES),
+                    help="which world to serve (registry in world_mcp.py)")
+    ap.add_argument("--rom", default=None, help="ROM path; defaults to the chosen game's ROM")
+    ap.add_argument("--init-state", default=None, help="gameplay save-state to boot from")
+    ap.add_argument("--out", default="runs/mcp_world")
+    ap.add_argument("--record", action="store_true",
+                    help="record an MP4 of the session to <out>/session.mp4 (needs imageio + imageio-ffmpeg)")
     ap.add_argument("--with-screenshot", action="store_true",
                     help="DEBUG ONLY: also return the raw frame image. Off by default — the brain is meant to "
                          "reason from the symbolic view (the perception seam), not read pixels.")
     args = ap.parse_args()
 
-    world = World(args)
-    tools = world.tools()
+    # LAZY: do NOT boot the emulator here. `initialize`/`tools/list` must answer instantly or the MCP client
+    # times out the startup handshake and marks the server "not connected". The World (PyBoy) is built on the
+    # first tool CALL, which the client waits on as a normal request (no startup timeout).
+    _world: list = [None]
+    def world():
+        if _world[0] is None:
+            w = World(args)
+            assert_action_tools_fresh(w.plugin)   # catch _STATIC_TOOLS drift on first boot (fail loud, never silent)
+            _world[0] = w
+        return _world[0]
 
     for line in sys.stdin:                       # newline-delimited JSON-RPC (the MCP stdio transport)
         if line and ord(line[0]) == 0xFEFF:      # tolerate a leading BOM on the first message
@@ -267,11 +342,11 @@ def main() -> int:
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "ai-pokemon-red-world", "version": "0.3.0"}}})
         elif method == "tools/list":
-            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": tools}})
+            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": _STATIC_TOOLS}})
         elif method == "tools/call":
             p = msg.get("params") or {}
             try:
-                content = world.call(p.get("name", ""), p.get("arguments") or {})
+                content = world().call(p.get("name", ""), p.get("arguments") or {})
                 _send({"jsonrpc": "2.0", "id": mid, "result": {"content": content}})
             except Exception as e:               # a tool error is an observation, not a crash (invariant 4)
                 _send({"jsonrpc": "2.0", "id": mid,
@@ -282,6 +357,13 @@ def main() -> int:
             _send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "Invalid Request: no method"}})
         else:
             _send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}})
+
+    # client disconnected (stdin EOF) -> stop the emulator and FINALIZE the --record MP4 (imageio needs close()).
+    if _world[0] is not None:
+        try:
+            _world[0].plugin.close()
+        except Exception:
+            pass
     return 0
 
 
