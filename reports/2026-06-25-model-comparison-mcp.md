@@ -42,6 +42,13 @@ The blocker is the **world, not the model**: `cn_open.state` + the explore/perce
 agent. Re-run after either (a) capturing a more-open in-cavern start state, or (b) fixing the strand bug Opus
 flagged (frontiers-unreachable / start-cell-mislabeled). Until then, no model ranking is defensible.
 
-## Raw data
-`runs/2026-06-25_cavenoire_mcp_{opus,sonnet,haiku}/` (oracle.jsonl + frames) + the per-run `*_run.log`
-(each model's narration + final report). Re-score: `uv run python -m eval.score_mcp_runs <dirs> --labels ...`.
+## Raw data + per-session memory (retrospective)
+Each `runs/2026-06-25_cavenoire_mcp_{opus,sonnet,haiku}/` holds the full record of that session:
+- **`oracle.jsonl`** — the world/RAM record per step (pose, hp, perceived outcome). + frames.
+- **`run.log`** — the brain's final narration / report.
+- **`transcript.jsonl`** — the **FULL brain transcript**: every turn, each tool call + result, and the
+  `remember` lessons it authored. (Claude Code auto-persists these in `~/.claude/projects/E--…-aria-mcp-test/`;
+  copied here for co-located review. Future runs: copy the newest `.jsonl` from there, or launch the brain with
+  `claude -p --output-format stream-json > <out>/transcript.jsonl`.)
+
+Re-score: `uv run python -m eval.score_mcp_runs <dirs> --labels opus,sonnet,haiku`.

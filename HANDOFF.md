@@ -85,6 +85,28 @@ source branch's commits → "N ahead of main" can mean already-merged).**
 **⇒ NEWEST (2026-06-25) — TWO THINGS: (A) the S4 MCP HARNESS IS BUILT + END-TO-END VERIFIED; (B) a MAJOR NEW
 DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `main` via PR #16 (harness) + PR #17 (direction).**
 
+**▶ MCP HARNESS DOCKERIZED + FIRST MODEL COMPARISON (2026-06-25, on PR #18 `docs/phase-a-and-mcp-testing`; not yet merged).**
+- **`world_mcp.py` runs as a Docker container** (`gb-mcp-world`, `docker run -i`) — fixes a Windows node-spawn
+  failure ("filename/directory/volume syntax incorrect") that made the server show "not connected" in Claude
+  Code. Now GAME-AGNOSTIC via `--game` (cave_noire+gauntlet registry), `--record` (MP4 → `<out>/session.mp4`),
+  lazy emulator boot (instant `initialize`), plugin-close on stdin EOF (finalizes the recording). ROMs mounted
+  ro (not baked in); `runs/` mounted. The portable brain↔world seam: Claude Code now, **ai-aria later, same `docker run -i`**.
+- **Testing method = Claude-over-MCP:** a real Claude (**headless `claude -p`**, `CLAUDE_CODE_OAUTH_TOKEN` from
+  `../aria-mcp-test/.env`, `--allowedTools mcp__cave-noire-world` = sandboxed to the 7 game tools) IS the
+  System-2 brain. Launcher dir: `../aria-mcp-test/` (`.mcp.json` + brief). Per-model configs: `runs/mcp_cfg_*.json`.
+- **First comparison (opus/sonnet/haiku):** harness VALIDATED end-to-end, but the result is **CONFOUNDED by a
+  WORLD STRAND-BUG** — all 3 trapped identically by the first `explore` into a walled pocket (Opus diagnosed it:
+  *"frontiers listed-but-unreachable, start cell mislabeled-unexplored"*). NOT a clean ranking (qualitatively
+  Opus led: 7 decisions, correct diagnosis, stopped cleanly). Report: `reports/2026-06-25-model-comparison-mcp.md`.
+- **Per-session MEMORY (retrospective) IS persisted:** each run dir `runs/2026-06-25_cavenoire_mcp_{opus,sonnet,haiku}/`
+  holds `oracle.jsonl` (game record) + `run.log` (final narration) + **`transcript.jsonl` (the FULL brain transcript
+  — every turn, tool call, and `remember` lesson).** Claude Code auto-saves these in `~/.claude/projects/E--…-aria-mcp-test/`;
+  co-located here for review. (Future runs: copy the newest `.jsonl` from there, or launch with `--output-format stream-json`.)
+- **⇒ OPEN (the real blocker): the STRAND BUG** — occupancy-map says frontiers exist but they're unreachable +
+  the start cell is mislabeled unexplored (likely the dead-reckoning / false-MOVE family). Fix it OR capture a
+  more-open `cn_open.state`, then a clean `--record` re-run per model = real numbers + videos. Score with
+  `eval/score_mcp_runs.py`. PR #18 also carries ADR-002 Phase A (life oracle `0xD389`) — merge when ready.
+
 **▶ STARTING WORK? The active task is the ADR-002 GATE PROBE (see (B) + ⇒NEXT below). Before writing ANY code,
 read `reports/2026-06-25-adr-002-ontology-discovery.md` — §9 (the gate) and §11 (anti-drift tripwires). The MCP
 harness (A) is DONE and verified — do not rebuild it. Do not start the re-architecture until the gate PASSES.**
