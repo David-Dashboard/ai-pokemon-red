@@ -12,6 +12,11 @@ investigation probes live in [`_archive/`](_archive/) (kept for the record, not 
 - `replay_tilemap` — end-to-end tilemap-learning validation on real frames.
 - `verify_heldout` — held-out verification gate for the camera-model classifier.
 
+## Localizer (control-grounded avatar localization — `core.localize`)
+- `probe_avatar_localize` — open-loop gate: predicted cell vs RAM cell (the pre-wiring accuracy gate).
+- `validate_localizer` — cross-game in-box validation of `AvatarLocalizer` vs the hand labels.
+- `score_localize` — the motion-centroid baseline + diagnostics vs hand labels.
+
 ## Scoring / ops
 - `score_perception` — score a perceiver's SymbolicState vs the RAM oracle.
 - `tune_threshold` — pick move/area frame-diff thresholds from logged runs.
