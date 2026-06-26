@@ -5,7 +5,40 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-06-26._
+
+## STATUS (2026-06-26) — strand fix SHIPPED + live System-2 test harness + repo declutter
+
+**Merged to main** (#22 `63513ba`, #23 `bd7fecf`; 350 tests green):
+- **Cave Noire strand fix is in main.** `core/localize.py` `AvatarLocalizer` (control-grounded — "the avatar is
+  the thing your buttons move"; a decaying heatmap of motion EXPLAINED BY the commanded direction, R0 numpy, no
+  RAM) is wired into `games/cave_noire/perceiver.py` (`LocalizedForegroundSignal`): the base `GridPerceiver`
+  **SNAPS** the cursor to the localizer's absolute cell (pose = f(current frame) → no dead-reckon integral → no
+  drift → no strand), with an **outlier gate** (reject a confident peak that leaps >1 cell unless it repeats —
+  kills animation false-positives). Falls back to dead-reckon when unlocked; Gauntlet (no `absolute_cell` hook)
+  is byte-for-byte unchanged. Tested: `tests/test_localize.py` + the snap branch in `tests/test_grid_perceiver.py`.
+- **Validated by a LIVE System-2 A/B** — a real `claude -p` brain over MCP, same world+brain+20-decision brief,
+  swapping ONLY the perceiver (Cave Noire `cn_open.state`, N=3): **localizer 15–17 distinct RAM tiles vs
+  dead-reckon's 7** (7 is a deterministic strand ceiling). Unbounded drift is gone.
+- **The live MCP test harness is the big new capability.** `world_mcp.py` (MCP stdio server: observe/explore/
+  goto/press) + a headless `claude -p` brain on David's **WSL** subscription (free), bridged by **Docker**
+  (`gb-mcp-world`). Reproduce via **`reports/2026-06-26-mcp-claude-p-runbook.md`** (+ a memory pointer). Logging:
+  `--record` (video+audio, finalized on SIGTERM) and `--keep-frames` (per-step PNGs aligned to `oracle.jsonl`).
+- **Repo decluttered** (#23): 45 dated reports → `reports/_archive/`, 43 one-off probes → `eval/_archive/`,
+  living files surface, a **`## Repo map`** in `README.md` (pointed to from `CLAUDE.md`). `runs/` tidied locally
+  (gitignored): scratch deleted, logs → `runs/_logs/`, concluded runs → `runs/_archive/`, `INDEX.md` regenerated.
+
+**Next perception bottleneck the live test exposed (NOT yet fixed):** the move/**wall** detector seals FALSE
+WALLS during a real game-mechanic pin — an enemy/animation freezes the avatar, commanded moves fail, and
+`wall_confirm` seals them. The strand (position *drift*) is fixed; this false-WALL-under-pin is the next target
+(the live brain broke it with a 600-frame `wait`). It's the move/wall verdict, not position — the localizer
+doesn't address it.
+
+**Fast-follows (optional):** `eval/README.md` doesn't list #22's 3 new localizer tools (`probe_avatar_localize`,
+`score_localize`, `validate_localizer`); ~10 stale old feature branches are prunable.
+**Deferred:** follow-camera dual (localize the avatar as the region that stayed put while the background
+scrolled + a center prior; world-position there stays `core.egomotion.best_shift`); R1 appearance-template
+climb only if a primitive measurably needs sub-cell tracking.
 
 ---
 
