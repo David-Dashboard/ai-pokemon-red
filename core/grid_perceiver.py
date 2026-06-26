@@ -174,6 +174,8 @@ class GridPerceiver:
         outcome, ego_motion = "unknown", "none"
         if abs_cell is not None:
             nx, ny = abs_cell
+            if not m.get("snapped"):                  # first lock: the pre-lock dead-reckon cells are in the
+                cells.clear(); blocked.clear()         # wrong (relative) frame -> drop them, re-anchor on truth
             dx, dy = nx - x, ny - y
             ncell = cells.setdefault((nx, ny), {"visited": True, "walls": set()})
             ncell["visited"] = True
