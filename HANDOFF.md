@@ -116,7 +116,7 @@ DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `
 - **⇒ OPEN (the real blocker): the STRAND BUG** — occupancy-map says frontiers exist but they're unreachable +
   the start cell is mislabeled unexplored (likely the dead-reckoning / false-MOVE family). Fix it OR capture a
   more-open `cn_open.state`, then a clean `--record` re-run per model = real numbers + videos. Score with
-  `eval/score_mcp_runs.py`. PR #18 also carries ADR-002 Phase A (life oracle `0xD389`) — merge when ready.
+  `eval/_archive/score_mcp_runs.py`. PR #18 also carries ADR-002 Phase A (life oracle `0xD389`) — merge when ready.
 
 **▶ STARTING WORK? The active task is the ADR-002 GATE PROBE (see (B) + ⇒NEXT below). Before writing ANY code,
 read `reports/_archive/2026-06-25-adr-002-ontology-discovery.md` — §9 (the gate) and §11 (anti-drift tripwires). The MCP
@@ -126,7 +126,7 @@ harness (A) is DONE and verified — do not rebuild it. Do not start the re-arch
 pre-conditions met; the gate's SHAPE is NOT yet confirmed (Check 2 is the keystone and is AMBER). GREEN: HUD =
 DIGITS visible during gameplay ("HP 8/10 ENEMY 1/3 B 2F") → `read_text` is right, life groundable continuously;
 the LIFE ORACLE EXISTS, found `0xD389` (the unique byte matching visible HP 7@f100/10@f500 — reproduce from a
-clean checkout via the committed fixture `eval/find_hp_addr eval/fixtures/cavenoire_hp_oracle --anchors 0:7 1:10`;
+clean checkout via the committed fixture `eval/_archive/find_hp_addr eval/fixtures/cavenoire_hp_oracle --anchors 0:7 1:10`;
 caveat: reads 15 on 4/4000 transition frames, single-run → clamp to ≤max when scoring),
 now wired `watch={...,"hp":0xD389}` (oracle.jsonl only). Decoys (enemy/floor counters) are *enumerable* but not
 usable until Check 2. AMBER/keystone = Check 2: a pixels-only consequence INDEPENDENT of the HP digits is NOT
@@ -180,7 +180,7 @@ hypothesizes "region R = my life"; its detector is scored vs the `hp` oracle. Ne
 below — the false-MOVE blocker is CLEARED.**
 - **The fix = two parts, both in `core/grid_perceiver.py`, both closed-loop validated (NOT either/or).** The
   part-2 ⇒FOUND guess (a "structural translation-check") was REFINED by a measure-first probe
-  (`eval/probe_phantom_move.py` + `eval/probe_spatial_move.py`, RAM = oracle): (1) **grid-max move signal** — the
+  (`eval/probe_phantom_move.py` + `eval/_archive/probe_spatial_move.py`, RAM = oracle): (1) **grid-max move signal** — the
   per-step signal is now the max per-cell change on an 8×8 grid (`ForegroundSignal(fg_grid=58)`; Cave Noire wires
   `_FG_GRID=58`), which localizes the sprite spike the whole-frame residual DILUTES (AUC **0.99 vs 0.86**, pure
   numpy, no deps — "measure WHERE the change is, not how much," minus the CNN); (2) **no-progress backstop**
@@ -249,7 +249,7 @@ and unchanged → behavior-preserving on the oracle (verbatim output committed i
   the follow-camera hid (`best_shift≈0` when the player slides in the dead-zone). Fix `_WALL_CONFIRM=3`
   (seal a wall only after N persistent no-scrolls): traversal up in all 5 runs, moves +73%, phantom walls −40%.
   Pose stepped in EGO space (best_shift dominant axis, not last-pressed token: 0.31→0.02 drift); walls now
-  bookkept in the SAME ego space (desync fix). `eval/replay_gauntlet_pose` = 83% heading / 0.02 drift.
+  bookkept in the SAME ego space (desync fix). `eval/_archive/replay_gauntlet_pose` = 83% heading / 0.02 drift.
 - **Cave Noire (PR #10, merged) — FIXED camera, pose from FOREGROUND motion (the missing half of ego-motion).**
   `find_ram_addr` found player regs X=`0xC504` Y=`0xC503`; `best_shift` is 99% camera-static there (fixed cam),
   so the Gauntlet recipe maps nothing. **`eval/probe_foreground_motion`:** the camera-compensated RESIDUAL
@@ -258,7 +258,7 @@ and unchanged → behavior-preserving on the oracle (verbatim output committed i
   `move = camera scrolled OR foreground residual high`. Camera-static share of real moves: Gauntlet 24% /
   Metroid 19% / Kirby 9% / Pokémon ~0% (always-centered = immune, why this never bit before). Cave Noire
   perceiver = Gauntlet structure with the move signal swapped to foreground + direction from the commanded
-  button (4-dir turn-based). `eval/replay_cave_noire_pose` = **99%(W1)→85%(W40) net-dir, 0.06 drift** (offline).
+  button (4-dir turn-based). `eval/_archive/replay_cave_noire_pose` = **99%(W1)→85%(W40) net-dir, 0.06 drift** (offline).
   **Live closed-loop run NOT done** (no plugin/emulator/driver yet).
 - **⇒ NEXT — PART 2 (now UNBLOCKED; both PR reviews endorse the exact design):** extract a SHARED `core/`
   occupancy-grid perceiver base parameterized by a **`move_signal(prev, cur, action) -> (moved, direction)`**
@@ -307,7 +307,7 @@ CLOSED. `best_shift` recovers self-motion DIRECTION on 3 NON-Pokémon games. `ma
   `SymbolicState.spatial_memory["ego_motion"]` (`core/contracts.py` UNTOUCHED). Verified
   **behavior-preserving**: tests green AND Eval A/B/C numbers byte-identical to pre-refactor (the unification is
   exact — `fd`-seed reproduces the probe at tie_break=0 and the perceiver at tie_break=1e-3; tie/seed edge cases
-  worked through). NOTE: `eval/_edge_confound.py` still has its own one-off `_best_shift` (out of scope — an
+  worked through). NOTE: `eval/_archive/_edge_confound.py` still has its own one-off `_best_shift` (out of scope — an
   exploratory script, left alone).
 - **Review addressed (PR #7, reviewer's 3 items) — 312 green:** (1) the seam no longer exposes the raw pixel shift —
   it emits a DIRECTION token via new `core.egomotion.direction(dx,dy)` (`spatial_memory["ego_motion"]` =
@@ -441,7 +441,7 @@ spaceinv+gauntlet / vizdoom (pose = non-leaking oracle).
   overworld); (3) **`kirby_auto1` barely scrolls** (A4=0.08). The per-game signatures are interpretable; a thin
   1–2-games/class centroid classifier just can't extract a clean class yet.
 - **⇒ NEXT (refined by this probe): build the ODOMETRY CORPUS with these requirements, THEN re-run the probe:**
-  (a) **sustained-gameplay** recordings only — gate with `eval/corpus_activity.py`, drop menu-polluted runs,
+  (a) **sustained-gameplay** recordings only — gate with `eval/_archive/corpus_activity.py`, drop menu-polluted runs,
   checkpoint-resume RPGs into real gameplay; (b) **≥2–3 games per camera class** (esp. a 2nd truly-fixed game,
   eventually a 2nd 3D scene) so class-ID is testable for every class; (c) **correct camera-class labels** (and
   likely a coarser camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow} — what odometry
@@ -451,7 +451,7 @@ spaceinv+gauntlet / vizdoom (pose = non-leaking oracle).
 **⇒ NEWEST (2026-06-23, later) — APPEARANCE/OCR vs cheap modality classification: FAIR cross-game probe RUN;
 decision = STOP (cheap menu-detection is a dead end; behavioral handling stands). Branch
 `feat/cross-game-perception`, UNCOMMITTED.** David rejected the under-proven "appearance can't classify modality
-cross-game" claim and demanded the probe. `eval/probe_modality_appearance.py` (+ `eval/_modality_probe_run.py`,
+cross-game" claim and demanded the probe. `eval/_archive/probe_modality_appearance.py` (+ `eval/_modality_probe_run.py`,
 run under `.venv-probe4`): ~190 hand-labeled GAMEPLAY-vs-NOT frames, **leave-one-GAME-out (pokemon = ONE unit —
 leakage guard)**, comparing CLIP MobileCLIP2-S0 / OCR-text-amount / cheap-numpy / flat-only (numpy logistic +
 cosine centroid/kNN; balanced accuracy). **The test corrected BOTH sides:** CLIP **GENERALIZES for
@@ -473,7 +473,7 @@ gameplay), build the capability the goal demands — an agent that handles menus
 - **Built (all world-agnostic, `core/`, numpy-only; 21 new tests, 304 total green; frozen contract untouched —
   `SymbolicState.context` already carries mode):** `core/modality.py` (`detect_modality(prev,curr,buttons) →
   (static|menu|gameplay|unknown, conf)`), `core/autoplay.py` (`ModalAutoPolicy`: gameplay→random breadth;
-  else an escape ladder), `record.py --smart-auto` (opt-in; default random unchanged), `eval/corpus_activity.py`
+  else an escape ladder), `record.py --smart-auto` (opt-in; default random unchanged), `eval/_archive/corpus_activity.py`
   (readiness/validation gate + `--anchor` Pokémon check).
 - **Validated (free, grounded):** Pokémon anchor (`--anchor runs/kanto1`): **overworld+MOVED → "gameplay" 98%**
   (buttons ground it, no GT). Cross-axis (`corpus_activity`): smart-auto flips **Kirby random THIN→READY
@@ -556,7 +556,7 @@ Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build seq
   (b) David to download **Super Mario Land**; (c) human-nudge the RPG/menu games into gameplay + `C`
   checkpoint (dev: Gold, FF-Adventure, Cave-Noire, Sword-of-Hope, Tetris; held-out: Zelda, Crystalis, F-1)
   so auto-collection can resume from a gameplay state; then bulk-auto from checkpoints.
-- **3D GATE → GREENLIT It3 (verified, 2026-06-22):** `eval/vizdoom_smoke.py` (`uv run --with vizdoom`)
+- **3D GATE → GREENLIT It3 (verified, 2026-06-22):** `eval/_archive/vizdoom_smoke.py` (`uv run --with vizdoom`)
   recorded `my_way_home` (700 steps; raw frames+actions+GT pos/angle in `runs/vizdoom_mywayhome/`). A
   5-agent adversarial verification UPHELD the greenlight — and the headline got STRONGER: the smoke test
   had an **off-by-one action-frame bug** (filtered pure-forward on action row *i*, but the *i-1→i* change
@@ -588,8 +588,8 @@ translate; closed-loop earned its keep).** Wired the tile-map's advisory into th
 `ExploreBrain(use_predictions=, pred_min_conf=, skip_flat_pred=)` treats predicted-BLOCKED unvisited cells
 as SOFT-WALLS (skip the bump) with a two-pass FALLBACK (no useful frontier → ignore predictions & bump, so a
 wrong skip DELAYS not strands) and the behavioural veto authoritative; the perceiver now tags each prediction
-`is_flat`. **Offline** (`eval/probe_navsave.py`, fixed recorded trajectory): skipping avoids **~76% of bumps
-@ <1% wrong-skip** — but that's a CEILING. **Closed-loop** (`eval/closed_loop_ab.py`, headless autopilot
+`is_flat`. **Offline** (`eval/_archive/probe_navsave.py`, fixed recorded trajectory): skipping avoids **~76% of bumps
+@ <1% wrong-skip** — but that's a CEILING. **Closed-loop** (`eval/_archive/closed_loop_ab.py`, headless autopilot
 DRIVING the emulator, no LLM, path DIVERGES): **naive skipping STRANDS the agent** (42 vs 134 cells — it learns
 "dark tile=wall" from one bump then skips look-alike flat DOORWAYS/stairs and seals itself in). **`skip_flat`
 FIXES it:** no strand, explores MORE than baseline (160 vs 134 cells), bump-rate **27.9% → 18.0% (~35% fewer
@@ -604,7 +604,7 @@ end-to-end (the first paid validation of the whole tile-map line); the It2+ CLIP
 `feat/novelty-signal`).** Folded a richer key into `core/tilemap.py`: **horizontal + VERTICAL gradient +
 a 4-bit brightness BUCKET**, with **structured matching** (intensity gated within ±1 band, Hamming tol on
 the 128-bit gradient only) + two consumer abstain knobs `predict(min_conf=, skip_flat=)`. Results
-(`eval/probe_tilemap.py` + `eval/_verify_tileset.py`, reproduced): **temporal acc-when-known 90.9% → 97.8%**
+(`eval/probe_tilemap.py` + `eval/_archive/_verify_tileset.py`, reproduced): **temporal acc-when-known 90.9% → 97.8%**
 (coverage held 98.6% — a strict win, the all-zeros alias is gone); leave-one-MAP-out lab flipped from
 confident-wrong 78.6%cov/77.7%acc → **11%cov/98.9%acc** (now reads NOVEL, safe); town wall-recall 84.7% →
 **89.9%**. Indoor leave-one-TILESET-out wall-miscalls **449 → 297** at default, **→ 2 with `skip_flat=True`**
@@ -619,7 +619,7 @@ predictions into the autopilot, set the abstain dial (min_conf/skip_flat) by the
 CORRECTED (branch `feat/novelty-signal`, pushed).** Ran the hash leave-one-MAP-out on the new data (8817
 faced-tiles, 10 runs) — it LOOKED great (Forest novel 3.3%, no map below baseline). A **5-agent verification
 workflow OVERTURNED the strong claim:** leave-one-MAP-out hid a failure because a held-out indoor map kept a
-**sibling** indoor map in the store. Under the honest **leave-one-TILESET-out** (`eval/_verify_tileset.py`,
+**sibling** indoor map in the store. Under the honest **leave-one-TILESET-out** (`eval/_archive/_verify_tileset.py`,
 independently reproduced): town wall-recall **84.7%** ✓, route **99.5%** ✓, but **INDOOR wall-recall = 0.0% —
 449/449 walls miscalled WALKABLE @ conf 0.94** (the confident-mispredict failure the hash was supposed to
 avoid). **Aggregate accuracy HID it** (indoor 80.7% > 67.2% baseline, because indoor is ~70% walkable) — the
@@ -639,7 +639,7 @@ pushed).** To close the DATA GAP (we only had ~5 early maps that SHARE a tileset
 cross-map win), built three free tools: **`play_record.py`** — a windowed PyBoy session you GUIDE, with a `Tab`
 toggle that hands control to the autopilot for hands-free dense sampling (WASD layout via in-place SDL2-keymap
 mutation — the user's arrow keys are dead; `C`=checkpoint `.state`; records probe-compatible frames+oracle);
-**`eval/auto_race.py`** — a headless free dumb auto-player (ExploreBrain + A-mash) for parallel data-gen / racing;
+**`eval/_archive/auto_race.py`** — a headless free dumb auto-player (ExploreBrain + A-mash) for parallel data-gen / racing;
 **`eval/index_runs.py`** — a non-destructive chronological catalog → `runs/INDEX.md`. **DATA NOW CAPTURED:** a guided
 `runs/kanto1` (**1303 steps, 15 maps incl. Viridian City + its buildings, Route 1/2, and Viridian Forest (map 51) —
 a genuinely NEW tileset**; 1145 manual / 160 auto) + 3 auto-races (`race1` trapped in the lab cluster; `race2`/`race3`
@@ -671,7 +671,7 @@ tile-fingerprint section) + [[vision-probe-findings]].
 empirically grounded). Full record: [`reports/_archive/2026-06-21-perception-architecture-decision.md`](reports/_archive/2026-06-21-perception-architecture-decision.md)
 + [`reports/_archive/2026-06-21-vision-model-probe.md`](reports/_archive/2026-06-21-vision-model-probe.md).** We probed lightweight
 off-the-shelf vision (MobileCLIP/SigLIP/Florence-2/RapidOCR/YOLO) on GB frames, ran 3 adversarial reviews, and
-EMPIRICALLY tested the "CLIP-embedding spatial store" idea. **Decisive result** (`eval/probe_walkability_learn.py`,
+EMPIRICALLY tested the "CLIP-embedding spatial store" idea. **Decisive result** (`eval/_archive/probe_walkability_learn.py`,
 behaviour-labelled store, oracle ground truth): the store predicts walkability **97.7%** on a temporal split — BUT
 that's **near-exact tile RECURRENCE (memorisation), not generalisation**: leave-one-MAP-out **collapses** (held-out
 lab **26.9%, below the 74.8% baseline**; accuracy by novelty: cosine `>0.97`→~100%, `<0.90`→≈chance). **CLIP
@@ -724,7 +724,7 @@ never mistaken for a cycle) to `(state_signature, screen_text)` and at **3 visit
 **defers UP** to aria with a **pure-fact `cycle_note`** ("you are repeating a state you have already seen…") —
 **System 1 detects, System 2 decides** (no harness steering; thin nudges stay out of `core/`). `core/novelty.py`
 `NoveltyMemory` + the `HybridBrain` gate; **233 tests**; the SHIPPED gate replayed over the real 463-step run
-trips **26× ALL in the lab trap (first @ step 416), 0 false positives** (`eval/inspect_longloop_trap.py` asserts
+trips **26× ALL in the lab trap (first @ step 416), 0 false positives** (`eval/_archive/inspect_longloop_trap.py` asserts
 it). Deferred (recorded): semantic/embedding novelty — the key-building call site is the swap point if a run
 shows decode noise fragmenting exact-match. **LIVE VALIDATION (3 cold runs from `start.state`): the agent got the starter (CHARMANDER) cold in ALL 3** (the
 longloop NEVER did); **run 2 FROZE and the gate fired 11× `[wake:cycle]`** → aria reasoned *"A and B both repeat —
@@ -875,13 +875,13 @@ x/y): **40.2% of overworld moves drifted, 139/144 the exact "RAM moved 2 tiles, 
 Root cause = a wrong MOVEMENT MODEL: the autopilot presses `[d,d]` and the code assumed GateWorld's *"turn, then
 move = net 1 tile"*, but the **real emulator absorbs the turn within the held press**, so `[d,d]` moves **TWO**
 tiles when open while the perceiver capped the cursor at one → ~1 tile lost per same-direction step → the interior
-map corrupts. Verified the true mechanics on the live emulator (`eval/probe_step.py`): a **single `[d]` press =
+map corrupts. Verified the true mechanics on the live emulator (`eval/_archive/probe_step.py`): a **single `[d]` press =
 exactly one tile** (even on a direction change; turn is free), `[d,d]` = two. **Fix (two halves):** (1)
 `ExploreBrain(single_step=True)` — the Pokémon drivers press `[d]` (one tile/decision) so each move stays synced;
 the **agnostic default stays `[d,d]`** (GateWorld untouched — step granularity is a per-world property the driver
 injects, `core/` stays world-agnostic). (2) **measured-distance odometry** in the perceiver — advance the cursor
 by the best-shift magnitude (clamped to the ±4-tile window), marking every traversed cell visited, instead of
-capping at one. **Free-validated** on run #15's real frames (`eval/replay_drift.py`: 40.2% → 0) AND **paid-validated
+capping at one. **Free-validated** on run #15's real frames (`eval/_archive/replay_drift.py`: 40.2% → 0) AND **paid-validated
 live in run #16** (`reports/_archive/2026-06-20-live-run-16-interior-nav-drift-fix-end-to-end-re-run.md`): drift **2.9% vs
 40.2%**, and **only 4% across 149 move-pairs INSIDE the lab (map 40)** — the room that corrupted before is now
 traversed cleanly, and the agent walked **up to Oak's tile at the top of the lab**, past run #15's wall. **170
@@ -1054,7 +1054,7 @@ iteration's harness work is done and ready for a guarded paid re-run:
   reads them**, so we nudge it to trust the screen instead of building a text-matcher that can't see.
 - **New eval scripts (untracked):** `eval/verify_battle_settle.py` (validates the production settle on a real
   battle), `eval/capture_battle.py` (reaches the rival battle, captures FIGHT-menu + move-select frames),
-  `eval/inspect_battle.py` (detect_mode + decoder + region dump over battle frames).
+  `eval/_archive/inspect_battle.py` (detect_mode + decoder + region dump over battle frames).
 - **Adversarial review is now COMPLETE — 0 confirmed bugs.** The first pass (5 dimensions) returned 0
   confirmed issues but lost 2 dimensions to session limits; both were **re-run** and came back clean:
   **signature-fix** found no bugs (the `ctx_label` move is behavior-preserving; battle→overworld exit is
@@ -1325,7 +1325,7 @@ Anthropic key behind aria needs credits; prompt caching was off but **partly eng
   + `rival_battle.state` (the battle-policy fixture). New branches off `main` from here for the next features.
 - You supply your own legally-obtained `roms/PokemonRed.gb` (none is bundled). `start.state` (past the intro,
   in the bedroom) is generated by `make_state.py`; `rival_battle.state` (parked at the rival battle, for the
-  isolated battle tests) by `eval/make_battle_state.py`. Both untracked/local.
+  isolated battle tests) by `eval/_archive/make_battle_state.py`. Both untracked/local.
 - You supply your own legally-obtained `roms/PokemonRed.gb` (none is bundled). `start.state` (past
   the intro, in the bedroom) is generated by `make_state.py`.
 - Windows + PowerShell host (a Bash tool is also available). Files under `runs/` are gitignored.

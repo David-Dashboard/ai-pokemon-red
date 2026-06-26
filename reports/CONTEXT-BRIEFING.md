@@ -192,5 +192,5 @@ Each invariant needs a *detector*; a principle without a tripwire silently rots.
 
 ---
 *For deeper detail: `HANDOFF.md` (goal + live status), `ARCHITECTURE.md` (the dual-process contract / ADR-001),
-`reports/2026-06-22-prior-art-scan.md` (who else is doing this), and
-`reports/2026-06-22-research-takeaways-for-experiments.md` (component-by-component lessons).*
+`reports/_archive/2026-06-22-prior-art-scan.md` (who else is doing this), and
+`reports/_archive/2026-06-22-research-takeaways-for-experiments.md` (component-by-component lessons).*

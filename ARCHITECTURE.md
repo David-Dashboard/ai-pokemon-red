@@ -67,7 +67,7 @@ boundary. This ADR fixes the boundary.
    **confidently wrong** (the hash cross-tileset wall-recall collapse; a menu misread as gameplay); the safe
    default is **wake-when-unsure** (over-waking costs a little; under-waking corrupts behaviour). So build cheap
    System-1 parts as a **gate** — handle reliable routine free, escalate otherwise — **never as a replacement
-   for System-2 judgment.** *Evidence:* the 2026-06-23 appearance/OCR probe (`eval/probe_modality_appearance.py`)
+   for System-2 judgment.** *Evidence:* the 2026-06-23 appearance/OCR probe (`eval/_archive/probe_modality_appearance.py`)
    — cheap perception cannot classify menus cross-game (pokemon 55% / spaceinv 64% balanced-acc), so menu
    *decisions* belong in System 2; cost stays bounded because decisions are rare vs routine steps. (Sharpens
    invariant #1.)
