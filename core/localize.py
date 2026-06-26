@@ -26,6 +26,7 @@ _DECAY = 0.7                 # heatmap memory: ~3-5 recent commanded steps (trac
 _PEAK = 2.6                  # min peak/mean ratio to treat the heatmap as a confident fix
 _JUMP = 30.0                 # px: a confident peak leaping >this from the held pos is suspected animation,
                              # not a real step (1 cell ~16-22px) -> reject unless it REPEATS (room change)
+_CONF_SAT = 6.0              # peak/mean at which a fix's confidence saturates to 1.0 (graded ABOVE the _PEAK gate)
 
 
 def _gray(frame):
@@ -59,9 +60,9 @@ class AvatarLocalizer:
         self.heat *= 0.0
 
     def _accumulate(self, cur, commanded_dir):
-        self.heat *= _DECAY                       # forget old evidence -> tracks the CURRENT position
         if self.prev is None or commanded_dir not in DELTA:
-            return
+            return                                # F2: decay + accumulate only on a COMMANDED step, so the fix
+        self.heat *= _DECAY                       # decays per "~3-5 commanded steps" (docstring), not per idle frame
         dx, dy = DELTA[commanded_dir]
         mot = np.abs(cur - self.prev)
         # residual after explaining the change by a +k*command shift; low where motion matched the command
@@ -88,7 +89,8 @@ class AvatarLocalizer:
                 self._pending = (c, r)            # first sighting of a far jump -> wait for confirmation
             else:
                 self.pos, self._pending = new, None
-            return (self.pos[0], self.pos[1], min(1.0, peak / mean / _PEAK))
+            conf = min(1.0, max(0.0, (peak / mean - _PEAK) / (_CONF_SAT - _PEAK)))   # F1: graded, not constant 1.0
+            return (self.pos[0], self.pos[1], conf)
         if self.pos is not None:                  # no recent commanded motion -> avatar stationary -> HOLD
             return (self.pos[0], self.pos[1], 0.3)
         return None
