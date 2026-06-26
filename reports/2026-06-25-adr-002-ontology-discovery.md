@@ -44,6 +44,12 @@ Most already exist, fused into perceivers: `best_shift` (ego-motion), `grid_max`
 perceptual hash + tile→function map (recognition + grounding). **Genuinely missing as clean primitives:**
 blob-segment+track, general glyph-read, the world-agnostic consequence detector.
 
+> **Design discipline (2026-06-26):** each floor primitive is designed to the **North Eye constitution**
+> (`reports/north-eye-perception-constitution.md`) — its 7-slot contract (esp. grounding-by-action↔sensor and
+> value+confidence+`None`) and the **Realizer Ladder** (default to cheap R0 pixel ops; climb to a fine-tunable
+> small model only on a measured bar). The constitution is a *design discipline, not a build order* — gate-first
+> still governs; build only the 2–3 primitives the HUD-grounding gate needs.
+
 ## 4. The loop — hypothesize → ground → compile (replaces "push a fixed schema up")
 1. **S2 hypothesizes** ontology from world-priors ("a dungeon — expect a life stat, enemies, a goal; look here").
 2. **S1 grounds** by behaviour: builds a cheap detector over the primitives, verifies its firing **correlates with
