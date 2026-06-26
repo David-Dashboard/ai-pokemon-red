@@ -1,6 +1,7 @@
 # Label dataset v2
 
 13 games · 250 labelled frames · 1146 boxes · 48 read-values (text/health).
+**OCR-value coverage is sparse:** only 48/661 (7%) of text+health boxes carry a read string — the HUD-gate OCR ground truth is a milestone, **not yet cross-world** (concentrated in the early games). Treat accordingly.
 Frames live in `runs/<game>/` (corpus, gitignored); these JSONs are the annotations.
 
 | game | frames | avatar | enemy | item | text | health | exit | npc | values | modes |

@@ -50,6 +50,10 @@ def main():
         f.write(f"# Label dataset {args.version}\n\n")
         f.write(f"{len(rows)} games · {tot_frames} labelled frames · "
                 f"{sum(tot_cat.values())} boxes · {tot_val} read-values (text/health).\n")
+        th = tot_cat.get("text", 0) + tot_cat.get("health", 0)
+        f.write(f"**OCR-value coverage is sparse:** only {tot_val}/{th} ({tot_val / th if th else 0:.0%}) of "
+                "text+health boxes carry a read string — the HUD-gate OCR ground truth is a milestone, **not yet "
+                "cross-world** (concentrated in the early games). Treat accordingly.\n")
         f.write("Frames live in `runs/<game>/` (corpus, gitignored); these JSONs are the annotations.\n\n")
         f.write("| game | frames | " + " | ".join(CATS) + " | values | modes |\n")
         f.write("|" + "---|" * (len(CATS) + 4) + "\n")
