@@ -82,16 +82,60 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
-**⇒ NEWEST (2026-06-26) — PERCEPTION CONSTITUTION: `reports/north-eye-perception-constitution.md` (docs branch
-`docs/north-eye-constitution`, PR pending).** A timeless design discipline for perception primitives — Marr's
+**⇒ NEWEST (2026-06-26, latest) — AVATAR LOCALIZER BUILT + CROSS-GAME VALIDATED (the strand fix's foundation).
+PR #21 OPEN (`feat/avatar-localizer`). Merged this session: #18, #19 (North Eye constitution), #20 (label
+dataset + tooling). `main` = `f4be920`. Picking up COLD? `git fetch` + `gh pr list --state all` first.**
+
+- **The strand bug ROOT CAUSE (RAM-proven, then acted on).** The occupancy map dead-reckons a *noisy binary
+  move-signal* with no absolute correction → unbounded drift → the strand. The cheap **"entry-openness"
+  wall-guard was built, closed-loop tested, and REVERTED** as a band-aid (it turned the give-up into a
+  *livelock* — same 7 RAM tiles; proof in the cn_open closed-loop run). Root cause = the move detector, not the
+  wall logic. David's call: **build the foundational fix, not more band-aids.**
+- **The foundational fix = ABSOLUTE AVATAR LOCALIZATION (`core/localize.py`, PR #21).** Control-grounded, per
+  the North Eye constitution: *the avatar is the thing your buttons move.* Each commanded step, accumulate a
+  **decaying per-cell heatmap of the motion EXPLAINED BY the commanded direction**; the peak is the avatar
+  (enemies/animation move uncommanded → wash out); **hold** when stationary. Output `(col,row,conf)` or `None`
+  (never fabricates). R0 numpy, **no RAM**. *(A first TLD/NCC-template version was built and REJECTED BY
+  MEASUREMENT — locked early + drifted, 0% in-box; a diagnostic showed action-correlation alone localizes to
+  1–15px, so the decaying-heatmap, no NCC, is the design — 7s/game.)*
+- **VALIDATED vs the hand-label GT (`eval/validate_localizer` on `datasets/labels/v2`):** **Cave Noire
+  59% in-box / 4px** (beats the motion-centroid baseline 41%/12px — and bounded → **no drift → kills the
+  strand**), SML 42%/9px. **Works for fixed-camera + avatar-moves-on-screen; FAILS on follow-camera** (the
+  command scrolls the *whole screen* → world-position there is **ego-motion `best_shift`**, not
+  avatar-localization — honest camera-class scope, not papered over). Cross-game motion baseline
+  (`eval/score_localize`): `avatar=mover` 2–5% in 9/10 games → motion localization is Cave-Noire-only;
+  control-grounding is what generalizes.
+- **HAND-LABEL DATASET (PR #20, merged) — the GT for all perception primitives.** `datasets/labels/v1` (110
+  frames) + **`v2` (13 games · 250 frames · 1146 boxes)**. Tooling: **`eval/label_frames.py`** (interactive:
+  per-frame **mode** + bounding boxes for avatar/enemy/item/text/health/exit/npc; text/health carry the **read
+  value** = OCR GT; **varied farthest-point sampling**), **`eval/snapshot_labels.py`** (versioned freeze +
+  manifest — cut the next with `--version v3`). Caveats: `red_resume` is 100% menu (re-record into gameplay);
+  OCR-value coverage is sparse (7%, early games only).
+- **NORTH EYE CONSTITUTION (PR #19, merged) — `reports/north-eye-perception-constitution.md`.** Marr-for-
+  embodiment + a **7-slot primitive contract** + the **Realizer Ladder** (R0 cheap pixel ops → R1 classical/
+  tiny-learned → R2 fine-tunable small CNN → R3 zero-shot VLM; climb only on a *measured* bar). Design
+  discipline, NOT a build order; the AvatarLocalizer is its first L2 instance (R0).
+- **⇒ NEXT (task #14 — the strand-fix payoff):** **wire the AvatarLocalizer into the Cave Noire perceiver** as
+  an absolute pose source (replace the dead-reckoned cursor in the `GridPerceiver`/`MoveSignal` path) →
+  **closed-loop on `cn_open.state`** (cover >7 RAM tiles, no strand/livelock) → then re-run the clean model
+  comparison (real numbers + `--record` videos). **DEFERRED:** the follow-camera dual (avatar = the region that
+  *stayed put while the background scrolled* + a center prior; world-pos there stays `best_shift`); and an R1
+  appearance climb only if a future primitive measurably needs it.
+- **KEY FILES:** `core/localize.py` · `eval/validate_localizer.py` (GT scorer) · `eval/score_localize.py`
+  (motion baseline) · `eval/probe_avatar_localize.py` (earlier RAM probe) · `eval/label_frames.py` +
+  `eval/snapshot_labels.py` + `datasets/labels/` · `reports/2026-06-26-avatar-localizer.md`. **341 tests green;
+  import-boundary + no-leak intact; `core/contracts.py` untouched.** Many stale local branches exist (merged) —
+  safe to prune.
+
+**⇒ (2026-06-26) — PERCEPTION CONSTITUTION (MERGED: PR #19): `reports/north-eye-perception-constitution.md`.**
+A timeless design discipline for perception primitives — Marr's
 three levels updated for embodiment (closed-loop grounding, coupled/time-bound implementation, minimal
 task-sufficient signal, movable fixed↔learned boundary, probabilistic outputs) + a **7-slot primitive contract**
 + the **Realizer Ladder** (R0 cheap pixel ops → R1 classical/tiny-learned → R2 fine-tunable small CNN → R3
 zero-shot VLM; climb only on a measured bar). It's a **constitution, not a build order** (gate-first still
 governs). Frames the `MoveSignal` camera-class split as the canonical violation and the `AvatarLocalizer` work as
-its first L2 instance. See also: the `AvatarLocalizer` measure-first investigation on `fix/cave-noire-strand`
-(cheap pixel localization of the Cave Noire avatar — under active evaluation via hand-labels
-(`eval/label_frames.py`); see the fix branch for current status/numbers).
+its first L2 instance. (Status SUPERSEDED — see the TOP block: the `AvatarLocalizer` is built + validated on
+PR #21.)
 
 **⇒ (2026-06-25) — TWO THINGS: (A) the S4 MCP HARNESS IS BUILT + END-TO-END VERIFIED; (B) a MAJOR NEW
 DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `main` via PR #16 (harness) + PR #17 (direction).**
