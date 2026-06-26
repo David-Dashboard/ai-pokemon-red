@@ -12,6 +12,18 @@ agents, RL policies, and classical search can all play through the same door.
 > Gen-1 **Game Boy** game *Pokémon Red* (`.gb`). It does **not** run Game Boy
 > Advance titles like *Pokémon FireRed* (`.gba`).
 
+## Repo map
+
+**Orient:** `ARCHITECTURE.md` · `ROADMAP.md` · `HANDOFF.md` (current thread) · `CLAUDE.md` (working rules) ·
+`reports/` (living refs: INSIGHTS, LEARNINGS, CONTEXT-BRIEFING, constitution — history in `reports/_archive/`).
+
+**The system:** `core/` (game-agnostic framework) · `games/<game>/` (per-world plugin + perceiver:
+cave_noire, gauntlet, pokemon_red) · `tests/` · `datasets/` (hand-label ground truth).
+
+**Run it:** `play_*.py` (per-game drivers) · `world_mcp.py` (MCP server — a Claude plays over MCP) ·
+`human_play.py` / `new_game.py` / `make_state.py` (utilities) · `eval/` (measurement tools — see
+[`eval/README.md`](eval/README.md); concluded one-off probes in `eval/_archive/`).
+
 ## Quickstart
 
 With [uv](https://docs.astral.sh/uv/) (recommended — `uv sync` reads

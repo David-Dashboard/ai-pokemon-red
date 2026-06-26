@@ -108,7 +108,7 @@ DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `
 - **First comparison (opus/sonnet/haiku):** harness VALIDATED end-to-end, but the result is **CONFOUNDED by a
   WORLD STRAND-BUG** — all 3 trapped identically by the first `explore` into a walled pocket (Opus diagnosed it:
   *"frontiers listed-but-unreachable, start cell mislabeled-unexplored"*). NOT a clean ranking (qualitatively
-  Opus led: 7 decisions, correct diagnosis, stopped cleanly). Report: `reports/2026-06-25-model-comparison-mcp.md`.
+  Opus led: 7 decisions, correct diagnosis, stopped cleanly). Report: `reports/_archive/2026-06-25-model-comparison-mcp.md`.
 - **Per-session MEMORY (retrospective) IS persisted:** each run dir `runs/2026-06-25_cavenoire_mcp_{opus,sonnet,haiku}/`
   holds `oracle.jsonl` (game record) + `run.log` (final narration) + **`transcript.jsonl` (the FULL brain transcript
   — every turn, tool call, and `remember` lesson).** Claude Code auto-saves these in `~/.claude/projects/E--…-aria-mcp-test/`;
@@ -119,10 +119,10 @@ DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `
   `eval/score_mcp_runs.py`. PR #18 also carries ADR-002 Phase A (life oracle `0xD389`) — merge when ready.
 
 **▶ STARTING WORK? The active task is the ADR-002 GATE PROBE (see (B) + ⇒NEXT below). Before writing ANY code,
-read `reports/2026-06-25-adr-002-ontology-discovery.md` — §9 (the gate) and §11 (anti-drift tripwires). The MCP
+read `reports/_archive/2026-06-25-adr-002-ontology-discovery.md` — §9 (the gate) and §11 (anti-drift tripwires). The MCP
 harness (A) is DONE and verified — do not rebuild it. Do not start the re-architecture until the gate PASSES.**
 
-**▶ PHASE A DONE (2026-06-25) — `reports/2026-06-25-phase-a-hud-grounding-precheck.md`. 2 of 3 gate
+**▶ PHASE A DONE (2026-06-25) — `reports/_archive/2026-06-25-phase-a-hud-grounding-precheck.md`. 2 of 3 gate
 pre-conditions met; the gate's SHAPE is NOT yet confirmed (Check 2 is the keystone and is AMBER). GREEN: HUD =
 DIGITS visible during gameplay ("HP 8/10 ENEMY 1/3 B 2F") → `read_text` is right, life groundable continuously;
 the LIFE ORACLE EXISTS, found `0xD389` (the unique byte matching visible HP 7@f100/10@f500 — reproduce from a
@@ -145,7 +145,7 @@ hypothesizes "region R = my life"; its detector is scored vs the `hp` oracle. Ne
   Launcher (a clean-slate fresh-Claude-Code brain) lives OUTSIDE the repo: `../aria-mcp-test/` (`.mcp.json` +
   thin brief), wired to `cn_open.state`. **To run it: open a fresh Claude Code in `../aria-mcp-test/`, approve
   the `cave-noire-world` server, say "observe, then explore."**
-- **(B) ADR-002 (PROPOSED, GATED) — `reports/2026-06-25-adr-002-ontology-discovery.md`. The direction; NOT yet
+- **(B) ADR-002 (PROPOSED, GATED) — `reports/_archive/2026-06-25-adr-002-ontology-discovery.md`. The direction; NOT yet
   built.** Move the hand-code/learn boundary DOWN: a small fixed `core/` **sensorimotor floor** (change · motion ·
   ego-motion · blob-segment · track · recognition-hash · glyph-read · emit-input · action↔effect · **consequence
   detector**) + a per-world ontology the **BRAIN hypothesizes** from priors and **BEHAVIOUR grounds** (=truth),
@@ -153,7 +153,7 @@ hypothesizes "region R = my life"; its detector is scored vs the `hp` oracle. Ne
   schema**. Existence proof: the tile→function map already does this for walkability. **ADR-001 stays Accepted
   until grounded.** Memory: `architecture-v2-ontology-discovery`.
 - **⇒ NEXT (agreed sequence):** (1) **roadmap/plan v2 — DRAFTED (PROPOSED, gated):**
-  `reports/2026-06-25-roadmap-v2-discovery-loop.md` — recasts the per-world UNIT from *"hand-build a perceiver"* to
+  `reports/_archive/2026-06-25-roadmap-v2-discovery-loop.md` — recasts the per-world UNIT from *"hand-build a perceiver"* to
   *"run the discovery loop"* (the ladder/discontinuities/invariants are unchanged); 4 rungs, gate-first (Rung 0 =
   the probe; PASS→promote, FAIL→fall back to ADR-001 cheap). Does NOT touch `ROADMAP.md`. (2) **minimal e2e = THE
   GATE PROBE (Rung 0 — the active build)** — evolve `world_mcp.py` into the sensorium
@@ -167,7 +167,7 @@ hypothesizes "region R = my life"; its detector is scored vs the `hp` oracle. Ne
   is **pixels-only** (oracle = scorer, never a sense, never the grounding signal). Within-run only (blank every
   run). Keep `world_mcp.py` symbolic-only — no screenshot-to-brain.
 - **⇒ DESIGN BACKLOG (2026-06-25 brainstorm — future visits/experiments, all gate-sequenced):**
-  `reports/2026-06-25-design-backlog-future-experiments.md` — the senses toolbox, `focus`/foveated attention, the
+  `reports/_archive/2026-06-25-design-backlog-future-experiments.md` — the senses toolbox, `focus`/foveated attention, the
   spatial scratchpad (L1 grounded / L2 hypothesis), entity-via-motion, the fit-method-to-data law, and the PARKED
   It3+ items (action-chunking + VLA distillation, "time-in-world → speed"). Includes the cheap-probe list. Nothing
   there is a build order — it's all behind the Rung-0 gate.
@@ -191,7 +191,7 @@ below — the false-MOVE blocker is CLEARED.**
 - **Results:** closed-loop corridor phantom **65→0**, pose `[0,-70]`→`[-1,-3]` (runaway gone); offline replay drift
   **0.06→0.02** (better); Gauntlet unchanged (backstop inert — camera-scroll = progress). The probe rejected the
   fancy options (CNN/embedding = invariance machine, OOD on pixel-art; per-cell SSIM ties grid-max, no win) —
-  survey in `reports/2026-06-24-visual-embedding-models-survey.md`. Full record: `reports/2026-06-24-phantom-move-probe.md`.
+  survey in `reports/_archive/2026-06-24-visual-embedding-models-survey.md`. Full record: `reports/_archive/2026-06-24-phantom-move-probe.md`.
 - **Open caveat (carried, not blocking):** `_FG_GRID=58` and the 0.99 AUC derive from a SINGLE human recording;
   generalization to a different dungeon / flicker level / session is unvalidated — treat 58 as a calibration
   constant to re-check on new corpora. The closed-loop corridor is `n_real=1` for discriminability (it validates
@@ -205,7 +205,7 @@ below — the false-MOVE blocker is CLEARED.**
 THIN CONFIG; Cave Noire live loop CLOSED; an anti-drift guardrail added. On a PR branch
 (`feat/core-perceiver-extraction`, PR #12); 338 tests green; both OFFLINE replay oracles re-run post-refactor
 and unchanged → behavior-preserving on the oracle (verbatim output committed in
-`reports/2026-06-24-part2-replay-revalidation.md`). Closed-loop surfaced a real defect the replay masks (below).**
+`reports/_archive/2026-06-24-part2-replay-revalidation.md`). Closed-loop surfaced a real defect the replay masks (below).**
 - **The ossification debt is paid (INSIGHTS §2).** The occupancy-grid perceiver, the GB emulator, and the
   perception-only plugin were duplicated 3× across `games/`; they now live ONCE in `core/`: `core/grid.py`
   (DIRS/DELTA/BACK/EGO2DIR/DIR2EGO), `core/gb_emulator.py` (the generic PyBoy wrapper), `core/perception_plugin.py`
@@ -231,7 +231,7 @@ and unchanged → behavior-preserving on the oracle (verbatim output committed i
   across runs (real `{2.1,2.5}` < idle-phantom `{3.8}` < real `{6.0}` ≪ big-event phantom `{57,71}`), so no
   static threshold/band separates; `context==gameplay` catches only the menu phantom. The reliable fix is
   STRUCTURAL (translation-direction check or move-persistence confirmation, the twin of wall-confirmation) —
-  its own probe + closed-loop validation. Evidence: `reports/2026-06-24-part2-replay-revalidation.md`.
+  its own probe + closed-loop validation. Evidence: `reports/_archive/2026-06-24-part2-replay-revalidation.md`.
 - **⇒ OPEN — autonomous deep-dungeon nav** still needs the false-MOVE fix above + a navigation goal. The random
   `ScriptedBrain` can't traverse the JP hub menus to reach a cavern (watch registers frozen at the hub); a
   hand-played in-cavern save-state (`human_play.py` → `--init-state`) is the entry point and now exists.
@@ -274,7 +274,7 @@ and unchanged → behavior-preserving on the oracle (verbatim output committed i
   frame while a wall needs 3 → idle animation can false-step; candidate fix = symmetric move-confirmation, to be
   CLOSED-LOOP validated); **`CaveNoirePlugin` must ship the no-leak RAM-sentinel test** like Gauntlet's. (2)
   Gauntlet 8-way exploration via a 4-cardinal `ExploreBrain` (fix via LLM diagonal sequences, NOT a `core/` edit).
-- **Reports:** `reports/2026-06-24-gauntlet-constancy.md`, `2026-06-24-cave-noire-fixed-camera.md`. Side-scrollers
+- **Reports:** `reports/_archive/2026-06-24-gauntlet-constancy.md`, `2026-06-24-cave-noire-fixed-camera.md`. Side-scrollers
   (Kirby/Metroid, 1D/warps) + 3D (Doom) remain later phases. Guardrails unchanged (held-out never tuned; corpus
   gitignored on D:; GBC banked WRAM).
 
@@ -283,7 +283,7 @@ CLOSED. `best_shift` recovers self-motion DIRECTION on 3 NON-Pokémon games. `ma
 + report are LOCAL/UNCOMMITTED (see ⇒NEXT — needs a commit/PR, ask David first).**
 - **What's new:** `cross_game_ram_truth()` (Eval C) added to `eval/probe_egomotion.py`, reusing `best_shift`.
   Ran on David's hand-recorded `runs/2026-06-23_{gauntlet,kirby,metroid}_ramplay` (665/419/947 frames, each with
-  a matching `oracle.jsonl` `watch` field). Report: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md`.
+  a matching `oracle.jsonl` `watch` field). Report: `reports/_archive/2026-06-23-cross-game-ram-grounded-egomotion.md`.
 - **Result (dominant-axis sign match vs RAM Δ; moves filtered `1≤|Δpos|≤40`; single-byte wrap-corrected):**
 
   | game | all (incl. camera-static) | camera-scrolled (honest metric) |
@@ -319,14 +319,14 @@ CLOSED. `best_shift` recovers self-motion DIRECTION on 3 NON-Pokémon games. `ma
   aliased `ego_direction` to avoid the shadow.
 - **⇒ NEXT:**
   1. **Commit + push/PR** (David commits/pushes only when asked — confirm first). Clean split into TWO PRs:
-     (a) Eval C — `eval/probe_egomotion.py` + `reports/2026-06-23-cross-game-ram-grounded-egomotion.md` (closes the
+     (a) Eval C — `eval/probe_egomotion.py` + `reports/_archive/2026-06-23-cross-game-ram-grounded-egomotion.md` (closes the
      "cross-game pending" item from PR #5); (b) P2 — `core/egomotion.py` + the two thin-wrapper repoints +
      `spatial_memory["ego_motion"]`.
   2. **P3 (downstream): let System-2 (aria) actually USE `ego_motion`** + P4 end-to-end verify. Magnitude/metric
      distance stays deferred (direction/sign is what's reliable). Held-out (Crystalis/Zelda/SML/F-1/Doom) stay
      never-tuned-on; GBC banked WRAM (fixed addr unreliable) — prefer DMG titles; corpus gitignored (D:), regen via
      `eval/collect_corpus.md` §7.
-- Reports: `reports/2026-06-23-cross-game-ram-grounded-egomotion.md` + `2026-06-23-egomotion-probe-P1.md`;
+- Reports: `reports/_archive/2026-06-23-cross-game-ram-grounded-egomotion.md` + `2026-06-23-egomotion-probe-P1.md`;
   LEARNINGS 2026-06-23 entries.
 
 **⇒ NEWEST (2026-06-23, latest) — P1 EGO-MOTION PROBE: 2D direction recovery is RAM-validated at 98%. Branch
@@ -341,7 +341,7 @@ deferred.
 - **⇒ NEXT = P2: extract `core/egomotion.py`** (world-agnostic, reuse `best_shift`, consolidate the duplicate
   `games/pokemon_red/perceiver._best_shift`); surface additively via `spatial_memory["ego_motion"]` (unfrozen
   `SymbolicState` seam — never touch `core/contracts.py`). Then P3 perceiver integration / P4 verify. Full
-  record: `reports/2026-06-23-egomotion-probe-P1.md`; LEARNINGS (2026-06-23, 6th entry); plan in the approved
+  record: `reports/_archive/2026-06-23-egomotion-probe-P1.md`; LEARNINGS (2026-06-23, 6th entry); plan in the approved
   P1 plan file.
 
 **⇒ NEWEST (2026-06-23, latest) — HELD-OUT VERIFICATION: per-run classifier generalizes zero-shot; the gate is
@@ -358,7 +358,7 @@ game defeats the zero-shot test + risks leakage).
   DRIVER, not the perceiver — **F-1 `fixed` is NOT a perception concern.**
 - **The real bottleneck = autonomous CONTROL of non-top-down games** (a competent controller = the agent itself,
   the project's end goal); camera-model PERCEPTION is verified-good where drivable. The HANDS-OFF discipline is
-  what surfaced this. Full record: `reports/2026-06-23-heldout-verification.md`; LEARNINGS (2026-06-23, 5th entry).
+  what surfaced this. Full record: `reports/_archive/2026-06-23-heldout-verification.md`; LEARNINGS (2026-06-23, 5th entry).
 - **⇒ NEXT unchanged: the generalizable ego-motion estimator** (fixed→none / 2D-scroll→`best_shift` / 3D→flow),
   on the drivable games; held-out re-runs cleanly once autonomous control improves.
 
@@ -374,7 +374,7 @@ HUMAN play (`--mode human`) for side-scrollers (auto can't run+jump; `--explore`
   (×1.3 → scroll_side: a 3D turn ≈ a 2D side-pan in whole-frame flow) — but 3D ego-motion is oracle-verified
   (turn-sign 95%, advance-corr +0.47).
 - **Corpus is gitignored (lives on D:); regenerate via `eval/collect_corpus.md`.** Full record:
-  `reports/2026-06-23-odometry-corpus-and-doom-heldout.md`; LEARNINGS (2026-06-23, 4th entry).
+  `reports/_archive/2026-06-23-odometry-corpus-and-doom-heldout.md`; LEARNINGS (2026-06-23, 4th entry).
 - **⇒ NEXT = build the generalizable ego-motion / odometry estimator** (the System-1 "how did I move" the probe
   was measuring readiness for): a per-camera-class branch (fixed→none; 2D-scroll→best-shift dx,dy; 3D→optical-flow
   turn+advance), developed on the dev corpus, verified on the held-out games incl. Doom. Cheaper sub-step first:
@@ -387,7 +387,7 @@ PICKS UP HERE.**
   reqs (`df76b65`), and the autoplay escape-ladder fix (`9874034`). `feat/cross-game-perception` is now merged
   and stale — safe to delete.
 - **Branch `feat/camera-model-probe`** (rebased onto `main`; **1 commit** = the probe + report + this HANDOFF):
-  `eval/probe_camera_model.py`, `reports/2026-06-23-camera-model-probe.md`. PR #2 not opened yet.
+  `eval/probe_camera_model.py`, `reports/_archive/2026-06-23-camera-model-probe.md`. PR #2 not opened yet.
 
 **▶ HOW A FRESH SESSION (e.g. the desktop) PICKS UP:**
 1. `git fetch origin && git checkout feat/camera-model-probe` (or merge it to `main` first; it's 1 clean commit).
@@ -446,7 +446,7 @@ spaceinv+gauntlet / vizdoom (pose = non-leaking oracle).
   eventually a 2nd 3D scene) so class-ID is testable for every class; (c) **correct camera-class labels** (and
   likely a coarser camera-MOTION-type taxonomy {fixed / rigid-2D-scroll / nonrigid-3D-flow} — what odometry
   actually branches on). Heavy compute/disk → **confirm corpus scope/step-count with David first.** Full record:
-  `reports/2026-06-23-camera-model-probe.md`; LEARNINGS (2026-06-23, 3rd entry).
+  `reports/_archive/2026-06-23-camera-model-probe.md`; LEARNINGS (2026-06-23, 3rd entry).
 
 **⇒ NEWEST (2026-06-23, later) — APPEARANCE/OCR vs cheap modality classification: FAIR cross-game probe RUN;
 decision = STOP (cheap menu-detection is a dead end; behavioral handling stands). Branch
@@ -503,7 +503,7 @@ START the generalizable-odometry build.** A planning/governance session (no game
   desktop/web, pixels-only]; cheap; no per-world training; with falsification criteria). The portable "how we
   work" doc is **`reports/CONTEXT-BRIEFING.md`** (methods/principles/preferences + **drift tripwires** +
   progressive disclosure + Sense A/B + the self-improvement loop).
-- **Research grounding** (`reports/2026-06-22-plan-grounding-and-failure-modes.md` + research-takeaways +
+- **Research grounding** (`reports/_archive/2026-06-22-plan-grounding-and-failure-modes.md` + research-takeaways +
   prior-art scan): every component anchored in real systems (Voyager/Reflexion/Huang "LLMs can't self-correct"/
   VO-SLAM/ObjectNav/computer-use) with failure modes. **Our verified findings independently match the
   textbook** (3D: rotation+textureless = the classic monocular-VO failures = our frame-diff/dark-wall result;
@@ -533,14 +533,14 @@ START the generalizable-odometry build.** A planning/governance session (no game
 `feat/cross-game-perception`, off `feat/novelty-signal`).** The Pokémon tile-map line (tasks #7→#9→#8) is
 built, verified, fixed, and the speedup measured — now we test the real thesis: does the core + brain
 generalize to OTHER games? David downloaded a ladder of GB ROMs chosen so each isolates ONE new
-perception/odometry axis (web-verified catalog: `reports/2026-06-22-gb-perception-test-suite.md`; we own
+perception/odometry axis (web-verified catalog: `reports/_archive/2026-06-22-gb-perception-test-suite.md`; we own
 Red/Gold/Zelda-LA/Kirby; acquisition order Lolo→Zelda-Oracle→FF-Adventure→Crystalis→Metroid-II→Q*bert→
 F-1-Race→Sword-of-Hope-II). **Decomposition:** per-game = perceiver (odometry/affordance/mode/OCR/entity/
 action-contract); INVARIANT (protect) = the brain + core learning + the SymbolicState seam — success =
 how LITTLE the brain changes. **Data strategy:** record the RAW substrate `(frame, exact buttons,
 next-frame, optional RAM)` game-agnostically, defer odometry/labeling to OFFLINE replay (don't bake the
 Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build sequence + full plan:**
-`reports/2026-06-22-cross-game-phase-plan.md`.
+`reports/_archive/2026-06-22-cross-game-phase-plan.md`.
 
 **STATUS (2026-06-22, end of session — SAFE TO COMPACT):**
 - **Recorder BUILT** (`record.py`, task #13 done): game-agnostic, any GB ROM → `runs/<name>/{frame_*.png,
@@ -570,8 +570,8 @@ Pokémon perceiver's camera-scroll/(4,4) assumptions into the data). **Build seq
   dir ~90–95%; expansion flow → advance; 2-feat → 98.3%). Reusable ceiling probe:
   `eval/vizdoom_flow_ceiling.py`. Untested: corridor/room base-rate, dark-wall FNs (3.8%), non-random
   policy, fwd+turn steps. ViZDoom installs cleanly headless (1.3.0, GT position oracle). Full verdict +
-  honest 3D section: `reports/2026-06-22-cross-game-phase-plan.md` ("3D — GREENLIT this iteration").
-- **PRIOR-ART scan** (`reports/2026-06-22-prior-art-scan.md`): closest = **Cradle** (screen-only general
+  honest 3D section: `reports/_archive/2026-06-22-cross-game-phase-plan.md` ("3D — GREENLIT this iteration").
+- **PRIOR-ART scan** (`reports/_archive/2026-06-22-prior-art-scan.md`): closest = **Cradle** (screen-only general
   control, GPT-4o — its perception/object-localization limitation VALIDATES our perception-first thesis) +
   **Wild Visual Navigation / V-STRONG** (robotics behaviour-grounded traversability that generalizes — the
   analog of our tile→function map; they make embeddings work ONLINE where we found a hash beats CLIP).
@@ -632,7 +632,7 @@ measure wall-recall**, and **hold out the whole TILESET, not one map.** **⇒ RE
 cheap fixes — (a) flatness/void guard (near-uniform → novel/low-conf, not walkable), (b) more-discriminative
 hash (intensity bits) to break the collisions; re-measure indoor wall-recall on leave-one-tileset-out. The
 overlap-window CLIP / hash⊕CLIP hybrid (task #9 step 2) is GATED behind those + a wall-recall≥~50% bar.** Full
-record (verification update at top): `reports/2026-06-21-tile-fingerprint-map-and-cross-tileset-capture.md`.
+record (verification update at top): `reports/_archive/2026-06-21-tile-fingerprint-map-and-cross-tileset-capture.md`.
 
 **⇒ (2026-06-21 eve) — DATA-CAPTURE TOOLING + FIRST CROSS-TILESET DATA (free; branch `feat/novelty-signal`,
 pushed).** To close the DATA GAP (we only had ~5 early maps that SHARE a tileset, which inflated the hash's
@@ -668,8 +668,8 @@ appearance-known walls; replay/live — OPEN QUESTIONS C.4). Detail: `reports/LE
 tile-fingerprint section) + [[vision-probe-findings]].
 
 **⇒ (prior, now BUILT — see NEWEST above) — PERCEPTION ARCHITECTURE DECISION (design session; converged +
-empirically grounded). Full record: [`reports/2026-06-21-perception-architecture-decision.md`](reports/2026-06-21-perception-architecture-decision.md)
-+ [`reports/2026-06-21-vision-model-probe.md`](reports/2026-06-21-vision-model-probe.md).** We probed lightweight
+empirically grounded). Full record: [`reports/_archive/2026-06-21-perception-architecture-decision.md`](reports/_archive/2026-06-21-perception-architecture-decision.md)
++ [`reports/_archive/2026-06-21-vision-model-probe.md`](reports/_archive/2026-06-21-vision-model-probe.md).** We probed lightweight
 off-the-shelf vision (MobileCLIP/SigLIP/Florence-2/RapidOCR/YOLO) on GB frames, ran 3 adversarial reviews, and
 EMPIRICALLY tested the "CLIP-embedding spatial store" idea. **Decisive result** (`eval/probe_walkability_learn.py`,
 behaviour-labelled store, oracle ground truth): the store predicts walkability **97.7%** on a temporal split — BUT
@@ -744,7 +744,7 @@ DIRECT NEXT ACTION = PAID-validate the stuck-breaker** (does the bare fact let a
 keyboard? — free validation proves the signal fires, NOT that aria recovers). Then **S5 (procedural memory)**.
 *(Orthogonal cleanup still open: the perceiver's keyboard-as-`battle` misread — now non-blocking but worth fixing.
 Honest cost: freeze-recovery is wake-heavy — 12 / 57 / 70 wakes across the 3 runs.)* Full detail:
-`reports/2026-06-21-seen-states-validation.md`
+`reports/_archive/2026-06-21-seen-states-validation.md`
 + `reports/LEARNINGS.md` + the `novelty-signal` memory.
 
 **⇒ CURRENT TRUTH (2026-06-20): the project was RE-ARCHITECTED in a planning session — read the
@@ -779,7 +779,7 @@ and read as walls). Surfaced as `spatial_memory.rois` + an LLM hint; both off by
 Pokémon drivers. **Run #17 (cold from `start.state`, run-16 config + the layer): the probe fired 23× and got
 SQUIRTLE, then WON the rival battle** (vs Bulbasaur, a type disadvantage; `in_battle` 2→0 sustained @842, stayed
 on map 40 = no blackout) — **nav+starter cost only ~6 of 69 wakes** (the probe is free autopilot; 227 free
-advances). Report `reports/2026-06-20-live-run-17-affordance-layer-probe-saliency-got-the-starter.md`, ~$0.6-0.8.
+advances). Report `reports/_archive/2026-06-20-live-run-17-affordance-layer-probe-saliency-got-the-starter.md`, ~$0.6-0.8.
 **Also built (groundwork, NOT yet effective): cross-place exploration** (when a room is exhausted, route through
 a portal to a place that still has frontiers — the decode-aligned way to make "leave Pallet" emerge instead of
 being told by `goals.md`). **185 tests.** **THE #1 BLOCKER IS NOW PLACE-DETECTION RELIABILITY:** the Phase-B
@@ -796,7 +796,7 @@ type chart, gym order — so "go north" is told, not decoded; cross-place is the
 on stripping the seed).* Branch `feat/interior-nav-drift` (off `main`), pushed.
 
 **⚠ 2026-06-20 — RE-ARCHITECTURE + COST ROOT-CAUSE (planning session). Full record: `knowledge-export/` +
-`ai-aria/PROMPT_ARCHITECTURE.md`; cost detail `reports/2026-06-20-cost-investigation.md`.**
+`ai-aria/PROMPT_ARCHITECTURE.md`; cost detail `reports/_archive/2026-06-20-cost-investigation.md`.**
 
 **Cost root-cause (CORRECTED — the earlier "aux ≈ half the spend" was WRONG):** the CONVERSATION prompt is
 **~92% of tokens** (aux/reflection ~8%); aria re-sends the whole `POKEMON_SYSTEM` manual **~7×/wake** (harness
@@ -882,7 +882,7 @@ the **agnostic default stays `[d,d]`** (GateWorld untouched — step granularity
 injects, `core/` stays world-agnostic). (2) **measured-distance odometry** in the perceiver — advance the cursor
 by the best-shift magnitude (clamped to the ±4-tile window), marking every traversed cell visited, instead of
 capping at one. **Free-validated** on run #15's real frames (`eval/replay_drift.py`: 40.2% → 0) AND **paid-validated
-live in run #16** (`reports/2026-06-20-live-run-16-interior-nav-drift-fix-end-to-end-re-run.md`): drift **2.9% vs
+live in run #16** (`reports/_archive/2026-06-20-live-run-16-interior-nav-drift-fix-end-to-end-re-run.md`): drift **2.9% vs
 40.2%**, and **only 4% across 149 move-pairs INSIDE the lab (map 40)** — the room that corrupted before is now
 traversed cleanly, and the agent walked **up to Oak's tile at the top of the lab**, past run #15's wall. **170
 tests.** Committed on `feat/interior-nav-drift` (off `main`, NOT pushed/merged).
@@ -917,14 +917,14 @@ watchdog in BOTH drivers (no halt mid-fight). **Run #13 (text-only hybrid from `
 config + auto-advance) WON the rival battle with just 18 BATTLE wakes vs run #12's ~68 (~3.8× cheaper)** —
 verified per-step (`in_battle` 2→0 sustained at step 72; SCRATCH ×12 / GROWL ×0; correct grounding, 0 confab,
 0 errors); 22 wakes / 400 steps total (5.5%), post-battle nav cost only 4 wakes (it even left the lab + explored
-Pallet). **Report `reports/2026-06-20-live-run-13-battle-auto-advance.md`**, video `runs/run13.mp4`, oracle
+Pallet). **Report `reports/_archive/2026-06-20-live-run-13-battle-auto-advance.md`**, video `runs/run13.mp4`, oracle
 `runs/run13/`, archive iter-013. Branch `feat/battle-auto-advance` off
 `main`, committed, **NOT pushed**. 158 tests. NEXT: (2) the **learned blind-execute battle policy** (skill
 compilation, now feasible because the state is decoded — INSIGHTS §6; run #13's 7 identical "FIGHT→SCRATCH"
 turns are the obvious thing to compile); (3) tighten **lab-exit / Pallet navigation** (the residual Phase-B gap).
 
 **Run #14 (2026-06-20) — first integrated COLD-START end-to-end run; nav holds, credits ran dry (downstream
-inconclusive). Report `reports/2026-06-20-live-run-14.md`.** From `start.state` (text-only, all current
+inconclusive). Report `reports/_archive/2026-06-20-live-run-14.md`.** From `start.state` (text-only, all current
 capabilities) the agent reached **Oak's lab `38→37→0→40` by step 130 on 15 productive wakes** — Phase B
 navigation validated COLD (past run #4's wall; run #5 only reached it before credits) — and auto-advanced Oak's
 dialog (81 free) in the lab. **Then Anthropic credits hit zero at step 276** (litellm log: *"credit balance is
@@ -937,7 +937,7 @@ outage burns the cap on no-ops; halting after N consecutive identical API errors
 hardening). *Process win: the run-end auto-report hook (built this session) fired correctly — first live test.*
 
 **Run #15 (2026-06-20) — CONCLUSIVE end-to-end re-run; the downstream wall is INTERIOR navigation (credits were
-masking it). Report `reports/2026-06-20-live-run-15.md`.** Built an **API-error circuit breaker** first
+masking it). Report `reports/_archive/2026-06-20-live-run-15.md`.** Built an **API-error circuit breaker** first
 (`API_ERROR_CIRCUIT_BREAKER=4`: the brain detects backend errors echoed as content + exceptions, counts
 consecutive failures, both drivers halt fast with the real error — so an outage no longer burns the wake budget;
 +4 tests, 167), **topped up credits**, and re-ran from `start.state`. With credits healthy (**0 errors, breaker
@@ -973,7 +973,7 @@ the blocker.
   video-only). Works headless or windowed.
 
 **The live result + a sharper diagnosis:** The first credit-funded LLM run (2026-06-15, hybrid+aria)
-cost ~$3 and made no progress (38↔37). Post-mortem: `reports/2026-06-15-live-run-01-postmortem.md`.
+cost ~$3 and made no progress (38↔37). Post-mortem: `reports/_archive/2026-06-15-live-run-01-postmortem.md`.
 A **free oracle replay (2026-06-15)** then corrected the framing: the *free* autopilot actually
 **leaves the house and reaches Pallet Town's doorstep on its own** — "can't leave the house" was
 specific to the hybrid run. The real failures:
@@ -990,7 +990,7 @@ specific to the hybrid run. The real failures:
    the nudge now prompts for one).
 
 **Live run #2 (2026-06-15, recorded, clean-start, guarded) — SUCCESS + a new wall.** Full report:
-`reports/2026-06-15-live-run-02.md`. With the fixes, the agent **left the house, crossed Pallet Town,
+`reports/_archive/2026-06-15-live-run-02.md`. With the fixes, the agent **left the house, crossed Pallet Town,
 and reached Oak's Lab** (maps 38→37→0→40, 57 cells) for **~$0.23** (30 bounded wakes, vs run #1's 351 /
 ~$3). The free autopilot drove 76/123 steps. Video: `runs/run2.mp4` (1:40, video+audio). The run-#1
 spatial failure is **solved on real hardware**. But it then **couldn't get the starter**: the LLM
@@ -1002,7 +1002,7 @@ THINK/MOVE, nothing else" + `max_tokens=64`, so the model never emits one. Per t
 law the fix is a HARNESS-owned `LESSON:` buffer, NOT aria's persisting `lessons.md`.
 
 **Live run #3 (2026-06-16, recorded, clean-start, guarded) — SUCCESS, the run-#2 wall is BROKEN.** Full
-report: `reports/2026-06-16-live-run-03.md`, video `runs/run3.mp4`. With steps 1–3 (the `LESSON:` buffer,
+report: `reports/_archive/2026-06-16-live-run-03.md`, video `runs/run3.mp4`. With steps 1–3 (the `LESSON:` buffer,
 disconfirm detector, dialog auto-advance, textbox decoder), the agent **comprehended Oak's forced gate,
 chose SQUIRTLE as its starter, and reached the rival battle** (vs BULBASAUR) — maps 38→37→0→40, 87 cells,
 for **~$0.33** (40 wakes, budget-capped). **Dialog auto-advance handled 123 dialog frames for free** (the
@@ -1158,7 +1158,7 @@ no bugs, only a widen-the-choice-region hardening + test gaps, now fixed). Detai
      (Glyph coverage is the early-game charset; uncalibrated glyphs decode to '?' safely and the table grows
      via `calibrate_font.py`.)
 4. ~~**Guarded, recorded PAID re-run Pallet→starter→Route 1.**~~ **DONE — SUCCESS** (run #3, 2026-06-16;
-   report `reports/2026-06-16-live-run-03.md`, video `runs/run3.mp4`). The run-#2 wall is **broken**: the
+   report `reports/_archive/2026-06-16-live-run-03.md`, video `runs/run3.mp4`). The run-#2 wall is **broken**: the
    agent comprehended Oak's gate, **chose SQUIRTLE, and reached the rival battle** for **~$0.33** (40
    wakes, budget-capped). Dialog auto-advance handled **123 dialog frames for free** (only 5 menu-choice
    wakes); the textbox decoder grounded it in real on-screen text (decoded live: *"ASH received a
@@ -1387,7 +1387,7 @@ roms/PokemonRed.gb         # YOUR vanilla ROM (not bundled, gitignored)
 
 ## 8. Navigating the code (the data flow)
 
-**Read in this order:** `HANDOFF.md` → `reports/2026-06-15-consolidated-report.md` →
+**Read in this order:** `HANDOFF.md` → `reports/_archive/2026-06-15-consolidated-report.md` →
 `core/contracts.py` (the vocabulary) → `core/runner.py` (the loop) → `games/pokemon_red/plugin.py`
 (a real world) → `core/brains.py` (decisions).
 
