@@ -96,7 +96,7 @@ different worlds, and different layers within one world, sit at different rungs 
 - **R3 — off-the-shelf zero-shot / VLM.** Heavy pretrained models for genuinely hard L3 semantics (faces,
   arbitrary objects, in-the-wild OCR). Time-bound, swappable, used **sparingly** — cost, plus the
   invariance-machine caveat (an embedding forgives exactly the small changes a game often needs you to notice;
-  `reports/2026-06-24-visual-embedding-models-survey.md`).
+  `reports/_archive/2026-06-24-visual-embedding-models-survey.md`).
 
 **Climb triggers (measured, never merely preferred):**
 (a) **fidelity rises** — pixel-art → 2D-animated → 3D → photoreal;
@@ -139,6 +139,6 @@ about needing that loop**, rather than papering over it with a hand-set constant
 
 ---
 
-_See also: `reports/2026-06-25-adr-002-ontology-discovery.md` (the sensorimotor floor + the hypothesize→ground
-loop), `reports/2026-06-24-visual-embedding-models-survey.md` (why an embedding is an invariance machine), and
+_See also: `reports/_archive/2026-06-25-adr-002-ontology-discovery.md` (the sensorimotor floor + the hypothesize→ground
+loop), `reports/_archive/2026-06-24-visual-embedding-models-survey.md` (why an embedding is an invariance machine), and
 the `AvatarLocalizer` plan in the active fix branch._
