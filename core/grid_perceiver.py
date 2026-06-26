@@ -34,6 +34,7 @@ _GRID = 8                  # per-cell change grid (eval/probe_spatial_move): a r
 # run that isn't VISUALLY progressing is a phantom runaway -> demote to no-move and let wall-confirm seal it.
 # Gated on a long same-dir run so it never fires on normal exploration.
 _RUN_GUARD, _PROG_W, _PROG_MIN = 4, 4, 4.0
+_DELTA_INV = {v: k for k, v in DELTA.items()}    # unit (dx,dy) -> cardinal, for snapping cell deltas to a step
 
 
 def grid_max_change(prev_norm, cur_norm) -> float:
@@ -157,11 +158,43 @@ class GridPerceiver:
             grid_max = grid_max_change(m["prev_norm"], cur_norm)
         ego_token = direction(sdx, sdy)
 
+        # Optional absolute-pose hook (fixed-camera localization): if the move signal can read the avatar's
+        # cell from pixels, SNAP the cursor to it -- pose is a function of the CURRENT frame, so there is no
+        # dead-reckoning integral to accumulate error (the strand fix). None (unlocked / no frame) -> fall back
+        # to the dead-reckon path below, so we are never worse than before. Walls are sealed/cleared only on a
+        # clean unit step that AGREES with the command (the avatar moves only where commanded; a disagreeing
+        # delta is localizer noise -> snap the position but leave the walls).
+        abs_cell = None
+        if not first and frame is not None and hasattr(self.move_signal, "absolute_cell"):
+            abs_cell = self.move_signal.absolute_cell(frame, commanded_dir=commanded_dir)
+
         x, y = m["cursor"]
         cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
         cell["visited"] = True
         outcome, ego_motion = "unknown", "none"
-        if not first:
+        if abs_cell is not None:
+            nx, ny = abs_cell
+            dx, dy = nx - x, ny - y
+            ncell = cells.setdefault((nx, ny), {"visited": True, "walls": set()})
+            ncell["visited"] = True
+            m["cursor"] = (nx, ny)
+            step = _DELTA_INV.get((dx, dy))
+            if m.get("snapped") and step is not None and step == commanded_dir:   # confirmed unit step
+                cell["walls"].discard(step)                          # left cell open the way we MOVED
+                ncell["walls"].discard(BACK[step])                   # entered cell open back the way we came
+                blocked.pop(((x, y), commanded_dir), None)
+                ego_motion, outcome = DIR2EGO.get(step, "none"), "moved"
+            elif m.get("snapped") and dx == 0 and dy == 0 and commanded_dir:       # commanded but pinned -> wall
+                key = ((x, y), commanded_dir)
+                blocked[key] = blocked.get(key, 0) + 1
+                if blocked[key] >= self.wall_confirm:
+                    cell["walls"].add(commanded_dir)
+                    outcome = "blocked"
+            elif dx or dy:                                           # first lock / >1 jump / off-axis noise
+                outcome = "moved"
+            m["snapped"] = True
+            cell, x, y = ncell, nx, ny
+        elif not first:
             res = self.move_signal(commanded_dir=commanded_dir, ego_token=ego_token,
                                    sdx=sdx, sdy=sdy, best_diff=best_diff, grid_max=grid_max)
             ego_motion = res.ego_motion

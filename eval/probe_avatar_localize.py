@@ -27,6 +27,13 @@ _NW, _NH = 128, 112
 _BG_W = 6                     # rolling-median background window (frames) -- static scene + flicker average out
 _HUD_FRAC = 0.78              # Cave Noire's status bar is the bottom band; the playfield is the top ~78%
 _RUN = "runs/2026-06-23_cavenoire_explore"
+_DIRS = ("up", "down", "left", "right")
+
+
+def _btn_dir(bs):
+    """Last cardinal in a recorded button list -> the commanded_dir the live agent would pass."""
+    t = [b for b in (bs or []) if b in _DIRS]
+    return t[-1] if t else None
 
 
 def _gray(p):
@@ -123,7 +130,7 @@ def _fit_eval(name, samples):
     """samples = list of (cx, cy, ram_x, ram_y). Fit one affine per axis (col->x, row->y), report cell error."""
     a = np.array(samples, float)
     if len(a) < 20:
-        print(f"  {name:14s}: (insufficient samples: {len(a)})"); return
+        print(f"  {name:14s}: (insufficient samples: {len(a)})"); return None, None
     cx, cy, rx, ry = a[:, 0], a[:, 1], a[:, 2], a[:, 3]
     # least-squares affine ram = m*centroid + b, per axis (the fixed screen->cell geometry)
     mx, bx = np.polyfit(cx, rx, 1)
@@ -135,12 +142,69 @@ def _fit_eval(name, samples):
     print(f"  {name:14s}: median={np.median(err):.2f}  90th={np.percentile(err, 90):.2f}  "
           f"mean={err.mean():.2f}  slope/1000fr={slope * 1000:+.2f}  (n={len(err)})  "
           f"pitch=({1/mx:.1f},{1/my:.1f})px/cell")
+    return err, (mx, bx, my, by)
+
+
+def eval_avatarlocalizer(steps):
+    """THE GATE: drive the SHIPPED core.localize.AvatarLocalizer continuously (commanded_dir from
+    buttons.jsonl -- the same input the live agent has), score predicted cell vs RAM cell. Unlike the
+    candidates above (RAM-blind centroid/NCC), this is the localizer we'd actually wire. The fitted affine
+    is the per-world screen->cell geometry constant (calibrated once here; the runtime uses pixels only).
+
+    RAM-cell is only a VALID screen target on gameplay frames (menu/transition/title hold a stale x,y the
+    sprite isn't at -- the documented 'loose proxy'). So we score three regimes: all frames, GAMEPLAY-only
+    (detect_modality, the same gate the live perceiver applies), and gameplay+MOVING (RAM is exact on a
+    confirmed within-room step). The middle one is the live-relevant gate."""
+    from core.localize import AvatarLocalizer
+    from core.modality import detect_modality
+    bp = os.path.join(_RUN, "buttons.jsonl")
+    btn = [json.loads(l) for l in open(bp, encoding="utf-8")] if os.path.exists(bp) else []
+    loc = AvatarLocalizer()
+    all_s, play_s, move_s, lock, eligible = [], [], [], 0, 0
+    prev_full, prev_rxy = None, None
+    for i, (fp, rx, ry, cut) in enumerate(steps):
+        if cut:
+            loc.reset()                                  # room changed -> drop the heatmap, re-acquire
+            prev_full = None
+        bs = btn[i].get("buttons") if i < len(btn) else None
+        rgb = np.asarray(Image.open(fp).convert("RGB"), np.float32) if os.path.exists(fp) else None
+        out = loc.update(rgb, _btn_dir(bs)) if rgb is not None else None
+        full = rgb[..., :3].mean(2) if rgb is not None else None
+        label = "gameplay" if prev_full is None or full is None else \
+            detect_modality(prev_full, full, [t for t in (bs or []) if t])[0]
+        moved = prev_rxy is not None and 0 < abs(_wrap(rx - prev_rxy[0])) + abs(_wrap(ry - prev_rxy[1])) <= 1
+        prev_full, prev_rxy = full, (rx, ry)
+        if cut:
+            continue                                     # don't score the cut frame; let it re-lock first
+        eligible += 1
+        if out is not None:
+            lock += 1
+            s = (out[0], out[1], rx, ry)
+            all_s.append(s)
+            if label == "gameplay":
+                play_s.append(s)
+                if moved:
+                    move_s.append(s)
+    print(f"\n[AvatarLocalizer] lock rate: {lock / eligible:.0%}  (eligible {eligible})")
+    _fit_eval("all-frames", all_s)
+    err, _ = _fit_eval("gameplay", play_s)               # <- the live-relevant gate
+    _, coef = _fit_eval("gameplay+moving", move_s)        # <- clean regime (RAM exact) -> the geometry constant
+    if coef:
+        mx, bx, my, by = coef
+        print(f"  AFFINE (160x144 px -> cell, from MOVING frames; wire as the per-world constant):")
+        print(f"    cell_x = round({mx:.6f} * col + {bx:.4f})")
+        print(f"    cell_y = round({my:.6f} * row + {by:.4f})")
     return err
 
 
 def main():
+    import sys
     print("=== AVATAR-LOCALIZATION PROBE - predicted cell vs RAM cell (exact); does pixel pose stay LOCKED? ===")
     steps = _load()
+    if "--gate-only" in sys.argv:                        # skip the 3-min RAM-blind candidate sweep
+        eval_avatarlocalizer(steps)
+        print("\nPASS = median<=1, 90th<=2, slope~0 (bounded, not cumulative), lock>=70%. Clear it before wiring.")
+        return 0
     cache = {}
     def g(p):
         if p not in cache:
@@ -237,7 +301,9 @@ def main():
     print()
     for k in samples:
         _fit_eval(k, samples[k])
-    print("\nPASS = median<=1, 90th<=2, slope~0 (bounded, not cumulative), lock>=70%. Winner -> core/localize.py.")
+    print("\n--- THE GATE: the shipped control-grounded AvatarLocalizer (the one we'd wire) ---")
+    eval_avatarlocalizer(steps)
+    print("\nPASS = median<=1, 90th<=2, slope~0 (bounded, not cumulative), lock>=70%. Clear it before wiring.")
     return 0
 
 

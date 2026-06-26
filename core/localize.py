@@ -24,6 +24,8 @@ _CELL = 10                   # heatmap cell size (px) -> a 14x16 grid
 _KSHIFTS = (3, 6, 10, 14)    # candidate per-step displacements that could explain a commanded move (px)
 _DECAY = 0.7                 # heatmap memory: ~3-5 recent commanded steps (tracks the CURRENT position)
 _PEAK = 2.6                  # min peak/mean ratio to treat the heatmap as a confident fix
+_JUMP = 30.0                 # px: a confident peak leaping >this from the held pos is suspected animation,
+                             # not a real step (1 cell ~16-22px) -> reject unless it REPEATS (room change)
 
 
 def _gray(frame):
@@ -47,11 +49,13 @@ class AvatarLocalizer:
     def __init__(self):
         self.prev = None
         self.pos: Optional[tuple] = None         # (col,row) last fix, held through stationary spells
+        self._pending = None                     # a far peak seen once: commit only if it REPEATS (vs a 1-frame outlier)
         self.heat = np.zeros((_NH // _CELL, _NW // _CELL), np.float32)
 
     def reset(self):                              # call on a room cut (the scene/avatar frame changed)
         self.prev = None
         self.pos = None
+        self._pending = None
         self.heat *= 0.0
 
     def _accumulate(self, cur, commanded_dir):
@@ -74,7 +78,16 @@ class AvatarLocalizer:
         peak, mean = float(self.heat.max()), float(self.heat.mean()) + 1e-6
         if peak / mean >= _PEAK:                  # a confident fix: move the estimate to the heatmap peak
             r, c = np.unravel_index(int(self.heat.argmax()), self.heat.shape)
-            self.pos = ((c + 0.5) * _CELL, (r + 0.5) * _CELL)
+            new = ((c + 0.5) * _CELL, (r + 0.5) * _CELL)
+            # outlier gate: a confident peak that leaps >1 cell from the held position is usually animation
+            # (a torch/enemy that momentarily out-votes the avatar), not a real step -> HOLD unless it REPEATS
+            # (a true room change). Within-cell moves commit immediately (no lag). Kills the jitter + gross
+            # single-frame jumps that otherwise pollute a snapped occupancy map.
+            if self.pos is not None and self._pending != (c, r) \
+                    and np.hypot(new[0] - self.pos[0], new[1] - self.pos[1]) > _JUMP:
+                self._pending = (c, r)            # first sighting of a far jump -> wait for confirmation
+            else:
+                self.pos, self._pending = new, None
             return (self.pos[0], self.pos[1], min(1.0, peak / mean / _PEAK))
         if self.pos is not None:                  # no recent commanded motion -> avatar stationary -> HOLD
             return (self.pos[0], self.pos[1], 0.3)
