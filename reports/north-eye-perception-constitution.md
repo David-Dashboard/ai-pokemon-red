@@ -13,8 +13,8 @@ updated for ~40 years of embodied cognition — plus a **project-specific techno
 Ladder: cheap pixel ops by default, climbing to fine-tunable learned models only when measured data complexity
 demands it).
 
-It is a constitution, not a plan. It frames the existing `AvatarLocalizer` work (`twinkly-gliding-ember.md`) as
-its first instance and the `MoveSignal` design as its canonical violation, but it ships no code.
+It is a constitution, not a plan. It frames the existing `AvatarLocalizer` work (on the `fix/cave-noire-strand`
+branch) as its first instance and the `MoveSignal` design as its canonical violation, but it ships no code.
 
 ---
 
@@ -114,18 +114,18 @@ is *encouraged*; heavy / zero-shot only where it beats cheaper rungs on a *measu
 ## 4. Code impact (described here; not changed in this PR)
 
 - **`MoveSignal` (the camera-class split) is the canonical violation.** It is hand-selected per world (breaks
-  rule 7), emits a bare boolean with no uncertainty (breaks rule 5), and its thresholds are hand-set rather than
-  grounded (breaks rule 2). The eventual fix: a single ego-motion **L1** primitive that reports *both* channels
+  rule 7), emits a hard verdict (a `MoveResult`) with no confidence field (breaks rule 5), and its thresholds are
+  hand-set rather than grounded (breaks rule 2). The eventual fix: a single ego-motion **L1** primitive that reports *both* channels
   (camera shift + foreground change) as value + confidence and lets the world select by grounding payoff —
   dissolving "camera class" as a concept.
-- **The `AvatarLocalizer` plan** (`twinkly-gliding-ember.md`) is the first **L2 `track`/`localize`** primitive
-  written to this contract: action-correlated avatar selection (rule 2), `None` when unlocked (rule 5), a numpy
-  realizer at R0/R1 (rule 4). Its open-loop probe failing the bar is the ladder working as intended — a measured
-  climb trigger, not a surprise.
+- **The `AvatarLocalizer` work** (on the `fix/cave-noire-strand` branch) is the first **L2 `track`/`localize`**
+  primitive written to this contract: action-correlated avatar selection (rule 2), `None` when unlocked (rule 5),
+  a numpy realizer at R0/R1 (rule 4). Its open-loop probe — scored against hand-labels — is the ladder's
+  measure-first gate in action: whether the cheap R0 rung suffices or must climb is decided on data, not asserted.
 - **ADR-002's sensorimotor floor** is exactly the L1/L2 primitive list; this constitution gives each one the
   seven-slot contract and a ladder rung.
-- **`confidence=0.4`** (the `GridPerceiver` placeholder) is the unfilled rule-5 slot, repo-wide. It marks every
-  primitive that is not yet honest about its own uncertainty.
+- **`confidence=0.4`** (a hard-coded placeholder in `GridPerceiver` + the Pokémon perceiver) is the unfilled
+  rule-5 slot — it marks the primitives not yet honest about their own uncertainty.
 
 ---
 

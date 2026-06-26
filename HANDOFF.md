@@ -89,9 +89,9 @@ task-sufficient signal, movable fixed↔learned boundary, probabilistic outputs)
 + the **Realizer Ladder** (R0 cheap pixel ops → R1 classical/tiny-learned → R2 fine-tunable small CNN → R3
 zero-shot VLM; climb only on a measured bar). It's a **constitution, not a build order** (gate-first still
 governs). Frames the `MoveSignal` camera-class split as the canonical violation and the `AvatarLocalizer` work as
-its first L2 instance. See also: the `AvatarLocalizer` measure-first result on `fix/cave-noire-strand` (cheap
-pixel localization of the Cave Noire avatar FAILED the open-loop bar — 5 methods, median 2–4 cells; a hand-label
-pass across games via `eval/label_frames.py` is underway to ground next steps).
+its first L2 instance. See also: the `AvatarLocalizer` measure-first investigation on `fix/cave-noire-strand`
+(cheap pixel localization of the Cave Noire avatar — under active evaluation via hand-labels
+(`eval/label_frames.py`); see the fix branch for current status/numbers).
 
 **⇒ (2026-06-25) — TWO THINGS: (A) the S4 MCP HARNESS IS BUILT + END-TO-END VERIFIED; (B) a MAJOR NEW
 DIRECTION is set — ADR-002 (PROPOSED, gated): self-built ontology. Landed on `main` via PR #16 (harness) + PR #17 (direction).**
