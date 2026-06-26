@@ -82,6 +82,42 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-06-26, evening) — CROSS-GAME CONSEQUENCE STUDY + PERCEPTION-NEEDS REPRIORITIZATION. The general
+`consequence` primitive is NOT cheap-pixel-generalizable; the roadmap reorders to AVATAR-LOCALIZATION. Branch
+`feat/adr-002-gate` (PR opened). NEXT = avatar-localization + blob-segment.**
+
+- **Context:** pursued the ADR-002 gate (fixture = Pokémon); David directed building the `consequence` primitive
+  by running the grounding harness across ALL non-held-out games + mining the agent transcripts for needs.
+- **Corrected a WRONG oracle:** Cave Noire HP = **`0xC120` (BCD)**; Phase A's `0xD389` is WRONG (coincidental
+  2-anchor match; its finder only tested raw-decimal). GB games store HUD numbers in **BCD** — always test it.
+  ⚠️ FIX NEEDED: `world_mcp.py` GAMES + the Phase-A precheck doc still assert `0xD389`. (memory: `cave-noire-hp-oracle`.)
+- **`read_text` = RapidOCR** (CPU `rapidocr-onnxruntime` in `.venv-ocr`; served by the repo's `vision_service.py`).
+  Reads GB HUD digits reliably — the general primitive, no per-game font. (No OCR service was running before.)
+- **Offline grounding smoke-test PASSED — Pokémon, both arms** (`eval/probe_hud_grounding.py`): `read_text(HP)`
+  tracks oracle `0xD015` 44/46; co-moves with the "Enemy…used" consequence 4/4, static level decoy rejected 0/4.
+  (Rebuilt SYMBOLIC-ONLY after David caught a pixels-to-brain drift — the brain must NOT see frames.)
+- **CROSS-GAME CONSEQUENCE STUDY (`eval/probe_consequence_detector.py`) — HEADLINE:** a pixels-only "flash"
+  detector works ONLY for the **static-battle class** (Pokémon Red recall 1.0, Gold 0.67); FAILS on every
+  moving-world action game (FFA 0.04 / Gauntlet 0.07 / Kirby ~0 / Metroid 0.50 but precision 0.05 = scroll-noise)
+  and Cave Noire (0.0, digit-only = no cue). **No universal cheap consequence detector — it's a MENU**
+  (static-battle = flash; action = needs avatar-localization; digit-only = no cue / audio).
+- **Oracles found (via play-subagents that generated damage data):** Red `0xD015` BE-u16, Gold `0xDA4C` BE-u16,
+  Metroid `0xD051` BCD (stated `0xDA13` was wrong), Gauntlet `0xD6D3` 2-byte-BCD, FFA `0xD7B2` u8, Cave Noire
+  `0xC120` BCD. Damage recordings: `runs/{red_battle,gold_damage,metroid_damage,kirby_damage,cavenoire_combat}_agent`.
+  Auto/explore recordings mostly LACK damage (random play takes damage only by bumping) → needed intelligent play-subagents.
+- **PERCEPTION-NEEDS REPORT (`reports/2026-06-26-perception-needs-from-play-transcripts.md`; transcripts kept in
+  `runs/agent_transcripts/`):** mining the 4 play transcripts shows the agents lost the most time NOT on HP-reading
+  but on **(1) self-localization/walkability** (broke the Gold run, ~250 turns) and **(3) mode/context detection**
+  (highest-frequency; killed Gold's Elm dialogue). Every RAM-peek / pixel-hack marks a missing primitive.
+- **⇒ CONVERGENCE + NEXT:** both studies point the SAME way — the action-game consequence fix (localize the
+  avatar, watch only its region) IS the #1-needed primitive. **NEXT = avatar-localization + blob-segment**
+  (have: `core/localize.py` AvatarLocalizer [fixed-cam] · `core/modality.py` · `core/egomotion.py`; MISSING:
+  blob-segment · persistence/track · walkability-from-pixels). NOT more whole-frame consequence work.
+- **Dev-tooling helper noted (not built):** an auto oracle-finder (scan WRAM u8/u16-BE/LE/BCD for the byte
+  matching a visually-read scalar trajectory) — would have collapsed the per-game RAM hunts to one call.
+- **The live-MCP gate itself was NOT built** (pivoted to the consequence study + perception mining); the offline
+  smoke-test stands as the gate's de-risk. New code (this PR): the 3 `eval/probe_*` + the perception-needs report.
+
 **⇒ NEWEST (2026-06-26, latest) — AVATAR LOCALIZER BUILT + CROSS-GAME VALIDATED (the strand fix's foundation).
 PR #21 OPEN (`feat/avatar-localizer`). Merged this session: #18, #19 (North Eye constitution), #20 (label
 dataset + tooling). `main` = `f4be920`. Picking up COLD? `git fetch` + `gh pr list --state all` first.**
