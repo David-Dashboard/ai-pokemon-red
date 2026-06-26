@@ -40,6 +40,7 @@ except Exception:
 import argparse
 import base64
 import json
+import signal
 import uuid
 
 # Run from the repo root so `import core` and relative rom/run paths resolve regardless of launch cwd.
@@ -60,6 +61,10 @@ GAMES = {
                    "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoirePerceiver",
                    "rom": "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
                    "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xD389}},   # hp = ADR-002 gate life oracle
+    "cave_noire_baseline": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
+                   "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoireBaselinePerceiver",
+                   "rom": "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
+                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xD389}},   # A/B CONTROL: dead-reckon, no localizer
     "gauntlet": {"pkg": "games.gauntlet", "plugin": "GauntletPlugin", "sandbox": "GAUNTLET_SANDBOX",
                  "perceiver_mod": "games.gauntlet.perceiver", "perceiver": "GauntletPerceiver",
                  "rom": "roms/Gauntlet II (USA, Europe).gb",
@@ -166,6 +171,7 @@ class World:
         sandbox = getattr(pkg, spec["sandbox"])
         Perceiver = getattr(importlib.import_module(spec["perceiver_mod"]), spec["perceiver"])
         self.with_screenshot = bool(args.with_screenshot)
+        self.keep_frames = bool(getattr(args, "keep_frames", False))   # --keep-frames: KEEP per-step PNGs as logs
         header = ("Top-down exploration. Perception is approximate; a screenshot is attached."
                   if self.with_screenshot else
                   "Top-down exploration. You perceive only this symbolic view — reason from it.")
@@ -211,9 +217,10 @@ class World:
         return text.replace(_GOTO_ADVERT,
                             "Call the `goto` tool with one of these (x, y), or `explore` to auto-explore.")
 
-    @staticmethod
-    def _drop_frame(obs) -> None:
-        p = (obs.data or {}).get("screen_path") or ""   # don't accumulate frame debris (oracle.jsonl keeps the record)
+    def _drop_frame(self, obs) -> None:
+        if self.keep_frames:                            # --keep-frames: log every per-step PNG (oracle pairs to it)
+            return
+        p = (obs.data or {}).get("screen_path") or ""   # else don't accumulate frame debris
         if p and os.path.exists(p):
             try:
                 os.remove(p)
@@ -231,10 +238,11 @@ class World:
                 with open(p, "rb") as f:
                     content.append({"type": "image", "data": base64.b64encode(f.read()).decode(),
                                     "mimeType": "image/png"})
-            try:
-                os.remove(p)
-            except OSError:
-                pass
+            if not self.keep_frames:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
         return content
 
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
@@ -308,6 +316,9 @@ def main() -> int:
     ap.add_argument("--with-screenshot", action="store_true",
                     help="DEBUG ONLY: also return the raw frame image. Off by default — the brain is meant to "
                          "reason from the symbolic view (the perception seam), not read pixels.")
+    ap.add_argument("--keep-frames", action="store_true",
+                    help="KEEP every per-step frame PNG on disk (default drops them as debris). Max logging: each "
+                         "PNG pairs with its oracle.jsonl step (RAM truth) + the symbolic view the brain saw.")
     args = ap.parse_args()
 
     # LAZY: do NOT boot the emulator here. `initialize`/`tools/list` must answer instantly or the MCP client
@@ -320,6 +331,23 @@ def main() -> int:
             assert_action_tools_fresh(w.plugin)   # catch _STATIC_TOOLS drift on first boot (fail loud, never silent)
             _world[0] = w
         return _world[0]
+
+    # The MCP client (claude) usually TERMINATES the server (SIGTERM) instead of closing stdin (EOF), which
+    # would skip the finalize below and leave the --record MP4 unmuxed (a stray .video.mp4, audio lost).
+    # Finalize on SIGTERM/SIGINT too so the recording is always closed + audio-muxed before exit.
+    def _shutdown(*_):
+        if _world[0] is not None:
+            try:
+                _world[0].plugin.close()
+            except Exception:
+                pass
+        raise SystemExit(0)
+    for _sig in (getattr(signal, "SIGTERM", None), getattr(signal, "SIGINT", None)):
+        if _sig is not None:
+            try:
+                signal.signal(_sig, _shutdown)
+            except (ValueError, OSError):        # not in main thread / unsupported -> rely on stdin-EOF
+                pass
 
     for line in sys.stdin:                       # newline-delimited JSON-RPC (the MCP stdio transport)
         if line and ord(line[0]) == 0xFEFF:      # tolerate a leading BOM on the first message

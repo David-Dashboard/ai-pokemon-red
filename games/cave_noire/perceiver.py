@@ -63,4 +63,12 @@ class CaveNoirePerceiver(GridPerceiver):
         super().__init__(LocalizedForegroundSignal(move_px=_MOVE_PX, fg_grid=_FG_GRID))
 
 
-__all__ = ["CaveNoirePerceiver", "LocalizedForegroundSignal"]
+class CaveNoireBaselinePerceiver(GridPerceiver):
+    """A/B CONTROL: the pre-localizer dead-reckon perceiver (plain ForegroundSignal, no snap). Isolates the
+    localizer's effect in the live MCP brain test by holding the world fixed and swapping only the perception."""
+
+    def __init__(self) -> None:
+        super().__init__(ForegroundSignal(move_px=_MOVE_PX, fg_grid=_FG_GRID))
+
+
+__all__ = ["CaveNoirePerceiver", "CaveNoireBaselinePerceiver", "LocalizedForegroundSignal"]
