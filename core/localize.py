@@ -26,7 +26,9 @@ _DECAY = 0.7                 # heatmap memory: ~3-5 recent commanded steps (trac
 _PEAK = 2.6                  # min peak/mean ratio to treat the heatmap as a confident fix
 _JUMP = 30.0                 # px: a confident peak leaping >this from the held pos is suspected animation,
                              # not a real step (1 cell ~16-22px) -> reject unless it REPEATS (room change)
-_CONF_SAT = 6.0              # peak/mean at which a fix's confidence saturates to 1.0 (graded ABOVE the _PEAK gate)
+_CONF_SAT = 70.0             # peak/mean at which confidence saturates to 1.0. Picked at the ~90th pct of MEASURED
+                             # Cave Noire lock ratios (min 2.5 / median 43 / 90th 70) so conf grades across the
+                             # real distribution instead of pinning to 1.0 (review F1'); graded ABOVE the _PEAK gate
 
 
 def _gray(frame):
