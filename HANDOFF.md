@@ -82,6 +82,40 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-06-26, late) — AVATAR-LOCALIZATION BAKE-OFF (the baseline wins) + the RELATIVE-MOTION pipeline
+as the next build. Branch `feat/avatar-localization` (commit `4ef895b`; off `main`, NOT PR'd). SIBLING work on
+PR #25 (`feat/adr-002-gate`): the cross-game consequence study + perception-needs report — `git fetch` +
+`gh pr list --state all` to see both.**
+
+- **Why we got here:** the cross-game consequence study (PR #25) + mining the play-subagent transcripts
+  reprioritized the roadmap toward avatar-localization + blob-segment (the agents' #1/#3 blind spots were
+  self-localization/walkability + mode-detection — `reports/2026-06-26-perception-needs-from-play-transcripts.md`).
+  A deep-research sweep then grounded the methods.
+- **RESEARCH GROUNDING (`reports/2026-06-26-avatar-localization-blob-segmentation-research.md`):** our
+  `AvatarLocalizer` action-correlation IS the canonical method (Bellemare *contingency*, AAAI 2012); `best_shift`
+  is the RIGHT ego-motion for flat pixel art (do NOT switch to ORB/homography). Blobs = connected-components on a
+  foreground mask. Climb to a learned model only on MEASURED failure (VLM grounding is documented to fail; Cradle
+  uses SAM only for hi-res desktop, not 160×144).
+- **THE BAKE-OFF (`eval/compare_localizers.py`):** implemented + scored 4 methods vs `datasets/labels/v2`.
+  **Baseline WINS — fixed 36% / follow 21% in-box, wins 7/10 games, Cave Noire 56%/4px. None beat it:** Bayes
+  (28/9 — ties on fixed but costlier; caught+fixed a log-vs-prob-blur bug), Blob (29/17 but bg-sub floods
+  spurious blobs, precision 6% — useful only as an AUXILIARY: entity bboxes / a peak-veto), Scroll (13/9 —
+  counterproductive: `best_shift` strips the avatar's own motion). New code: `core/blob.py` (pure-numpy CC —
+  scipy NOT installed, don't add it; no OpenCV), `core/localize_{bayes,blob,scroll}.py`, 20 tests, 370 green.
+- **THE STRUCTURAL FINDING (the "wall"):** all 4 are MOTION localizers → they need the avatar to move ON SCREEN.
+  Works for FIXED-camera (avatar moves on a still screen); FAILS for FOLLOW-camera (avatar stays centered, the
+  WORLD scrolls → no motion to ground → ≈0% on Gold/Space Invaders). Not a method flaw — follow-camera
+  localization is a DIFFERENT problem: world-position via ego-motion integration, not sprite-finding.
+- **⇒ NEXT BUILD = the RELATIVE-MOTION pipeline (`reports/2026-06-26-relative-motion-pipeline.md`):** ① camera
+  motion (`best_shift`) → world position (sum it) + a fixed/follow router; ② object motion = the RESIDUAL after
+  camera-compensation → control-correlation picks the avatar, blob → entities; ③ fuse (Kalman/odometry + occasional
+  absolute fixes for drift). UNIFIES both camera classes (camera term = 0 → fixed; ≠ 0 → follow — one pipeline).
+  **The one hard part = a CLEAN residual in ② (compensation noise + animation flicker + scroll-edge reveals = the
+  blob-precision problem).** Don't build a fancier screen-localizer.
+- **DECISION:** keep the baseline as the fixed-camera localizer; bank the bake-off by-products (`core/blob.py`,
+  `compare_localizers.py`, tests); the 3 losing localizer variants are experiments (PR-or-archive TBD, David's call).
+  Aim next effort at the relative-motion pipeline + walkability/mode-detection.
+
 **⇒ NEWEST (2026-06-26, latest) — AVATAR LOCALIZER BUILT + CROSS-GAME VALIDATED (the strand fix's foundation).
 PR #21 OPEN (`feat/avatar-localizer`). Merged this session: #18, #19 (North Eye constitution), #20 (label
 dataset + tooling). `main` = `f4be920`. Picking up COLD? `git fetch` + `gh pr list --state all` first.**
