@@ -65,6 +65,10 @@ _SIG_MIN_DISTINCT = 6    # at least this many non-flat fingerprints required (ou
 # Relocalization fires only when the signature match is UNIQUE (exactly 1 stored cell) and the
 # re-anchor distance is > 1 cell (a 1-cell difference is within dead-reckoning noise — not worth firing).
 _RELOC_MIN_DIST = 2      # minimum L-inf distance (cells) to trigger a re-anchor
+# A loop-closure means RETURNING to a place after travelling elsewhere — not a look-alike frame seen a step
+# or two ago during normal travel (which is a false positive: same signature, genuinely different cell). Only
+# re-anchor when the stored signature was last recorded at least this many gameplay frames ago.
+_RELOC_RECENCY = 5
 
 
 def grid_max_change(prev_norm, cur_norm) -> float:
@@ -310,39 +314,48 @@ class GridPerceiver:
             recent.append(cur_norm)
             del recent[:-(_PROG_W + 1)]
 
-        # Tilemap-based relocalization (loop closure): when the agent re-enters territory it has
-        # mapped, re-anchor the drifted cursor to the remembered location. Only fires in fixed-camera
-        # worlds (ForegroundSignal) — follow-camera worlds scroll every step, making frame signatures
-        # useless. Guards: signature must be distinctive (not flat), match must be unique across all
-        # stored signatures, and the re-anchor distance must exceed dead-reckoning noise (_RELOC_MIN_DIST).
-        # A wrong re-anchor is worse than none, so we are conservative.
-        if isinstance(self.move_signal, ForegroundSignal) and label == "gameplay" and frame is not None:
+        # Tilemap-based relocalization (loop closure) for PURE dead-reckoning worlds: when the agent
+        # re-enters mapped territory, re-anchor the drifted cursor to the remembered location. SKIPPED
+        # when the move signal provides an `absolute_cell` localizer (it already gives a per-frame
+        # ground-truth fix — there is no dead-reckoning drift to recover, and running both would make
+        # two snap mechanisms fight over the cursor). Fixed-camera only — follow-camera worlds scroll
+        # every step, so a fixed-screen signature is meaningless. Guard: the signature must be
+        # distinctive (`_place_sig` rejects flat/ambiguous frames) and the re-anchor distance must
+        # exceed dead-reckoning noise (_RELOC_MIN_DIST).
+        # KNOWN LIMITATION (see reports/2026-06-29-relocalization-notes.md): exact 12-tile signatures
+        # cannot distinguish a real loop-closure from two identically-templated rooms, so a wrong
+        # re-anchor is possible in games with repeated room layouts. NOT yet bench-validated.
+        if (isinstance(self.move_signal, ForegroundSignal)
+                and not hasattr(self.move_signal, "absolute_cell")
+                and label == "gameplay" and frame is not None):
             frame_arr = np.asarray(frame)
             if frame_arr.ndim >= 2:
-                place_sigs: dict = m.setdefault("place_sigs", {})   # sig_tuple -> (cx, cy)
+                place_sigs: dict = m.setdefault("place_sigs", {})   # sig -> (cx, cy, step_last_seen)
+                step_n = m["_reloc_step"] = m.get("_reloc_step", 0) + 1
                 sig = _place_sig(frame_arr)
                 if sig is not None:
-                    # Record: store this signature → current cursor (only after 2+ cells so the origin
-                    # isn't over-recorded; overwrite is fine — last confirmed position wins).
-                    if len(cells) >= 2:
-                        place_sigs[sig] = (x, y)
-                    # Match: look for a previously stored signature that equals the current one but
-                    # was recorded at a different cursor position (= the agent has looped back).
-                    match_cell = place_sigs.get(sig)
-                    if (match_cell is not None
-                            and match_cell != (x, y)
-                            and max(abs(match_cell[0] - x), abs(match_cell[1] - y)) >= _RELOC_MIN_DIST):
-                        # Uniqueness check: no other stored signature matches sig (same tuple = exact
-                        # match here, so the dict lookup already gives us uniqueness by key identity —
-                        # the sig tuple IS the key, and dicts enforce uniqueness).
-                        # Re-anchor: snap the cursor to the remembered cell and restore confidence.
-                        mx, my = match_cell
+                    # MATCH FIRST against the PRIOR recording, THEN record. Recording before the lookup
+                    # (the original bug) just returned the position we wrote this frame, so the re-anchor
+                    # guard was always false and relocalization never fired. Re-anchor only on a genuine
+                    # loop-closure: a stored signature, far enough from the (drifted) cursor, AND last seen
+                    # _RELOC_RECENCY+ frames ago (so a look-alike frame recurring during travel doesn't
+                    # spuriously snap us back). Then overwrite with the new position + step.
+                    prev = place_sigs.get(sig)
+                    if (prev is not None
+                            and (prev[0], prev[1]) != (x, y)
+                            and max(abs(prev[0] - x), abs(prev[1] - y)) >= _RELOC_MIN_DIST
+                            and step_n - prev[2] >= _RELOC_RECENCY):
+                        mx, my = prev[0], prev[1]
                         m["cursor"] = (mx, my)
                         x, y = mx, my
                         cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
                         cell["visited"] = True
                         m["pose_confidence"] = _CONF_BASE
                         outcome = "moved"   # treat as a successful repositioning
+                    # Record AFTER matching (only past the origin so it isn't over-recorded). After a
+                    # re-anchor (x, y) == prev cell, so this just refreshes its step stamp.
+                    if len(cells) >= 2:
+                        place_sigs[sig] = (x, y, step_n)
 
         # Dead-frontier detection: two signals increment a frontier's fail counter:
         # 1. External (world_mcp / bench): context["goto_fails"] = [(cx,cy), ...] — the caller
