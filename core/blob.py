@@ -18,17 +18,21 @@ from PIL import Image
 
 # ── connected-components (pure numpy, BFS) ────────────────────────────────────
 
-def _label_bfs(mask: np.ndarray) -> tuple[np.ndarray, int]:
+def _label_bfs(mask: np.ndarray, connectivity: int = 4) -> tuple[np.ndarray, int]:
     """Label connected components of bool mask via BFS. Returns (labels, n_labels).
-    Labels are 1-indexed (0 = background)."""
+    Labels are 1-indexed (0 = background).
+    connectivity=4: cardinal neighbours only (default).
+    connectivity=8: cardinal + diagonal neighbours."""
     H, W = mask.shape
     labels = np.zeros((H, W), dtype=np.int32)
     n = 0
-    # use a flat index queue for speed
     flat = mask.ravel()
     label_flat = labels.ravel()
     idx = np.where(flat)[0]
     pending = set(idx.tolist())
+    _neighbours4 = ((-1, 0), (1, 0), (0, -1), (0, 1))
+    _neighbours8 = ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1))
+    neighbours = _neighbours8 if connectivity == 8 else _neighbours4
     for seed in list(pending):
         if label_flat[seed] != 0 or not flat[seed]:
             continue
@@ -39,7 +43,8 @@ def _label_bfs(mask: np.ndarray) -> tuple[np.ndarray, int]:
         while head < len(queue):
             cur = queue[head]; head += 1
             cy, cx = divmod(cur, W)
-            for ny, nx in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
+            for dy, dx in neighbours:
+                ny, nx = cy + dy, cx + dx
                 if 0 <= ny < H and 0 <= nx < W:
                     ni = ny * W + nx
                     if flat[ni] and label_flat[ni] == 0:
@@ -101,6 +106,7 @@ def segment_blobs(
     bg: Optional["RollingBg"] = None,
     thresh: float = 15.0,
     min_area: int = 16,
+    connectivity: int = 4,
 ) -> list[Blob]:
     """Segment foreground blobs from a frame.
 
@@ -110,6 +116,7 @@ def segment_blobs(
         bg: RollingBg instance; only used when fg_mag is None.
         thresh: foreground threshold (pixel units, 0-255 scale).
         min_area: drop blobs with fewer pixels than this.
+        connectivity: 4 (cardinal, default) or 8 (cardinal+diagonal).
 
     Returns list of Blob (empty list if no foreground or not enough bg history).
     """
@@ -125,7 +132,7 @@ def segment_blobs(
     if not mask.any():
         return []
 
-    labels, n = _label_bfs(mask)
+    labels, n = _label_bfs(mask, connectivity=connectivity)
     blobs = []
     for lbl in range(1, n + 1):
         ys, xs = np.where(labels == lbl)
