@@ -20,6 +20,25 @@ desmume produced the frame. Adding a console = **implement those ~9 methods**; p
 is the same move that took us from GB (PyBoy) to GBA (mgba). NDS is the next rung — *with three genuine deltas
 the Protocol doesn't yet cover* (§3).
 
+## ✅ Spike results (2026-06-29) — py-desmume VERIFIED 4/4 on Windows
+
+The de-risking spike is **done and passed** — `py-desmume==0.0.9` installs on **Windows / Python 3.12** (no
+Linux container required, unlike GBA's mgba) and delivers **all four capabilities** against New Super Mario
+Bros:
+
+| Capability | Result | py-desmume call (verified) |
+|---|---|---|
+| Framebuffer | ✅ `(384,256,3)` — **both screens stacked** (top 0:192, bottom 192:384) | `np.frombuffer(emu.display_buffer_as_rgbx())[:256*384*4].reshape(384,256,4)[:,:,:3]` |
+| RAM read (oracle) | ✅ full 4 MB main RAM, live values | `emu.memory.unsigned[addr]` / `.signed` / `.read(s,e,size)` |
+| Savestate | ✅ roundtrip reverts | `emu.savestate.save_file(p)` / `load_file(p)` |
+| Input | ✅ buttons + **touch** | `emu.input.keypad_add_key(keymask(Keys.KEY_*))` / `keypad_rm_key`; `touch_set_pos(x,y)` / `touch_release()` |
+| Tick / close | ✅ | `for _ in range(n): emu.cycle()`; `emu.destroy()`; `emu.reset()` |
+
+**Gotcha found:** **DSi-enhanced ROMs (Pokémon White) render blank** without DSi firmware — boot a **plain-DS**
+ROM (NSMB, Mario Kart DS) or supply the DSi BIOS. **Verdict: py-desmume is the binding; NDS is *more*
+Windows-friendly than GBA was.** This retires the "Linux-container-only" worry — a container is still nice for
+reproducibility but is no longer required for parity. The §2 table below is now settled in py-desmume's favour.
+
 ## 1. What already exists (the prior art this plan reuses)
 
 - **GB/GBC — `core/gb_emulator.py` (`PyBoyEmulator`):** the reference implementation of the Protocol;
@@ -77,10 +96,9 @@ grid, blob `min_area`). Treat 3D-robust perception as a later, measured climb �
 
 ## 4. Build order (the Realizer Ladder — cheapest first, mirrors the GBA path)
 
-1. **Spike (de-risk, no commitment).** In a Linux container/WSL, install `py-desmume`, boot a real 2D NDS ROM
-   (**Pokémon White** — already in `roms/nds/`), and prove **4 capabilities**: framebuffer (both screens) + RAM
-   `read()` + savestate roundtrip + button input. Map each to the 9 Protocol methods. *Exactly the mgba 4/4
-   spike.* If it can't deliver all four on Linux after reasonable effort → fall back to the libretro shim, report.
+1. **Spike (de-risk, no commitment). ✅ DONE 2026-06-29 — passed 4/4 on Windows** (see "Spike results" above).
+   `py-desmume==0.0.9` gave framebuffer (both screens) + RAM read + savestate + input/touch against NSMB. The
+   libretro-shim fallback is unneeded. (Use a **plain-DS** ROM, not DSi-enhanced.)
 2. **`core/nds_emulator.py`.** Implement the Protocol mirroring `PyBoyEmulator`: dual-screen `screen_ndarray()`
    (stacked), `BUTTONS` = GB's 8 + `l`,`r`, `read()`/savestates from the binding, lazy/guarded import. **No touch
    yet.**
