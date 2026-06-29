@@ -8,8 +8,9 @@ Emulator is picked from the ROM extension: .gba -> mgba GBAEmulator, else PyBoy 
 Both satisfy the same Emulator Protocol, so perception is identical either way.
 
 Camera class is auto-detected from the ROM filename via the _FOLLOW_KEYS mapping
-(gold/kirby/metroid/spaceinv/f1race/ffa/sml -> follow; everything else -> fixed). GBA titles
-aren't in that GB-tuned map — pass --camera explicitly (e.g. Emerald is follow).
+(gold/kirby/metroid/spaceinv/f1race/ffa/sml -> follow; other .gb/.gbc -> fixed). GBA titles
+aren't in that GB-tuned map, so .gba defaults to FOLLOW (correct for the marquee GBA games and the
+safer default — see _camera_class); pass --camera for a genuinely fixed-camera GBA game.
 
   uv run python play_generic.py --rom "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb" --steps 150
   uv run python play_generic.py --rom "roms/Gauntlet II (USA, Europe).gb" --camera follow --steps 150
@@ -35,6 +36,13 @@ def _camera_class(rom_path: str, override: str | None) -> str:
     if override in ("fixed", "follow"):
         return override
     slug = os.path.basename(rom_path).lower()
+    if slug.endswith(".gba"):
+        # GBA titles aren't in the GB-tuned follow-key map. Default to FOLLOW, not fixed: it's correct
+        # for the marquee GBA games (Pokémon/Zelda/Mario/Kirby) AND the safer wrong-default — a wrong
+        # "fixed" silently turns on fixed-camera-only tilemap relocalization + entity detection over a
+        # scrolling screen (floods spurious blobs / false re-anchors), whereas "follow" just leaves
+        # those off. Pass --camera to override for a genuinely fixed-camera GBA game.
+        return "follow"
     return "follow" if is_follow_camera(slug) else "fixed"
 
 
