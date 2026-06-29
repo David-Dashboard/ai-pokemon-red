@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import re
 
-from core.grid_perceiver import FOLLOW_CAMERA_KEYS as FOLLOW_KEYS, is_follow_camera
+from core.grid_perceiver import is_follow_camera
 
 # Held-out games: never tune thresholds on these; report separately.
 HELD_OUT = {"crystalis", "zelda", "sml", "f1race"}

@@ -20,7 +20,7 @@ import uuid
 from core.brains import ExploreBrain, ScriptedBrain
 from core.gateway import Gateway
 from core.grid_perceiver import (CameraScrollSignal, ForegroundSignal, GridPerceiver,
-                                 FOLLOW_CAMERA_KEYS as _FOLLOW_KEYS, is_follow_camera)
+                                 is_follow_camera)
 from core.perception_plugin import PerceptionPlugin
 from core.permissions import Allowlist
 from core.runner import run_episode
@@ -60,7 +60,7 @@ def _ontology_stage(game_slug: str, reached: bool, explored: int, stall: str) ->
     if explored < 3:
         return "S2/S8 (stuck on menu it can't parse)"
     if "plateau" in stall or "frontier" in stall:
-        if any(k in sl for k in _FOLLOW_KEYS):
+        if is_follow_camera(sl):
             return "S3/S6 (follow-camera pose drift -> map warp)"
         return "S5 (affordance / dead-end — no frontiers)"
     if "wall" in stall or "no_move" in stall:

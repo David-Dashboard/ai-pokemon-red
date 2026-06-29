@@ -83,13 +83,9 @@ _RELOC_MIN_DIST = 2      # minimum L-inf distance (cells) to trigger a re-anchor
 # Maximum L-inf distance for a re-anchor: derived at runtime from the visited-cell bounding box so the
 # agent can recover anywhere within explored territory while rejecting jumps beyond what it has actually
 # mapped (those are impossible teleports / false identical-room matches, not real loop closures).
-# A loop-closure means RETURNING to a place after travelling elsewhere — not a look-alike frame seen a step
-# or two ago during normal travel (which is a false positive: same signature, genuinely different cell). Only
-# re-anchor when the stored signature was last recorded at least this many gameplay frames ago.
-# Minimum frames since the signature was last recorded before we allow a re-anchor.
-# Prevents re-anchoring on a look-alike frame that appeared just one or two steps ago during normal
-# travel (same tiles visible from adjacent cells) — those are NOT loop closures, just close-range
-# signature reuse. 5 frames is enough to distinguish a genuine revisit from same-place-different-step.
+# Minimum frames since a signature was last recorded before we allow a re-anchor: prevents re-anchoring on
+# a look-alike frame seen one or two steps ago during normal travel (same tiles visible from adjacent cells
+# — close-range signature reuse, NOT a loop closure). 5 distinguishes a genuine revisit-after-travel.
 _RELOC_RECENCY = 5
 
 

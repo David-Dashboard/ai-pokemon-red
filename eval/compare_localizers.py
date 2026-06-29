@@ -124,7 +124,9 @@ def run_game(label_path: str) -> Optional[dict]:
             )
             if fg_pr is not None:
                 det_blobs = segment_blobs(None, fg_mag=fg_pr, thresh=15.0, min_area=16)
-                det_boxes = [[b.x0, b.y0, b.x1, b.y1] for b in det_blobs]
+                # inclusive blob bbox -> exclusive (+1) to match the exclusive _iou / float GT
+                # (kept consistent with probe_entities.py).
+                det_boxes = [[b.x0, b.y0, b.x1 + 1, b.y1 + 1] for b in det_blobs]
             else:
                 det_boxes = []
 
