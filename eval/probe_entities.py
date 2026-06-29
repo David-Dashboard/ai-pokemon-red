@@ -28,7 +28,7 @@ import numpy as np
 from PIL import Image
 
 from core.entities import EntityDetector
-from eval._eval_utils import _slug, _camera, _is_held_out, _iou, FOLLOW_KEYS as _FOLLOW_KEYS
+from eval._eval_utils import _slug, _camera, _is_held_out, _iou
 
 _LABEL_ROOT = "datasets/labels/v2"
 _IOU_THRESH = 0.3
@@ -110,7 +110,9 @@ def _score_detector(detector: EntityDetector, label_path: str,
         matched_det: set[int] = set()
         for gi, gb in enumerate(gt_boxes):
             for di, db in enumerate(det_boxes):
-                if _iou(gb, db) >= _IOU_THRESH and gi not in matched_gt and di not in matched_det:
+                # Detector boxes are integer-inclusive [x0,y0,x1,y1]; _iou expects exclusive convention.
+                db_excl = (db[0], db[1], db[2] + 1, db[3] + 1)
+                if _iou(gb, db_excl) >= _IOU_THRESH and gi not in matched_gt and di not in matched_det:
                     matched_gt.add(gi)
                     matched_det.add(di)
                     break

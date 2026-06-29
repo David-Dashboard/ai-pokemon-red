@@ -8,9 +8,7 @@ from __future__ import annotations
 import os
 import re
 
-
-# Games that use a follow/scroll camera (spread < 15 from eval/score_localize).
-FOLLOW_KEYS = ("gold", "kirby", "metroid", "spaceinv", "f1race", "ffa", "sml")
+from core.grid_perceiver import FOLLOW_CAMERA_KEYS as FOLLOW_KEYS, is_follow_camera
 
 # Held-out games: never tune thresholds on these; report separately.
 HELD_OUT = {"crystalis", "zelda", "sml", "f1race"}
@@ -20,11 +18,6 @@ def _slug(path: str) -> str:
     """Label-file path -> game slug, stripping any leading date prefix."""
     name = os.path.basename(path).replace(".json", "")
     return re.sub(r'^\d{4}-\d{2}-\d{2}_', '', name)
-
-
-def is_follow_camera(slug: str) -> bool:
-    """Return True when the game uses a follow/scroll camera."""
-    return any(k in slug for k in FOLLOW_KEYS)
 
 
 def _camera(slug: str) -> str:

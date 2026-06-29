@@ -19,11 +19,11 @@ import uuid
 
 from core.brains import ExploreBrain, ScriptedBrain
 from core.gateway import Gateway
-from core.grid_perceiver import CameraScrollSignal, ForegroundSignal, GridPerceiver
+from core.grid_perceiver import (CameraScrollSignal, ForegroundSignal, GridPerceiver,
+                                 FOLLOW_CAMERA_KEYS as _FOLLOW_KEYS, is_follow_camera)
 from core.perception_plugin import PerceptionPlugin
 from core.permissions import Allowlist
 from core.runner import run_episode
-from eval._eval_utils import is_follow_camera, FOLLOW_KEYS as _FOLLOW_KEYS
 
 _SANDBOX = Allowlist({"press_button", "press_sequence", "wait"})
 
