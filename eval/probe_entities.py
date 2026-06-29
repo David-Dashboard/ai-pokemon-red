@@ -28,8 +28,8 @@ import numpy as np
 from PIL import Image
 
 from core.entities import EntityDetector
+from eval._eval_utils import _slug, _camera, _is_held_out, _iou, FOLLOW_KEYS as _FOLLOW_KEYS
 
-_HELD_OUT = {"crystalis", "zelda", "sml", "f1race"}
 _LABEL_ROOT = "datasets/labels/v2"
 _IOU_THRESH = 0.3
 
@@ -39,9 +39,6 @@ _HUD_CAVENOIRE = (0, 128, 160, 144)
 
 # Games that have a visible HUD band at bottom (used to enable HUD filter)
 _HUD_GAMES = ("cavenoire", "gauntlet", "ffa")
-
-# Camera class heuristic (same as compare_localizers)
-_FOLLOW_KEYS = ("gold", "kirby", "metroid", "spaceinv", "f1race", "ffa", "sml")
 
 
 @dataclass
@@ -65,27 +62,6 @@ class Acc:
         return self
 
 
-def _slug(path: str) -> str:
-    return os.path.basename(path).replace(".json", "").replace("2026-06-23_", "")
-
-
-def _camera(slug: str) -> str:
-    return "follow" if any(k in slug for k in _FOLLOW_KEYS) else "fixed"
-
-
-def _is_held_out(slug: str) -> bool:
-    return any(h in slug for h in _HELD_OUT)
-
-
-def _iou(b1, b2) -> float:
-    ix0, iy0 = max(b1[0], b2[0]), max(b1[1], b2[1])
-    ix1, iy1 = min(b1[2], b2[2]), min(b1[3], b2[3])
-    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
-    if inter == 0:
-        return 0.0
-    a1 = (b1[2] - b1[0]) * (b1[3] - b1[1])
-    a2 = (b2[2] - b2[0]) * (b2[3] - b2[1])
-    return inter / (a1 + a2 - inter)
 
 
 def _score_detector(detector: EntityDetector, label_path: str,

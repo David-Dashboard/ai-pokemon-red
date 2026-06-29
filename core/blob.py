@@ -151,6 +151,7 @@ def segment_blobs(
 # ── cross-frame tracker ───────────────────────────────────────────────────────
 
 def _iou(a: Blob, b: Blob) -> float:
+    # Inclusive convention (+1) is intentional: Blob coordinates are integer pixel indices, both endpoints included.
     ix0, iy0 = max(a.x0, b.x0), max(a.y0, b.y0)
     ix1, iy1 = min(a.x1, b.x1), min(a.y1, b.y1)
     inter = max(0, ix1 - ix0 + 1) * max(0, iy1 - iy0 + 1)

@@ -23,8 +23,8 @@ from core.grid_perceiver import CameraScrollSignal, ForegroundSignal, GridPercei
 from core.perception_plugin import PerceptionPlugin
 from core.permissions import Allowlist
 from core.runner import run_episode
+from eval._eval_utils import is_follow_camera, FOLLOW_KEYS as _FOLLOW_KEYS
 
-_FOLLOW_KEYS = ("gold", "kirby", "metroid", "spaceinv", "f1race", "ffa", "sml")
 _SANDBOX = Allowlist({"press_button", "press_sequence", "wait"})
 
 # Known gameplay states (skip the warmup for these).
@@ -40,7 +40,7 @@ _EMBODIMENT_MISMATCH = {"tetris", "space invaders", "mortal kombat", "f-1 race",
 
 def _camera_class(rom_path: str) -> str:
     slug = os.path.basename(rom_path).lower()
-    return "follow" if any(k in slug for k in _FOLLOW_KEYS) else "fixed"
+    return "follow" if is_follow_camera(slug) else "fixed"
 
 
 def _find_state(slug_lower: str) -> str | None:

@@ -13,7 +13,7 @@ numpy + PIL only. No cv2.
 """
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Any, Optional
 
 import numpy as np
 from PIL import Image
@@ -55,15 +55,10 @@ def _synthesize_residual_frame(prev_aligned: np.ndarray, cur: np.ndarray) -> np.
     return np.stack([residual, residual, residual], axis=2)
 
 
-class _LocalizerProto(Protocol):
-    def update(self, frame, commanded_dir=None): ...
-    def reset(self): ...
-
-
 class ScrollingLocalizer:
     """Wraps any avatar localizer; compensates camera ego-motion before passing frames."""
 
-    def __init__(self, inner: _LocalizerProto):
+    def __init__(self, inner: Any):
         self.inner = inner
         self._prev_gray: Optional[np.ndarray] = None
 

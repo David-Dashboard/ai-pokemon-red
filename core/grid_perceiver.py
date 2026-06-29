@@ -43,6 +43,7 @@ _DELTA_INV = {v: k for k, v in DELTA.items()}    # unit (dx,dy) -> cardinal, for
 #   _CONF_RECOV — how quickly confidence recovers per confirmed move (linear rise back to _CONF_BASE)
 #   _DEAD_TRIES — a frontier is pruned after this many goto/explore "no-path / 0-step" attempts
 _CONF_BASE, _CONF_DRIFT, _CONF_RECOV = 0.7, 0.2, 0.1
+_CONF_DROP = 0.15   # mild confidence penalty on first no-move-after-command (possible drift, not yet a wall)
 _DEAD_TRIES = 3
 
 # Tilemap-based relocalization (loop closure for dead-reckoning drift).
@@ -65,6 +66,7 @@ _SIG_MIN_DISTINCT = 6    # at least this many non-flat fingerprints required (ou
 # Relocalization fires only when the signature match is UNIQUE (exactly 1 stored cell) and the
 # re-anchor distance is > 1 cell (a 1-cell difference is within dead-reckoning noise — not worth firing).
 _RELOC_MIN_DIST = 2      # minimum L-inf distance (cells) to trigger a re-anchor
+_RELOC_MAX_DIST = 8      # maximum L-inf distance — map-spanning jumps are likely false identical-room matches
 # A loop-closure means RETURNING to a place after travelling elsewhere — not a look-alike frame seen a step
 # or two ago during normal travel (which is a false positive: same signature, genuinely different cell). Only
 # re-anchor when the stored signature was last recorded at least this many gameplay frames ago.
@@ -299,8 +301,9 @@ class GridPerceiver:
                     cell["visited"] = True
                     cell["walls"].discard(BACK[step])       # the entered cell is open back the way we came
                     m["cursor"] = (x, y)
+                    dead_frontiers.pop((x, y), None)   # a reached cell is not dead
                     outcome = "moved"
-                    # confirmed move: map is tracking; recover confidence toward the base.
+                    # a confirmed move is evidence the dead-reckoning is tracking, so trust recovers.
                     m["pose_confidence"] = min(_CONF_BASE, m["pose_confidence"] + _CONF_RECOV)
                 else:                                       # no move: a WALL or a transient dead-zone/idle
                     key = ((x, y), commanded_dir)
@@ -312,7 +315,7 @@ class GridPerceiver:
                         # first no-move-after-command (may be drift, not a wall yet): mild confidence drop.
                         # This is the highest-leverage signal: ok=True from the gateway but the avatar
                         # didn't move -> the dead-reckoned cursor may be wrong.
-                        m["pose_confidence"] = max(_CONF_DRIFT, m["pose_confidence"] - 0.15)
+                        m["pose_confidence"] = max(_CONF_DRIFT, m["pose_confidence"] - _CONF_DROP)
 
         m["prev_full"], m["prev_norm"] = cur_full, cur_norm
         if cur_norm is not None:                 # rolling frame buffer for the no-progress backstop
@@ -350,7 +353,7 @@ class GridPerceiver:
                     prev = place_sigs.get(sig)
                     if (prev is not None
                             and (prev[0], prev[1]) != (x, y)
-                            and max(abs(prev[0] - x), abs(prev[1] - y)) >= _RELOC_MIN_DIST
+                            and _RELOC_MIN_DIST <= max(abs(prev[0] - x), abs(prev[1] - y)) <= _RELOC_MAX_DIST
                             and step_n - prev[2] >= _RELOC_RECENCY):
                         mx, my = prev[0], prev[1]
                         m["cursor"] = (mx, my)
@@ -402,10 +405,7 @@ class GridPerceiver:
             jam_target = (cursor_now[0] + jammed_dx, cursor_now[1] + jammed_dy)
             dead_frontiers[jam_target] = dead_frontiers.get(jam_target, 0) + 1
             dead_frontiers[cursor_now] = dead_frontiers.get(cursor_now, 0) + 1
-        # Drop cells that have failed _DEAD_TRIES times from the dead-frontier set if they're now reachable
-        # (a wall was later confirmed there) — keep the dict bounded.
-        dead_frontiers_pruned = {k: v for k, v in dead_frontiers.items() if v < _DEAD_TRIES * 3}
-        m["dead_frontiers"] = dead_frontiers_pruned
+        m["dead_frontiers"] = dead_frontiers
 
         # affordances: open (non-wall) directions, unexplored first.
         open_unexplored, open_all = [], []
@@ -435,7 +435,7 @@ class GridPerceiver:
                 nbr = cells.get((cx + ddx, cy + ddy))
                 if nbr is None or not nbr.get("visited"):
                     # omit frontier if it has failed _DEAD_TRIES times (dead / drift-isolated)
-                    if dead_frontiers_pruned.get((cx, cy), 0) < _DEAD_TRIES:
+                    if dead_frontiers.get((cx, cy), 0) < _DEAD_TRIES:
                         frontiers.append([cx, cy])
                     break
 
@@ -466,7 +466,7 @@ class GridPerceiver:
                             "map": grid, "frontiers": frontiers, "rois": [],
                             "place_portals": [], "place_frontiers": [], "places_known": 1,
                             "ego_motion": ego_motion,
-                            "entities": entities},
+                            "entities": entities},   # screen-derived, not RAM/oracle — no no-leak violation
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome, "diff": round(best_diff, 2)},
             screen_text="",

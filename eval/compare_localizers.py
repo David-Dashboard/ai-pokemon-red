@@ -32,31 +32,12 @@ from core.localize_bayes import BayesAvatarLocalizer
 from core.localize_blob import BlobContingencyLocalizer
 from core.localize_scroll import ScrollingLocalizer
 from core.blob import RollingBg, segment_blobs
-
-# Held-out games (do NOT tune on them; report separately)
-_HELD_OUT = {"crystalis", "zelda", "sml", "f1race"}
+from eval._eval_utils import _slug as _game_slug, _camera as _camera_class, _is_held_out, _iou
 
 # Camera class by game-name substring (spread < 15 = follow/scroll, >= 15 = fixed/flip)
 # Derived from eval/score_localize spread column; games with spread >= 15 = fixed.
 _DIRS = ("up", "down", "left", "right")
 _LABEL_ROOT = "datasets/labels/v2"
-
-
-def _game_slug(path: str) -> str:
-    return os.path.basename(path).replace(".json", "").replace("2026-06-23_", "")
-
-
-def _is_held_out(slug: str) -> bool:
-    return any(h in slug for h in _HELD_OUT)
-
-
-def _camera_class(slug: str) -> str:
-    """Return 'fixed' or 'follow' based on spread heuristic."""
-    # follow/scroll: gold, kirby, metroid, spaceinv (spread < 15)
-    follow_keys = ("gold", "kirby", "metroid", "spaceinv", "f1race", "ffa", "sml")
-    if any(k in slug for k in follow_keys):
-        return "follow"
-    return "fixed"
 
 
 def _dir(buttons) -> Optional[str]:
@@ -70,17 +51,6 @@ def _ctr(box):
 
 def _inside(p, box) -> bool:
     return box[0] <= p[0] <= box[2] and box[1] <= p[1] <= box[3]
-
-
-def _iou(b1, b2) -> float:
-    ix0, iy0 = max(b1[0], b2[0]), max(b1[1], b2[1])
-    ix1, iy1 = min(b1[2], b2[2]), min(b1[3], b2[3])
-    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
-    if inter == 0:
-        return 0.0
-    a1 = (b1[2] - b1[0]) * (b1[3] - b1[1])
-    a2 = (b2[2] - b2[0]) * (b2[3] - b2[1])
-    return inter / (a1 + a2 - inter)
 
 
 def run_game(label_path: str) -> Optional[dict]:

@@ -248,9 +248,11 @@ class World:
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 
     def _run_autopilot(self, target, max_steps: int) -> tuple[int, str]:
+        self.plugin._extra_context = {}   # clear stale slot from a previous call
         steps = 0
         prev_pose = None
         same_pose_count = 0
+        flagged: set = set()
         for _ in range(max(1, min(int(max_steps), 200))):
             obs = self.plugin.observe(_AGENT)
             self._drop_frame(obs)
@@ -263,7 +265,10 @@ class World:
                 # No reachable frontier: if we have a target, mark it as a dead frontier
                 # so the perceiver prunes it from the frontier list on the next observe.
                 if target is not None:
-                    self.plugin._extra_context["goto_fails"] = [target]
+                    t = tuple(target)
+                    if t not in flagged:
+                        flagged.add(t)
+                        self.plugin._extra_context["goto_fails"] = [target]
                 return steps, ("blocked / no path to the target" if target is not None
                                else "out of reachable frontiers — your decision")
             self.gw.execute(call)
@@ -276,7 +281,10 @@ class World:
                 same_pose_count = 0
                 prev_pose = list(pose) if pose is not None else prev_pose
             if target is not None and same_pose_count >= 4:
-                self.plugin._extra_context["goto_fails"] = [target]
+                t = tuple(target)
+                if t not in flagged:
+                    flagged.add(t)
+                    self.plugin._extra_context["goto_fails"] = [target]
         return steps, "reached the step cap"
 
     # -- dispatch (single return; the self-improvement preamble is prepended to every result) ----------------

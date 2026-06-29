@@ -107,7 +107,6 @@ class BlobContingencyLocalizer:
 
     def update(self, frame, commanded_dir: Optional[str] = None):
         """Returns (col, row, confidence) or None."""
-        import numpy as np
         a = np.asarray(frame)
         gray = a[..., :3].mean(2).astype(np.float32) if a.ndim == 3 else a.astype(np.float32)
 

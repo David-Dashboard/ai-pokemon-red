@@ -22,10 +22,7 @@ from core.grid_perceiver import CameraScrollSignal, ForegroundSignal, GridPercei
 from core.perception_plugin import PerceptionPlugin
 from core.permissions import Allowlist
 from core.runner import run_episode
-
-# Camera-class heuristic: substring in the ROM slug -> follow-camera world.
-# From eval/compare_localizers.py and eval/probe_entities.py.
-_FOLLOW_KEYS = ("gold", "kirby", "metroid", "spaceinv", "f1race", "ffa", "sml")
+from eval._eval_utils import is_follow_camera
 
 _SANDBOX = Allowlist({"press_button", "press_sequence", "wait"})
 
@@ -34,7 +31,7 @@ def _camera_class(rom_path: str, override: str | None) -> str:
     if override in ("fixed", "follow"):
         return override
     slug = os.path.basename(rom_path).lower()
-    return "follow" if any(k in slug for k in _FOLLOW_KEYS) else "fixed"
+    return "follow" if is_follow_camera(slug) else "fixed"
 
 
 def main() -> int:
