@@ -32,7 +32,7 @@ def _emu(console: str, rom: str):
         return GBAEmulator(rom), (lambda e: e.screen_ndarray())
     if console == "nds":
         from core.nds_emulator import DeSmuMEEmulator
-        return DeSmuMEEmulator(rom, headless=True), (lambda e: e.screen_ndarray()[:192])
+        return DeSmuMEEmulator(rom, headless=True), (lambda e: e.screen_ndarray())
     raise SystemExit(f"unknown console {console}")
 
 
@@ -54,6 +54,10 @@ def _stepper(kind: str):
         from core.navigators import HarnessNavigator
         nav = HarnessNavigator(mode="vlm" if kind == "vlm-h" else "ocr")
         return lambda prev, curr, last: [nav.decide(curr)]
+    if kind in ("nds-vlm", "nds-ocr"):
+        from core.navigators import NDSTouchNavigator
+        nav = NDSTouchNavigator(mode="vlm" if kind == "nds-vlm" else "ocr")
+        return lambda prev, curr, last: [nav.decide(curr)]
     raise SystemExit(f"unknown kind {kind}")
 
 
@@ -72,7 +76,15 @@ def _save_strip(frames, path):
     strip.save(path)
 
 
+def _label(action) -> str:
+    """Human-readable label for a strip caption: str actions pass through; touch tuples compact."""
+    if isinstance(action, str):
+        return action
+    return f"touch{action[1]},{action[2]}"
+
+
 def main() -> int:
+    from core.navigators import apply_action
     console, rom, kind, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
     n_steps = int(sys.argv[5]) if len(sys.argv) > 5 else N_STEPS
     emu, ff = _emu(console, rom)
@@ -83,9 +95,9 @@ def main() -> int:
             curr = ff(emu)
             buttons = step(prev, curr, last)
             if i % KEEP_EVERY == 0:
-                frames.append((i, curr.copy(), "+".join(buttons)))
-            for b in buttons:
-                emu.press(b)
+                frames.append((i, curr.copy(), "+".join(_label(a) for a in buttons)))
+            for action in buttons:
+                apply_action(emu, action)
             prev, last = curr, buttons
         frames.append((n_steps, ff(emu), "END"))
         _save_strip(frames, out)

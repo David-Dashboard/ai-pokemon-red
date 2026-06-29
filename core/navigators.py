@@ -27,6 +27,15 @@ litellm.suppress_debug_info = True
 # GB/GBA share these; NDS adds x/y (+touch, handled elsewhere).
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 
+# NDS 12-button set (import-safe: py-desmume is guarded inside DeSmuMEEmulator.__init__).
+from core.nds_emulator import BUTTONS as NDS_BUTTONS  # noqa: E402
+# Touch-target detector for NDS bottom screen (numpy-only, no heavy deps).
+from core.nds_perceiver import _detect_touch_targets  # noqa: E402
+
+# Stylus hold and settle frame counts (mirrors NDSPerceptionPlugin._do_touch).
+_TOUCH_HOLD = 6
+_TOUCH_SETTLE = 4
+
 _PROMPT = (
     "You are playing a video game and the screen is currently a TITLE SCREEN, MENU, or other non-gameplay "
     "UI. Your goal is to reach actual GAMEPLAY (a controllable character/scene). Pick the SINGLE best button "
@@ -34,6 +43,130 @@ _PROMPT = (
     "up/down/left/right, cancel with 'b'. Reply with ONLY the button word, nothing else.\n"
     "Valid buttons: a, b, start, select, up, down, left, right."
 )
+
+
+def apply_action(emu, action, *, hold: int = _TOUCH_HOLD, settle: int = _TOUCH_SETTLE) -> None:
+    """Dispatch one action to the emulator.
+
+    touch tuple ("touch", x, y) → stylus tap with hold+settle ticks (safe fallback to "a" if
+    coords are out of range or the emulator does not support touch). Any other value → emu.press().
+    Never raises.
+    """
+    if isinstance(action, tuple) and len(action) == 3 and action[0] == "touch":
+        try:
+            x, y = int(action[1]), int(action[2])
+        except (TypeError, ValueError):
+            emu.press("a")
+            return
+        if (0 <= x <= 255 and 0 <= y <= 191
+                and hasattr(emu, "touch") and hasattr(emu, "touch_release")):
+            emu.touch(x, y)
+            emu.tick(hold)
+            emu.touch_release()
+            emu.tick(settle)
+        else:
+            emu.press("a")
+    else:
+        emu.press(str(action))
+
+
+def _parse_nds_action(text: str, targets: list, buttons: Sequence[str]) -> "str | tuple | None":
+    """Parse a model reply into a button string or touch tuple.
+
+    Accepts (case-insensitive, tolerant of surrounding fluff):
+      TOUCH <i>       — index into area-sorted targets list → ("touch", cx, cy)
+      TOUCH <x> <y>  — raw coords, range-checked → ("touch", x, y)
+      else            — delegate to _parse_button for a standard button word.
+    Returns None if nothing matches.
+    """
+    if not text:
+        return None
+    t = text.strip()
+    # Raw coords: TOUCH <x> <y>
+    m = re.search(r"\btouch\s+(\d+)\s+(\d+)", t, re.IGNORECASE)
+    if m:
+        x, y = int(m.group(1)), int(m.group(2))
+        if 0 <= x <= 255 and 0 <= y <= 191:
+            return ("touch", x, y)
+        # Out of range — fall through to button parse.
+        return None
+    # Index: TOUCH <i>
+    m = re.search(r"\btouch\s+(\d+)", t, re.IGNORECASE)
+    if m:
+        i = int(m.group(1))
+        if 0 <= i < len(targets):
+            tgt = targets[i]
+            return ("touch", tgt["cx"], tgt["cy"])
+        # Out of range — fall through.
+        return None
+    return _parse_button(text, buttons)
+
+
+class NDSTouchNavigator:
+    """NDS navigator that can issue both button presses and stylus taps.
+
+    mode='vlm' shows the top screen image to a local VLM; mode='ocr' sends text only.
+    Detects touch targets on the bottom screen and offers them to the model as numbered
+    options so touch-menu UIs can be cleared without knowing coordinates in advance.
+    """
+
+    def __init__(self, mode: str = "vlm", model: Optional[str] = None,
+                 api_base: Optional[str] = None,
+                 buttons: Sequence[str] = NDS_BUTTONS, upscale: int = 3):
+        self.mode = mode
+        self.buttons = buttons
+        self.upscale = upscale
+        self.model = model or ("openai/qwen2.5-vl" if mode == "vlm" else "openai/qwen2.5-text")
+        self.api_base = api_base or ("http://localhost:8080/v1" if mode == "vlm" else "http://localhost:8081/v1")
+
+    def decide(self, frame, buttons: Optional[Sequence[str]] = None) -> "str | tuple":
+        bs = tuple(buttons or self.buttons)
+        a = np.asarray(frame)
+        if a.shape[0] == 384:
+            top = a[:192]
+            bot = a[192:]
+        else:
+            # Defensive: single screen passed — treat as top, no touch targets.
+            top = a
+            bot = None
+        targets = _detect_touch_targets(bot) if bot is not None else []
+
+        btn_list = ", ".join(bs)
+        if targets:
+            tgt_lines = "\n".join(
+                f"  TOUCH {i} -> ({t['cx']},{t['cy']})" for i, t in enumerate(targets)
+            )
+        else:
+            tgt_lines = "  (none detected)"
+
+        prompt = (
+            "You are playing a Nintendo DS game and the screen shows a TITLE SCREEN, MENU, or other "
+            "non-gameplay UI. Your goal is to reach actual GAMEPLAY (a controllable character or scene).\n"
+            f"NDS buttons: {btn_list}.\n"
+            "Touch targets detected on the bottom (touch) screen (numbered, largest area first):\n"
+            + tgt_lines + "\n"
+            "Reply with EXACTLY ONE of:\n"
+            "  - A button word (e.g. a, start, up)\n"
+            "  - TOUCH <index>  (tap a numbered target above)\n"
+            "  - TOUCH <x> <y>  (raw bottom-screen pixel, x 0-255 y 0-191)\n"
+            "Reply with ONLY that — no other text."
+        )
+
+        if self.mode == "vlm":
+            content = [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": _img_data_url(top, self.upscale)}},
+            ]
+        else:
+            content = [{"type": "text", "text": prompt}]
+
+        r = litellm.completion(
+            model=self.model, api_base=self.api_base, api_key="local",
+            messages=[{"role": "user", "content": content}],
+            max_tokens=16, temperature=0,
+        )
+        raw = r.choices[0].message.content
+        return _parse_nds_action(raw, targets, bs) or "a"
 
 
 def _img_data_url(frame, upscale: int = 3) -> str:
