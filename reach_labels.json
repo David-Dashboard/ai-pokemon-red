@@ -1,0 +1,290 @@
+[
+  {
+    "console": "gb",
+    "rom": "Azure Dreams (USA) (SGB Enhanced) (GB Compatible).gbc",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
+    "held_out": false,
+    "detector_reached": false,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Crystalis (USA).gbc",
+    "held_out": true,
+    "detector_reached": true,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Dragon Warrior Monsters (USA, Europe) (SGB Enhanced) (GB Compatible).gbc",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "gameplay",
+    "truth_reached": true
+  },
+  {
+    "console": "gb",
+    "rom": "F-1 Race (World).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Final Fantasy Adventure (USA).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Gauntlet II (USA, Europe).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "gameplay",
+    "truth_reached": true
+  },
+  {
+    "console": "gb",
+    "rom": "Kirby's Dream Land (USA, Europe).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "gameplay",
+    "truth_reached": true
+  },
+  {
+    "console": "gb",
+    "rom": "Legend of Zelda, The - Link's Awakening (U) (V1.2) [!].gb",
+    "held_out": true,
+    "detector_reached": true,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Metroid II - Return of Samus (World).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "gameplay",
+    "truth_reached": true
+  },
+  {
+    "console": "gb",
+    "rom": "Mortal Kombat (USA, Europe).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Pokemon - Gold Version (USA, Europe) (SGB Enhanced) (GB Compatible).gbc",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "PokemonRed.gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Space Invaders (USA) (SGB Enhanced).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "gameplay",
+    "truth_reached": true
+  },
+  {
+    "console": "gb",
+    "rom": "Super Mario Land (World) (Rev 1).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "gameplay",
+    "truth_reached": true
+  },
+  {
+    "console": "gb",
+    "rom": "Sword of Hope II, The (USA).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "gb",
+    "rom": "Tetris Plus (USA, Europe) (SGB Enhanced).gb",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "0247 - Mortal Kombat Advance (U)(Venom).gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "2288 - 2 in 1 - Dragon Ball Z - The Legacy of Goku I & II (U)(Rising Sun).gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "2689 - Final Fantasy VI Advance (U)(Xenophobia).gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "Kirby - Nightmare in Dreamland (U) [!].gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "Legend of Zelda, The - The Minish Cap (U).gba",
+    "held_out": true,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "Naruto - Ninja Council 2 (U).gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "Pokemon - Emerald Version (U).gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "gba",
+    "rom": "Super Mario Advance 2 - Super Mario World (U) [!].gba",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "menu",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "FIFA Street 3 (USA) (En,Fr,Es).nds",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Harry Potter and the Order of the Phoenix (USA).nds",
+    "held_out": false,
+    "detector_reached": false,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Kirby Super Star Ultra (USA).nds",
+    "held_out": false,
+    "detector_reached": false,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Legend of Zelda, The - Spirit Tracks (USA) (En,Fr,Es) (Rev 1).nds",
+    "held_out": true,
+    "detector_reached": false,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Mario Kart DS (USA) (En,Fr,De,Es,It).nds",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "New Super Mario Bros. (USA).nds",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Phoenix Wright - Ace Attorney - Trials and Tribulations (USA).nds",
+    "held_out": false,
+    "detector_reached": false,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Pokemon - White Version (USA, Europe) (NDSi Enhanced).nds",
+    "held_out": false,
+    "detector_reached": false,
+    "label": "loading",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Professor Layton and the Curious Village (USA, Australia).nds",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Resident Evil - Deadly Silence (USA).nds",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  },
+  {
+    "console": "nds",
+    "rom": "Star Wars - The Force Unleashed (USA) (En,Fr,De,Es,It).nds",
+    "held_out": false,
+    "detector_reached": true,
+    "label": "title",
+    "truth_reached": false
+  }
+]

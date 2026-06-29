@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-06-29._
 
 ---
 
@@ -81,6 +81,139 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 **⇒ Read the TOP block first — this section is append-on-top (newest → oldest). Picking up COLD? `git fetch` +
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
+
+**⇒ NEWEST (2026-06-29, late) — SUPERSEDES the PR #26 block directly below. The NDS and GBA arcs are BOTH
+MERGED to `main`; ZERO open PRs. Now on branch `feat/nds-reachability` (off `main`) building the boot-to-gameplay
+REACH layer + the VLM-vs-OCR+LLM menu-navigator bake-off — ALL UNCOMMITTED (untracked). Picking up COLD? `main`
+is far ahead of the blocks below; trust git.**
+
+- **`main` = `3693d4f`. Three arcs landed 2026-06-29 — the "7 open PRs to address" in the block below are ALL
+  resolved:**
+  - **Perception layer (#26, squash `082b1b7`)** — entity detection, pose-drift confidence, tilemap
+    relocalization, the generic bench harness, the Cave Noire `0xC120` BCD oracle fix. *(Relocalization still
+    NOT bench-validated for improvement — carried forward.)*
+  - **NDS arc — MERGED** (`#27`/`#28` direct + the **`#34` bundle** `merge/nds-into-main`): py-desmume emulator
+    behind the Emulator Protocol, prior-free screen-role discovery, touch-as-action, NDS bench. `#29`/`#30`/`#31`/
+    `#33` CLOSED as superseded by the `#34` squash. This was the parallel-session NDS stack — now reviewed + landed.
+  - **GBA end-to-end (#35)** — `core/gba_emulator.py` on Linux **mgba** + console-agnostic perception; `.gba`
+    camera defaults to **follow** (adversarial-review #3). The GBA path didn't just build — it SHIPPED. Recipe:
+    `reports/2026-06-29-gba-mgba-recipe.md`.
+  - **`#24`/`#25` CLOSED** (not merged). **No open PRs.** New on `main`: `reports/2026-06-29-gba-mgba-recipe.md`,
+    `reports/2026-06-29-relocalization-notes.md`.
+- **ACTIVE — `feat/nds-reachability` (off `main`; NOTHING committed — every file below is untracked).** The
+  boot-to-gameplay REACH layer: you can't end-to-end-bench a game you can't boot INTO gameplay (the gate before
+  the GB/GBC bench named in the #26-era NEXT).
+  - `core/reach_gameplay.py` — drive any Emulator-Protocol emulator cold-boot→gameplay via the modality
+    escape-ladder (`core/autoplay.py:ModalAutoPolicy`); world-agnostic, `frame_fn` for NDS dual-screen; declares
+    `reached` after `stable_k` consecutive "gameplay" reads; returns telemetry (steps-to-first/stable + mode trace).
+  - `core/navigators.py` — navigators for the menus the blind ladder CAN'T pass (naming grids, file/character
+    select). **Two modes (vlm/ocr) × harnesses:** one-shot (`VLMNavigator` pixels→VLM; `MenuPerceiverNavigator`
+    RapidOCR + contrast cursor-cue→text→LLM), `HarnessNavigator` (action-history + stall/loop warnings),
+    `ReActNavigator` (one accumulating Thought/Action/Observation conversation). All free via LiteLLM → local
+    llama.cpp `llama-server` (**VLM :8080, text :8081**); output forced to a valid button (parse + optional GBNF).
+  - `eval/reach_measure.py` — measure reach for ONE ROM, one JSON line + optional film-strip (one-ROM-per-process
+    so a frozen ROM can't poison the sweep). `eval/bakeoff.py` — the head-to-head:
+    `python -m eval.bakeoff <console> <rom> {ladder|vlm|ocr|vlm-h|ocr-h} out.png`; saves a captioned trajectory
+    strip (final tile = the verdict to eyeball). **Single-environment** — run where emulator + llama-server co-live
+    (**WSL for gb/gba**).
+  - `reach_labels.json` + `datasets/reach/strips/` (gb+gba strips + `index.html`) — hand-labels of where the
+    LADDER actually lands. **EARLY FINDING: the modality detector FALSE-POSITIVES "reached"** (e.g. Azure Dreams /
+    Crystalis hand-labelled `loading` but `detector_reached=true`; Cave Noire stuck in `menu`) — confirms the
+    #26-era "fine menu/mode detection is near-chance" weakness, and marks the ROMs where the navigators must earn
+    their keep.
+  - Still untracked + carried from the #26 era: `reports/perception-ontology.md`, `reports/perception-cnn-plan.md`,
+    `datasets/ontology/` (modality dataset + labeler + first-pass labels).
+- **⇒ NEXT:** run the **VLM vs OCR+LLM bake-off** (vs the ladder baseline) on the menu-stuck ROMs — needs WSL +
+  two local llama-servers (VLM :8080, text :8081) + RapidOCR. Then commit/split the reach branch (a big untracked
+  pile); bench-validate relocalization (open from #26); CNN portfolio (mode-first) once labeling has per-class data.
+
+**⇒ NEWEST (2026-06-29) — PR #26 MERGED (the perception layer is on `main`); GBA mgba-container build in
+progress; open-PR cleanup. The 2026-06-28 reframing work shipped + hardened through 3 review rounds.**
+
+- **PR #26 MERGED to `main` (squash, `082b1b7`).** The perception layer: **entity detection** (camera-class
+  dispatched — S7 routed by S3, follow-cameras return [] not garbage), **pose-drift confidence**
+  (0.7→0.2 on drift + `pose["uncertain"]`), **tilemap relocalization** (loop-closure re-anchor), the generic
+  single-game + batch **bench harness** (`play_generic.py`/`bench_generic.py`), the **Cave Noire oracle fix**
+  (`0xD389`→`0xC120` BCD), `core/entities.py`, the `eval/_eval_utils.py` refactor, + the avatar-localization
+  **bake-off** base it carried (the losing localizer variants + `compare_localizers` + relative-motion docs).
+- **Hardened across 3 review iterations** (`/code-review high`): **2 critical** (relocalization was DEAD code —
+  recorded the signature before matching, so it never fired; entity detection wasn't camera-gated) + ~20
+  medium/cleanup — ALL fixed. The relocalization fix is **proven to fire** (synthetic loop-closure) but **NOT
+  yet bench-validated for IMPROVEMENT** — the real follow-up (`bench_generic` before/after on Crystalis/Zelda).
+  See `reports/2026-06-29-relocalization-notes.md` (merged) for the next-steps + known limits (identical-room
+  false-positive needs motion-consistency; it only fires for pure-dead-reckoning fixed-camera worlds, NOT the
+  two world_mcp worlds, so no reasoning-brain loop exercises it yet).
+- **GBA mgba-container (IN PROGRESS, branch `feat/gba-mgba-container` off `main`).** Building a Dockerfile +
+  `core/gba_emulator.py` on the **Linux mgba** binding (the keeper — spike proved 4/4: framebuffer + RAM read +
+  savestates). **Docker is currently DOWN on this machine** → wrapper validated against the WSL mgba build; the
+  in-container smoke-test is deferred until Docker is up. SUPERSEDES the pyboy-advance draft (local-only branch
+  `feat/gba-emulator`, no RAM/savestates).
+- **OPEN PRs to address (7):** #24 (stale 2026-06-26 handoff docs — likely close), #25 (`feat/adr-002-gate`:
+  cross-game consequence study + perception-needs report — real, merge if clean), AND **#27–#31 = a full NDS
+  stack** (py-desmume emulator behind the Protocol, prior-free screen-role discovery, touch-as-action, NDS
+  bench) — **parallel work NOT from the perception session; needs David's context before merging.**
+- **STILL UNCOMMITTED (for a docs/dataset branch off `main`):** this `HANDOFF.md` edit,
+  `reports/perception-ontology.md`, `reports/perception-cnn-plan.md`, `datasets/ontology/` (modality dataset +
+  labeler + David's first-pass labels, 508 frames GB+GBC+GBA, PNG metadata + manifest).
+- **⇒ NEXT:** finish the GBA container (needs Docker up for the in-container smoke-test) → bench-validate
+  relocalization → docs/dataset branch → resolve the open PRs → then the CNN portfolio (mode classifier first,
+  `reports/perception-cnn-plan.md`) once labeling has enough per-class data.
+
+**⇒ NEWEST (2026-06-28) — PERCEPTION ONTOLOGY + CNN-PORTFOLIO PLAN, GBA EMULATOR PATH RESOLVED, ENTITY-DETECTION
+MEASURED. A reframing session: stopped polishing isolated detectors and defined the END-STATE structure. Branch
+`feat/entity-perception` carries a pile of UNCOMMITTED work — see "uncommitted" below. Nothing pushed/PR'd this
+session.**
+
+- **THE REFRAME — the perception ONTOLOGY (`reports/perception-ontology.md`, canonical).** Perception = a
+  pipeline where **meta-perception (routers) configures content-perception, then fusion assembles.** 11 stages:
+  Phase I routers S1 substrate · S2 mode/context · S3 camera-class · S4 embodiment/agency · S5 spatial-topology;
+  Phase II content (dispatched) S6 localization · S7 entities · S8 text/HUD · S9 affordances; Phase III S10
+  fusion · S11 assembly. **Axes stable across GB→GBA→NDS→desktop→robot; only the cell values change.** Every
+  class-bounded failure we've hit = "a primitive run outside its ontology cell." Build implication: **router
+  first** (S2/S3/S4 = the weak-coverage CNN targets), then fill the cells.
+- **CNN-PORTFOLIO PLAN (`reports/perception-cnn-plan.md`, PLAN ONLY — no training authorized).** 4 lightweight
+  CPU models: (1) mode classifier S2, (2) camera+embodiment S3/S4 (frame-pair), (3) avatar keypoint S6, (4)
+  entity detector S7 (bbox+class). OCR=reuse RapidOCR; segmentation=deferred climb. **Leave-one-GAME-out**
+  (frame splits leak); **weak-supervision bootstrap** from oracles+routers+contingency (~10× less hand-label);
+  **general-not-per-game** is the acceptance bar. Order: labeling pipeline → train #1 mode (proves the loop) →
+  run bench → re-rank #2/#3/#4. ⚠️ Introduces training + torch into a training-free repo = deliberate new-dep.
+- **DIRECTION DECIDED: go end-to-end ("ship the thing"), stop polishing detectors.** Run brain + existing
+  perception on whole games, instrument where TASK progress fails — let measured failures rank what to build.
+  GB/GBC bench first (17 ROMs, calibrated, free), GBA next, NDS deferred.
+- **GBA EMULATOR — resolved to LINUX mgba in a container.** Windows is a dead end (`mgba` no Win wheel;
+  `pyboy-advance` does pixels+buttons but LACKS RAM-read + savestates). **WSL `mgba` spike PASSED 4/4:
+  framebuffer (160,240,3) + RAM read (oracle) + savestate roundtrip confirmed** (source-built mgba 0.10.2; full
+  API→Protocol mapping in the agent transcript). ⇒ **Containerize** (Dockerfile; try clean `pip install mgba` on
+  py3.11 first), write `core/gba_emulator.py` (mgba flavor). Retires pyboy-advance + libretro-on-Windows. NDS
+  still deferred (dual-screen + touch + 3D-degrades-tile-primitives). 8 GBA ROMs unzipped in `roms/gba/`
+  (Emerald, Minish Cap, Kirby NiD, SMW, FF6, DBZ, Naruto, MK Advance); 2 corrupt (Harvest Moon, Trollz — re-grab).
+- **ENTITY DETECTION wired + measured (`core/entities.py`, `eval/probe_entities.py`).** 8-conn option added to
+  `blob.py` + a core `EntityDetector` surfaced in `spatial_memory["entities"]` (NOT affordances — entities are
+  perceptual facts; affordance needs grounding). **8-conn+min_area lifts fixed-cam precision 6%→~22%, but it's a
+  MOTION detector → blind to STATIC entities (recall ~12%) and floods on follow/scroll (~3%).** Not surfaced as
+  confident → consistent with the ontology (S7 needs the right cell + eventually the CNN). 381 tests green. Slow
+  stock probe replaced by a fast labelled-frame-only scorer (`scratchpad/fast_entity_score.py`).
+- **KILLED the relative-motion pipeline (adversarial review).** Feeding the contingency localizer a
+  camera-compensated residual provably ZEROES a centered avatar's motion (follow cams) — it rebuilt the
+  already-counterproductive `ScrollingLocalizer`; and odometry world-pos isn't scorable vs v2 SCREEN labels.
+  Don't revive it. (Old branch `feat/relative-motion` was renamed `feat/entity-perception`.)
+- **QA confirmed the Tier-1 bedrock (`scratchpad/qa-numpy-vs-scipy-opencv.md`).** `blob.py` CC = pure 4-conn,
+  100% match to `scipy.ndimage.label` real+synthetic. `best_shift` direction 82.8% vs `cv2.phaseCorrelate`,
+  **0 real directional errors**. Magnitude unreliable by design. ⇒ keep numpy; no scipy/OpenCV needed.
+- **PERCEPTION INVENTORY (what works, no systematic error):** Tier-1 bedrock = ego-motion **direction** +
+  connected-components + **OCR-on-text** (HP 44/46). Tier-2 in-class = pose dead-reckoning on **top-down**
+  (~100%/0.02 Pokémon, 83%/0.02 Gauntlet; BREAKS on 1D-scroll Kirby/Metroid) + **coarse** modality
+  (gameplay-vs-title ~83%). Tier-3 systematic-error = entities, follow-camera localization, **fine**
+  menu-detection (near-chance cross-game: pokemon 55%/spaceinv 64%). Corpus **23/25 monochrome** → RGB helps
+  only the 2 colour games (crystalis, gold) + new colour GBA titles.
+- **⇒ NEXT:** (1) GBA mgba container + `core/gba_emulator.py`; (2) GB/GBC end-to-end bench (spike ONE top-down
+  game first — Cave Noire/Gauntlet — then fan out ~15 play-subagents); (3) CNN portfolio, mode-first. **DECIDE
+  the commit/split of the uncommitted pile before building more.**
+- **UNCOMMITTED on `feat/entity-perception` (3 unrelated concerns — likely 3 branches/commits):** (a) entity
+  work — `core/{blob,grid_perceiver,perception_plugin}.py` + `core/entities.py` + `eval/probe_entities.py` +
+  `tests/test_entities.py`; (b) `core/gba_emulator.py` (pyboy-advance draft — to be superseded by mgba); (c) the
+  2 reports notes + this HANDOFF edit. Open from before: PR #24, #25, and `feat/avatar-localization` local
+  commits (`4ef895b`, `eed10e7`).
 
 **⇒ NEWEST (2026-06-26, late) — AVATAR-LOCALIZATION BAKE-OFF (the baseline wins) + the RELATIVE-MOTION pipeline
 as the next build. Branch `feat/avatar-localization` (commit `4ef895b`; off `main`, NOT PR'd). SIBLING work on

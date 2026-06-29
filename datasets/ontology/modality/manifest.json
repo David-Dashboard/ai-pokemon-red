@@ -1,0 +1,35 @@
+{
+ "dataset": "modality",
+ "version": 1,
+ "created": "2026-06-28",
+ "classes": [
+  "gameplay",
+  "menu",
+  "dialog",
+  "transition",
+  "title"
+ ],
+ "class_note": "pause/inventory/map -> menu; game-over -> discuss (gameover candidate)",
+ "frame_count": 508,
+ "frames_with_oracle": 0,
+ "platforms": {
+  "gb": 280,
+  "gba": 228
+ },
+ "metadata_keys": [
+  "game",
+  "platform",
+  "source_run",
+  "src_frame",
+  "oracle"
+ ],
+ "labels_file": "labels.json",
+ "label_count": 618,
+ "label_distribution": {
+  "menu": 238,
+  "gameplay": 267,
+  "transition": 111,
+  "dialog": 2
+ },
+ "labels_note": "first pass; title+map folded into menu by labeler; 110 orphan labels for pruned frames; 0 frames still unlabeled"
+}
