@@ -263,3 +263,134 @@ def test_nds_perceiver_injects_touch_targets_into_spatial_memory():
     targets = sm["touch_targets"]
     assert isinstance(targets, list)
     assert len(targets) >= 1, f"expected at least 1 target, got {targets}"
+
+
+# ---------------------------------------------------------------------------
+# New tests (F1/F2/F3/F5 fixes — address code-review findings)
+# ---------------------------------------------------------------------------
+
+# (a) touch NOT advertised on GB worlds, IS on NDS
+# -------------------------------------------------------
+
+def test_gb_plugin_does_not_advertise_touch():
+    """GB PerceptionPlugin must NOT have a touch tool — it was leaking via _STATIC_TOOLS."""
+    from core.perception_plugin import PerceptionPlugin
+    plugin = PerceptionPlugin(emulator=FakeEmu(), perceiver=FakePerceiver(), out_dir="/tmp/nds_touch_test")
+    names = [s.name for s in plugin.tools("test-agent")]
+    assert "touch" not in names, f"touch must NOT be in GB plugin tools, got: {names}"
+
+
+def test_nds_plugin_does_advertise_touch():
+    """NDSPerceptionPlugin MUST have a touch tool."""
+    plugin = _make_plugin()
+    names = [s.name for s in plugin.tools("test-agent")]
+    assert "touch" in names, f"touch must be in NDS plugin tools, got: {names}"
+
+
+def test_world_mcp_static_tools_gb_no_touch():
+    """world_mcp._static_tools('cave_noire') must NOT include touch."""
+    from world_mcp import _static_tools
+    tools = _static_tools("cave_noire")
+    names = [t["name"] for t in tools]
+    assert "touch" not in names, f"touch must NOT be in GB world static tools, got: {names}"
+
+
+def test_world_mcp_static_tools_nds_has_touch():
+    """world_mcp._static_tools('nds') MUST include touch."""
+    from world_mcp import _static_tools
+    tools = _static_tools("nds")
+    names = [t["name"] for t in tools]
+    assert "touch" in names, f"touch must be in NDS world static tools, got: {names}"
+
+
+# (b) Exact-equality freshness assertion
+# -------------------------------------------------------
+
+def test_assert_action_tools_fresh_exact_equality_passes():
+    """assert_action_tools_fresh passes when static == live (exact match)."""
+    from world_mcp import assert_action_tools_fresh
+    plugin = _make_plugin()
+    # NDSPerceptionPlugin exposes press_button, press_sequence, wait, touch.
+    # _NDS_ACTION_TOOLS has the same set. Should not raise.
+    # (FakeEmu has no BUTTONS class attr, so plugin.tools() returns GB 8-button enum for press tools.
+    # That will cause a mismatch vs _NDS_ACTION_TOOLS which uses NDS 12 buttons. We test the GB path.)
+    from core.perception_plugin import PerceptionPlugin
+    gb_plugin = PerceptionPlugin(emulator=FakeEmu(), perceiver=FakePerceiver(), out_dir="/tmp/nds_touch_test")
+    # GB plugin has 3 tools; _GB_ACTION_TOOLS also has 3. But button enum uses FakeEmu fallback (8 buttons).
+    # We only test that the function can be called and raises SystemExit on mismatch.
+    from world_mcp import _GB_ACTION_TOOLS
+    from core.contracts import ToolSpec
+    # Construct a mock plugin whose tools() exactly match _GB_ACTION_TOOLS
+    class _ExactPlugin:
+        def tools(self, agent_id):
+            return [ToolSpec(name=t["name"], description="", schema=t["inputSchema"], cost=1, mutating=True)
+                    for t in _GB_ACTION_TOOLS]
+    assert_action_tools_fresh(_ExactPlugin(), "cave_noire")  # must not raise
+
+
+def test_assert_action_tools_fresh_raises_on_drift():
+    """assert_action_tools_fresh raises SystemExit when live plugin has extra or missing tools."""
+    from world_mcp import assert_action_tools_fresh
+    from core.contracts import ToolSpec
+
+    class _ExtraPlugin:
+        def tools(self, agent_id):
+            return [ToolSpec(name="press_button", description="", schema={"type": "object", "properties": {}, "required": []}, cost=1, mutating=True),
+                    ToolSpec(name="extra_tool", description="", schema={"type": "object", "properties": {}, "required": []}, cost=1, mutating=True)]
+
+    import pytest
+    with pytest.raises(SystemExit):
+        assert_action_tools_fresh(_ExtraPlugin(), "cave_noire")
+
+
+# (c) touch exception → ok=False
+# -------------------------------------------------------
+
+def test_touch_exception_becomes_ok_false():
+    """Any exception inside _do_touch must be caught and returned as ok=False (not propagate)."""
+    class BrokenEmu(FakeEmu):
+        def touch(self, x: int, y: int) -> None:
+            raise RuntimeError("simulated hardware fault")
+
+    plugin = _make_plugin(BrokenEmu())
+    res = plugin.handle(_call("touch", {"x": 100, "y": 50}))
+    assert not res.ok, "exception in touch must become ok=False"
+    assert res.error is not None and len(res.error) > 0
+
+
+# (d) NDS buttons accepted by NDSPerceptionPlugin
+# -------------------------------------------------------
+
+class FakeNDSEmu(FakeEmu):
+    """Fake NDS emulator: exposes BUTTONS = NDS 12-button set."""
+    BUTTONS = ("a", "b", "x", "y", "l", "r", "start", "select", "up", "down", "left", "right")
+
+    def press(self, button: str, hold_frames: int = 8, settle_frames: int = 16) -> None:
+        pass  # accept any button
+
+
+def test_nds_buttons_accepted_by_plugin():
+    """NDSPerceptionPlugin must accept NDS-specific buttons x, y, l, r."""
+    emu = FakeNDSEmu()
+    plugin = NDSPerceptionPlugin(emulator=emu, perceiver=FakePerceiver(), out_dir="/tmp/nds_touch_test")
+    for btn in ("x", "y", "l", "r"):
+        res = plugin.handle(_call("press_button", {"button": btn}))
+        assert res.ok, f"NDS button '{btn}' was rejected: {res.error}"
+
+
+def test_gb_buttons_still_accepted_by_base_plugin():
+    """GB PerceptionPlugin must still accept all 8 original GB buttons (no regression)."""
+    from core.perception_plugin import PerceptionPlugin
+    plugin = PerceptionPlugin(emulator=FakeEmu(), perceiver=FakePerceiver(), out_dir="/tmp/nds_touch_test")
+    for btn in ("a", "b", "start", "select", "up", "down", "left", "right"):
+        res = plugin.handle(_call("press_button", {"button": btn}))
+        assert res.ok, f"GB button '{btn}' was rejected: {res.error}"
+
+
+def test_nds_only_buttons_rejected_by_gb_plugin():
+    """GB PerceptionPlugin must reject NDS-only buttons x, y, l, r."""
+    from core.perception_plugin import PerceptionPlugin
+    plugin = PerceptionPlugin(emulator=FakeEmu(), perceiver=FakePerceiver(), out_dir="/tmp/nds_touch_test")
+    for btn in ("x", "y", "l", "r"):
+        res = plugin.handle(_call("press_button", {"button": btn}))
+        assert not res.ok, f"NDS button '{btn}' must be rejected by GB plugin but was accepted"

@@ -52,6 +52,9 @@ class Emulator(Protocol):
 class PyBoyEmulator:
     """Live PyBoy-backed Game Boy. Wraps version drift behind a small surface."""
 
+    # Expose BUTTONS as a class attribute so PerceptionPlugin._buttons() can discover it.
+    BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
+
     def __init__(self, rom_path: str, headless: bool = True, sound: bool = False,
                  realtime: Optional[bool] = None, record_path: Optional[str] = None,
                  record_fps: int = 30, record_scale: int = 3):

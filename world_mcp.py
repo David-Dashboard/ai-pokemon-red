@@ -49,13 +49,21 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from core.brains import ExploreBrain        # noqa: E402  (the free System-1 autopilot)
 from core.contracts import ToolCall         # noqa: E402
 from core.gateway import Gateway            # noqa: E402
-from core.gb_emulator import BUTTONS        # noqa: E402  (cheap import — no PyBoy; for the static tool list)
+from core.gb_emulator import BUTTONS as _GB_BUTTONS   # noqa: E402  (cheap import — no PyBoy; for the static tool list)
+import core.nds_emulator as _nds_emu_mod   # noqa: E402  (for NDS BUTTONS; lazy-guard: import succeeds even without py-desmume)
 
 import importlib                            # noqa: E402  (worlds loaded by --game from GAMES — game-agnostic)
 
 # Per-world registry so this harness serves ANY world via `--game`, not just Cave Noire. Each entry is the
 # import paths + the per-world bits (default ROM, the RAM `watch` for the SCORING oracle — never on the wire).
 # Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
+_NDS_WORLDS = frozenset({"nds"})   # game keys that are NDS worlds (get touch + NDS buttons)
+
+# Lazy import so world_mcp.py is importable without py-desmume installed.
+def _nds_sandbox():
+    from core.permissions import Allowlist
+    return Allowlist({"press_button", "press_sequence", "wait", "touch"})
+
 GAMES = {
     "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
                    "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoirePerceiver",
@@ -69,6 +77,12 @@ GAMES = {
                  "perceiver_mod": "games.gauntlet.perceiver", "perceiver": "GauntletPerceiver",
                  "rom": "roms/Gauntlet II (USA, Europe).gb",
                  "watch": {"x": 0xC286, "y": 0xC2C6}},
+    # NDS world: uses NDSPerceptionPlugin (adds touch) + NDSPerceiver + NDS BUTTONS.
+    "nds": {"pkg": "core.nds_perception_plugin", "plugin": "NDSPerceptionPlugin",
+            "sandbox": "NDS_MCP_SANDBOX",
+            "perceiver_mod": "core.nds_perceiver", "perceiver": "NDSPerceiver",
+            "rom": "roms/nds/game.nds",   # override with --rom
+            "watch": {}},
 }
 
 _AGENT = "mcp-brain"
@@ -113,67 +127,89 @@ _REMEMBER_TOOL = {
                     "Within-run only: forgotten when the session ends (that's intentional)."),
     "inputSchema": {"type": "object", "properties": {"lesson": {"type": "string"}}, "required": ["lesson"]},
 }
-# Static action-tool specs (mirror games/cave_noire's PerceptionPlugin.tools()) so `tools/list` can answer
-# WITHOUT booting the emulator — the emulator is built lazily on the first tool CALL (see main()). This keeps
-# the `initialize`/`tools/list` handshake instant so the MCP client doesn't time out waiting on a PyBoy boot.
-_BUTTON_ENUM = {"type": "string", "enum": list(BUTTONS)}
-_PRESS_BUTTON_TOOL = {
-    "name": "press_button",
-    "description": "Move one tile (up/down/left/right) or act with `a` (interact / pick up).",
-    "inputSchema": {"type": "object",
-                    "properties": {"button": _BUTTON_ENUM,
-                                   "hold_frames": {"type": "integer", "minimum": 1, "maximum": 120}},
-                    "required": ["button"]},
-}
-_PRESS_SEQUENCE_TOOL = {
-    "name": "press_sequence",
-    "description": "Press several buttons in order (4-directional, no diagonals), e.g. [\"up\",\"up\",\"left\"].",
-    "inputSchema": {"type": "object",
-                    "properties": {"buttons": {"type": "array", "items": _BUTTON_ENUM, "maxItems": 16}},
-                    "required": ["buttons"]},
-}
-_WAIT_TOOL = {
-    "name": "wait",
-    "description": "Advance the game without input — let an animation finish.",
-    "inputSchema": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}},
-                    "required": []},
-}
+# Static action-tool specs (mirror the live plugin's tools()) so `tools/list` can answer WITHOUT booting
+# the emulator — the emulator is built lazily on the first tool CALL (see main()). This keeps the
+# `initialize`/`tools/list` handshake instant so the MCP client doesn't time out waiting on a boot.
+#
+# IMPORTANT: the button set is game-dependent.
+#   GB worlds  (cave_noire, gauntlet, …) → _GB_BUTTONS (8 buttons; NO touch)
+#   NDS worlds (nds)                     → _nds_emu_mod.BUTTONS (12 buttons) + _TOUCH_TOOL
+#
+# _static_tools(game) returns the correct per-game list; the `tools/list` handler calls it.
+# assert_action_tools_fresh() does an EXACT-EQUALITY check (not intersection) so static==live is always true.
+
+def _make_press_tools(buttons: tuple) -> list[dict]:
+    """Return [press_button, press_sequence, wait] spec dicts for the given button set."""
+    button_enum = {"type": "string", "enum": list(buttons)}
+    return [
+        {
+            "name": "press_button",
+            "description": "Move one tile (up/down/left/right) or act with `a` (interact / pick up).",
+            "inputSchema": {"type": "object",
+                            "properties": {"button": button_enum,
+                                           "hold_frames": {"type": "integer", "minimum": 1, "maximum": 120}},
+                            "required": ["button"]},
+        },
+        {
+            "name": "press_sequence",
+            "description": "Press several buttons in order (4-directional, no diagonals), e.g. [\"up\",\"up\",\"left\"].",
+            "inputSchema": {"type": "object",
+                            "properties": {"buttons": {"type": "array", "items": button_enum, "maxItems": 16}},
+                            "required": ["buttons"]},
+        },
+        {
+            "name": "wait",
+            "description": "Advance the game without input — let an animation finish.",
+            "inputSchema": {"type": "object",
+                            "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}},
+                            "required": []},
+        },
+    ]
+
 _TOUCH_TOOL = {
     "name": "touch",
     "description": ("Tap the NDS bottom (touch) screen at pixel coordinates (x, y). "
                     "x: 0–255 left-to-right, y: 0–191 top-to-bottom. "
-                    "Use coordinates from observe()'s spatial_memory.touch_targets list. "
-                    "NDS worlds only — returns an error on GB worlds."),
+                    "Use coordinates from observe()'s spatial_memory.touch_targets list."),
     "inputSchema": {"type": "object",
                     "properties": {"x": {"type": "integer", "minimum": 0, "maximum": 255},
                                    "y": {"type": "integer", "minimum": 0, "maximum": 191},
                                    "hold_frames": {"type": "integer", "minimum": 1, "maximum": 60}},
                     "required": ["x", "y"]},
 }
-# The action tools are mirrored from the live plugin; `assert_action_tools_fresh()` enforces they stay in sync
-# (the observe/explore/goto/remember tools are defined HERE and used by both, so they cannot drift).
-# _ACTION_TOOLS covers the GB baseline; _NDS_EXTRA_TOOLS covers NDS-specific additions (touch).
-_ACTION_TOOLS = [_PRESS_BUTTON_TOOL, _PRESS_SEQUENCE_TOOL, _WAIT_TOOL]
-_NDS_EXTRA_TOOLS = [_TOUCH_TOOL]
-_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL, *_ACTION_TOOLS, *_NDS_EXTRA_TOOLS]
+
+# Pre-built per-world action-tool lists (no touch on GB; touch+NDS buttons on NDS).
+_GB_ACTION_TOOLS = _make_press_tools(_GB_BUTTONS)
+_NDS_ACTION_TOOLS = [*_make_press_tools(_nds_emu_mod.BUTTONS), _TOUCH_TOOL]
 
 
-def assert_action_tools_fresh(plugin) -> None:
-    """Lazy-boot safety net: `tools/list` answers from _STATIC_TOOLS *before* the plugin is booted, so the static
-    action specs could silently drift from what the plugin actually accepts (a renamed param, a changed `maximum`,
-    an added tool). Compare by NAME + SCHEMA — the load-bearing part the brain builds requests from; descriptions
-    are intentionally generic across --game and are not compared.
+def _static_tools(game: str) -> list[dict]:
+    """Return the correct tools/list response for `game` WITHOUT booting the emulator."""
+    nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
+    if game in _NDS_WORLDS:
+        return [*nav, *_NDS_ACTION_TOOLS]
+    return [*nav, *_GB_ACTION_TOOLS]
 
-    Invariant: every static action tool that the live plugin ALSO exposes must have matching schema (no silent
-    drift). Extra tools in the plugin that are NOT in the static list are allowed (e.g. touch on NDS worlds
-    advertised via World.tools(), not the static list). Fail LOUD rather than mislead the brain."""
-    static = {t["name"]: t["inputSchema"] for t in [*_ACTION_TOOLS, *_NDS_EXTRA_TOOLS]}
+
+def assert_action_tools_fresh(plugin, game: str) -> None:
+    """Lazy-boot safety net: `tools/list` answers from _static_tools() *before* the plugin is booted,
+    so the static action specs could silently drift from what the plugin actually accepts.
+
+    Invariant (EXACT EQUALITY): the set of static action tools must equal the live plugin's tools
+    exactly — same names, same schemas. Fail LOUD rather than silently mislead the brain."""
+    static = {t["name"]: t["inputSchema"] for t in (_NDS_ACTION_TOOLS if game in _NDS_WORLDS else _GB_ACTION_TOOLS)}
     live = {s.name: s.schema for s in plugin.tools(_AGENT)}
-    # Check only the intersection: static tools that the plugin also declares must have matching schema.
+    # Exact equality: static action tools == live plugin tools (no extras allowed on either side).
     drift = {nm: (static[nm], live[nm]) for nm in static if nm in live and static[nm] != live[nm]}
-    if drift:
-        raise SystemExit("world_mcp._STATIC_TOOLS action specs are STALE vs the live plugin (schema drift) — "
-                         f"update to match.\n  drift: {drift}")
+    missing_from_live = set(static) - set(live)
+    extra_in_live = set(live) - set(static)
+    if drift or missing_from_live or extra_in_live:
+        raise SystemExit(
+            "world_mcp static action tools are STALE vs the live plugin — update to match.\n"
+            f"  schema drift: {drift}\n"
+            f"  in static but not live: {missing_from_live}\n"
+            f"  in live but not static: {extra_in_live}"
+        )
 
 
 def _send(msg: dict) -> None:
@@ -188,7 +224,12 @@ class World:
         spec = GAMES[args.game]
         pkg = importlib.import_module(spec["pkg"])
         Plugin = getattr(pkg, spec["plugin"])
-        sandbox = getattr(pkg, spec["sandbox"])
+        # Resolve sandbox: NDS worlds use a locally-built Allowlist (no shared module); GB worlds get
+        # their sandbox from the game's own package (e.g. CAVE_NOIRE_SANDBOX).
+        if args.game in _NDS_WORLDS:
+            sandbox = _nds_sandbox()
+        else:
+            sandbox = getattr(pkg, spec["sandbox"])
         Perceiver = getattr(importlib.import_module(spec["perceiver_mod"]), spec["perceiver"])
         self.with_screenshot = bool(args.with_screenshot)
         self.keep_frames = bool(getattr(args, "keep_frames", False))   # --keep-frames: KEEP per-step PNGs as logs
@@ -326,7 +367,7 @@ class World:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="MCP (stdio) server exposing a Game Boy world as tools.")
-    ap.add_argument("--game", default="cave_noire", choices=sorted(GAMES),
+    ap.add_argument("--game", default="cave_noire", choices=sorted(GAMES),  # noqa: GAMES includes "nds"
                     help="which world to serve (registry in world_mcp.py)")
     ap.add_argument("--rom", default=None, help="ROM path; defaults to the chosen game's ROM")
     ap.add_argument("--init-state", default=None, help="gameplay save-state to boot from")
@@ -348,7 +389,7 @@ def main() -> int:
     def world():
         if _world[0] is None:
             w = World(args)
-            assert_action_tools_fresh(w.plugin)   # catch _STATIC_TOOLS drift on first boot (fail loud, never silent)
+            assert_action_tools_fresh(w.plugin, args.game)   # catch static-tool drift on first boot (exact equality)
             _world[0] = w
         return _world[0]
 
@@ -390,7 +431,7 @@ def main() -> int:
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "ai-pokemon-red-world", "version": "0.3.0"}}})
         elif method == "tools/list":
-            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": _STATIC_TOOLS}})
+            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": _static_tools(args.game)}})
         elif method == "tools/call":
             p = msg.get("params") or {}
             try:

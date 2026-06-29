@@ -45,6 +45,10 @@ _NDS_FPS = 59.8261  # NDS hardware framerate
 class DeSmuMEEmulator:
     """Live DeSmuME-backed Nintendo DS. Mirrors PyBoyEmulator's public surface exactly."""
 
+    # Expose BUTTONS as a class attribute so PerceptionPlugin._buttons() can discover it
+    # via getattr(type(self.emu), "BUTTONS") without importing nds_emulator directly.
+    BUTTONS = ("a", "b", "x", "y", "l", "r", "start", "select", "up", "down", "left", "right")
+
     def __init__(self, rom_path: str, headless: bool = True):
         if not os.path.exists(rom_path):
             raise FileNotFoundError(

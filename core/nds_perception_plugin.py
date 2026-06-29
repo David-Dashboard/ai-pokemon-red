@@ -61,7 +61,10 @@ class NDSPerceptionPlugin(PerceptionPlugin):
 
     def handle(self, call: ToolCall) -> ToolResult:
         if call.tool == "touch":
-            return self._do_touch(call)
+            try:
+                return self._do_touch(call)
+            except Exception as e:  # defensive: errors are observations, never crashes (base class invariant)
+                return self._reject(call, f"touch: internal error: {e}")
         return super().handle(call)
 
     # -- internals -----------------------------------------------------------

@@ -72,8 +72,13 @@ class PerceptionPlugin:
 
     # -- GamePlugin surface --------------------------------------------------
 
+    def _buttons(self) -> tuple:
+        """Button set for this emulator — sourced from the injected emulator if it exposes BUTTONS,
+        otherwise falls back to the GB 8-button set. This lets NDS emulators advertise x/y/l/r."""
+        return getattr(type(self.emu), "BUTTONS", None) or getattr(self.emu, "BUTTONS", None) or BUTTONS
+
     def tools(self, agent_id: str) -> list[ToolSpec]:
-        button_enum = {"type": "string", "enum": list(BUTTONS)}
+        button_enum = {"type": "string", "enum": list(self._buttons())}
         return [
             ToolSpec(
                 name="press_button",
@@ -195,9 +200,10 @@ class PerceptionPlugin:
     # -- internals -----------------------------------------------------------
 
     def _do_buttons(self, call: ToolCall, buttons: list, hold: int) -> ToolResult:
+        valid = self._buttons()
         for b in buttons:
-            if not isinstance(b, str) or b.lower() not in BUTTONS:
-                return self._reject(call, f"invalid button: {b!r}", extra={"valid_buttons": list(BUTTONS)})
+            if not isinstance(b, str) or b.lower() not in valid:
+                return self._reject(call, f"invalid button: {b!r}", extra={"valid_buttons": list(valid)})
         for b in buttons:
             self.emu.press(b.lower(), hold_frames=max(1, min(int(hold), 120)))
         return self._post_action(call, action="+".join(str(b) for b in buttons))
@@ -210,7 +216,7 @@ class PerceptionPlugin:
                           data={"action": action, "frame": self.emu.frame}, cost_charged=1)
 
     def _reject(self, call: ToolCall, reason: str, extra: Optional[dict] = None) -> ToolResult:
-        data = {"valid_buttons": list(BUTTONS)}
+        data = {"valid_buttons": list(self._buttons())}
         if extra:
             data.update(extra)
         return ToolResult(call_id=call.call_id, ok=False, data=data, error=reason, cost_charged=1)

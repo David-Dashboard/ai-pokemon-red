@@ -33,16 +33,18 @@ call the `touch` tool with its (cx, cy). No OCR — purely structural blob detec
 """
 from __future__ import annotations
 
+import dataclasses
 from typing import Any, Optional
 
 import numpy as np
 
+from core.blob import connected_components  # 4-connected CC on a set of (x,y) coords
 from core.grid_perceiver import CameraScrollSignal, GridPerceiver, MoveSignal
 from core.perception import JSON, PerceptMemory, SymbolicState
 from core.screen_role import ScreenRoleDiscovery
 
 # ---------------------------------------------------------------------------
-# Minimal blob segmentor (no scipy — pure numpy BFS, same approach as blob.py design).
+# Blob segmentor — reuses _clusters from saliency.py (no third CC implementation).
 # ---------------------------------------------------------------------------
 
 # Ignore blobs smaller than this (noise, single pixels, compression artefacts).
@@ -55,11 +57,11 @@ def _detect_touch_targets(frame: np.ndarray) -> list[dict]:
     """Return candidate touch targets from a (H, W, 3) uint8 screen frame.
 
     Strategy: convert to greyscale, compute edge magnitude (simple Sobel-style via
-    numpy diff), threshold → foreground mask, then BFS connected-components to find
-    distinct blobs. Returns each blob as {cx, cy, bbox:[x0,y0,x1,y1], area}.
+    numpy diff), threshold → foreground mask, convert foreground pixels to a set of
+    (x, y) coords, then delegate to _clusters() for 4-connected components.
+    Returns each blob as {cx, cy, bbox:[x0,y0,x1,y1], area}.
 
-    This is intentionally fast and approximate — NDS UIs are high-contrast, so
-    simple edge detection surfaces buttons and icons reliably.
+    Reuses core.blob.connected_components to avoid a third CC implementation.
     """
     if frame is None or frame.size == 0:
         return []
@@ -77,53 +79,33 @@ def _detect_touch_targets(frame: np.ndarray) -> list[dict]:
     mag = gx + gy                           # (H-2, W-2)
 
     # Threshold at half the median of non-zero gradient values.
-    # mean+std overshoots on NDS UIs where all edges have similar magnitude (one contrast level);
-    # median*0.5 passes the actual edges while suppressing zero-background.
     nz = mag[mag > 0]
     if nz.size == 0:
         return []
     thresh = float(np.median(nz)) * 0.5
-    mask = (mag > thresh).astype(np.uint8)  # (H-2, W-2); edge map
+    # +1 offset: mag is (H-2, W-2), so pixel coords in the original frame are +1.
+    ys, xs = np.where(mag > thresh)
+    if ys.size == 0:
+        return []
+    # Build a set of (x, y) tuples for _clusters — note: _clusters uses (x, y) = (col, row).
+    pixel_set = {(int(xs[i]) + 1, int(ys[i]) + 1) for i in range(len(ys))}
 
-    # BFS connected-components on the edge mask.
-    h, w = mask.shape
-    labels = np.zeros_like(mask, dtype=np.int32)
-    label_id = 0
     blobs: list[dict] = []
+    for comp in connected_components(pixel_set):
+        area = len(comp)
+        if area < _MIN_BLOB_AREA:
+            continue
+        cxs = [p[0] for p in comp]
+        cys = [p[1] for p in comp]
+        x0, x1 = int(min(cxs)), int(max(cxs))
+        y0, y1 = int(min(cys)), int(max(cys))
+        blobs.append({
+            "cx": x0 + (x1 - x0) // 2,
+            "cy": y0 + (y1 - y0) // 2,
+            "bbox": [x0, y0, x1, y1],
+            "area": area,
+        })
 
-    for sy in range(h):
-        for sx in range(w):
-            if mask[sy, sx] == 0 or labels[sy, sx] != 0:
-                continue
-            label_id += 1
-            queue = [(sy, sx)]
-            labels[sy, sx] = label_id
-            ys = [sy]
-            xs = [sx]
-            qi = 0
-            while qi < len(queue):
-                cy, cx = queue[qi]; qi += 1
-                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    ny, nx = cy + dy, cx + dx
-                    if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not labels[ny, nx]:
-                        labels[ny, nx] = label_id
-                        queue.append((ny, nx))
-                        ys.append(ny)
-                        xs.append(nx)
-            area = len(ys)
-            if area < _MIN_BLOB_AREA:
-                continue
-            y0, y1 = int(min(ys)), int(max(ys))
-            x0, x1 = int(min(xs)), int(max(xs))
-            # +1 offset: mask is (H-2, W-2), so pixel coords in original frame are +1.
-            blobs.append({
-                "cx": x0 + (x1 - x0) // 2 + 1,
-                "cy": y0 + (y1 - y0) // 2 + 1,
-                "bbox": [x0 + 1, y0 + 1, x1 + 1, y1 + 1],
-                "area": area,
-            })
-
-    # Sort by area descending (biggest = most prominent UI element), cap count.
     blobs.sort(key=lambda b: b["area"], reverse=True)
     return blobs[:_MAX_TARGETS]
 
@@ -227,23 +209,16 @@ class NDSPerceiver:
 
         sym = self._grid.perceive(gameplay_frame, memory, enriched_ctx)
 
-        # --- touch-target detection on the SYMBOLIC (touch) screen ---
-        targets = _detect_touch_targets(symbolic_frame)
+        # --- touch-target detection always on the BOTTOM physical screen ---
+        # Touch coordinates are physical bottom-screen coordinates (the hardware stylus maps to
+        # the bottom screen unconditionally). Detecting on the "symbolic" screen would produce wrong
+        # coordinates whenever gameplay=bottom (the role-flip case). Always use bot_frame here.
+        targets = _detect_touch_targets(bot_frame)
         if targets:
-            # SymbolicState is frozen; rebuild with augmented spatial_memory.
+            # SymbolicState is frozen; use dataclasses.replace to clone with augmented spatial_memory.
             sm = dict(sym.spatial_memory) if sym.spatial_memory else {}
             sm["touch_targets"] = targets
-            sym = SymbolicState(
-                confidence=sym.confidence,
-                context=sym.context,
-                pose=sym.pose,
-                spatial_memory=sm,
-                affordances=sym.affordances,
-                last_action=sym.last_action,
-                screen_text=sym.screen_text,
-                raw_available=sym.raw_available,
-                raw_ref=sym.raw_ref,
-            )
+            sym = dataclasses.replace(sym, spatial_memory=sm)
 
         return sym
 

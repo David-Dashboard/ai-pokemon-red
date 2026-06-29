@@ -35,9 +35,6 @@ from core.modality import detect_modality
 _MIN_STEPS = 3
 # Rolling window size for evidence accumulation.
 _WINDOW = 8
-# A screen wins control-correlation if its mean diff under commands is this many times
-# larger than the other screen's (or the idle baseline).
-_CORR_RATIO = 1.25
 # Modality vote weight vs correlation vote weight when combining evidence.
 _MODAL_W = 0.6
 _CORR_W = 0.4
