@@ -82,6 +82,77 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-06-30) — FOLLOW-UPS: ReAct + 3 improvement variants + model swaps (Qwen3-VL-4B, UI-TARS-2B)
++ a frontier-model test. CENTRAL FINDING: the `a`-collapse is the HARNESS, not the model. On
+`feat/nds-reachability`; report: `reports/2026-06-30-model-and-harness-experiments.md`. ⚠ SERVER STATE
+CHANGED — restore commands below.**
+
+- **THE FINDING — model generation/scale is NOT the lever.** The one-shot navigator (`max_tokens=8`, "pick a
+  button") makes ANY model `a`-collapse: **Qwen3-VL-4B (newer + larger) collapses identically (`ax24`)** and
+  ties-or-trails the 2.5-VL-3B (GB: 4B `vlm` 2/8, `vlm-react` 2/8 vs 3B 3/8 each). ReAct breaks the collapse
+  (button variety 1→3–7) but doesn't convert at small scale. The **blind ladder stays champion (5/8)**.
+  Remaining levers: keep the ladder as System-1; a **grounding specialist (UI-TARS-2B) in a proper harness**;
+  the dead-button-ledger trick. Makes us *less* optimistic 8B would crack it.
+- **ReAct + 3 variants (built by a Sonnet agent from a 4-lens ideation fan-out; 452 tests green; UNCOMMITTED):**
+  `vlm-react`/`ocr-react`, `LadderLLMNavigator` (`ladder-llm`), `MemNavigator` (`vlm-mem`, reuses
+  `core/outcome.OutcomeMemory`), primed one-shot (`vlm-prime`/`ocr-prime`) — in `core/navigators.py` +
+  `eval/bakeoff.py` + `tests/test_navigator_variants.py`. **None beat the ladder**; the "prefer start" prior
+  backfired into a `start`-collapse; the 3B authored ZERO lessons (explore yes, learn no).
+- **UI-TARS-2B-SFT (the GUI specialist — David's bet):** downloaded (1.1 GB Q4) + a **borrowed Qwen2-VL-2B
+  mmproj** (UI-TARS repos ship none; base vision tower matches → loads). **Grounding verified PRECISE** (points
+  dead-on at "New Game" on a monochrome GB menu; normalized 0–1000 coords; needs `--image-min-tokens 1024`).
+  Fits NDS touch directly; GB/GBA buttons need a ground→dpad/hotkey bridge. **⇒ OPEN BUILD = a console-agnostic
+  UI-TARS navigator** ("can it do all our use cases").
+- **Frontier-model test (built, PENDING AUTH):** `scratchpad/claude_test.py` runs the EXACT `VLMNavigator`/
+  `ReActNavigator` against `claude-sonnet-4-6` via LiteLLM (SSL + auth-routing proven). **Blocked: the
+  `ai-aria/.env` `ANTHROPIC_API_KEY` is well-formed but Anthropic rejects it (revoked/expired).** Fires the
+  instant a live key is in the env — the conclusive harness-vs-model test.
+- **⇒ ENV + MODELS (WSL user `nvidia`; RTX 3080 10 GB; llama.cpp `25a1d63`):** GB+NDS on Windows `.venv-win`
+  (pyboy + py-desmume + litellm + rapidocr + pytest); GBA on `~/.venv-bakeoff` (uv 3.11) + `~/gba-spike` mgba
+  (`LD_LIBRARY_PATH=~/gba-spike` `PYTHONPATH=~/gba-spike/mgba-build/python/lib.linux-x86_64-3.8`). Models in
+  `/home/nvidia/models/`: the 3Bs, `UI-TARS-2B-SFT-Q4_K_M`+`mmproj-Qwen2-VL-2B-Instruct-F16`,
+  `Qwen3VL-4B-Instruct-Q4_K_M`+mmproj. **Cert: Python can't verify public TLS → `litellm.ssl_verify=False` for
+  cloud calls.**
+- **⚠ RESTORE THE ORIGINAL SERVERS** (currently `Qwen3-VL-4B` on `:8080`; the two 3Bs are STOPPED). From
+  `~/llama.cpp/build/bin/`: `:8080` = `llama-server -m Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf --mmproj
+  mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf -ngl 99 --host 127.0.0.1 --port 8080 -c 4096 --no-webui`; `:8081` =
+  same with `qwen2.5-3b-instruct-q4_k_m.gguf` (no mmproj) `--port 8081`.
+- **⇒ NEXT:** (1) restore servers (or keep Qwen3-VL); (2) fire the Claude test once a valid `ANTHROPIC_API_KEY`
+  is set; (3) build the **UI-TARS-2B console-agnostic navigator** (David's "lean on UI-TARS" direction);
+  (4) commit/review the uncommitted variants. **Still UNCOMMITTED:** the variants + tests, both reports, this
+  HANDOFF edit, scratchpad tooling.
+
+**⇒ NEWEST (2026-06-29, evening) — NDS TOUCH NAVIGATOR SHIPPED (committed) + the VLM-vs-OCR+LLM navigator
+bake-off RAN across GB/GBA/NDS (63 runs). On `feat/nds-reachability` (base `45c1ee9` + touch `62ccb46`).
+Report: `reports/2026-06-29-navigator-bakeoff.md`.**
+
+- **Touch navigator (committed `62ccb46`).** `core/navigators.py`: `NDSTouchNavigator` (vlm/ocr) +
+  `apply_action` (button-or-`("touch",x,y)` dispatch) + `_parse_nds_action`; reuses
+  `nds_perceiver._detect_touch_targets`. `eval/bakeoff.py`: `nds-vlm`/`nds-ocr` kinds + full dual-screen
+  frame + a touch/press loop (GB/GBA byte-unchanged). 19 mock tests; **435 suite green**; adversarially
+  reviewed (1 minor hardening — `apply_action` never-raises); **smoke-verified end-to-end** (desmume boots +
+  real taps). `core/contracts.py` untouched.
+- **THE BAKE-OFF RESULT.** Q: do pixels (VLM) or our symbols (OCR-text / touch-blobs + LLM) beat a blind
+  escape-ladder at boot→gameplay? **A: VLM == OCR on EVERY console (a tie); the blind ladder BEATS both on
+  button-only consoles (GB 5/8, GBA 6/7 vs 3/3 each); the touch navigators WIN on NDS (2/6 each vs ladder
+  1/6).** Dominant failure = the **`a`-collapse** — a 3B model `a`-mashes (×24) and never notices it's stuck
+  on a name-grid / cursor-menu; OCR doesn't rescue it because GB/GBA pixel-font OCR is garbled (`"New Game"`→
+  `"TNOY"`). Touch is the only real differentiator. Detector `reached` over-counts intros/menus (ordering
+  trustworthy, counts not). Models: local **Qwen2.5-VL-3B `:8080`** / **Qwen2.5-3B `:8081`**, free, 24 steps.
+- **⇒ ENV (operational — reuse next session).** **GB + NDS run on Windows `.venv-win`** (pyboy + py-desmume +
+  litellm + **rapidocr** [added via `uv pip`]; pytest 9.0.3). **GBA runs in WSL** `Ubuntu-20.04` (user
+  `nvidia`): `~/.venv-bakeoff` (uv, py3.11) + the `~/gba-spike` mgba build via `LD_LIBRARY_PATH=~/gba-spike`
+  + `PYTHONPATH=~/gba-spike/mgba-build/python/lib.linux-x86_64-3.8` (abi3 loads on 3.11). **NOT Docker** (no
+  GBA image — recipe `reports/2026-06-29-gba-mgba-recipe.md`). llama-servers `127.0.0.1:8080` VL / `:8081`
+  text (reachable from Windows via WSL2 localhost-forwarding). Instrumented runner + sweep scripts live in the
+  session scratchpad.
+- **⇒ NEXT (in progress): the ReAct follow-up.** Wire `ReActNavigator` into `bakeoff._stepper`
+  (`vlm-react`/`ocr-react`) + re-run the GB set — does the stateful Thought/Action/Observation loop (it has
+  stall/loop detection) break the `a`-collapse the one-shot navigators died on? Then touch-capable ReAct for
+  NDS / a larger model / repeats for error bars.
+- **Still UNCOMMITTED:** the scratchpad analysis tooling, this HANDOFF edit, `reports/2026-06-29-navigator-bakeoff.md`.
+  (The reach base + touch ARE committed — supersedes the "(2026-06-29, late)" block's "ALL UNCOMMITTED".)
+
 **⇒ NEWEST (2026-06-29, late) — SUPERSEDES the PR #26 block directly below. The NDS and GBA arcs are BOTH
 MERGED to `main`; ZERO open PRs. Now on branch `feat/nds-reachability` (off `main`) building the boot-to-gameplay
 REACH layer + the VLM-vs-OCR+LLM menu-navigator bake-off — ALL UNCOMMITTED (untracked). Picking up COLD? `main`

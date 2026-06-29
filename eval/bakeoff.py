@@ -58,6 +58,26 @@ def _stepper(kind: str):
         from core.navigators import NDSTouchNavigator
         nav = NDSTouchNavigator(mode="vlm" if kind == "nds-vlm" else "ocr")
         return lambda prev, curr, last: [nav.decide(curr)]
+    if kind in ("vlm-react", "ocr-react"):
+        from core.navigators import ReActNavigator
+        nav = ReActNavigator(mode="vlm" if kind == "vlm-react" else "ocr")
+        return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "ladder-llm":
+        from core.navigators import LadderLLMNavigator
+        nav = LadderLLMNavigator()
+        return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "vlm-mem":
+        from core.navigators import MemNavigator
+        nav = MemNavigator(mode="vlm")
+        return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "vlm-prime":
+        from core.navigators import VLMNavigator
+        nav = VLMNavigator(primed=True)
+        return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "ocr-prime":
+        from core.navigators import MenuPerceiverNavigator
+        nav = MenuPerceiverNavigator(primed=True)
+        return lambda prev, curr, last: [nav.decide(curr)]
     raise SystemExit(f"unknown kind {kind}")
 
 

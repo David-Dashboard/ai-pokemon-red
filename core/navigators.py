@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import io
+import random
 import re
 from typing import Optional, Sequence
 
@@ -43,6 +44,16 @@ _PROMPT = (
     "up/down/left/right, cancel with 'b'. Reply with ONLY the button word, nothing else.\n"
     "Valid buttons: a, b, start, select, up, down, left, right."
 )
+
+_PROMPT_PRIMED = (
+    _PROMPT
+    + " (1) On a name-entry letter grid, 'a' only ADDS a letter — to finish, press 'start' or move to an "
+    "'End'/'OK' tile. (2) Moving the cursor is NOT progress; press 'a' to SELECT a highlighted option, or "
+    "'start' to confirm/skip. On a title screen, prefer 'start'."
+)
+
+# Rotation order for primed-navigator fallback when the model returns nothing parseable.
+_FALLBACK_CYCLE = ("a", "start", "right", "b", "down", "up", "left", "select")
 
 
 def apply_action(emu, action, *, hold: int = _TOUCH_HOLD, settle: int = _TOUCH_SETTLE) -> None:
@@ -208,18 +219,27 @@ class VLMNavigator:
     """Screen pixels -> small VLM -> button."""
 
     def __init__(self, model: str = "openai/qwen2.5-vl", api_base: str = "http://localhost:8080/v1",
-                 buttons: Sequence[str] = BUTTONS, upscale: int = 3):
+                 buttons: Sequence[str] = BUTTONS, upscale: int = 3, primed: bool = False):
         self.model, self.api_base, self.buttons, self.upscale = model, api_base, buttons, upscale
+        self._prompt = _PROMPT_PRIMED if primed else _PROMPT
+        self._fb_idx = 0   # fallback cycle index (used only when primed=True)
+        self._primed = primed
+
+    def _next_fallback(self) -> str:
+        btn = _FALLBACK_CYCLE[self._fb_idx % len(_FALLBACK_CYCLE)]
+        self._fb_idx += 1
+        return btn
 
     def decide(self, frame, buttons: Optional[Sequence[str]] = None) -> str:
         bs = tuple(buttons or self.buttons)
         msg = [{"role": "user", "content": [
-            {"type": "text", "text": _PROMPT},
+            {"type": "text", "text": self._prompt},
             {"type": "image_url", "image_url": {"url": _img_data_url(frame, self.upscale)}},
         ]}]
         r = litellm.completion(model=self.model, api_base=self.api_base, api_key="local",
                                messages=msg, max_tokens=8, temperature=0)
-        return _parse_button(r.choices[0].message.content, bs) or "a"
+        parsed = _parse_button(r.choices[0].message.content, bs)
+        return parsed if parsed is not None else (self._next_fallback() if self._primed else "a")
 
 
 class MenuPerceiverNavigator:
@@ -230,9 +250,17 @@ class MenuPerceiverNavigator:
     """
 
     def __init__(self, model: str = "openai/qwen2.5-text", api_base: str = "http://localhost:8081/v1",
-                 buttons: Sequence[str] = BUTTONS):
+                 buttons: Sequence[str] = BUTTONS, primed: bool = False):
         self.model, self.api_base, self.buttons = model, api_base, buttons
         self._ocr = None
+        self._base_prompt = _PROMPT_PRIMED if primed else _PROMPT
+        self._fb_idx = 0
+        self._primed = primed
+
+    def _next_fallback(self) -> str:
+        btn = _FALLBACK_CYCLE[self._fb_idx % len(_FALLBACK_CYCLE)]
+        self._fb_idx += 1
+        return btn
 
     def _engine(self):
         if self._ocr is None:
@@ -277,13 +305,14 @@ class MenuPerceiverNavigator:
         rows = "\n".join(
             f"  y={l['y']:>3} \"{l['text']}\"{'   <-- SELECTION POINTER here' if i == menu['cursor_hint'] else ''}"
             for i, l in enumerate(menu["lines"])) or "  (no text detected)"
-        prompt = (_PROMPT + "\n\nThe perceiver read these on-screen text rows (top to bottom by y; OCR on a "
+        prompt = (self._base_prompt + "\n\nThe perceiver read these on-screen text rows (top to bottom by y; OCR on a "
                   "pixel font is imperfect, infer intent). The row marked SELECTION POINTER has the menu "
                   "cursor next to it (blank if none detected):\n" + rows +
                   "\n\nMove the selection with up/down; choose the pointed option with 'a'.")
         r = litellm.completion(model=self.model, api_base=self.api_base, api_key="local",
                                messages=[{"role": "user", "content": prompt}], max_tokens=8, temperature=0)
-        return _parse_button(r.choices[0].message.content, bs) or "a"
+        parsed = _parse_button(r.choices[0].message.content, bs)
+        return parsed if parsed is not None else (self._next_fallback() if self._primed else "a")
 
 
 _HARNESS_PROMPT = (
@@ -496,4 +525,167 @@ class ReActNavigator:
         self._prev = np.asarray(frame).copy()
         self._last_btn = btn
         self._btns.append(btn)
+        return btn
+
+
+# ---------------------------------------------------------------------------
+# Variant 1: LadderLLMNavigator
+# Runs the blind escape ladder by default; wakes the VLM only on a novelty stall.
+# A "novelty stall" fires when the set of seen screen fingerprints has cycled —
+# i.e. no genuinely new fingerprint in the last N steps.  This catches name-grid
+# loops where _changed() flickers (a keeps adding letters) but the screen-set
+# repeats, a case the frame-diff alone cannot detect.
+# ---------------------------------------------------------------------------
+
+_NOVELTY_WINDOW = 6   # steps without a new fingerprint → stall
+
+
+class LadderLLMNavigator:
+    """Blind escape ladder + on-stall VLM wake.  Cost metric: self.wakes."""
+
+    def __init__(self, mode: str = "vlm", model: Optional[str] = None,
+                 api_base: Optional[str] = None, buttons: Sequence[str] = BUTTONS):
+        self.buttons = buttons
+        self.mode = mode
+        self.model = model or "openai/qwen2.5-vl"
+        self.api_base = api_base or "http://localhost:8080/v1"
+        from core.autoplay import ModalAutoPolicy
+        self._policy = ModalAutoPolicy(random.Random(0), lambda r: ["right"])
+        self._prev = None
+        self._last: list = []
+        self.wakes: int = 0
+        # Ring of fingerprints (hashable tuples) seen in the last N steps.
+        self._fp_ring: list = []   # recent fingerprints (may have repeats)
+        self._fp_seen: set = set() # unique fingerprints ever seen
+
+    def _fingerprint(self, frame) -> tuple:
+        """Coarse 8×8 quantized gray — same screen set collapses; genuinely new screen is distinct."""
+        small = HarnessNavigator._small(self, frame)  # reuse: 40×36 float32 gray
+        # Downsample to 8×8 by averaging 5×4 blocks, then quantize to 16 levels.
+        h, w = small.shape
+        bh, bw = h // 8, w // 8
+        grid = small[:bh * 8, :bw * 8].reshape(8, bh, 8, bw).mean(axis=(1, 3))
+        return tuple(int(v / 16) for v in grid.flatten())
+
+    def _stalled(self, frame) -> bool:
+        fp = self._fingerprint(frame)
+        self._fp_ring.append(fp)
+        if len(self._fp_ring) > _NOVELTY_WINDOW:
+            self._fp_ring.pop(0)
+        # Stall = none of the last N fingerprints are new (all were seen before).
+        new_in_window = any(f not in self._fp_seen for f in self._fp_ring)
+        self._fp_seen.add(fp)
+        return len(self._fp_ring) >= _NOVELTY_WINDOW and not new_in_window
+
+    def decide(self, frame, buttons: Optional[Sequence[str]] = None) -> str:
+        bs = tuple(buttons or self.buttons)
+        if not self._stalled(frame):
+            mode_buttons = self._policy.decide(self._prev, frame, self._last)[1]
+            btn = mode_buttons[0] if mode_buttons else "right"
+            self._prev = np.asarray(frame).copy()
+            self._last = [btn]
+            return btn
+        # Novelty stall — wake LLM once for a corrective button.
+        self.wakes += 1
+        content: list = [{"type": "text", "text": _HARNESS_PROMPT + "\nThink briefly, then: ACTION: <button>"}]
+        if self.mode == "vlm":
+            content.append({"type": "image_url", "image_url": {"url": _img_data_url(frame, 3)}})
+        r = litellm.completion(model=self.model, api_base=self.api_base, api_key="local",
+                               messages=[{"role": "user", "content": content}],
+                               max_tokens=64, temperature=0.7)
+        btn = _parse_action(r.choices[0].message.content, bs) or "a"
+        self._prev = np.asarray(frame).copy()
+        self._last = [btn]
+        return btn
+
+
+# ---------------------------------------------------------------------------
+# Variant 2: MemNavigator
+# ReActNavigator + dead-button ledger (OutcomeMemory) + durable lesson scratchpad.
+# ---------------------------------------------------------------------------
+
+_PREF_ORDER = ("start", "right", "down", "a", "b", "up", "left", "select")
+
+
+class MemNavigator(ReActNavigator):
+    """ReAct conversation extended with durable dead-button memory and lesson scratchpad."""
+
+    def __init__(self, mode: str = "vlm", model: Optional[str] = None,
+                 api_base: Optional[str] = None, buttons: Sequence[str] = BUTTONS,
+                 keep_turns: int = 8):
+        super().__init__(mode=mode, model=model, api_base=api_base,
+                         buttons=buttons, keep_turns=keep_turns)
+        from core.outcome import OutcomeMemory
+        self._mem = OutcomeMemory(dead_after=2)
+        self._lessons: list = []   # deduped, capped at 5, ≤120 chars each
+
+    def _screen_key(self, frame) -> tuple:
+        """8×8 / 16-level coarse fingerprint — same menu collapses; distinct menus differ."""
+        small = self._small(frame)   # 40×36 float32 gray
+        h, w = small.shape
+        bh, bw = h // 8, w // 8
+        grid = small[:bh * 8, :bw * 8].reshape(8, bh, 8, bw).mean(axis=(1, 3))
+        return tuple(int(v / 16) for v in grid.flatten())
+
+    def _lesson_header(self) -> str:
+        if not self._lessons:
+            return ""
+        return "Lessons learned THIS run (still apply):\n" + "\n".join(f"- {l}" for l in self._lessons)
+
+    def _parse_lesson(self, raw: str) -> Optional[str]:
+        m = re.search(r"lesson\s*:\s*(.+)", raw, re.IGNORECASE)
+        if not m:
+            return None
+        text = m.group(1).strip()[:120]
+        return text if text else None
+
+    def decide(self, frame, buttons: Optional[Sequence[str]] = None) -> str:
+        bs = tuple(buttons or self.buttons)
+        # Record previous press outcome before updating self._prev.
+        if self._last_btn is not None and self._prev is not None:
+            key = self._screen_key(self._prev)
+            effective = bool(self._changed(frame))
+            self._mem.record(key, self._last_btn, effective)
+
+        # Determine dead buttons for the current screen.
+        curr_key = self._screen_key(frame)
+        dead = set(self._mem.dead_actions(curr_key))
+
+        # Inject dead-button warning + lessons into the system message for this turn.
+        # We temporarily swap the system message, then restore after the call to keep
+        # _trim() from ever seeing the injected text as a trimmed user/assistant turn.
+        orig_system = self.messages[0]["content"]
+        injected = orig_system
+        if dead:
+            injected = injected + f"\nOn THIS screen these buttons did nothing — do NOT press: {sorted(dead)}"
+        lesson_hdr = self._lesson_header()
+        if lesson_hdr:
+            injected = injected + "\n" + lesson_hdr
+
+        stalled = self._stalled(frame)
+        if stalled and not injected.endswith("...and write a one-line Lesson so you don't repeat this"):
+            injected = injected + "\n...and write a one-line Lesson so you don't repeat this"
+
+        self.messages[0] = {"role": "system", "content": injected}
+        btn = super().decide(frame, buttons)
+        self.messages[0] = {"role": "system", "content": orig_system}
+
+        # Override with a non-dead button if model chose a dead one.
+        if btn in dead:
+            for candidate in _PREF_ORDER:
+                if candidate not in dead and candidate in bs:
+                    btn = candidate
+                    break
+
+        # Parse and store lesson from this turn's raw output.
+        lesson = self._parse_lesson(self.last_raw)
+        if lesson and lesson not in self._lessons:
+            self._lessons.append(lesson)
+            if len(self._lessons) > 5:
+                self._lessons.pop(0)
+
+        # Fix _last_btn to what we actually returned (super().decide set it to something else).
+        self._last_btn = btn
+        if self._btns:
+            self._btns[-1] = btn
         return btn
