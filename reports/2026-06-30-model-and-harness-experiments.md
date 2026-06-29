@@ -58,6 +58,20 @@ invalid (revoked/expired). The moment a live `ANTHROPIC_API_KEY` is in the env, 
 harness-vs-model test. Predicted tell: one-shot Claude *still* one-buttons → it's the harness; Claude+ReAct
 reaches gameplay → the small models were just too weak.
 
+## Experiment 5 — the UI-TARS console-agnostic navigator (built; diagnosed)
+`UITARSNavigator` (`core/navigators.py`; kinds `uitars-nds`/`uitars-gb`/`uitars-gba`; 30 tests, **479 suite
+green**): **NDS** = ground→touch (send the bottom screen, scale normalized 0–1000 → `("touch",x,y)`); **GB/GBA**
+= a grounding bridge (ground the target option + the cursor → derive dpad/`a`). First benchmark:
+- **`uitars-nds` on Phoenix Wright (touch-primary): stuck.** Taps `128,93` (center) ×24 and never reaches the
+  touch menu — the boot is a **Capcom splash → black loading** screen with *nothing to tap*, and a pure-touch
+  navigator can't press `start`/wait to get *past* it. **Not** a grounding failure (grounding is precise on a
+  real menu, see above); a **design gap** — it skips the first half of the problem.
+- **`uitars-gb` on FFA:** the bridge varies (`a`→`up`) but doesn't converge.
+- **⇒ THE FIX (next build): HYBRIDIZE** — modality escape-ladder / button-advance to get *past*
+  splash/title/loading to a real menu, *then* hand off to UI-TARS grounding→touch. This restates the spine of
+  the whole investigation: **structure (the ladder) is the System-1 floor that reaches the menu; UI-TARS is the
+  specialist that navigates it once you're there.** Committed for the next session to build on.
+
 ## Synthesis — where the lever actually is
 Not a bigger/newer general model (3B→4B is flat). The promising paths:
 1. **Keep the structured ladder** as the cheap System-1 floor (5/8, ~0 cost).
@@ -70,7 +84,7 @@ Not a bigger/newer general model (3B→4B is flat). The promising paths:
   uv] + pytest 9.0.3); **GBA in WSL `~/.venv-bakeoff`** (uv, py3.11) + `~/gba-spike` mgba via
   `LD_LIBRARY_PATH=~/gba-spike` + `PYTHONPATH=~/gba-spike/mgba-build/python/lib.linux-x86_64-3.8` (abi3 on 3.11).
 - **Models** in `/home/nvidia/models/` (WSL, user `nvidia`): original `Qwen2.5-VL-3B-Instruct-Q4_K_M`+mmproj +
-  `qwen2.5-3b-instruct` (text); `UI-TARS-2B-SFT-Q4_K_M` + `mmproj-Qwen2-VL-2B-Instruct-F16`;
+  `qwen2.5-3b-instruct` (text); `UI-TARS-2B-SFT-Q4_K_M` + `mmproj-Qwen2-VL-2B-Instruct-f16`;
   `Qwen3VL-4B-Instruct-Q4_K_M` + `mmproj-Qwen3VL-4B-Instruct-F16`. All fit 10 GB one-or-two at a time.
 - **⚠ SERVER STATE CHANGED:** `Qwen3-VL-4B` is on `:8080`; the **original two 3B servers are STOPPED**. Restore
   (both from `~/llama.cpp/build/bin/`):

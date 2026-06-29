@@ -689,3 +689,157 @@ class MemNavigator(ReActNavigator):
         if self._btns:
             self._btns[-1] = btn
         return btn
+
+
+# ---------------------------------------------------------------------------
+# UITARSNavigator
+# GUI-grounding via UI-TARS-2B: given a screen + target description, outputs
+# a click coordinate.  NDS → touch (primary); GB/GBA → derived dpad (experimental).
+# ---------------------------------------------------------------------------
+
+def _parse_uitars_coords(text: str) -> "tuple[int, int] | None":
+    """Extract the first two integers from a UI-TARS reply (tolerant of wrapping text).
+
+    Handles bare "(499,637)", action-wrapped "click(point='(499,637)')", and any reply
+    that contains at least two digit sequences.  Returns (x, y) as raw integers (0-1000
+    scale) or None on failure.
+    """
+    if not text:
+        return None
+    # Prefer an explicit (x,y) pair first.
+    m = re.search(r"\((\d+)\s*,\s*(\d+)\)", text)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    # Fallback: first two digit runs anywhere in the string.
+    nums = re.findall(r"\d+", text)
+    if len(nums) >= 2:
+        return int(nums[0]), int(nums[1])
+    return None
+
+
+_UITARS_PROMPT_TOUCH = (
+    "Output only the click coordinate as (x,y) for: "
+    "the button/option to tap to advance toward gameplay"
+)
+_UITARS_PROMPT_TARGET = (
+    "Output only the click coordinate as (x,y) for: "
+    "the menu option that starts/advances the game (e.g. New Game / Start / Yes)"
+)
+_UITARS_PROMPT_CURSOR = (
+    "Output only the click coordinate as (x,y) for: "
+    "the option currently highlighted / pointed at by the cursor"
+)
+
+# Threshold (fraction of frame height) within which target and cursor are
+# considered "aligned" → press "a".
+_UITARS_ALIGN_THRESH = 0.08
+
+
+class UITARSNavigator:
+    """GUI-grounding navigator backed by UI-TARS-2B.
+
+    NDS (console="nds"): sends only the bottom screen to UI-TARS, parses a
+    normalized (0-1000) coordinate, scales to bottom-screen pixels, and returns
+    a ("touch", x, y) tuple.  On parse failure returns "a".
+
+    GB/GBA (console in {"gb","gba"}): EXPERIMENTAL — uses two sequential
+    UI-TARS queries (target option + cursor position) on the full frame to
+    derive a dpad direction.  Falls back to "start" / rotating cycle on failure.
+    """
+
+    def __init__(self, console: str = "nds", model: str = "openai/uitars",
+                 api_base: str = "http://localhost:8080/v1", upscale: int = 3):
+        self.console = console
+        self.model = model
+        self.api_base = api_base
+        self.upscale = upscale
+        self._fb_idx = 0   # fallback cycle index for GB/GBA
+
+    def _next_fallback(self) -> str:
+        btn = _FALLBACK_CYCLE[self._fb_idx % len(_FALLBACK_CYCLE)]
+        self._fb_idx += 1
+        return btn
+
+    def _query(self, frame, prompt: str) -> "tuple[int, int] | None":
+        """Send frame + prompt to UI-TARS; return parsed (x, y) in 0-1000 space or None."""
+        try:
+            msg = [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": _img_data_url(frame, self.upscale)}},
+            ]}]
+            r = litellm.completion(
+                model=self.model, api_base=self.api_base, api_key="local",
+                messages=msg, max_tokens=32, temperature=0,
+            )
+            return _parse_uitars_coords(r.choices[0].message.content)
+        except Exception:
+            return None
+
+    def _decide_nds(self, frame) -> "str | tuple":
+        """NDS priority path: touch the bottom screen."""
+        a = np.asarray(frame)
+        if a.shape[0] == 384:
+            bot = a[192:]   # bottom screen: 192 rows × 256 cols
+        else:
+            bot = a         # defensive: single screen passed
+        H, W = bot.shape[:2]   # 192, 256
+
+        coords = self._query(bot, _UITARS_PROMPT_TOUCH)
+        if coords is None:
+            return "a"
+        nx, ny = coords
+        px = min(max(round(nx / 1000 * W), 0), W - 1)
+        py = min(max(round(ny / 1000 * H), 0), H - 1)
+        return ("touch", px, py)
+
+    def _decide_gb(self, frame) -> str:
+        """GB/GBA experimental path: derive dpad from two grounding queries.
+
+        Two queries on the full frame:
+          1. target: where is the option to select?
+          2. cursor: where is the currently highlighted item?
+        If both succeed and are vertically close → "a" (already aligned);
+        else navigate toward the target.  Falls back to "start" then cycle.
+        """
+        a = np.asarray(frame)
+        H, W = a.shape[:2]
+
+        target = self._query(a, _UITARS_PROMPT_TARGET)
+        cursor = self._query(a, _UITARS_PROMPT_CURSOR)
+
+        if target is None or cursor is None:
+            # One query failed — fall back to rotating cycle starting with "start".
+            if self._fb_idx == 0:
+                self._fb_idx = 0   # ensure "start" is next in _FALLBACK_CYCLE
+                # _FALLBACK_CYCLE = ("a", "start", ...) so nudge to "start".
+                # Rather than override the cycle, just return "start" directly
+                # and do NOT advance the index (deterministic first-fail response).
+                return "start"
+            return self._next_fallback()
+
+        # Scale to pixel space for comparison.
+        ty = round(target[1] / 1000 * H)
+        cy = round(cursor[1] / 1000 * H)
+        tx = round(target[0] / 1000 * W)
+        cx = round(cursor[0] / 1000 * W)
+
+        thresh_px = round(_UITARS_ALIGN_THRESH * H)
+        if abs(ty - cy) <= thresh_px:
+            return "a"   # cursor is on the target row → select it
+        if ty < cy:
+            return "up"
+        if ty > cy:
+            return "down"
+        # Same row but different column (shouldn't happen often on GB menus).
+        return "left" if tx < cx else "right"
+
+    def decide(self, frame) -> "str | tuple":
+        """Return a button str or ("touch", x, y) tuple.  Never raises."""
+        try:
+            if self.console == "nds":
+                return self._decide_nds(frame)
+            else:
+                # GB / GBA (experimental grounding bridge).
+                return self._decide_gb(frame)
+        except Exception:
+            return "a"

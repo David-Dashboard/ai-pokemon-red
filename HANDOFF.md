@@ -101,8 +101,10 @@ CHANGED — restore commands below.**
 - **UI-TARS-2B-SFT (the GUI specialist — David's bet):** downloaded (1.1 GB Q4) + a **borrowed Qwen2-VL-2B
   mmproj** (UI-TARS repos ship none; base vision tower matches → loads). **Grounding verified PRECISE** (points
   dead-on at "New Game" on a monochrome GB menu; normalized 0–1000 coords; needs `--image-min-tokens 1024`).
-  Fits NDS touch directly; GB/GBA buttons need a ground→dpad/hotkey bridge. **⇒ OPEN BUILD = a console-agnostic
-  UI-TARS navigator** ("can it do all our use cases").
+  Fits NDS touch directly; GB/GBA buttons need a ground→dpad/hotkey bridge. **⇒ NAVIGATOR BUILT** (`UITARSNavigator`,
+  kinds `uitars-nds/gb/gba`, 479 tests green) **but pure-touch gets STUCK on boot splashes** (Phoenix Wright:
+  Capcom splash→black loading — nothing to tap, can't button-past) → **needs HYBRIDIZING** (ladder/button
+  front-half to reach the menu, then UI-TARS grounding→touch). See `reports/2026-06-30-...` Exp 5.
 - **Frontier-model test (built, PENDING AUTH):** `scratchpad/claude_test.py` runs the EXACT `VLMNavigator`/
   `ReActNavigator` against `claude-sonnet-4-6` via LiteLLM (SSL + auth-routing proven). **Blocked: the
   `ai-aria/.env` `ANTHROPIC_API_KEY` is well-formed but Anthropic rejects it (revoked/expired).** Fires the
@@ -111,16 +113,20 @@ CHANGED — restore commands below.**
   (pyboy + py-desmume + litellm + rapidocr + pytest); GBA on `~/.venv-bakeoff` (uv 3.11) + `~/gba-spike` mgba
   (`LD_LIBRARY_PATH=~/gba-spike` `PYTHONPATH=~/gba-spike/mgba-build/python/lib.linux-x86_64-3.8`). Models in
   `/home/nvidia/models/`: the 3Bs, `UI-TARS-2B-SFT-Q4_K_M`+`mmproj-Qwen2-VL-2B-Instruct-F16`,
-  `Qwen3VL-4B-Instruct-Q4_K_M`+mmproj. **Cert: Python can't verify public TLS → `litellm.ssl_verify=False` for
+  `Qwen3VL-4B-Instruct-Q4_K_M`+mmproj (note: the UI-TARS mmproj filename is lowercase `...f16.gguf`). **Cert:
+  Python can't verify public TLS → `litellm.ssl_verify=False` for
   cloud calls.**
-- **⚠ RESTORE THE ORIGINAL SERVERS** (currently `Qwen3-VL-4B` on `:8080`; the two 3Bs are STOPPED). From
+- **⚠ RESTORE THE ORIGINAL SERVERS** (currently **`UI-TARS-2B` on `:8080`** with the `f16` mmproj +
+  `--image-min-tokens 1024`; Qwen3-VL-4B + the two 3Bs are STOPPED). From
   `~/llama.cpp/build/bin/`: `:8080` = `llama-server -m Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf --mmproj
   mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf -ngl 99 --host 127.0.0.1 --port 8080 -c 4096 --no-webui`; `:8081` =
   same with `qwen2.5-3b-instruct-q4_k_m.gguf` (no mmproj) `--port 8081`.
-- **⇒ NEXT:** (1) restore servers (or keep Qwen3-VL); (2) fire the Claude test once a valid `ANTHROPIC_API_KEY`
-  is set; (3) build the **UI-TARS-2B console-agnostic navigator** (David's "lean on UI-TARS" direction);
-  (4) commit/review the uncommitted variants. **Still UNCOMMITTED:** the variants + tests, both reports, this
-  HANDOFF edit, scratchpad tooling.
+- **⇒ NEXT:** (1) restore servers (or keep UI-TARS up); (2) fire the Claude test once a valid `ANTHROPIC_API_KEY`
+  is set; (3) **HYBRIDIZE the UI-TARS navigator** (built) — ladder/button front-half to reach the menu, then
+  UI-TARS grounding→touch; re-test touch-primary NDS (Phoenix Wright/Layton) + fix the GB bridge convergence;
+  (4) adversarially review the experiment variants + the UI-TARS navigator. **Committed `4052e40`:** variants +
+  both reports + this block; the `UITARSNavigator` is committed alongside this update. Scratchpad tooling stays
+  session-local.
 
 **⇒ NEWEST (2026-06-29, evening) — NDS TOUCH NAVIGATOR SHIPPED (committed) + the VLM-vs-OCR+LLM navigator
 bake-off RAN across GB/GBA/NDS (63 runs). On `feat/nds-reachability` (base `45c1ee9` + touch `62ccb46`).

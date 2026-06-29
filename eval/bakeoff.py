@@ -78,6 +78,18 @@ def _stepper(kind: str):
         from core.navigators import MenuPerceiverNavigator
         nav = MenuPerceiverNavigator(primed=True)
         return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "uitars-nds":
+        from core.navigators import UITARSNavigator
+        nav = UITARSNavigator(console="nds")
+        return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "uitars-gb":
+        from core.navigators import UITARSNavigator
+        nav = UITARSNavigator(console="gb")
+        return lambda prev, curr, last: [nav.decide(curr)]
+    if kind == "uitars-gba":
+        from core.navigators import UITARSNavigator
+        nav = UITARSNavigator(console="gba")
+        return lambda prev, curr, last: [nav.decide(curr)]
     raise SystemExit(f"unknown kind {kind}")
 
 
