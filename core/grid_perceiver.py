@@ -21,11 +21,23 @@ import numpy as np
 from PIL import Image
 
 from core.egomotion import best_shift, direction
+from core.entities import EntityDetector
 from core.grid import BACK, DELTA, DIR2EGO, DIRS, EGO2DIR
 from core.modality import detect_modality
 from core.perception import JSON, PerceptMemory, SymbolicState
+from core.tilemap import TileFunctionMap
 
 WALL_CONFIRM = 3           # seal a wall only after N persistent no-move attempts (dead-zone/idle is transient)
+
+# Games that use a follow/scroll camera (camera scrolls under a centered avatar).
+# Measured: spread < 15 px between min/max best_shift over a run (eval/score_localize).
+# Single source of truth: drivers and eval both import from here, not from eval/.
+FOLLOW_CAMERA_KEYS = ("gold", "kirby", "metroid", "spaceinv", "f1race", "ffa", "sml")
+
+
+def is_follow_camera(slug: str) -> bool:
+    """Return True when the game slug matches a known follow/scroll-camera game."""
+    return any(k in slug for k in FOLLOW_CAMERA_KEYS)
 _NW, _NH = 128, 112        # normalize frames for best_shift (same as eval/probe_camera_model)
 _MAX_SHIFT, _STEP = 18, 2  # 2D translation search (px on the normalized frame)
 _GRID = 8                  # per-cell change grid (eval/probe_spatial_move): a real move spikes ONE cell
@@ -35,6 +47,46 @@ _GRID = 8                  # per-cell change grid (eval/probe_spatial_move): a r
 # Gated on a long same-dir run so it never fires on normal exploration.
 _RUN_GUARD, _PROG_W, _PROG_MIN = 4, 4, 4.0
 _DELTA_INV = {v: k for k, v in DELTA.items()}    # unit (dx,dy) -> cardinal, for snapping cell deltas to a step
+# Pose-drift / confidence tracking:
+#   _CONF_BASE  — steady-state confidence when the map is reliable
+#   _CONF_DRIFT — confidence floor when drift is detected (no-move-after-command or phantom-runaway)
+#   _CONF_RECOV — how quickly confidence recovers per confirmed move (linear rise back to _CONF_BASE)
+#   _DEAD_TRIES — a frontier is pruned after this many goto/explore "no-path / 0-step" attempts
+_CONF_BASE, _CONF_DRIFT, _CONF_RECOV = 0.7, 0.2, 0.1
+# Mild confidence penalty on first no-move-after-command: the avatar DIDN'T move despite a command, which
+# is the highest-leverage drift signal (a real wall is still tentative at this point), so we nudge
+# confidence down without collapsing it — recovery is fast once moves confirm (+ _CONF_RECOV per step).
+# 0.15 was calibrated so three no-moves without a confirmed step drops below _CONF_DRIFT (≈ 0.7 - 3×0.15).
+_CONF_DROP = 0.15
+_DEAD_TRIES = 3
+
+# Tilemap-based relocalization (loop closure for dead-reckoning drift).
+# A "place signature" is a tuple of tile fingerprints sampled from fixed screen regions (avoiding the
+# avatar at screen centre). On revisit, a distinctive, unique signature match → re-anchor the cursor.
+# Only fires in fixed-camera worlds (ForegroundSignal) where the background is stable each frame.
+#
+# Crop grid: 12 positions across 3 rows × 4 columns. Each crop is _SIG_TILE × _SIG_TILE pixels.
+# Columns are spaced to cover left/right thirds; rows avoid the screen centre strip (avatar zone).
+# GB frame is 160×144 px. Avatar in fixed-camera worlds sits near pixel (80, 72) = centre.
+# We sample: rows at y=8, y=56, y=112 (top, upper-mid below row 0, bottom) — skipping y=72 (avatar).
+# Columns at x=8, x=52, x=104, x=144 (left, centre-left, centre-right, right edge).
+_SIG_TILE = 16       # pixels per side for each sampled crop
+_SIG_ROWS = [8, 56, 112]              # y offsets (top-left of crop); avoids centre strip 64-88
+_SIG_COLS = [8, 52, 104, 144]        # x offsets
+_SIG_POSITIONS = [(y, x) for y in _SIG_ROWS for x in _SIG_COLS]  # 12 crops
+
+# A signature is considered flat/ambiguous if too many of its tiles are individually flat.
+_SIG_MIN_DISTINCT = 6    # at least this many non-flat fingerprints required (out of 12)
+# Relocalization fires only when the signature match is UNIQUE (exactly 1 stored cell) and the
+# re-anchor distance is > 1 cell (a 1-cell difference is within dead-reckoning noise — not worth firing).
+_RELOC_MIN_DIST = 2      # minimum L-inf distance (cells) to trigger a re-anchor
+# Maximum L-inf distance for a re-anchor: derived at runtime from the visited-cell bounding box so the
+# agent can recover anywhere within explored territory while rejecting jumps beyond what it has actually
+# mapped (those are impossible teleports / false identical-room matches, not real loop closures).
+# Minimum frames since a signature was last recorded before we allow a re-anchor: prevents re-anchoring on
+# a look-alike frame seen one or two steps ago during normal travel (same tiles visible from adjacent cells
+# — close-range signature reuse, NOT a loop closure). 5 distinguishes a genuine revisit-after-travel.
+_RELOC_RECENCY = 5
 
 
 def grid_max_change(prev_norm, cur_norm) -> float:
@@ -61,6 +113,11 @@ class MoveSignal(Protocol):
     def __call__(self, *, commanded_dir: Optional[str], ego_token: str,
                  sdx: int, sdy: int, best_diff: float, grid_max: float) -> MoveResult: ...
 
+    def fixed_camera(self) -> bool:
+        """Return True for fixed/static-screen worlds; False for follow/scroll-camera worlds.
+        Required by GridPerceiver to gate entity detection and tilemap relocalization."""
+        ...
+
 
 class CameraScrollSignal:
     """Follow-camera worlds (Gauntlet): the camera scrolled => we moved; step by the ego (scrolled) axis."""
@@ -75,6 +132,9 @@ class CameraScrollSignal:
         if max(abs(sdx), abs(sdy)) >= self.move_px:
             return MoveResult(True, EGO2DIR.get(ego_token, commanded_dir), ego_token)
         return MoveResult(False, None, ego_token)
+
+    def fixed_camera(self) -> bool:
+        return False    # follow-camera: the world scrolls under a centered avatar
 
 
 class ForegroundSignal:
@@ -96,6 +156,9 @@ class ForegroundSignal:
             return MoveResult(True, step, DIR2EGO.get(step, "none"))
         return MoveResult(False, None, "none")
 
+    def fixed_camera(self) -> bool:
+        return True     # fixed/static screen: sprites move against a still background
+
 
 def _dominant_dir(action: Optional[str]) -> Optional[str]:
     """Net commanded direction of an action like 'up+up' or 'right+b' -> 'up' / 'right' / None."""
@@ -115,18 +178,46 @@ def _grays(frame, nw: int, nh: int):
     return g.astype(np.float32), norm
 
 
+def _place_sig(frame_arr: np.ndarray) -> Optional[tuple]:
+    """Compute a place signature: a tuple of tile fingerprints from 12 fixed screen regions.
+
+    Returns None if the frame is too small or the signature is too flat/ambiguous (too many
+    near-uniform crops → not a distinctive enough place to risk re-anchoring on).
+
+    The 12 positions avoid the screen centre (avatar zone). This is called on the raw uint8 frame."""
+    h, w = frame_arr.shape[:2]
+    fps = []
+    flat_count = 0
+    for (py, px) in _SIG_POSITIONS:
+        y1, y2 = py, min(py + _SIG_TILE, h)
+        x1, x2 = px, min(px + _SIG_TILE, w)
+        if y2 <= y1 or x2 <= x1:
+            return None          # frame too small
+        crop = frame_arr[y1:y2, x1:x2]
+        fp = TileFunctionMap.fingerprint(crop)
+        fps.append(fp)
+        if TileFunctionMap.is_flat(fp):
+            flat_count += 1
+    distinct = len(_SIG_POSITIONS) - flat_count
+    if distinct < _SIG_MIN_DISTINCT:
+        return None              # too many flat/ambiguous tiles → not a safe relocalization target
+    return tuple(fps)
+
+
 class GridPerceiver:
     """screen -> SymbolicState via dead-reckoned odometry + a coarse occupancy map. No RAM.
 
     `move_signal` is the only per-world part (see CameraScrollSignal / ForegroundSignal)."""
 
     def __init__(self, move_signal: MoveSignal, *, max_shift: int = _MAX_SHIFT, step: int = _STEP,
-                 nw: int = _NW, nh: int = _NH, wall_confirm: int = WALL_CONFIRM) -> None:
+                 nw: int = _NW, nh: int = _NH, wall_confirm: int = WALL_CONFIRM,
+                 entity_detector: Optional[EntityDetector] = None) -> None:
         self.move_signal = move_signal
         self.max_shift = max_shift
         self.step = step
         self.nw, self.nh = nw, nh
         self.wall_confirm = wall_confirm
+        self._entity_detector = entity_detector or EntityDetector()
 
     def perceive(self, frame: Any, memory: PerceptMemory,
                  context: Optional[JSON] = None) -> SymbolicState:
@@ -134,6 +225,8 @@ class GridPerceiver:
         m.setdefault("cursor", (0, 0))
         cells = m.setdefault("cells", {})
         blocked = m.setdefault("blocked_attempts", {})   # (cell, dir) -> consecutive no-move attempts
+        dead_frontiers = m.setdefault("dead_frontiers", {})  # (cx,cy) -> consecutive 0-step/no-path tries
+        m.setdefault("pose_confidence", _CONF_BASE)
         ctx = context or {}
         action = ctx.get("last_action")
         commanded_dir = _dominant_dir(action)
@@ -213,6 +306,9 @@ class GridPerceiver:
                         if cur_norm is not None and len(recent) >= _PROG_W else None)
                 if run_len >= _RUN_GUARD and prog is not None and prog < _PROG_MIN:
                     moved, step_dir = False, None          # not actually getting anywhere -> treat as no-move
+                    # phantom runaway detected: the move signal fired but we went nowhere; the occupancy map
+                    # is likely drifting -> drop confidence so the brain knows the symbolic view is unreliable.
+                    m["pose_confidence"] = _CONF_DRIFT
             elif not (moved and step_dir):
                 m["run"] = (None, 0)
             if commanded_dir:
@@ -226,19 +322,119 @@ class GridPerceiver:
                     cell["visited"] = True
                     cell["walls"].discard(BACK[step])       # the entered cell is open back the way we came
                     m["cursor"] = (x, y)
+                    dead_frontiers.pop((x, y), None)   # a reached cell is not dead
                     outcome = "moved"
+                    # a confirmed move is evidence the dead-reckoning is tracking, so trust recovers.
+                    m["pose_confidence"] = min(_CONF_BASE, m["pose_confidence"] + _CONF_RECOV)
                 else:                                       # no move: a WALL or a transient dead-zone/idle
                     key = ((x, y), commanded_dir)
                     blocked[key] = blocked.get(key, 0) + 1
                     if blocked[key] >= self.wall_confirm:   # persistent -> a real wall, seal it
                         cell["walls"].add(commanded_dir)
                         outcome = "blocked"
+                    elif blocked[key] == 1:
+                        # first no-move-after-command (may be drift, not a wall yet): mild confidence drop.
+                        # This is the highest-leverage signal: ok=True from the gateway but the avatar
+                        # didn't move -> the dead-reckoned cursor may be wrong.
+                        m["pose_confidence"] = max(_CONF_DRIFT, m["pose_confidence"] - _CONF_DROP)
 
         m["prev_full"], m["prev_norm"] = cur_full, cur_norm
         if cur_norm is not None:                 # rolling frame buffer for the no-progress backstop
             recent = m.setdefault("recent_norms", [])
             recent.append(cur_norm)
             del recent[:-(_PROG_W + 1)]
+
+        # Tilemap-based relocalization (loop closure) for PURE dead-reckoning worlds: when the agent
+        # re-enters mapped territory, re-anchor the drifted cursor to the remembered location. SKIPPED
+        # when the move signal provides an `absolute_cell` localizer (it already gives a per-frame
+        # ground-truth fix — there is no dead-reckoning drift to recover, and running both would make
+        # two snap mechanisms fight over the cursor). Fixed-camera only — follow-camera worlds scroll
+        # every step, so a fixed-screen signature is meaningless. Guard: the signature must be
+        # distinctive (`_place_sig` rejects flat/ambiguous frames) and the re-anchor distance must
+        # exceed dead-reckoning noise (_RELOC_MIN_DIST).
+        # KNOWN LIMITATION (see reports/2026-06-29-relocalization-notes.md): exact 12-tile signatures
+        # cannot distinguish a real loop-closure from two identically-templated rooms, so a wrong
+        # re-anchor is possible in games with repeated room layouts. NOT yet bench-validated.
+        fixed_cam = self.move_signal.fixed_camera()
+        # Hoist once: used by both relocalization and entity detection below (avoid double conversion).
+        frame_arr = np.asarray(frame) if frame is not None else None
+        if (fixed_cam
+                and not hasattr(self.move_signal, "absolute_cell")
+                and label == "gameplay" and frame_arr is not None):
+            if frame_arr.ndim >= 2:
+                place_sigs: dict = m.setdefault("place_sigs", {})   # sig -> (cx, cy, step_last_seen)
+                step_n = m["_reloc_step"] = m.get("_reloc_step", 0) + 1
+                sig = _place_sig(frame_arr)
+                if sig is not None:
+                    # MATCH FIRST against the PRIOR recording, THEN record. Recording before the lookup
+                    # (the original bug) just returned the position we wrote this frame, so the re-anchor
+                    # guard was always false and relocalization never fired. Re-anchor only on a genuine
+                    # loop-closure: a stored signature, far enough from the (drifted) cursor, AND last seen
+                    # _RELOC_RECENCY+ frames ago (so a look-alike frame recurring during travel doesn't
+                    # spuriously snap us back). Then overwrite with the new position + step.
+                    prev = place_sigs.get(sig)
+                    # Re-anchor distance cap: reject jumps larger than the L-inf span of visited cells
+                    # from the current cursor — we can only have drifted within explored territory.
+                    if cells:
+                        xs = [cx for cx, cy in cells]; ys = [cy for cx, cy in cells]
+                        reloc_max_dist = max(max(xs) - min(xs), max(ys) - min(ys), 1)
+                    else:
+                        reloc_max_dist = 1
+                    if (prev is not None
+                            and (prev[0], prev[1]) != (x, y)
+                            and _RELOC_MIN_DIST <= max(abs(prev[0] - x), abs(prev[1] - y)) <= reloc_max_dist
+                            and step_n - prev[2] >= _RELOC_RECENCY):
+                        mx, my = prev[0], prev[1]
+                        m["cursor"] = (mx, my)
+                        x, y = mx, my
+                        cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
+                        cell["visited"] = True
+                        m["pose_confidence"] = _CONF_BASE
+                        outcome = "moved"   # treat as a successful repositioning
+                    # Record AFTER matching (only past the origin so it isn't over-recorded). After a
+                    # re-anchor (x, y) == prev cell, so this just refreshes its step stamp.
+                    if len(cells) >= 2:
+                        place_sigs[sig] = (x, y, step_n)
+
+        # Dead-frontier detection: two signals increment a frontier's fail counter:
+        # 1. External (world_mcp / bench): context["goto_fails"] = [(cx,cy), ...] — the caller
+        #    observed 0 steps / no-path for these targets and tells us explicitly.
+        # 2. Internal (purely perceiver-side): if the cursor has been at the SAME position for
+        #    _DEAD_TRIES consecutive commanded moves that all returned no-move outcomes, then all
+        #    current frontiers are inaccessible from here (the agent is jammed). Demote all of them.
+        for fail_coord in ctx.get("goto_fails", []):
+            key = tuple(fail_coord)
+            dead_frontiers[key] = min(dead_frontiers.get(key, 0) + 1, _DEAD_TRIES)
+        # Internal jam detection: if the agent keeps trying the SAME DIRECTION with no movement,
+        # the cursor is drift-jammed (a phantom-runaway or a corrupt wall map). Distinguish this from
+        # NORMAL wall discovery (trying different directions at a dead-end, which is expected exploration).
+        # Only fire when the same commanded direction produces no-move _DEAD_TRIES times in a row from
+        # the same cursor position — that's a repeated single-direction jam, not multi-direction probing.
+        cursor_now = (x, y)
+        m.setdefault("_jam_dir", None)
+        m.setdefault("_jam_len", 0)
+        if commanded_dir and outcome not in ("moved",):
+            if m["_jam_dir"] == commanded_dir and m.get("_jam_pos") == cursor_now:
+                m["_jam_len"] += 1
+            else:
+                m["_jam_dir"] = commanded_dir
+                m["_jam_pos"] = cursor_now
+                m["_jam_len"] = 1
+        else:
+            m["_jam_dir"] = None
+            m["_jam_pos"] = cursor_now
+            m["_jam_len"] = 0
+        # Fire after _DEAD_TRIES same-direction no-moves, demoting only the SPECIFIC cells involved:
+        # - the cursor's current cell (the frontier head that can't be left in this direction)
+        # - the neighbor in the jammed direction (the dead target)
+        # Targeted demotion avoids mass-pruning valid frontiers in other directions (Zelda regression
+        # when ALL frontiers were demoted simultaneously at a multi-frontier dead-end).
+        if m["_jam_len"] >= _DEAD_TRIES and commanded_dir:
+            jammed_dx, jammed_dy = DELTA.get(commanded_dir, (0, 0))
+            jam_target = (cursor_now[0] + jammed_dx, cursor_now[1] + jammed_dy)
+            dead_frontiers[jam_target] = min(dead_frontiers.get(jam_target, 0) + 1, _DEAD_TRIES)
+            dead_frontiers[cursor_now] = min(dead_frontiers.get(cursor_now, 0) + 1, _DEAD_TRIES)
+        m["dead_frontiers"] = dead_frontiers
 
         # affordances: open (non-wall) directions, unexplored first.
         open_unexplored, open_all = [], []
@@ -252,6 +448,8 @@ class GridPerceiver:
                 open_unexplored.append(d)
 
         # full map + frontier cells (a frontier = visited cell with a non-wall edge into the unknown).
+        # Dead frontiers (repeatedly unreachable) are demoted: kept in the map but omitted from the
+        # active frontier list so the brain isn't lured into infinite retries toward them.
         visited_n = sum(1 for c in cells.values() if c.get("visited"))
         grid, frontiers = [], []
         for (cx, cy), c in cells.items():
@@ -265,23 +463,38 @@ class GridPerceiver:
                 ddx, ddy = DELTA[d]
                 nbr = cells.get((cx + ddx, cy + ddy))
                 if nbr is None or not nbr.get("visited"):
-                    frontiers.append([cx, cy])
+                    # omit frontier if it has failed _DEAD_TRIES times (dead / drift-isolated)
+                    if dead_frontiers.get((cx, cy), 0) < _DEAD_TRIES:
+                        frontiers.append([cx, cy])
                     break
 
+        # Entity detection (S7) is DISPATCHED BY CAMERA CLASS (S3): the motion-based foreground detector is
+        # valid only on a fixed/static screen, where sprites move against a still background. On a follow
+        # camera the whole screen scrolls every frame, so the rolling-background reads the scroll as
+        # foreground and floods spurious blobs — so we skip it (return empty) rather than feed the brain
+        # garbage. The follow-camera detector (a camera-compensated residual) is a future per-cell algorithm;
+        # see reports/perception-ontology.md (S7 routed by S3) + the killed relative-motion pipeline.
+        entities: list[dict] = []
+        if fixed_cam and frame_arr is not None:
+            if frame_arr.ndim == 3 and frame_arr.shape[2] >= 3:
+                entities = self._entity_detector.detect(frame_arr)
+
         raw_ref = ctx.get("frame_path", "") if frame is not None else ""
+        pose_conf = m["pose_confidence"]
         return SymbolicState(
-            # FIXED PLACEHOLDER: the lean grid perceivers don't yet compute a calibrated confidence
-            # (carried over verbatim from the Gauntlet/Cave Noire perceivers). ADR-001 inv-6 wants this
-            # meaningful before `confidence` gates deferral; a per-cell coverage/outcome-derived value is
-            # a follow-up. Until then it is a constant and brains must not read it as calibrated.
-            confidence=0.4,
+            # Pose-drift-aware confidence: starts at _CONF_BASE (0.7), drops toward _CONF_DRIFT (0.2) when
+            # a no-move-after-command or phantom-runaway is detected, recovers by _CONF_RECOV per confirmed
+            # move. Low confidence signals the brain that the dead-reckoned map may be wrong. (ADR-001 inv-6)
+            confidence=round(pose_conf, 2),
             context=label,
-            pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": 0},
+            pose={"frame": "grid", "value": [x, y], "uncertain": pose_conf < _CONF_BASE, "area": 0,
+                  "confidence": round(pose_conf, 2)},
             spatial_memory={"kind": "occupancy-grid", "area": 0, "visited": visited_n,
                             "walls_here": sorted(cell["walls"]),
                             "map": grid, "frontiers": frontiers, "rois": [],
                             "place_portals": [], "place_frontiers": [], "places_known": 1,
-                            "ego_motion": ego_motion},
+                            "ego_motion": ego_motion,
+                            "entities": entities},   # screen-derived, not RAM/oracle — no no-leak violation
             affordances=open_unexplored or open_all,
             last_action={"action": action, "outcome": outcome, "diff": round(best_diff, 2)},
             screen_text="",

@@ -66,6 +66,7 @@ class PerceptionPlugin:
         self._oracle_path = os.path.join(self.out_dir, "oracle.jsonl")
         self._watch = dict(watch or {})        # name -> WRAM addr; RAM goes to the oracle log ONLY
         self._last_action: Optional[str] = None  # fed to the perceiver for odometry
+        self._extra_context: dict = {}           # transient caller-injected context (e.g. goto_fails)
         self._button_desc = button_desc
         self._sequence_desc = sequence_desc
         self._render_header = render_header
@@ -132,7 +133,8 @@ class PerceptionPlugin:
             pixels = self.emu.screen_ndarray()
         except Exception:
             pixels = None
-        context = {"frame_path": screen_path, "last_action": self._last_action}
+        context = {"frame_path": screen_path, "last_action": self._last_action, **self._extra_context}
+        self._extra_context = {}   # consumed — clear so it doesn't leak to the next observe()
         sym = self.perceiver.perceive(pixels, self._percept_memory, context)
         self._log_oracle(screen_path, sym)
         data = sym.to_dict()
@@ -181,6 +183,10 @@ class PerceptionPlugin:
             lines.append(f"Unexplored/open directions from here (head toward these to make progress): "
                          f"{', '.join(sym.affordances)}.")
         lines.append(f"Cells explored in this area so far: {sm.get('visited', 0)}.")
+        entities = sm.get("entities") or []
+        if entities:
+            ctrs = ", ".join(f"({e['centroid'][0]:.0f},{e['centroid'][1]:.0f})" for e in entities[:8])
+            lines.append(f"Entities on screen (sprites/enemies/items): {len(entities)} at {ctrs}.")
         frontiers = sm.get("frontiers") or []
         if pose.get("value") is not None and frontiers:
             sample = ", ".join(f"{f[0]} {f[1]}" for f in frontiers[:6])

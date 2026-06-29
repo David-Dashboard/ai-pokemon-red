@@ -60,11 +60,11 @@ GAMES = {
     "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
                    "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoirePerceiver",
                    "rom": "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
-                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xD389}},   # hp = ADR-002 gate life oracle
+                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xC120}},   # hp = ADR-002 gate life oracle (BCD)
     "cave_noire_baseline": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
                    "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoireBaselinePerceiver",
                    "rom": "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb",
-                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xD389}},   # A/B CONTROL: dead-reckon, no localizer
+                   "watch": {"x": 0xC504, "y": 0xC503, "hp": 0xC120}},   # A/B CONTROL: dead-reckon, no localizer (BCD)
     "gauntlet": {"pkg": "games.gauntlet", "plugin": "GauntletPlugin", "sandbox": "GAUNTLET_SANDBOX",
                  "perceiver_mod": "games.gauntlet.perceiver", "perceiver": "GauntletPerceiver",
                  "rom": "roms/Gauntlet II (USA, Europe).gb",
@@ -248,7 +248,11 @@ class World:
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 
     def _run_autopilot(self, target, max_steps: int) -> tuple[int, str]:
+        self.plugin._extra_context = {}   # clear stale slot from a previous call
         steps = 0
+        prev_pose = None
+        same_pose_count = 0
+        flagged: set = set()
         for _ in range(max(1, min(int(max_steps), 200))):
             obs = self.plugin.observe(_AGENT)
             self._drop_frame(obs)
@@ -258,10 +262,29 @@ class World:
                     return steps, "arrived at the target cell"
             call = self.explore.decide(obs, self.plugin.tools(_AGENT), {"goto": target})
             if call is None:
+                # No reachable frontier: if we have a target, mark it as a dead frontier
+                # so the perceiver prunes it from the frontier list on the next observe.
+                if target is not None:
+                    t = tuple(target)
+                    if t not in flagged:
+                        flagged.add(t)
+                        self.plugin._extra_context["goto_fails"] = [target]
                 return steps, ("blocked / no path to the target" if target is not None
                                else "out of reachable frontiers — your decision")
             self.gw.execute(call)
             steps += 1
+            # Detect pose-frozen runs (all steps but cursor never moves) → mark target as dead.
+            pose = (obs.data.get("pose") or {}).get("value")
+            if pose is not None and list(pose) == (prev_pose or []):
+                same_pose_count += 1
+            else:
+                same_pose_count = 0
+                prev_pose = list(pose) if pose is not None else prev_pose
+            if target is not None and same_pose_count >= 4:
+                t = tuple(target)
+                if t not in flagged:
+                    flagged.add(t)
+                    self.plugin._extra_context["goto_fails"] = [target]
         return steps, "reached the step cap"
 
     # -- dispatch (single return; the self-improvement preamble is prepended to every result) ----------------
