@@ -110,6 +110,9 @@ class CameraScrollSignal:
             return MoveResult(True, EGO2DIR.get(ego_token, commanded_dir), ego_token)
         return MoveResult(False, None, ego_token)
 
+    def fixed_camera(self) -> bool:
+        return False    # follow-camera: the world scrolls under a centered avatar
+
 
 class ForegroundSignal:
     """Fixed-camera worlds (Cave Noire): the screen never scrolls, so the move signal is FOREGROUND motion.
@@ -129,6 +132,9 @@ class ForegroundSignal:
             step = EGO2DIR.get(ego_token, commanded_dir) if scrolled else commanded_dir
             return MoveResult(True, step, DIR2EGO.get(step, "none"))
         return MoveResult(False, None, "none")
+
+    def fixed_camera(self) -> bool:
+        return True     # fixed/static screen: sprites move against a still background
 
 
 def _dominant_dir(action: Optional[str]) -> Optional[str]:
@@ -325,7 +331,8 @@ class GridPerceiver:
         # KNOWN LIMITATION (see reports/2026-06-29-relocalization-notes.md): exact 12-tile signatures
         # cannot distinguish a real loop-closure from two identically-templated rooms, so a wrong
         # re-anchor is possible in games with repeated room layouts. NOT yet bench-validated.
-        if (isinstance(self.move_signal, ForegroundSignal)
+        fixed_cam = getattr(self.move_signal, "fixed_camera", lambda: False)()
+        if (fixed_cam
                 and not hasattr(self.move_signal, "absolute_cell")
                 and label == "gameplay" and frame is not None):
             frame_arr = np.asarray(frame)
@@ -432,12 +439,14 @@ class GridPerceiver:
                         frontiers.append([cx, cy])
                     break
 
-        # Entity detection: foreground blobs that are NOT the avatar.
-        # We pass the avatar's pixel centre so the detector can exclude it.
-        # Avatar lives at approximately the screen centre in follow-camera worlds;
-        # for grid perceivers we pass None and let the detector use centroid distance.
+        # Entity detection (S7) is DISPATCHED BY CAMERA CLASS (S3): the motion-based foreground detector is
+        # valid only on a fixed/static screen, where sprites move against a still background. On a follow
+        # camera the whole screen scrolls every frame, so the rolling-background reads the scroll as
+        # foreground and floods spurious blobs — so we skip it (return empty) rather than feed the brain
+        # garbage. The follow-camera detector (a camera-compensated residual) is a future per-cell algorithm;
+        # see reports/perception-ontology.md (S7 routed by S3) + the killed relative-motion pipeline.
         entities: list[dict] = []
-        if frame is not None:
+        if fixed_cam and frame is not None:
             frame_arr = np.asarray(frame)
             if frame_arr.ndim == 3 and frame_arr.shape[2] >= 3:
                 entities = self._entity_detector.detect(frame_arr)
