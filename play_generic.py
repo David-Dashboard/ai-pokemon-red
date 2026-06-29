@@ -1,14 +1,19 @@
-"""Generic end-to-end play harness — runs the SHARED perceiver on ANY GB/GBC ROM.
+"""Generic end-to-end play harness — runs the SHARED perceiver on ANY GB/GBC/GBA ROM.
 
-Wires: GBEmulator(rom) -> PerceptionPlugin -> GridPerceiver(MoveSignal per camera class)
+Wires: <Emulator>(rom) -> PerceptionPlugin -> GridPerceiver(MoveSignal per camera class)
     -> ScriptedBrain warmup -> ExploreBrain exploration -> run_episode.
 Headless. No LLM, no API calls.
 
+Emulator is picked from the ROM extension: .gba -> mgba GBAEmulator, else PyBoy (.gb/.gbc).
+Both satisfy the same Emulator Protocol, so perception is identical either way.
+
 Camera class is auto-detected from the ROM filename via the _FOLLOW_KEYS mapping
-(gold/kirby/metroid/spaceinv/f1race/ffa/sml -> follow; everything else -> fixed).
+(gold/kirby/metroid/spaceinv/f1race/ffa/sml -> follow; everything else -> fixed). GBA titles
+aren't in that GB-tuned map — pass --camera explicitly (e.g. Emerald is follow).
 
   uv run python play_generic.py --rom "roms/Cave Noire (Japan) [T-En by Aeon Genesis v1.00].gb" --steps 150
   uv run python play_generic.py --rom "roms/Gauntlet II (USA, Europe).gb" --camera follow --steps 150
+  python play_generic.py --rom "roms/gba/Pokemon - Emerald Version (U).gba" --camera follow --steps 150
 """
 from __future__ import annotations
 
@@ -56,12 +61,20 @@ def main() -> int:
     move_signal = ForegroundSignal() if cam == "fixed" else CameraScrollSignal()
     perceiver = GridPerceiver(move_signal=move_signal)
 
+    # Emulator by ROM extension — both satisfy the Emulator Protocol, so PerceptionPlugin
+    # is agnostic. .gba builds an mgba GBAEmulator (no headless/record kwargs — always headless).
+    emulator = None
+    if args.rom.lower().endswith(".gba"):
+        from core.gba_emulator import GBAEmulator
+        emulator = GBAEmulator(args.rom)
+
     plugin = PerceptionPlugin(
         rom_path=args.rom,
         out_dir=out_dir,
         headless=not args.window,
         init_state=args.init_state,
         perceiver=perceiver,
+        emulator=emulator,
     )
     gateway = Gateway(plugin, _SANDBOX)
     agent_id = f"agent-{uuid.uuid4()}"

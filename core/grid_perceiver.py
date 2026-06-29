@@ -66,14 +66,23 @@ _DEAD_TRIES = 3
 # Only fires in fixed-camera worlds (ForegroundSignal) where the background is stable each frame.
 #
 # Crop grid: 12 positions across 3 rows × 4 columns. Each crop is _SIG_TILE × _SIG_TILE pixels.
-# Columns are spaced to cover left/right thirds; rows avoid the screen centre strip (avatar zone).
-# GB frame is 160×144 px. Avatar in fixed-camera worlds sits near pixel (80, 72) = centre.
-# We sample: rows at y=8, y=56, y=112 (top, upper-mid below row 0, bottom) — skipping y=72 (avatar).
-# Columns at x=8, x=52, x=104, x=144 (left, centre-left, centre-right, right edge).
-_SIG_TILE = 16       # pixels per side for each sampled crop
-_SIG_ROWS = [8, 56, 112]              # y offsets (top-left of crop); avoids centre strip 64-88
-_SIG_COLS = [8, 52, 104, 144]        # x offsets
-_SIG_POSITIONS = [(y, x) for y in _SIG_ROWS for x in _SIG_COLS]  # 12 crops
+# Columns are spaced to cover left/right thirds; rows avoid the screen centre strip (the avatar zone —
+# avatar sits near screen centre on both fixed and follow cameras).
+# The grid is expressed as FRACTIONS of frame dims so it is resolution-agnostic (GB 160×144, GBA 240×160,
+# …): _sig_positions(h, w) derives the pixel offsets per frame. The fractions are taken from the original
+# validated GB grid (rows y=8/56/112 on h=144, cols x=8/52/104/144 on w=160), so GB sampling is unchanged.
+_GB_W, _GB_H = 160, 144              # reference resolution the fractions were calibrated on
+_SIG_TILE = 16                       # pixels per side for each sampled crop (2×2 hardware tiles on GB & GBA)
+_SIG_ROW_FRACS = tuple(y / _GB_H for y in (8, 56, 112))     # top, upper-mid, bottom — skips the centre band
+_SIG_COL_FRACS = tuple(x / _GB_W for x in (8, 52, 104, 144))  # left, centre-left, centre-right, right edge
+_SIG_N = len(_SIG_ROW_FRACS) * len(_SIG_COL_FRACS)          # 12 crops
+
+
+def _sig_positions(h: int, w: int) -> list[tuple[int, int]]:
+    """12 crop top-left offsets derived from frame dims — resolution-agnostic, avatar-centre-avoiding."""
+    rows = [round(h * f) for f in _SIG_ROW_FRACS]
+    cols = [round(w * f) for f in _SIG_COL_FRACS]
+    return [(y, x) for y in rows for x in cols]
 
 # A signature is considered flat/ambiguous if too many of its tiles are individually flat.
 _SIG_MIN_DISTINCT = 6    # at least this many non-flat fingerprints required (out of 12)
@@ -186,9 +195,10 @@ def _place_sig(frame_arr: np.ndarray) -> Optional[tuple]:
 
     The 12 positions avoid the screen centre (avatar zone). This is called on the raw uint8 frame."""
     h, w = frame_arr.shape[:2]
+    positions = _sig_positions(h, w)
     fps = []
     flat_count = 0
-    for (py, px) in _SIG_POSITIONS:
+    for (py, px) in positions:
         y1, y2 = py, min(py + _SIG_TILE, h)
         x1, x2 = px, min(px + _SIG_TILE, w)
         if y2 <= y1 or x2 <= x1:
@@ -198,7 +208,7 @@ def _place_sig(frame_arr: np.ndarray) -> Optional[tuple]:
         fps.append(fp)
         if TileFunctionMap.is_flat(fp):
             flat_count += 1
-    distinct = len(_SIG_POSITIONS) - flat_count
+    distinct = len(positions) - flat_count
     if distinct < _SIG_MIN_DISTINCT:
         return None              # too many flat/ambiguous tiles → not a safe relocalization target
     return tuple(fps)
