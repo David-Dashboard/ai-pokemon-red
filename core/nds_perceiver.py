@@ -19,6 +19,17 @@ Usage (in a PerceptionPlugin or a live NDS session):
 The adapter is intentionally thin: it slices the dual frame, runs discovery, and delegates
 everything else to GridPerceiver unchanged. 256×192 NDS screens vs 160×144 GB screens are
 handled by passing nw/nh to GridPerceiver so best_shift and grid-math are correct.
+
+Touch-target detection
+----------------------
+When a full dual-frame is processed, the SYMBOLIC (non-gameplay) screen — typically the touch
+surface — is analysed for candidate tap points. Distinct blob-like regions (detected via a simple
+foreground-mask + connected-components pass, numpy-only) are returned as a list of dicts:
+
+    [{"cx": int, "cy": int, "bbox": [x0, y0, x1, y1], "area": int}, ...]
+
+These are stored in `SymbolicState.spatial_memory["touch_targets"]` so a brain can pick one and
+call the `touch` tool with its (cx, cy). No OCR — purely structural blob detection.
 """
 from __future__ import annotations
 
@@ -29,6 +40,92 @@ import numpy as np
 from core.grid_perceiver import CameraScrollSignal, GridPerceiver, MoveSignal
 from core.perception import JSON, PerceptMemory, SymbolicState
 from core.screen_role import ScreenRoleDiscovery
+
+# ---------------------------------------------------------------------------
+# Minimal blob segmentor (no scipy — pure numpy BFS, same approach as blob.py design).
+# ---------------------------------------------------------------------------
+
+# Ignore blobs smaller than this (noise, single pixels, compression artefacts).
+_MIN_BLOB_AREA = 64
+# Cap the number of targets returned (a menu rarely has >20 distinct elements).
+_MAX_TARGETS = 24
+
+
+def _detect_touch_targets(frame: np.ndarray) -> list[dict]:
+    """Return candidate touch targets from a (H, W, 3) uint8 screen frame.
+
+    Strategy: convert to greyscale, compute edge magnitude (simple Sobel-style via
+    numpy diff), threshold → foreground mask, then BFS connected-components to find
+    distinct blobs. Returns each blob as {cx, cy, bbox:[x0,y0,x1,y1], area}.
+
+    This is intentionally fast and approximate — NDS UIs are high-contrast, so
+    simple edge detection surfaces buttons and icons reliably.
+    """
+    if frame is None or frame.size == 0:
+        return []
+
+    arr = np.asarray(frame, dtype=np.float32)
+    if arr.ndim != 3 or arr.shape[2] < 3:
+        return []
+
+    # Greyscale (luminance weights).
+    gray = arr[:, :, 0] * 0.299 + arr[:, :, 1] * 0.587 + arr[:, :, 2] * 0.114
+
+    # Sobel-like gradient magnitude (3×3 approximation via numpy slicing).
+    gx = np.abs(gray[1:-1, 2:] - gray[1:-1, :-2])
+    gy = np.abs(gray[2:, 1:-1] - gray[:-2, 1:-1])
+    mag = gx + gy                           # (H-2, W-2)
+
+    # Threshold at half the median of non-zero gradient values.
+    # mean+std overshoots on NDS UIs where all edges have similar magnitude (one contrast level);
+    # median*0.5 passes the actual edges while suppressing zero-background.
+    nz = mag[mag > 0]
+    if nz.size == 0:
+        return []
+    thresh = float(np.median(nz)) * 0.5
+    mask = (mag > thresh).astype(np.uint8)  # (H-2, W-2); edge map
+
+    # BFS connected-components on the edge mask.
+    h, w = mask.shape
+    labels = np.zeros_like(mask, dtype=np.int32)
+    label_id = 0
+    blobs: list[dict] = []
+
+    for sy in range(h):
+        for sx in range(w):
+            if mask[sy, sx] == 0 or labels[sy, sx] != 0:
+                continue
+            label_id += 1
+            queue = [(sy, sx)]
+            labels[sy, sx] = label_id
+            ys = [sy]
+            xs = [sx]
+            qi = 0
+            while qi < len(queue):
+                cy, cx = queue[qi]; qi += 1
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    ny, nx = cy + dy, cx + dx
+                    if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not labels[ny, nx]:
+                        labels[ny, nx] = label_id
+                        queue.append((ny, nx))
+                        ys.append(ny)
+                        xs.append(nx)
+            area = len(ys)
+            if area < _MIN_BLOB_AREA:
+                continue
+            y0, y1 = int(min(ys)), int(max(ys))
+            x0, x1 = int(min(xs)), int(max(xs))
+            # +1 offset: mask is (H-2, W-2), so pixel coords in original frame are +1.
+            blobs.append({
+                "cx": x0 + (x1 - x0) // 2 + 1,
+                "cy": y0 + (y1 - y0) // 2 + 1,
+                "bbox": [x0 + 1, y0 + 1, x1 + 1, y1 + 1],
+                "area": area,
+            })
+
+    # Sort by area descending (biggest = most prominent UI element), cap count.
+    blobs.sort(key=lambda b: b["area"], reverse=True)
+    return blobs[:_MAX_TARGETS]
 
 # NDS screen dimensions (each half of the 384×256 dual buffer).
 _NDS_H = 192
@@ -120,13 +217,35 @@ class NDSPerceiver:
         self._last_role = role
 
         gameplay_screen = role.get("gameplay") or self._fallback
+        symbolic_screen = "bottom" if gameplay_screen == "top" else "top"
         gameplay_frame = top_frame if gameplay_screen == "top" else bot_frame
+        symbolic_frame = bot_frame if symbolic_screen == "bottom" else top_frame
 
         # Attach discovery metadata to context so GridPerceiver / callers can log it.
         enriched_ctx = dict(ctx)
         enriched_ctx["screen_role"] = role
 
-        return self._grid.perceive(gameplay_frame, memory, enriched_ctx)
+        sym = self._grid.perceive(gameplay_frame, memory, enriched_ctx)
+
+        # --- touch-target detection on the SYMBOLIC (touch) screen ---
+        targets = _detect_touch_targets(symbolic_frame)
+        if targets:
+            # SymbolicState is frozen; rebuild with augmented spatial_memory.
+            sm = dict(sym.spatial_memory) if sym.spatial_memory else {}
+            sm["touch_targets"] = targets
+            sym = SymbolicState(
+                confidence=sym.confidence,
+                context=sym.context,
+                pose=sym.pose,
+                spatial_memory=sm,
+                affordances=sym.affordances,
+                last_action=sym.last_action,
+                screen_text=sym.screen_text,
+                raw_available=sym.raw_available,
+                raw_ref=sym.raw_ref,
+            )
+
+        return sym
 
     @property
     def last_role(self) -> dict:

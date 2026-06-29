@@ -138,22 +138,42 @@ _WAIT_TOOL = {
     "inputSchema": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 1, "maximum": 600}},
                     "required": []},
 }
+_TOUCH_TOOL = {
+    "name": "touch",
+    "description": ("Tap the NDS bottom (touch) screen at pixel coordinates (x, y). "
+                    "x: 0–255 left-to-right, y: 0–191 top-to-bottom. "
+                    "Use coordinates from observe()'s spatial_memory.touch_targets list. "
+                    "NDS worlds only — returns an error on GB worlds."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x": {"type": "integer", "minimum": 0, "maximum": 255},
+                                   "y": {"type": "integer", "minimum": 0, "maximum": 191},
+                                   "hold_frames": {"type": "integer", "minimum": 1, "maximum": 60}},
+                    "required": ["x", "y"]},
+}
 # The action tools are mirrored from the live plugin; `assert_action_tools_fresh()` enforces they stay in sync
 # (the observe/explore/goto/remember tools are defined HERE and used by both, so they cannot drift).
+# _ACTION_TOOLS covers the GB baseline; _NDS_EXTRA_TOOLS covers NDS-specific additions (touch).
 _ACTION_TOOLS = [_PRESS_BUTTON_TOOL, _PRESS_SEQUENCE_TOOL, _WAIT_TOOL]
-_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL, *_ACTION_TOOLS]
+_NDS_EXTRA_TOOLS = [_TOUCH_TOOL]
+_STATIC_TOOLS = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL, *_ACTION_TOOLS, *_NDS_EXTRA_TOOLS]
 
 
 def assert_action_tools_fresh(plugin) -> None:
     """Lazy-boot safety net: `tools/list` answers from _STATIC_TOOLS *before* the plugin is booted, so the static
     action specs could silently drift from what the plugin actually accepts (a renamed param, a changed `maximum`,
     an added tool). Compare by NAME + SCHEMA — the load-bearing part the brain builds requests from; descriptions
-    are intentionally generic across --game and are not compared. Fail LOUD rather than mislead the brain."""
-    want = {t["name"]: t["inputSchema"] for t in _ACTION_TOOLS}
-    got = {s.name: s.schema for s in plugin.tools(_AGENT)}
-    if want != got:
-        raise SystemExit("world_mcp._STATIC_TOOLS action specs are STALE vs the live plugin (name/schema drift) — "
-                         f"update _ACTION_TOOLS to match.\n  static: {want}\n  live:   {got}")
+    are intentionally generic across --game and are not compared.
+
+    Invariant: every static action tool that the live plugin ALSO exposes must have matching schema (no silent
+    drift). Extra tools in the plugin that are NOT in the static list are allowed (e.g. touch on NDS worlds
+    advertised via World.tools(), not the static list). Fail LOUD rather than mislead the brain."""
+    static = {t["name"]: t["inputSchema"] for t in [*_ACTION_TOOLS, *_NDS_EXTRA_TOOLS]}
+    live = {s.name: s.schema for s in plugin.tools(_AGENT)}
+    # Check only the intersection: static tools that the plugin also declares must have matching schema.
+    drift = {nm: (static[nm], live[nm]) for nm in static if nm in live and static[nm] != live[nm]}
+    if drift:
+        raise SystemExit("world_mcp._STATIC_TOOLS action specs are STALE vs the live plugin (schema drift) — "
+                         f"update to match.\n  drift: {drift}")
 
 
 def _send(msg: dict) -> None:
@@ -293,8 +313,8 @@ class World:
             body = [{"type": "text", "text": f"[goto {tuple(target)} -> {why} after {steps} step(s)]"},
                     *self._content(self.plugin.observe(_AGENT))]
         else:
-            # a direct action (press_button / press_sequence / wait): route through the gateway (policy + plugin).
-            if name in ("press_button", "press_sequence", "wait"):
+            # a direct action (press_button / press_sequence / wait / touch): route through the gateway.
+            if name in ("press_button", "press_sequence", "wait", "touch"):
                 self.decisions += 1          # a real brain action is a wake; an unknown tool name is not counted
             res = self.gw.execute(ToolCall(tool=name, args=args, agent_id=_AGENT, call_id=str(uuid.uuid4())))
             head = {"type": "text", "text": f"[{name} -> ok={res.ok}" + ("" if res.ok else f", {res.error}") + "]"}
