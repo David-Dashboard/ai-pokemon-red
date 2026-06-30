@@ -52,6 +52,15 @@ class ModalAutoPolicy:
         self._esc = 0                # index into the escape ladder (advances while stuck)
         self.stalls = 0              # telemetry: total non-gameplay steps this run
 
+    def reset(self) -> None:
+        """Reset the escape ladder to its advance-biased top (index 0).
+
+        Use when an external controller takes over for one or more steps and then hands
+        control back (e.g. LadderLLMNavigator wakes the VLM on a stall): the screen has
+        changed out from under the policy, so resuming mid-rotation would press a stale
+        ladder move. Restarting from the top re-advances cleanly with the a/start bias."""
+        self._esc = 0
+
     def decide(self, prev_frame, curr_frame,
                last_buttons: Optional[Sequence[str]] = None) -> Tuple[str, List[str]]:
         """Return (detected_mode, buttons_to_press) for the screen we are currently looking at."""

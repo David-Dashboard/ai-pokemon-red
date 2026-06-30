@@ -190,6 +190,24 @@ def _img_data_url(frame, upscale: int = 3) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
+def _small_gray(frame) -> np.ndarray:
+    """Downscale a frame to a 36×40 float32 grayscale thumbnail (cheap screen fingerprint base)."""
+    a = np.asarray(frame)[..., :3].mean(2)
+    return np.asarray(Image.fromarray(a.astype("uint8")).resize((40, 36)), np.float32)
+
+
+def _coarse_fingerprint(small: np.ndarray) -> tuple:
+    """8×8 / 16-level coarse-gray fingerprint of a `_small_gray` thumbnail.
+
+    Same screen (or the same menu re-rendered) collapses to one key; a genuinely new
+    screen is distinct. Shared by every navigator that needs novelty/stall detection so
+    the quantization stays in ONE place (the repo's anti-primitive-duplication rule)."""
+    h, w = small.shape
+    bh, bw = h // 8, w // 8
+    grid = small[:bh * 8, :bw * 8].reshape(8, bh, 8, bw).mean(axis=(1, 3))
+    return tuple(int(v / 16) for v in grid.flatten())
+
+
 def _parse_button(text: str, buttons: Sequence[str]) -> Optional[str]:
     if not text:
         return None
@@ -348,8 +366,7 @@ class HarnessNavigator:
         self._perceiver = MenuPerceiverNavigator() if mode == "ocr" else None
 
     def _small(self, frame) -> np.ndarray:
-        a = np.asarray(frame)[..., :3].mean(2)
-        return np.asarray(Image.fromarray(a.astype("uint8")).resize((40, 36)), np.float32)
+        return _small_gray(frame)
 
     def _stalled(self, frame) -> bool:
         """True if we've been on essentially the same screen for ~6 presses (stuck in a menu)."""
@@ -453,8 +470,7 @@ class ReActNavigator:
         self.last_raw = ""
 
     def _small(self, frame) -> np.ndarray:
-        a = np.asarray(frame)[..., :3].mean(2)
-        return np.asarray(Image.fromarray(a.astype("uint8")).resize((40, 36)), np.float32)
+        return _small_gray(frame)
 
     def _changed(self, frame) -> Optional[bool]:
         if self._prev is None:
@@ -467,6 +483,18 @@ class ReActNavigator:
         stuck = len(self._recent) >= 6 and float(np.abs(g - self._recent[-6]).mean()) < 4.0
         self._recent.append(g)
         return stuck
+
+    def _stall_peek(self, frame) -> bool:
+        """Non-mutating stall check: same result as `_stalled` WITHOUT appending to `_recent`.
+
+        Lets a subclass (MemNavigator) ask "are we stalled?" before delegating to
+        `super().decide()` — which calls `_stalled` itself. Without this, MemNavigator
+        and ReActNavigator both append per step, so `_recent` grows twice as fast and the
+        ~6-frame stall window fires at ~3."""
+        if len(self._recent) < 6:
+            return False
+        g = self._small(frame)
+        return float(np.abs(g - self._recent[-6]).mean()) < 4.0
 
     def _screen_content(self, frame) -> list:
         if self.mode == "vlm":
@@ -560,12 +588,7 @@ class LadderLLMNavigator:
 
     def _fingerprint(self, frame) -> tuple:
         """Coarse 8×8 quantized gray — same screen set collapses; genuinely new screen is distinct."""
-        small = HarnessNavigator._small(self, frame)  # reuse: 40×36 float32 gray
-        # Downsample to 8×8 by averaging 5×4 blocks, then quantize to 16 levels.
-        h, w = small.shape
-        bh, bw = h // 8, w // 8
-        grid = small[:bh * 8, :bw * 8].reshape(8, bh, 8, bw).mean(axis=(1, 3))
-        return tuple(int(v / 16) for v in grid.flatten())
+        return _coarse_fingerprint(_small_gray(frame))
 
     def _stalled(self, frame) -> bool:
         fp = self._fingerprint(frame)
@@ -594,6 +617,10 @@ class LadderLLMNavigator:
                                messages=[{"role": "user", "content": content}],
                                max_tokens=64, temperature=0.7)
         btn = _parse_action(r.choices[0].message.content, bs) or "a"
+        # The wake changes the screen out from under the ladder; reset its rotation so it
+        # resumes from the advance-biased top instead of a stale mid-ladder move (which
+        # otherwise derails a screen the fresh ladder would have cleared).
+        self._policy.reset()
         self._prev = np.asarray(frame).copy()
         self._last = [btn]
         return btn
@@ -621,11 +648,7 @@ class MemNavigator(ReActNavigator):
 
     def _screen_key(self, frame) -> tuple:
         """8×8 / 16-level coarse fingerprint — same menu collapses; distinct menus differ."""
-        small = self._small(frame)   # 40×36 float32 gray
-        h, w = small.shape
-        bh, bw = h // 8, w // 8
-        grid = small[:bh * 8, :bw * 8].reshape(8, bh, 8, bw).mean(axis=(1, 3))
-        return tuple(int(v / 16) for v in grid.flatten())
+        return _coarse_fingerprint(self._small(frame))
 
     def _lesson_header(self) -> str:
         if not self._lessons:
@@ -662,7 +685,9 @@ class MemNavigator(ReActNavigator):
         if lesson_hdr:
             injected = injected + "\n" + lesson_hdr
 
-        stalled = self._stalled(frame)
+        # Peek (non-mutating): super().decide() below calls _stalled() itself, which appends
+        # to _recent. Calling _stalled() here too would double the append and halve the window.
+        stalled = self._stall_peek(frame)
         if stalled and not injected.endswith("...and write a one-line Lesson so you don't repeat this"):
             injected = injected + "\n...and write a one-line Lesson so you don't repeat this"
 
@@ -845,3 +870,86 @@ class UITARSNavigator:
                 return self._decide_gb(frame)
         except Exception:
             return "a"
+
+
+# ---------------------------------------------------------------------------
+# HybridNavigator
+# The escape ladder reaches the menu; UI-TARS navigates it once you're there.
+# ---------------------------------------------------------------------------
+
+class HybridNavigator:
+    """Blind escape-ladder front-half, then hand off to UI-TARS grounding.
+
+    Diagnosis (reports/2026-06-30 Exp 5): a pure-touch UI-TARS navigator gets STUCK on boot
+    splashes / loading screens — there is nothing to ground or tap, and it cannot press
+    start/wait to get *past* them (Phoenix Wright: Capcom splash → black loading → taps the
+    center ×24 forever). The blind escape ladder is exactly the System-1 floor that advances
+    through splash/title/loading; UI-TARS is the specialist that clears the menu once we are
+    there. This composes the two: run the ladder until we have ARRIVED at a real menu, then
+    latch into UI-TARS grounding for the rest of the run.
+
+    Handoff trigger (per console):
+      - NDS  : the bottom screen has >= `min_targets` detectable touch targets — a real touch
+               menu is up. Flat splash / black loading screens have no edges → no targets → we
+               keep laddering past them.
+      - GB/GBA: a novelty-stall — the ladder has pressed for `_NOVELTY_WINDOW` steps without
+               reaching a genuinely new screen fingerprint, i.e. it has hit a menu it cannot
+               clear on its own (name grid / file-select). Hand to the UI-TARS grounding bridge.
+
+    Telemetry: `handed_off` (have we switched yet) and `wakes` (UI-TARS grounding steps = the
+    cost signal, mirroring LadderLLMNavigator.wakes). The navigator is constructed fresh per
+    ROM, so no reset is needed between runs.
+    """
+
+    def __init__(self, console: str = "nds", model: str = "openai/uitars",
+                 api_base: str = "http://localhost:8080/v1", upscale: int = 3,
+                 min_targets: int = 1, buttons: Sequence[str] = BUTTONS):
+        self.console = console
+        self.buttons = buttons
+        self.min_targets = min_targets
+        self._uitars = UITARSNavigator(console=console, model=model,
+                                       api_base=api_base, upscale=upscale)
+        from core.autoplay import ModalAutoPolicy
+        self._policy = ModalAutoPolicy(random.Random(0), lambda r: ["right"])
+        self._prev = None
+        self._last: list = []
+        self.handed_off: bool = False
+        self.wakes: int = 0
+        # Novelty-stall fingerprint state (GB/GBA handoff trigger).
+        self._fp_ring: list = []
+        self._fp_seen: set = set()
+
+    @staticmethod
+    def _bottom(frame) -> np.ndarray:
+        a = np.asarray(frame)
+        return a[192:] if a.shape[0] == 384 else a
+
+    def _stalled(self, frame) -> bool:
+        """True once the ladder has gone `_NOVELTY_WINDOW` steps with no genuinely new screen."""
+        fp = _coarse_fingerprint(_small_gray(frame))
+        self._fp_ring.append(fp)
+        if len(self._fp_ring) > _NOVELTY_WINDOW:
+            self._fp_ring.pop(0)
+        new_in_window = any(f not in self._fp_seen for f in self._fp_ring)
+        self._fp_seen.add(fp)
+        return len(self._fp_ring) >= _NOVELTY_WINDOW and not new_in_window
+
+    def _at_menu(self, frame) -> bool:
+        """Have we reached a menu UI-TARS should take over? (console-specific trigger)."""
+        if self.console == "nds":
+            return len(_detect_touch_targets(self._bottom(frame))) >= self.min_targets
+        # GB / GBA: the ladder stalling on a screen it can't clear is the handoff cue.
+        return self._stalled(frame)
+
+    def decide(self, frame, buttons: Optional[Sequence[str]] = None) -> "str | tuple":
+        if not self.handed_off and self._at_menu(frame):
+            self.handed_off = True
+        if self.handed_off:
+            self.wakes += 1
+            return self._uitars.decide(frame)
+        # Still in the splash/title/loading run — step the blind escape ladder.
+        mode_buttons = self._policy.decide(self._prev, frame, self._last)[1]
+        btn = mode_buttons[0] if mode_buttons else "right"
+        self._prev = np.asarray(frame).copy()
+        self._last = [btn]
+        return btn

@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-29._
+_Last updated: 2026-07-01._
 
 ---
 
@@ -81,6 +81,39 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 **⇒ Read the TOP block first — this section is append-on-top (newest → oldest). Picking up COLD? `git fetch` +
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
+
+**⇒ NEWEST (2026-07-01, later) — THE HYBRID NAVIGATOR IS BUILT (the designated next build) + the 2 logged
+variant bugs are FIXED. On `feat/nds-reachability`; 491 tests green (+8). CODE/UNIT-TEST ONLY — live VLM
+validation is still PENDING (this was built in a cloud container with NO GPU / models / ROMs; run the strips on
+the local RTX-3080 box to score it).**
+- **`HybridNavigator` (`core/navigators.py`; bake-off kinds `hybrid-nds/gb/gba`; `tests/test_hybrid_navigator.py`,
+  8 tests).** Composes the two halves the 06-30 Exp-5 diagnosis pointed at: the blind escape **ladder is the
+  System-1 floor that gets PAST splash/title/loading** (where pure-touch UI-TARS sat tapping center ×24 with
+  nothing to ground — Phoenix Wright), then it **latches into UI-TARS grounding** once a real menu is up.
+  Handoff trigger per console: **NDS** = the bottom screen shows ≥`min_targets` touch targets
+  (`_detect_touch_targets`); **GB/GBA** = a **novelty-stall** (ladder ran `_NOVELTY_WINDOW` steps with no new
+  screen fingerprint → hit a menu it can't clear). Telemetry: `handed_off` + `wakes` (UI-TARS calls = cost).
+  One-way latch (the specialist owns the menu once reached). The known-deferred GB-bridge statelessness (a↔up
+  non-convergence) is INHERITED, not fixed here — on GB the hybrid's value is reaching the menu cleanly; if the
+  bridge still won't converge, the documented fallback is ladder-for-buttons + NDS-touch-only.
+- **2 logged variant bugs FIXED (regression-tested):** (1) **MemNavigator double-`_stalled`** — it called
+  `_stalled()` itself AND `super().decide()` called it again → `_recent` grew 2/step → the ~6-frame stall window
+  fired at ~3. Added a non-mutating `ReActNavigator._stall_peek()`; MemNavigator now peeks, the ring appends once.
+  (2) **LadderLLMNavigator `_esc` not reset after a wake** — the ladder resumed mid-rotation on the post-wake
+  screen and pressed a stale move (the "derailed ladder win"). Added `ModalAutoPolicy.reset()`, called after the
+  LLM wake so the ladder restarts from its advance-biased top.
+- **Dedup (anti-primitive-ossification rule):** the 8×8/16-level screen fingerprint was triplicated
+  (`LadderLLM._fingerprint`, `MemNav._screen_key`, the `_small` thumbnails) → lifted to module-level
+  `_small_gray()` + `_coarse_fingerprint()` in `core/navigators.py`; all callers repointed (behavior-preserving,
+  491 green).
+- **⚠ NOTE — `litellm` is imported by `core/navigators.py` but is NOT in `pyproject.toml`** (kept in the local
+  `.venv-win`/`.venv-bakeoff`, same as `rapidocr`/`py-desmume`/`mgba` — the bake-off deps live in the local
+  venvs by convention). A clean checkout must `uv pip install litellm` (+ `rapidocr-onnxruntime` for the OCR
+  navigators) before importing the navigator module or running its tests.
+- **⇒ NEXT (unchanged spine, now with the hybrid in hand):** on the local GPU box — restore the UI-TARS server
+  (or the 3Bs), run `hybrid-nds` on the touch-primary NDS titles that stalled pure UI-TARS (Phoenix Wright,
+  Layton) + `hybrid-gb` on FFA, score the strips; verify+swap the SFT mmproj; then fire the Claude same-harness
+  test once a live `ANTHROPIC_API_KEY` is set. Report: `reports/2026-06-30-model-and-harness-experiments.md` (Exp 5).
 
 **⇒ NEWEST (2026-07-01) — UI-TARS NAVIGATOR ADVERSARIALLY REVIEWED (4 web-grounded agents) + 2 cheap fixes
 applied; the original 3B servers are RESTORED. On `feat/nds-reachability`. SUPERSEDES the 06-30 server-state.**

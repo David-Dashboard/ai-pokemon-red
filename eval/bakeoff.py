@@ -90,6 +90,10 @@ def _stepper(kind: str):
         from core.navigators import UITARSNavigator
         nav = UITARSNavigator(console="gba")
         return lambda prev, curr, last: [nav.decide(curr)]
+    if kind in ("hybrid-nds", "hybrid-gb", "hybrid-gba"):
+        from core.navigators import HybridNavigator
+        nav = HybridNavigator(console=kind.split("-")[1])
+        return lambda prev, curr, last: [nav.decide(curr)]
     raise SystemExit(f"unknown kind {kind}")
 
 

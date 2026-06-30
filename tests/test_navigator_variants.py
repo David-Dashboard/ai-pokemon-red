@@ -184,6 +184,42 @@ def test_mem_navigator_lesson_dedup(monkeypatch):
 
 
 # ===========================================================================
+# Regression tests for two logged variant bugs (2026-07-01 HANDOFF block)
+# ===========================================================================
+
+def test_mem_navigator_appends_recent_once_per_step(monkeypatch):
+    """MemNavigator must grow _recent by exactly 1 per decide().
+
+    Previously it called _stalled() itself AND super().decide() called it again, so _recent
+    grew by 2 per step → the ~6-frame stall window fired at ~3. The fix routes MemNavigator
+    through the non-mutating _stall_peek()."""
+    nav = MemNavigator(mode="vlm")
+    monkeypatch.setattr(_nav_mod.litellm, "completion",
+                        lambda **kw: _FakeCompletion("Thought: x\nAction: a"))
+    for i in range(5):
+        nav.decide(_random_frame(seed=i))
+    assert len(nav._recent) == 5, (
+        f"_recent should grow 1/step (got {len(nav._recent)} after 5 steps — double-append bug)"
+    )
+
+
+def test_ladder_llm_resets_esc_after_wake(monkeypatch):
+    """After an LLM wake the escape ladder must restart from the top (_esc == 0).
+
+    Without the reset the ladder resumes mid-rotation on the post-wake screen and presses a
+    stale move, derailing a screen the fresh ladder would have cleared."""
+    nav = LadderLLMNavigator()
+    monkeypatch.setattr(_nav_mod.litellm, "completion",
+                        lambda **kw: _FakeCompletion("ACTION: b"))
+    # Constant frame → ladder advances _esc while not yet stalled, then a novelty-stall wakes
+    # the LLM; the wake must reset _esc back to 0.
+    for _ in range(_nav_mod._NOVELTY_WINDOW + 2):
+        nav.decide(_blank_frame())
+    assert nav.wakes >= 1, "the constant frame should have triggered at least one wake"
+    assert nav._policy._esc == 0, f"_esc should be reset to 0 after a wake, got {nav._policy._esc}"
+
+
+# ===========================================================================
 # Primed navigator tests
 # ===========================================================================
 
