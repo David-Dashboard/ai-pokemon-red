@@ -700,14 +700,18 @@ class MemNavigator(ReActNavigator):
 def _parse_uitars_coords(text: str) -> "tuple[int, int] | None":
     """Extract the first two integers from a UI-TARS reply (tolerant of wrapping text).
 
-    Handles bare "(499,637)", action-wrapped "click(point='(499,637)')", and any reply
-    that contains at least two digit sequences.  Returns (x, y) as raw integers (0-1000
-    scale) or None on failure.
+    Handles v1 "(499,637)" / "click(start_box='<|box_start|>(x,y)<|box_end|>')",
+    doubao "<point>x y</point>", and any reply with at least two digit sequences.
+    Returns (x, y) as raw integers (0-1000 scale) or None on failure.
     """
     if not text:
         return None
-    # Prefer an explicit (x,y) pair first.
+    # v1: explicit (x,y) pair (comma-separated).
     m = re.search(r"\((\d+)\s*,\s*(\d+)\)", text)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    # doubao: <point>x y</point> (space-separated).
+    m = re.search(r"<point>\s*(\d+)\s+(\d+)\s*</point>", text)
     if m:
         return int(m.group(1)), int(m.group(2))
     # Fallback: first two digit runs anywhere in the string.
@@ -717,18 +721,20 @@ def _parse_uitars_coords(text: str) -> "tuple[int, int] | None":
     return None
 
 
-_UITARS_PROMPT_TOUCH = (
-    "Output only the click coordinate as (x,y) for: "
-    "the button/option to tap to advance toward gameplay"
+_UITARS_SYSTEM = (
+    "You are a GUI agent. You are given a task and a screenshot. "
+    "You need to perform the next action to complete the task.\n\n"
+    "## Output Format\n"
+    "Action: ...\n\n"
+    "## Action Space\n"
+    "click(start_box='<|box_start|>(x1,y1)<|box_end|>')\n\n"
+    "## User Instruction\n"
+    "{instruction}"
 )
-_UITARS_PROMPT_TARGET = (
-    "Output only the click coordinate as (x,y) for: "
-    "the menu option that starts/advances the game (e.g. New Game / Start / Yes)"
-)
-_UITARS_PROMPT_CURSOR = (
-    "Output only the click coordinate as (x,y) for: "
-    "the option currently highlighted / pointed at by the cursor"
-)
+
+_UITARS_PROMPT_TOUCH = "Tap the on-screen button or menu option that advances toward starting or continuing the game."
+_UITARS_PROMPT_TARGET = "Click the menu option that starts or advances the game (e.g. New Game / Start / Yes)."
+_UITARS_PROMPT_CURSOR = "Click the option currently highlighted by the cursor or selection pointer."
 
 # Threshold (fraction of frame height) within which target and cursor are
 # considered "aligned" → press "a".
@@ -753,7 +759,7 @@ class UITARSNavigator:
         self.model = model
         self.api_base = api_base
         self.upscale = upscale
-        self._fb_idx = 0   # fallback cycle index for GB/GBA
+        self._fb_idx = _FALLBACK_CYCLE.index("start")   # GB/GBA fallback rotation (start-first)
 
     def _next_fallback(self) -> str:
         btn = _FALLBACK_CYCLE[self._fb_idx % len(_FALLBACK_CYCLE)]
@@ -761,15 +767,17 @@ class UITARSNavigator:
         return btn
 
     def _query(self, frame, prompt: str) -> "tuple[int, int] | None":
-        """Send frame + prompt to UI-TARS; return parsed (x, y) in 0-1000 space or None."""
+        """Send frame + task to UI-TARS; return parsed (x, y) in 0-1000 space or None."""
         try:
-            msg = [{"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": _img_data_url(frame, self.upscale)}},
-            ]}]
+            msg = [
+                {"role": "system", "content": _UITARS_SYSTEM.format(instruction=prompt)},
+                {"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": _img_data_url(frame, self.upscale)}},
+                ]},
+            ]
             r = litellm.completion(
                 model=self.model, api_base=self.api_base, api_key="local",
-                messages=msg, max_tokens=32, temperature=0,
+                messages=msg, max_tokens=64, temperature=0,
             )
             return _parse_uitars_coords(r.choices[0].message.content)
         except Exception:
@@ -808,13 +816,7 @@ class UITARSNavigator:
         cursor = self._query(a, _UITARS_PROMPT_CURSOR)
 
         if target is None or cursor is None:
-            # One query failed — fall back to rotating cycle starting with "start".
-            if self._fb_idx == 0:
-                self._fb_idx = 0   # ensure "start" is next in _FALLBACK_CYCLE
-                # _FALLBACK_CYCLE = ("a", "start", ...) so nudge to "start".
-                # Rather than override the cycle, just return "start" directly
-                # and do NOT advance the index (deterministic first-fail response).
-                return "start"
+            # One query failed — rotate through the fallback cycle (starts at "start").
             return self._next_fallback()
 
         # Scale to pixel space for comparison.

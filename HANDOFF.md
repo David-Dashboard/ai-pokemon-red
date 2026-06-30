@@ -82,6 +82,30 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-07-01) — UI-TARS NAVIGATOR ADVERSARIALLY REVIEWED (4 web-grounded agents) + 2 cheap fixes
+applied; the original 3B servers are RESTORED. On `feat/nds-reachability`. SUPERSEDES the 06-30 server-state.**
+- **SERVERS RESTORED:** the two original 3Bs are back — Qwen2.5-VL-3B (`:8080`, +mmproj) and Qwen2.5-3B text
+  (`:8081`); UI-TARS-2B is STOPPED (it had idled out of WSL). Restore commands unchanged (06-30 block / report).
+- **FIXED now (committed this session):** (1) GB-bridge `_fb_idx` no-op — the fallback was locked to `start`
+  forever (`_next_fallback()` was dead); now rotates start→cycle. (2) Adopted the OFFICIAL UI-TARS GROUNDING
+  system prompt ("You are a GUI agent…" + action space) with the target in the instruction slot; dropped the
+  off-distribution "output only (x,y)" wording; parser handles both v1 `start_box='(x,y)'` and doubao
+  `<point>x y</point>`.
+- **REFUTED (false alarms):** the two "critical" coordinate findings — UI-TARS coords are 0–1000 normalized and
+  RESOLUTION-INDEPENDENT, so `/1000*W` matches UI-TARS's own documented formula and `upscale=3` does NOT corrupt
+  them (verified against the code + the earlier precise-grounding test).
+- **CONFIRMED:** UI-TARS-2B-SFT is **Qwen2-VL-2B** (arch matches exactly; not 2.5-VL). The borrowed
+  `mmproj-Qwen2-VL-2B` is architecturally right + grounds precisely, but it's the **pre-SFT** projector — the
+  SFT'd mmproj may ship in `lmstudio-community/UI-TARS-2B-SFT-GGUF` (the "repos ship none" note may be stale);
+  verify + A/B. `--image-min-tokens 1024` is fine for our small frames.
+- **DEFERRED to the hybrid (NOT fixed):** the GB bridge is **stateless** (two fresh groundings/step, no memory
+  the emulator moved) → the a↔up non-convergence; fix with inter-step state or drop the GB bridge and lean on
+  ladder-for-buttons + NDS touch. Variant bugs logged (MemNavigator double-`_stalled` → stall at ~3 not 6 frames;
+  LadderLLM no `_esc` reset after an LLM wake = the "derailed ladder win" mechanism).
+- **⇒ NEXT (unchanged spine — HYBRIDIZE):** ladder/button front-half to reach a real menu → UI-TARS
+  grounding→touch; live-validate the new prompt; verify+swap the SFT mmproj; re-test Phoenix Wright/Layton + the
+  GB bridge. Then fire the Claude same-harness test once a live `ANTHROPIC_API_KEY` is set.
+
 **⇒ NEWEST (2026-06-30) — FOLLOW-UPS: ReAct + 3 improvement variants + model swaps (Qwen3-VL-4B, UI-TARS-2B)
 + a frontier-model test. CENTRAL FINDING: the `a`-collapse is the HARNESS, not the model. On
 `feat/nds-reachability`; report: `reports/2026-06-30-model-and-harness-experiments.md`. ⚠ SERVER STATE

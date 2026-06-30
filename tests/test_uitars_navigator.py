@@ -148,7 +148,8 @@ def test_nds_action_wrapped_reply(monkeypatch):
 
 
 def test_nds_sends_only_bottom_screen(monkeypatch):
-    """The image sent to UI-TARS must be the bottom half of the dual frame only."""
+    """The image sent to UI-TARS must be the bottom half of the dual frame only,
+    as a user message with only an image (no text); system message carries the task."""
     captured = {}
 
     def fake_completion(**kw):
@@ -165,11 +166,17 @@ def test_nds_sends_only_bottom_screen(monkeypatch):
     nav = UITARSNavigator(console="nds")
     nav.decide(frame)
 
-    # The image_url content is a base64 PNG; we verify only that the call was made
-    # and includes an image_url part (full decode not needed in mock test).
-    content = captured["messages"][0]["content"]
+    msgs = captured["messages"]
+    # system message contains "GUI agent" + task text
+    assert msgs[0]["role"] == "system"
+    assert "GUI agent" in msgs[0]["content"]
+    assert _nav_mod._UITARS_PROMPT_TOUCH in msgs[0]["content"]
+    # user message is image-only
+    assert msgs[1]["role"] == "user"
+    content = msgs[1]["content"]
     types = [c.get("type") for c in content]
     assert "image_url" in types
+    assert "text" not in types
 
 
 def test_nds_returns_tuple_not_str(monkeypatch):
@@ -310,3 +317,48 @@ def test_stepper_uitars_gba(monkeypatch):
     result = step(None, _gb_frame(), [])
     assert isinstance(result, list) and len(result) == 1
     assert isinstance(result[0], str)
+
+
+# ===========================================================================
+# FIX #1 — GB-bridge fallback rotation
+# ===========================================================================
+
+def test_gb_fallback_rotates_on_repeated_parse_failure(monkeypatch):
+    """_decide_gb must ROTATE through _FALLBACK_CYCLE when _query returns None.
+
+    Both queries return an unparseable string, so target and cursor are None.
+    The first call must return "start" (the initial rotation position) and the
+    second call must return a DIFFERENT button, proving _next_fallback() is live.
+    """
+    monkeypatch.setattr(_nav_mod.litellm, "completion",
+                        _fake_completion("no coordinates here"))
+    nav = UITARSNavigator(console="gb")
+
+    first = nav.decide(_gb_frame())
+    second = nav.decide(_gb_frame())
+
+    assert first == "start", f"expected 'start' first, got {first!r}"
+    assert second != "start", f"second call should advance beyond 'start', got {second!r}"
+    assert second in _nav_mod._FALLBACK_CYCLE, f"unexpected button {second!r}"
+
+
+# ===========================================================================
+# FIX #5 — _parse_uitars_coords handles both v1 and doubao formats
+# ===========================================================================
+
+def test_parse_v1_start_box_format():
+    """v1 start_box='<|box_start|>(235,512)<|box_end|>' → (235, 512)."""
+    text = "Action: click(start_box='<|box_start|>(235,512)<|box_end|>')"
+    assert _parse_uitars_coords(text) == (235, 512)
+
+
+def test_parse_doubao_point_format():
+    """doubao <point>235 512</point> → (235, 512)."""
+    text = "<point>235 512</point>"
+    assert _parse_uitars_coords(text) == (235, 512)
+
+
+def test_parse_doubao_point_with_whitespace():
+    """<point> with extra whitespace around numbers still parses."""
+    text = "Action: <point>  100  200  </point>"
+    assert _parse_uitars_coords(text) == (100, 200)

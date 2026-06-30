@@ -72,6 +72,24 @@ green**): **NDS** = ground→touch (send the bottom screen, scale normalized 0�
   the whole investigation: **structure (the ladder) is the System-1 floor that reaches the menu; UI-TARS is the
   specialist that navigates it once you're there.** Committed for the next session to build on.
 
+### Review (2026-07-01) — adversarial, web-grounded
+Four agents (3 of them googling the official UI-TARS sources) reviewed the committed `UITARSNavigator` +
+variants. **Fixed now:** (1) the GB-bridge `_fb_idx` no-op — the fallback was locked to `start` forever and
+`_next_fallback()` was dead code; now rotates start→cycle. (2) Adopted the official UI-TARS GROUNDING system
+prompt ("You are a GUI agent…" + action space) with the target in the instruction slot, dropping the
+off-distribution "output only (x,y)" wording; the parser now accepts both v1 `start_box='(x,y)'` and doubao
+`<point>x y</point>`. **Refuted (false alarms):** the two "critical" coordinate findings — UI-TARS coords are
+0–1000 normalized and RESOLUTION-INDEPENDENT, so `/1000*W` matches UI-TARS's own documented formula and the
+`upscale=3` does not corrupt them (confirmed by reading the code + the earlier precise-grounding test).
+**Confirmed facts:** UI-TARS-2B-SFT is **Qwen2-VL-2B** (config/arch match exactly, not 2.5-VL); the borrowed
+`mmproj-Qwen2-VL-2B` is architecturally correct and grounds precisely, but it is the **pre-SFT** projector — the
+SFT'd mmproj may ship in `lmstudio-community/UI-TARS-2B-SFT-GGUF` (so the "repos ship none" note may be stale);
+verify + A/B it. `--image-min-tokens 1024` is fine for our small frames. **Deferred to the hybrid (not fixed):**
+the GB bridge is **stateless** (two fresh groundings/step, no memory the emulator moved) → the a↔up
+non-convergence; fix with inter-step state or drop the GB bridge for ladder-buttons + NDS touch. Variant bugs
+logged: `MemNavigator` calls `_stalled()` twice/step (stall fires at ~3 not 6 frames); `LadderLLMNavigator`
+doesn't reset `_esc` after an LLM wake (the "derailed ladder win" mechanism).
+
 ## Synthesis — where the lever actually is
 Not a bigger/newer general model (3B→4B is flat). The promising paths:
 1. **Keep the structured ladder** as the cheap System-1 floor (5/8, ~0 cost).
