@@ -394,3 +394,154 @@ def test_nds_only_buttons_rejected_by_gb_plugin():
     for btn in ("x", "y", "l", "r"):
         res = plugin.handle(_call("press_button", {"button": btn}))
         assert not res.ok, f"NDS button '{btn}' must be rejected by GB plugin but was accepted"
+
+
+# ---------------------------------------------------------------------------
+# 6. touch_target — coarse id resolution against the last observe()'s targets
+#    (feat/touch-target-coarsening; the ADR-003 "coordinate leak" fix — additive)
+# ---------------------------------------------------------------------------
+
+# A known area-sorted target list to seed _last_touch_targets directly (0 = largest by convention).
+_SEED_TARGETS = [
+    {"cx": 60, "cy": 40, "bbox": [20, 20, 100, 60], "area": 3200},   # id 0
+    {"cx": 125, "cy": 140, "bbox": [80, 120, 170, 160], "area": 3000},  # id 1
+    {"cx": 190, "cy": 40, "bbox": [150, 20, 230, 60], "area": 2800},  # id 2
+]
+
+
+def test_touch_target_toolspec_present():
+    plugin = _make_plugin()
+    names = [s.name for s in plugin.tools("test-agent")]
+    assert "touch_target" in names, f"expected 'touch_target' in tools(), got: {names}"
+
+
+def test_touch_target_toolspec_schema_and_flags():
+    plugin = _make_plugin()
+    spec = next(s for s in plugin.tools("test-agent") if s.name == "touch_target")
+    props = spec.schema["properties"]
+    assert "id" in props and props["id"]["minimum"] == 0
+    assert "hold_frames" in props
+    assert spec.schema["required"] == ["id"]
+    assert spec.cost == 1
+    assert spec.mutating is True
+
+
+def test_touch_target_resolves_id_zero_to_first_target():
+    """touch_target(id=0) taps the 0-th (largest) cached target's (cx, cy)."""
+    emu = FakeEmu()
+    plugin = _make_plugin(emu)
+    plugin._last_touch_targets = list(_SEED_TARGETS)
+    res = plugin.handle(_call("touch_target", {"id": 0}))
+    assert res.ok, f"expected ok=True, got error: {res.error}"
+    assert emu.touches == [(60, 40)], f"expected tap at target 0 (60,40), got {emu.touches}"
+    assert emu.releases == 1
+    assert "touch_target" in res.data.get("action", "")
+
+
+def test_touch_target_resolves_middle_id():
+    emu = FakeEmu()
+    plugin = _make_plugin(emu)
+    plugin._last_touch_targets = list(_SEED_TARGETS)
+    res = plugin.handle(_call("touch_target", {"id": 2}))
+    assert res.ok
+    assert emu.touches == [(190, 40)], f"expected tap at target 2 (190,40), got {emu.touches}"
+
+
+def test_touch_target_empty_list_rejected():
+    """No targets from the last observe() -> ok=False, no tap, no raise."""
+    emu = FakeEmu()
+    plugin = _make_plugin(emu)
+    plugin._last_touch_targets = []
+    res = plugin.handle(_call("touch_target", {"id": 0}))
+    assert not res.ok
+    assert emu.touches == []
+    assert res.error and "no touch targets" in res.error.lower()
+
+
+def test_touch_target_out_of_range_rejected():
+    emu = FakeEmu()
+    plugin = _make_plugin(emu)
+    plugin._last_touch_targets = list(_SEED_TARGETS)   # len 3 -> valid ids 0..2
+    res = plugin.handle(_call("touch_target", {"id": 3}))
+    assert not res.ok
+    assert emu.touches == []
+    assert "range" in res.error.lower()
+
+
+def test_touch_target_negative_id_rejected():
+    emu = FakeEmu()
+    plugin = _make_plugin(emu)
+    plugin._last_touch_targets = list(_SEED_TARGETS)
+    res = plugin.handle(_call("touch_target", {"id": -1}))
+    assert not res.ok
+    assert emu.touches == []
+
+
+def test_touch_target_exception_becomes_ok_false():
+    """Any exception inside _do_touch_target must be caught and returned as ok=False (not propagate)."""
+    class BrokenEmu(FakeEmu):
+        def touch(self, x: int, y: int) -> None:
+            raise RuntimeError("simulated hardware fault")
+
+    plugin = _make_plugin(BrokenEmu())
+    plugin._last_touch_targets = list(_SEED_TARGETS)
+    res = plugin.handle(_call("touch_target", {"id": 0}))
+    assert not res.ok, "exception in touch_target must become ok=False"
+    assert res.error is not None and len(res.error) > 0
+
+
+def test_touch_target_defaults_empty_before_any_observe():
+    """A fresh plugin has an empty target cache (so touch_target rejects until observe() runs)."""
+    plugin = _make_plugin()
+    assert plugin._last_touch_targets == []
+
+
+def test_observe_populates_last_touch_targets_cache():
+    """The observe() override caches spatial_memory.touch_targets so touch_target can resolve them."""
+    class _DualUIEmu(FakeEmu):
+        """FakeEmu whose screen_ndarray returns the synthetic UI dual-frame (top gameplay, bottom UI)."""
+        def screen_ndarray(self, screen="both"):
+            return _make_dual_frame_with_ui()
+
+    # Real NDSPerceiver so a UI dual-frame yields detected touch_targets.
+    plugin = NDSPerceptionPlugin(emulator=_DualUIEmu(), perceiver=NDSPerceiver(fallback_screen="top"),
+                                 out_dir="/tmp/nds_touch_test")
+
+    # Feed several observe() calls so ScreenRoleDiscovery commits (min_steps=3 default).
+    for _ in range(10):
+        plugin.observe("test-agent")
+
+    assert isinstance(plugin._last_touch_targets, list)
+    assert len(plugin._last_touch_targets) >= 1, (
+        f"expected observe() to cache >=1 target, got {plugin._last_touch_targets}"
+    )
+    # And touch_target now resolves against the cache end-to-end.
+    tap_emu = FakeEmu()
+    plugin.emu = tap_emu
+    res = plugin.handle(_call("touch_target", {"id": 0}))
+    assert res.ok, f"touch_target failed after observe cache: {res.error}"
+    assert len(tap_emu.touches) == 1
+
+
+def test_world_mcp_static_tools_nds_has_touch_target():
+    """world_mcp._static_tools('nds') MUST include touch_target (mirrors the live plugin)."""
+    from world_mcp import _static_tools
+    tools = _static_tools("nds")
+    names = [t["name"] for t in tools]
+    assert "touch_target" in names, f"touch_target must be in NDS world static tools, got: {names}"
+
+
+def test_world_mcp_static_tools_gb_no_touch_target():
+    """world_mcp._static_tools('cave_noire') must NOT include touch_target."""
+    from world_mcp import _static_tools
+    tools = _static_tools("cave_noire")
+    names = [t["name"] for t in tools]
+    assert "touch_target" not in names, f"touch_target must NOT be in GB world static tools, got: {names}"
+
+
+def test_assert_action_tools_fresh_nds_with_touch_target():
+    """assert_action_tools_fresh passes for the NDS plugin now that both lists carry touch_target."""
+    from world_mcp import assert_action_tools_fresh
+    plugin = NDSPerceptionPlugin(emulator=FakeNDSEmu(), perceiver=FakePerceiver(),
+                                 out_dir="/tmp/nds_touch_test")
+    assert_action_tools_fresh(plugin, "nds")  # must not raise
