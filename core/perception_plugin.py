@@ -161,7 +161,8 @@ class PerceptionPlugin:
         rec["perceived"] = {"outcome": la.get("outcome"), "action": la.get("action"),
                             "diff": la.get("diff"), "pose": (sym.pose or {}).get("value"),
                             "context": sym.context, "confidence": sym.confidence,
-                            "ego_motion": (sym.spatial_memory or {}).get("ego_motion")}
+                            "ego_motion": (sym.spatial_memory or {}).get("ego_motion"),
+                            "screen_text": sym.screen_text}
         try:
             with open(self._oracle_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec) + "\n")
@@ -174,6 +175,22 @@ class PerceptionPlugin:
         sm = sym.spatial_memory or {}
         la = sym.last_action or {}
         lines = [self._render_header]
+
+        # Non-overworld: the exploration render (pose/cells/frontiers) is degenerate/stale during a
+        # dialog and previously confused the brain into thinking perception had frozen. Lead with the
+        # decoded text instead and skip the spatial lines.
+        if sym.context != "overworld":
+            if sym.screen_text:
+                lines.append(f"On-screen text (you are in a {sym.context}, NOT free movement): "
+                             f"\"{sym.screen_text}\"")
+                if sym.context in ("dialog", "battle_text"):
+                    lines.append("Press A (or B) to advance the text.")
+                elif sym.context == "menu":
+                    lines.append("This is a menu choice to read and decide, not a place to walk.")
+            else:
+                lines.append(f"You are in a {sym.context}, NOT free movement.")
+            return "\n".join(lines)
+
         if pose.get("value") is not None:
             lines.append(f"Your position (dead-reckoned, approximate): {tuple(pose['value'])}.")
         action, outcome = la.get("action"), la.get("outcome")
@@ -197,6 +214,8 @@ class PerceptionPlugin:
             sample = ", ".join(f"{f[0]} {f[1]}" for f in frontiers[:6])
             lines.append(f"Unexplored frontier cells you can target (x y): {sample}. "
                          f"Add 'GOTO: x y' to have a free pathfinder walk you to one.")
+        if sym.screen_text:  # rare in overworld, but harmless to surface if present
+            lines.append(f"On-screen text: \"{sym.screen_text}\"")
         return "\n".join(lines)
 
     def drain_events(self) -> list[Event]:
