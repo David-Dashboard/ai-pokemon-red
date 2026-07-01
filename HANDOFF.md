@@ -82,6 +82,33 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-07-01, evening) — THE HYBRID IS LIVE-VALIDATED end-to-end on the RTX-3080 box across 27 games
+(NDS ×11, GB ×8, GBA ×8) with UI-TARS-2B on `:8080`. VERDICT: it does exactly what it was built for. Report:
+`reports/2026-07-01-hybrid-validation.md` (+ strip evidence in `reports/assets/2026-07-01-hybrid-validation/`).
+Closes the "live VLM validation PENDING" item on the block below. On `feat/nds-reachability`; PR opened.**
+- **THE SPLASH WALL IS GONE (27/27).** The blind ladder front-half clears every boot splash/logo/loading
+  (Capcom, LEVEL-5, Nintendo, Midway, Atari, Square Enix, HAL, LucasArts, EA…) — the exact failure that pinned
+  pure-UI-TARS (Phoenix Wright: tap-splash-center ×24). Then it hands off to UI-TARS. This was the whole point.
+- **NDS touch CONVERTS (the winning path): 2/11 into gameplay** (Phoenix Wright → dialogue; NSMB → world map),
+  **9/11 reached a real interactive screen** (Layton name-entry, MKDS, Kirby MP menus, RE main menu, Star Wars
+  intro crawl, HP/FIFA titles). Only 2 didn't — Spirit Tracks (loading-bound) + Pokémon White (DSi-enhanced →
+  white-screens under desmume; emulator limit, not the navigator).
+- **THE GB/GBA BRIDGE IS THE CONFIRMED NEXT WALL — the a↔up non-convergence it INHERITED, now empirically shown.**
+  GB 1/8 gameplay (Cave Noire, whose menus are OK/NO confirm dialogs); the rest reach the menu but the STATELESS
+  bridge ping-pongs the cursor (Pokémon R/G + Emerald sit on NEW GAME and never press A). Fix: give the bridge
+  inter-step state, OR drop it → ladder-for-buttons + NDS-touch-only.
+- **REGRESSION found — GB start-gated titles.** Handoff on the first novelty-stall swaps the ladder's start/A-press
+  for grounding, so bare "PRESS START" titles (Sword of Hope II, Tetris Plus, MK) stall where the *pure ladder*
+  (GB champion 5/8) cleared them. Don't hand off until a real cursor/touch menu is detected.
+- **Notes:** strip-eyeballed (not oracle), single run; blind touch has side effects (MKDS tapped through an
+  "erase all save → OK"); the `a` captions on low-detail NDS screens = UI-TARS's button fallback (benign here).
+- **Env used:** UI-TARS-2B (`UI-TARS-2B-SFT-Q4_K_M` + borrowed `mmproj-Qwen2-VL-2B-Instruct-f16`,
+  `--image-min-tokens 1024`) on `:8080`; NDS+GB in Windows `.venv-win`, GBA in WSL `~/.venv-bakeoff` + `~/gba-spike`.
+  Sweep drivers + the 27 strips are session-scratchpad; the 3 contact sheets are committed under `reports/assets/`.
+- **⇒ NEXT:** fix the GB/GBA bridge (inter-step state) or adopt ladder-for-buttons + NDS-touch-only; fix the GB
+  handoff regression (confirm a cursor menu before handing off); verify+swap the SFT mmproj; then the Claude
+  same-harness test once a live `ANTHROPIC_API_KEY` is set. **Server left as UI-TARS-2B on `:8080` (3Bs stopped).**
+
 **⇒ NEWEST (2026-07-01, later) — THE HYBRID NAVIGATOR IS BUILT (the designated next build) + the 2 logged
 variant bugs are FIXED. On `feat/nds-reachability`; 491 tests green (+8). CODE/UNIT-TEST ONLY — live VLM
 validation is still PENDING (this was built in a cloud container with NO GPU / models / ROMs; run the strips on
