@@ -62,7 +62,7 @@ _NDS_WORLDS = frozenset({"nds"})   # game keys that are NDS worlds (get touch + 
 # Lazy import so world_mcp.py is importable without py-desmume installed.
 def _nds_sandbox():
     from core.permissions import Allowlist
-    return Allowlist({"press_button", "press_sequence", "wait", "touch"})
+    return Allowlist({"press_button", "press_sequence", "wait", "touch", "touch_target"})
 
 GAMES = {
     "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
@@ -169,8 +169,10 @@ def _make_press_tools(buttons: tuple) -> list[dict]:
 _TOUCH_TOOL = {
     "name": "touch",
     "description": ("Tap the NDS bottom (touch) screen at pixel coordinates (x, y). "
-                    "x: 0–255 left-to-right, y: 0–191 top-to-bottom. "
-                    "Use coordinates from observe()'s spatial_memory.touch_targets list."),
+                    "x: 0–255 (left to right), y: 0–191 (top to bottom). "
+                    "Prefer touch_target(id) when the target is in observe()'s touch_targets; use raw "
+                    "coords only for targets the detector missed. "
+                    "Issues a stylus-down at (x, y), holds for a few ticks, then releases."),
     "inputSchema": {"type": "object",
                     "properties": {"x": {"type": "integer", "minimum": 0, "maximum": 255},
                                    "y": {"type": "integer", "minimum": 0, "maximum": 191},
@@ -178,9 +180,19 @@ _TOUCH_TOOL = {
                     "required": ["x", "y"]},
 }
 
-# Pre-built per-world action-tool lists (no touch on GB; touch+NDS buttons on NDS).
+_TOUCH_TARGET_TOOL = {
+    "name": "touch_target",
+    "description": ("Tap the id-th detected touch target from observe()'s touch_targets list "
+                    "(0-based, area-sorted; 0 = largest). Preferred over touch(x,y) — no raw coordinates."),
+    "inputSchema": {"type": "object",
+                    "properties": {"id": {"type": "integer", "minimum": 0},
+                                   "hold_frames": {"type": "integer", "minimum": 1, "maximum": 60}},
+                    "required": ["id"]},
+}
+
+# Pre-built per-world action-tool lists (no touch on GB; touch/touch_target + NDS buttons on NDS).
 _GB_ACTION_TOOLS = _make_press_tools(_GB_BUTTONS)
-_NDS_ACTION_TOOLS = [*_make_press_tools(_nds_emu_mod.BUTTONS), _TOUCH_TOOL]
+_NDS_ACTION_TOOLS = [*_make_press_tools(_nds_emu_mod.BUTTONS), _TOUCH_TOOL, _TOUCH_TARGET_TOOL]
 
 
 def _static_tools(game: str) -> list[dict]:
@@ -377,8 +389,8 @@ class World:
             body = [{"type": "text", "text": f"[goto {tuple(target)} -> {why} after {steps} step(s)]"},
                     *self._content(self.plugin.observe(_AGENT))]
         else:
-            # a direct action (press_button / press_sequence / wait / touch): route through the gateway.
-            if name in ("press_button", "press_sequence", "wait", "touch"):
+            # a direct action (press_button / press_sequence / wait / touch / touch_target): route through the gateway.
+            if name in ("press_button", "press_sequence", "wait", "touch", "touch_target"):
                 self.decisions += 1          # a real brain action is a wake; an unknown tool name is not counted
             res = self.gw.execute(ToolCall(tool=name, args=args, agent_id=_AGENT, call_id=str(uuid.uuid4())))
             head = {"type": "text", "text": f"[{name} -> ok={res.ok}" + ("" if res.ok else f", {res.error}") + "]"}
