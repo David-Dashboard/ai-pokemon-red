@@ -126,8 +126,9 @@ guards:
 ## Change-process cross-reference
 
 The repo has **no standalone `CONTRACT.md`** (the UEC ships one). The additive-only ceremony lives inline in
-`core/contracts.py` (module docstring, ~lines 2–51) and is enforced by `tests/test_contract_frozen.py` (the
-`PINNED_SHA256` hash pin + a `CONTRACT-CHANGE-APPROVED` commit token convention). This is functionally
+`core/contracts.py` (module docstring, ~lines 2–51) and is enforced by two files: `tests/test_contract_frozen.py` (the
+`PINNED_SHA256` hash pin + the `CONTRACT_VERSION` constant) and the `scripts/pre-commit` git hook (the
+`CONTRACT-CHANGE-APPROVED` commit-token gate). This is functionally
 equivalent to the UEC's `CONTRACT.md` §3, just inlined rather than a separate file.
 
 **Deferred, out-of-scope follow-up:** formalizing a standalone repo `CONTRACT.md` (mirroring the UEC's) is
