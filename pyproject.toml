@@ -24,3 +24,12 @@ dev = [
 # This is an application, not a library — don't try to build/install the repo
 # itself as a wheel; just manage its environment and dependencies.
 package = false
+
+[tool.pytest.ini_options]
+# reports/_archive/embodiment-stone-layer-v0.2/ vendors a REFERENCE-ONLY copy of an
+# external contract scaffold (ADR-003) that happens to ship its own tests/ package.
+# Without this, pytest's rootdir-relative import resolves its tests/test_contract_frozen.py
+# to the same dotted module name as this repo's tests/test_contract_frozen.py and aborts
+# collection repo-wide ("import file mismatch"). Exclude the vendored tree; it is not
+# wired into this repo's test suite.
+norecursedirs = ["reports/_archive/embodiment-stone-layer-v0.2"]
