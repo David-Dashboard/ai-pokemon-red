@@ -1,0 +1,43 @@
+{
+  "Skill": {
+    "handle": "craft_pickaxe",
+    "verb": "craft",
+    "params": {"item": "enum"},
+    "enums": {"item": ["pickaxe", "table"]},
+    "reversible": false,
+    "cost": {"data_loss": 1.0},
+    "duration": "extended",
+    "data": {"note": "soft per-domain payload lives here"}
+  },
+  "Percept": {
+    "timestep": 5.0,
+    "frame": "grid",
+    "episode": "running",
+    "skills": [
+      {"handle": "click", "verb": "click", "params": {"target": "element_id"},
+       "enums": {}, "reversible": true, "cost": {}, "duration": "extended", "data": {}}
+    ],
+    "text": "a 3x3 grid; one button visible",
+    "data": {"entities": [{"id": "btn_submit", "type": "button"}]}
+  },
+  "Goal": {
+    "skill": "click",
+    "params": {"target": "btn_submit"},
+    "percept_timestep": 5.0,
+    "data": {}
+  },
+  "Outcome_ok": {
+    "ok": true, "status": "success", "reward": 1.0, "error": null,
+    "episode": "running", "data": {}
+  },
+  "Outcome_error_is_observation": {
+    "ok": false, "status": "failure", "reward": 0.0,
+    "error": "target occluded", "episode": "running",
+    "data": {"retry_hint": "scroll then re-perceive"}
+  },
+  "Outcome_permission_pending": {
+    "ok": false, "status": "aborted", "reward": 0.0,
+    "error": "pending:appr_7af3", "episode": "running",
+    "data": {"approval_id": "appr_7af3"}
+  }
+}

@@ -82,6 +82,28 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-07-01, later) — STAGE 0: embodiment north-star contract recorded (ADR-003, doc-only). On
+branch `docs/adr-003-embodiment-contract`, off `origin/main`.**
+- **What landed:** ADR-003 (`reports/_archive/2026-07-01-adr-003-embodiment-north-star-contract.md`) records
+  the externally-designed Embodiment Universal Contract (UEC) as the documented north-star target; the UEC
+  scaffold is vendored read-only at `reports/_archive/embodiment-stone-layer-v0.2/`; the originating migration
+  analysis is internalized at `reports/_archive/2026-07-01-migration-embodiment-contract.md`.
+- **The key correction:** the migration doc's "~80% congruent, ONE delta" claim was **understated** — this
+  session's line-by-line comparison found **~4 real structural deltas** (cost scalar→vector; reversibility
+  semantics inverted; params JSON-Schema→type-strings; events stream→soft observatory), not one. ADR-003 is now
+  the authoritative mapping.
+- **Guardrails:** the frozen v1 (`core/contracts.py`, `CONTRACT_VERSION = 1`, hash-pinned in
+  `tests/test_contract_frozen.py`) is **untouched** — this is doc-only. Deltas are gated to the roadmap rung
+  that forces each: skill-handle coarsening at **It2**, the reversibility cost-vector (first
+  `CONTRACT_VERSION = 2`) at **It4**. Nothing lands speculatively before its rung.
+- **Collision fix:** the vendored scaffold ships its own `tests/` package, which pytest's rootdir-relative
+  import would otherwise resolve to the same dotted module name as this repo's `tests/test_contract_frozen.py`
+  and abort collection repo-wide. Added `reports/_archive/embodiment-stone-layer-v0.2` to
+  `[tool.pytest.ini_options] norecursedirs` in `pyproject.toml` — verified collection count unchanged
+  (415 tests, identical IDs, before/after).
+- **⇒ NEXT:** nothing until It2 forces skill-coarsening (or It4 forces the cost-vector). ADR-003 stays
+  PROPOSED in `reports/_archive/` — not promoted into `ARCHITECTURE.md` — until its gate passes.
+
 **⇒ NEWEST (2026-06-26, late) — AVATAR-LOCALIZATION BAKE-OFF (the baseline wins) + the RELATIVE-MOTION pipeline
 as the next build. Branch `feat/avatar-localization` (commit `4ef895b`; off `main`, NOT PR'd). SIBLING work on
 PR #25 (`feat/adr-002-gate`): the cross-game consequence study + perception-needs report — `git fetch` +

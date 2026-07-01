@@ -7,6 +7,8 @@ Pinned so we don't drift. Companion docs: [`ROADMAP.md`](ROADMAP.md) (where the 
 - **Status:** Accepted — 2026-06-20.
 - **Supersedes:** the implicit "ai-pokemon-red is the harness that drives aria as a per-wake decision
   endpoint" model. The control is **inverted** relative to that: aria is the agent; the world serves it.
+- **See also:** ADR-003 (Proposed) — the embodiment north-star contract —
+  [`reports/_archive/2026-07-01-adr-003-embodiment-north-star-contract.md`](reports/_archive/2026-07-01-adr-003-embodiment-north-star-contract.md).
 
 ## Context
 

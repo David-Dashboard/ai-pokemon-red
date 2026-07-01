@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Pre-commit hook: protects the embodiment stone layer.
+# Install:  cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+set -euo pipefail
+
+PROTECTED='^(core/contracts\.py|contracts/golden_vectors_v[0-9]+\.json|tests/test_contract_frozen\.py|scripts/pre-commit)$'
+
+staged=$(git diff --cached --name-only)
+touched=$(echo "$staged" | grep -E "$PROTECTED" || true)
+
+if [ -n "$touched" ]; then
+  msg_file=".git/COMMIT_EDITMSG"
+  if ! git log -1 --pretty=%B 2>/dev/null | grep -q 'CONTRACT-CHANGE-APPROVED' \
+     && ! grep -q 'CONTRACT-CHANGE-APPROVED' "$msg_file" 2>/dev/null; then
+    echo ""
+    echo "✋ BLOCKED: this commit touches the FROZEN stone layer:"
+    echo "$touched" | sed 's/^/    /'
+    echo ""
+    echo "Contract changes require the process in CONTRACT.md §3 and a commit"
+    echo "message containing the token: CONTRACT-CHANGE-APPROVED"
+    echo "(AI assistants: do not add this token yourself — stop and ask the human.)"
+    exit 1
+  fi
+fi
+
+# Always verify the stone layer is intact before any commit.
+python -m pytest tests/test_contract_frozen.py -q || {
+  echo "✋ BLOCKED: frozen-contract tests failing. Revert stone-layer changes."
+  exit 1
+}
