@@ -389,8 +389,8 @@ class World:
             body = [{"type": "text", "text": f"[goto {tuple(target)} -> {why} after {steps} step(s)]"},
                     *self._content(self.plugin.observe(_AGENT))]
         else:
-            # a direct action (press_button / press_sequence / wait / touch): route through the gateway.
-            if name in ("press_button", "press_sequence", "wait", "touch"):
+            # a direct action (press_button / press_sequence / wait / touch / touch_target): route through the gateway.
+            if name in ("press_button", "press_sequence", "wait", "touch", "touch_target"):
                 self.decisions += 1          # a real brain action is a wake; an unknown tool name is not counted
             res = self.gw.execute(ToolCall(tool=name, args=args, agent_id=_AGENT, call_id=str(uuid.uuid4())))
             head = {"type": "text", "text": f"[{name} -> ok={res.ok}" + ("" if res.ok else f", {res.error}") + "]"}

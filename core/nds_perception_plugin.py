@@ -41,8 +41,10 @@ class NDSPerceptionPlugin(PerceptionPlugin):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # Cache of the touch_targets from the most recent observe() — the resolution source for
-        # touch_target(id). The frame does not advance between observe() and the next act() in the
-        # MCP flow, so this is drift-free (no re-detect/TOCTOU reordering risk).
+        # touch_target(id). Kept fresh by the MCP driver (world_mcp.World.call), which re-observe()s
+        # after EVERY action, so the cache always reflects the frame the brain last saw. (The tap
+        # itself advances the frame; safety comes from that post-action re-observe, NOT from a static
+        # frame — do not remove the driver's trailing observe().)
         self._last_touch_targets: list = []
 
     # -- GamePlugin surface (extend, not replace) ----------------------------
