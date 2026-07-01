@@ -14,9 +14,9 @@ investigation probes live in [`_archive/`](_archive/) (kept for the record, not 
 
 ## Scoring / ops
 - `score_perception` — score a perceiver's SymbolicState vs the RAM oracle.
+- `score_red_task` — score the It1 task (get the starter) from a `claude -p` MCP run's oracle+transcript.
 - `tune_threshold` — pick move/area frame-diff thresholds from logged runs.
 - `index_runs` — catalog `runs/` into a scannable index.
-- `estimate_wake_rate` — estimate LLM-wake cost from a run (free).
 
 ## Capture / calibration / labeling (asset + dataset tools)
 - `capture_modes` · `capture_dialog` · `capture_battle` — capture mode/dialog/battle frames.

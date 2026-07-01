@@ -32,4 +32,4 @@ package = false
 # to the same dotted module name as this repo's tests/test_contract_frozen.py and aborts
 # collection repo-wide ("import file mismatch"). Exclude the vendored tree; it is not
 # wired into this repo's test suite.
-norecursedirs = ["reports/_archive/embodiment-stone-layer-v0.2"]
+norecursedirs = ["reports/_archive/embodiment-stone-layer-v0.2", "games/pokemon_red/_archive"]

@@ -10,7 +10,7 @@ import pytest
 
 from core.perception import StubPerceiver, SymbolicState
 from games.pokemon_red import memory_map as mm
-from games.pokemon_red.plugin import PokemonRedPlugin
+from games.pokemon_red import PokemonRedPlugin
 from tests.test_pokemon_red import FakeEmulator
 
 # The role-named keys that ARE allowed to cross the seam (the SymbolicState contract). Derived from the
@@ -18,7 +18,11 @@ from tests.test_pokemon_red import FakeEmulator
 ALLOWED_SEAM_KEYS = set(SymbolicState(confidence=0.0, context="overworld").to_dict())
 
 # Substrings that betray an oracle/RAM-derived field having leaked into agent-facing data.
-FORBIDDEN_KEY_SUBSTRINGS = ("ram", "wram", "oracle", "map_id", "true_", "gt_", "ground_truth")
+FORBIDDEN_KEY_SUBSTRINGS = ("ram", "wram", "oracle", "map_id", "true_", "gt_", "ground_truth", "watch")
+
+# The lean PokemonRedPlugin's `watch` map (mirrors world_mcp.py's GAMES["pokemon_red"]["watch"]) — RAM
+# goes to oracle.jsonl only, never Observation.data (the structural no-leak guarantee this test proves).
+WATCH = {"x": mm.ADDR_X, "y": mm.ADDR_Y, "map": mm.ADDR_MAP_ID}
 
 # Distinctive RAM values we plant; none should surface in what the agent sees.
 RAM_SENTINELS = {"map": 222, "x": 201, "y": 233}
@@ -47,12 +51,14 @@ def _all_values(obj):
 
 @pytest.fixture
 def agent_obs(tmp_path):
-    """What the agent actually sees, with distinctive RAM sentinels planted in the emulator."""
+    """What the agent actually sees, with distinctive RAM sentinels planted in the emulator. The lean
+    PerceptionPlugin structurally can't leak RAM into Observation.data — even watched RAM goes only to
+    the oracle log (a stronger guarantee than the archived heavy plugin's read_state-based observe)."""
     emu = FakeEmulator()
     emu.mem[mm.ADDR_MAP_ID] = RAM_SENTINELS["map"]
     emu.mem[mm.ADDR_X] = RAM_SENTINELS["x"]
     emu.mem[mm.ADDR_Y] = RAM_SENTINELS["y"]
-    plugin = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=StubPerceiver())
+    plugin = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=StubPerceiver(), watch=WATCH)
     return plugin.observe("a").data
 
 
@@ -60,7 +66,7 @@ def test_only_role_named_keys_cross_the_seam(agent_obs):
     # The role-named SymbolicState keys are present...
     assert ALLOWED_SEAM_KEYS <= set(agent_obs), "the seam dropped a role-named field"
     # ...and no obvious RAM keys are at the top level.
-    for k in ("x", "y", "map_id", "ram"):
+    for k in ("x", "y", "map_id", "ram", "watch"):
         assert k not in agent_obs, f"RAM key '{k}' crossed the seam"
 
 

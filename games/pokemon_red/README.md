@@ -1,57 +1,55 @@
-# Pokémon Red world plugin
+# Pokémon Red world
 
-An emulator-driven Pokémon Red world for the Arena testbed. An agent plays the
-*actual* game (via the PyBoy Game Boy emulator) by emitting button-press
-ToolCalls through the gateway — the "Claude Plays Pokémon" setup, wired to the
-contract.
+A Pokémon Red world for the game-agnostic MCP harness (`world_mcp.py --game pokemon_red`), same lean
+`PerceptionPlugin` shape as `games/cave_noire` / `games/gauntlet`. An agent (or `claude -p` MCP brain)
+plays the *actual* game (via the PyBoy Game Boy emulator) by emitting button-press ToolCalls through the
+gateway — the "Claude Plays Pokémon" setup, wired to the contract.
 
 ## Contract posture
 
-This is the testbed's stand-in for **the real desktop**, so it follows the
-real-world rules in `CONTRACT.md`, not the simulated-world ones:
+Ships per-world CONFIG only (see `__init__.py` / `plugin.py`): the sandbox and a `PokemonRedPlugin`
+(`core.perception_plugin.PerceptionPlugin` wired with Pokémon's flavor text). The brain (`core/`) and the
+world-interface infra (the plugin body) are reused UNCHANGED.
 
 | Aspect              | Choice                                                              |
 | ------------------- | ------------------------------------------------------------------ |
-| Protocol            | `GamePlugin` **only** — no `Replayable`. An open-world RPG has no clean reset/terminal. |
+| Perception          | Pixels-derived `SymbolicState` only (`perceiver.py`'s `OverworldPerceiver`) — no RAM in the observation. |
 | Time regime         | Real-world: `t` = unix epoch seconds (invariant 6).                |
 | Errors              | Observations: a bad button → `ok=False` ToolResult with the legal buttons (invariant 2). |
-| Screen on the wire  | None. The frame is saved to disk; `Observation.data["screen_path"]` carries the path (invariant 3). |
-| Permissions         | `Allowlist`, **not** allow-all — it permits exactly the in-game button tools (honors the real-world hard rule, while the sandbox stays playable). |
+| Screen on the wire  | None by default. The frame is saved to disk; `Observation.data["screen_path"]` carries the path (invariant 3). |
+| Permissions         | `Allowlist`, **not** allow-all — it permits exactly the in-game button tools. |
 
 ## Setup
 
-```bash
-pip install -r requirements-pokemon.txt        # installs PyBoy + deps
-```
-
-Then **supply your own legally-obtained Pokémon Red ROM** (`.gb`). No ROM is
-bundled with this project and none will be downloaded for you.
+Supply your own legally-obtained Pokémon Red ROM (`.gb`) at `roms/PokemonRed.gb`. No ROM is bundled with
+this project and none will be downloaded for you.
 
 ## Run
 
 ```bash
-# Zero-model smoke test — proves the gateway→plugin→emulator pipeline:
-python play_pokemon.py --rom path/to/PokemonRed.gb --brain scripted --steps 50
+# Build a gameplay start-state (mashes the unskippable intro headless):
+python new_game.py --rom roms/PokemonRed.gb --out runs/red_start.state
 
-# LLM agent via a local Ollama vision model:
-python play_pokemon.py --rom path/to/PokemonRed.gb --brain llm \
-    --model llama3.2-vision --steps 200 --window
+# Serve it over MCP for a claude -p brain (see reports/2026-06-26-mcp-claude-p-runbook.md and
+# runs/brain_red_starter/ for the full task-brief recipe):
+python world_mcp.py --game pokemon_red --init-state runs/red_start.state --out runs/mcp_world
 ```
-
-Point the LLM brain at any model by passing your own `complete_fn` to
-`LLMButtonBrain` (e.g. the Claude API for a much stronger player).
 
 ## Files
 
 | File            | Role                                                              |
 | --------------- | ----------------------------------------------------------------- |
-| `emulator.py`   | The **only** PyBoy import. Thin surface: press / tick / read / screen. |
-| `memory_map.py` | Curated Pokémon Red WRAM addresses → structured state. Pure; no emulator. |
-| `reward.py`     | Synthetic reward from state deltas (badges, levels, exploration). |
-| `plugin.py`     | `PokemonRedPlugin(GamePlugin)`: tools / handle / observe / drain_events. |
+| `__init__.py`   | `PokemonRedPlugin` (the lean `PerceptionPlugin` subclass) + `POKEMON_SANDBOX`. |
+| `perceiver.py`  | `OverworldPerceiver`: pixels → `SymbolicState` (odometry + occupancy map + textbox decode). |
+| `textbox.py`    | Gen-1 dialog/menu glyph decoding, used by the perceiver. |
+| `saliency.py`   | Motion-saliency (NPC/ROI detection), used by the perceiver. |
+| `emulator.py`   | Pokémon's own PyBoy wrapper (fade detection + battle-settle pacing). Not currently wired into the MCP seam (`world_mcp.World` builds the generic `core.gb_emulator.PyBoyEmulator`); kept for direct/injected use. |
+| `memory_map.py` | Curated Pokémon Red WRAM addresses → structured state. Pure; no emulator. Source of truth for `world_mcp.py`'s `watch` map (scoring oracle only). |
+| `_archive/`     | The pre-seam heavy `GamePlugin` (`plugin.py`: RAM observe, reward shaping, battle-settle wiring) and `reward.py`. Superseded by the lean plugin above; kept for reference, excluded from pytest collection. |
 
 The emulator is **dependency-injected**, so all logic is unit-tested against a
-fake RAM with no ROM and no PyBoy (`tests/test_pokemon_red.py`).
+fake RAM with no ROM and no PyBoy (`tests/test_pokemon_red.py`, `tests/test_perception.py`,
+`tests/test_no_ram_leak.py`).
 
 > ⚠️ The memory addresses target the US/EN ROM revision. A wrong address yields
 > wrong *telemetry*, not a crash — if a field looks bogus, suspect the address.

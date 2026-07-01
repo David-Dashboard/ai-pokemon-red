@@ -8,7 +8,7 @@ mashes A through Oak's speech, picks the preset names at both name menus
 the bedroom — then writes a save state you can boot the agent from:
 
     python new_game.py --rom "roms/Pokemon Red.gb" --out start.state
-    python play_pokemon.py --rom "roms/Pokemon Red.gb" --load-state start.state --brain scripted
+    python world_mcp.py --game pokemon_red --init-state start.state --out runs/mcp_world
 
 Assumes a fresh cartridge (no existing in-game save). Save states embed
 copyrighted game memory, so they're gitignored — keep them local.

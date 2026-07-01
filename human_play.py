@@ -5,7 +5,7 @@ button-mashing brain can't reliably clear it. Standard practice for agent/RL
 setups: play past it once, save a state, then boot the agent from there:
 
     python human_play.py --rom "roms/Pokemon Red.gb" --out start.state
-    python play_pokemon.py --rom "roms/Pokemon Red.gb" --load-state start.state --brain scripted
+    python world_mcp.py --game pokemon_red --init-state start.state --out runs/mcp_world
 
 A window opens — play with your keyboard (PyBoy's default Game Boy bindings:
 arrow keys = d-pad, A = the 'a' key, B = the 's' key, Start = Enter). When you've
