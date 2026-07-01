@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-01 (It1 seam closed end-to-end + generalized across 3 games; #39 merged)._
+_Last updated: 2026-07-02 (It1 dialog-perception fixed + validated e2e; brain now reaches Oak's lab + starter prompt; #41 merged)._
 
 ---
 
@@ -82,7 +82,46 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
-**⇒⇒ NEWEST (2026-07-01, night) — IT1 SEAM *CLOSED* END-TO-END + GENERALIZED TO 3 GAMES; PR #39 MERGED.
+**⇒⇒ NEWEST (2026-07-02) — IT1 DIALOG-PERCEPTION FIXED + VALIDATED END-TO-END; PR #41 MERGED (main `2360713`).
+Brain now clears Oak's whole intro cutscene and reaches the lab + starter prompt. Party still 0 — remaining
+blocker is the INTERIOR POSE bug (task #7). This supersedes the 07-01 "task one dialog short" item below. ⇒⇒**
+
+- **Root cause found by measuring, not guessing.** The 07-01 stall ("brain flew blind at Oak's intercept") was
+  NOT a decoder problem. An offline probe on the recorded frames (`runs/brain_red_starter/world/frame_*.png`)
+  showed `textbox.decode()` reads the intercept text **perfectly**. The real bug: `core/perception_plugin.py::`
+  `_render_symbolic` **never surfaced `sym.screen_text`** (a regression from the lean-plugin migration #39) — the
+  decoded dialog was computed and silently dropped before reaching the brain. Every "decode is broken → use OCR/
+  VLM/upscale/auto-calibrate the font" hypothesis was DISPROVEN by the probe. **Lesson: probe recorded frames
+  before building.**
+- **The fix (PR #41, merged):** `_render_symbolic` now routes a `_TEXT_CONTEXTS` allowlist
+  (`dialog/menu/battle/battle_text`) to a text render (decoded text + a decision hint, no stale spatial lines);
+  `screen_text` is logged to `oracle.jsonl` for verification. Review caught a **cross-game regression** (my spec's
+  `!= "overworld"` would have collapsed cave_noire/gauntlet's exploration render — grid perceivers emit
+  `gameplay/static/menu/unknown`, never `overworld`); fixed via the allowlist + a regression test. 412 tests.
+- **Validated e2e (account B, $2.21, 53 decisions, clean):** `screen_text` populates live (26 steps); the brain
+  **read Oak's entire cutscene** ("…Don't go out!" → "You need your own POKéMON…" → "Here, come with…" → lab:
+  "GARY? Gramps!") and **reached map 40 = Oak's Lab + the "which POKéMON do you want?" prompt** (last run died at
+  map 0). Nav 0→37→38→40. The exact 07-01 blocker is GONE.
+- **⇒ NEXT (task #7 — the binding work): the INTERIOR DEAD-RECKONING/POSE bug.** At the starter table the pose
+  resets to (0,0) with `up` mis-walled, so the brain can't align onto a specific Poké Ball tile — every `up`+`a`
+  re-triggers Oak's generic prompt instead of a ball's YES/NO. Same false-transition/pose-corruption family as the
+  07-01 `(5,-5)` break and Cave Noire's drift. Fix pose stability in interiors (hold/repair during scene changes;
+  stop minting bogus places), build it so a later absolute localizer (the `AvatarLocalizer`, PR #21) can replace
+  it, then re-run the account-B audit to score **party 0→1**.
+- **Design decided this session (NOT built — gated follow-ups):** (1) **"Patience" = a System-1 auto-advance
+  reflex**, not a brain trait: settle-to-stable before perceiving (also fixes the pose churn), then mash the
+  world's advance-input through plain no-choice dialog WITHOUT waking the brain — keyed on STATE (gated-static /
+  choice / free-control), not a hardcoded button; the advance button LEARNED by control-grounding (same thesis as
+  button↔effect / AvatarLocalizer); **never auto-commit a choice** (default-to-wake, the erase-save guard). Lift
+  `battle_subscreen` to `core/` as its base. (2) **Dialog-text generalization = auto-calibrate the font**
+  (cluster recurring text tiles → one-time VLM/OCR label → cheap template match at runtime), NOT hardcode a
+  per-game table and NOT a per-frame VLM — build when a novel-font held-out world forces it (climb the North Eye
+  ladder on measured need).
+- **Ops:** account-B subscription `claude -p` runs are **pre-authorized** (run without per-run approval — see the
+  `claude-p-run-authorization` auto-memory); infra confirmed ready (WSL claude + `~/.claude-b` + Docker up).
+  Rebuild the `gb-mcp-world` image after any code change before a run (it COPYs `core/`/`games/`).
+
+**⇒⇒ (2026-07-01, night) — IT1 SEAM *CLOSED* END-TO-END + GENERALIZED TO 3 GAMES; PR #39 MERGED.
 This SUPERSEDES the cold-start bridge below (its "loop NOT closed / #38+#36 open" is now stale). ⇒⇒**
 
 - **The loop is CLOSED.** For the first time in any world, a real System-2 brain (`claude -p`) drove a game
