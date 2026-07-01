@@ -83,6 +83,10 @@ GAMES = {
             "perceiver_mod": "core.nds_perceiver", "perceiver": "NDSPerceiver",
             "rom": "roms/nds/game.nds",   # override with --rom
             "watch": {}},
+    "pokemon_red": {"pkg": "games.pokemon_red", "plugin": "PokemonRedPlugin", "sandbox": "POKEMON_SANDBOX",
+                    "perceiver_mod": "games.pokemon_red.perceiver", "perceiver": "OverworldPerceiver",
+                    "rom": "roms/PokemonRed.gb",
+                    "watch": {"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163, "badges": 0xD356}},
 }
 
 _AGENT = "mcp-brain"
