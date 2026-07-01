@@ -1,23 +1,17 @@
-"""Pokémon Red plugin tests — run with NO ROM and NO PyBoy.
+"""Pokémon Red support-module tests — run with NO ROM and NO PyBoy.
 
-The emulator is dependency-injected, so a tiny in-memory FakeEmulator exercises
-every code path: state parsing, error-as-observation, reward shaping, the
-gateway's permission veto, and a full runner episode. (A real-ROM integration
-test is intentionally omitted — it needs a copyrighted ROM the project never
-ships.)
+`FakeEmulator` is the RAM-backed PyBoy stand-in shared across the pokemon_red test files (and borrowed
+by test_cave_noire.py / test_gauntlet.py, which reuse it as a generic fake). Covers the pure memory-map
+parsing and the emulator's battle-settle pacing helper (`advance_until_static`). The heavy `GamePlugin`
+this file used to test (reward shaping, RAM-observe, POKEMON_SYSTEM) was archived to `_archive/` when Red
+was wired into the game-agnostic MCP seam — see tests/test_no_ram_leak.py and tests/test_perception.py
+for the lean `PokemonRedPlugin`'s coverage now. (A real-ROM integration test is intentionally omitted —
+it needs a copyrighted ROM the project never ships.)
 """
 
 from __future__ import annotations
 
-import pytest
-
-from core.brains import ScriptedBrain
-from core.gateway import Gateway
-from core.permissions import Allowlist
-from core.runner import run_episode
-from games.pokemon_red import POKEMON_SANDBOX, POKEMON_SYSTEM
 from games.pokemon_red import memory_map as mm
-from games.pokemon_red.plugin import PokemonRedPlugin
 
 
 class FakeEmulator:
@@ -79,38 +73,7 @@ def _seed_party_mon1(emu: FakeEmulator):
     emu.mem[base + mm.OFF_MAX_HP + 1] = 0x18  # 24
 
 
-# -- prompt: lesson channel (S3 beta — harness channel retired) ---------------
-
-def test_pokemon_system_no_harness_lesson_channel_under_beta():
-    # S3 beta: the harness no longer advertises a plain `LESSON:` line — aria owns within-run memory and
-    # teaches its own <lesson> tag (stripped server-side, so THINK/MOVE parsing is untouched).
-    assert "LESSON:" not in POKEMON_SYSTEM                  # harness plain-text channel retired
-    assert "<lesson>" not in POKEMON_SYSTEM.lower()         # the harness prompt must NOT teach the tag either
-    # The muzzle stays lifted (so aria can emit its tags around the reply); THINK/MOVE still required.
-    assert "nothing else" not in POKEMON_SYSTEM
-    assert "THINK:" in POKEMON_SYSTEM and "MOVE:" in POKEMON_SYSTEM and "GOTO:" in POKEMON_SYSTEM
-
-
-def test_pokemon_system_has_battle_guidance():
-    # Battle policy v2 (run-#6b fixes): the prompt must teach picking a DAMAGING move (not mashing A
-    # into a non-damaging status move like GROWL) and reading the screen to name your Pokémon + the foe.
-    low = POKEMON_SYSTEM.lower()
-    assert "battle" in low
-    assert "fight" in low                      # the action-menu option to attack with
-    assert "damage" in low                     # pick a move that DEALS DAMAGE...
-    assert "growl" in low                      # ...not a non-damaging status move (the run-#6b trap)
-    assert "mash a" in low                     # explicit: do NOT just mash A
-
-
 # -- battle pacing: settle a battle animation before observing -----------------
-
-def _battle_frame():
-    import numpy as np
-    f = np.full((144, 160, 3), 60, dtype=np.uint8)
-    f[:58, :] = 255      # white HP boxes (top)
-    f[96:, :] = 255      # white action/text box (bottom)
-    return f
-
 
 def test_advance_until_static_settles_when_animation_stops():
     import numpy as np
@@ -185,22 +148,6 @@ def test_advance_until_static_requires_a_full_window():
     assert settled is True and pulled == 6            # 1 priming pull + 5 stable diffs
 
 
-def test_battle_screen_settles_before_observe(tmp_path):
-    # In battle, an action must trigger emulator.settle() so the agent observes a stable screen.
-    p, emu = _plugin(tmp_path)
-    emu._screen = _battle_frame()
-    p.handle(_tc("press_button", {"button": "a"}))
-    assert emu.settles == 1
-
-
-def test_overworld_action_does_not_settle(tmp_path):
-    # Outside battle, settling would needlessly slow the free autopilot — it must NOT fire.
-    p, emu = _plugin(tmp_path)
-    emu._screen = None                         # default zeros frame -> detect_mode == overworld
-    p.handle(_tc("press_button", {"button": "down"}))
-    assert emu.settles == 0
-
-
 # -- memory map ---------------------------------------------------------------
 
 def test_bcd_and_popcount():
@@ -228,112 +175,3 @@ def test_read_state_parses_party_and_fields():
     assert s["party"][0] == {"species_id": 153, "level": 12, "hp": 20,
                              "max_hp": 24, "status": 0}
     assert s["party_level_sum"] == 12 and s["party_hp_sum"] == 20
-
-
-# -- plugin: errors are observations -----------------------------------------
-
-def _plugin(tmp_path):
-    emu = FakeEmulator()
-    p = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path))
-    return p, emu
-
-
-def test_invalid_button_is_observation_not_exception(tmp_path):
-    p, _ = _plugin(tmp_path)
-    res = p.handle(_tc("press_button", {"button": "z"}))
-    assert res.ok is False
-    assert "invalid button" in res.error
-    assert set(res.data["valid_buttons"]) >= {"a", "b", "up", "down"}
-
-
-def test_unknown_tool_is_observation(tmp_path):
-    p, _ = _plugin(tmp_path)
-    res = p.handle(_tc("teleport", {}))
-    assert res.ok is False and "unknown tool" in res.error
-
-
-def test_valid_press_returns_ok_and_emits_event(tmp_path):
-    p, _ = _plugin(tmp_path)
-    res = p.handle(_tc("press_button", {"button": "a"}))
-    assert res.ok is True and res.data["action"] == "a"
-    types = [e.type for e in p.drain_events()]
-    assert "tool_called" in types
-
-
-def test_init_state_is_loaded_before_baseline(tmp_path):
-    emu = FakeEmulator()
-    PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), init_state="start.state")
-    assert emu.loaded == "start.state"
-
-
-def test_save_state_delegates_to_emulator(tmp_path):
-    p, emu = _plugin(tmp_path)
-    p.save_state("final.state")
-    assert emu.saved == "final.state"
-
-
-def test_observe_writes_screen_path_and_text(tmp_path):
-    p, emu = _plugin(tmp_path)
-    _seed_party_mon1(emu)
-    obs = p.observe("agent-x")
-    assert obs.data["screen_path"].endswith(".png")
-    assert "Pokémon Red" in obs.text
-    assert obs.data["party"][0]["level"] == 12
-
-
-# -- reward shaping -----------------------------------------------------------
-
-def test_badge_gain_rewards_and_emits_badge_event(tmp_path):
-    p, emu = _plugin(tmp_path)  # baseline: 0 badges
-    emu.mem[mm.ADDR_BADGES] = 0b00000001  # earn one
-    res = p.handle(_tc("press_button", {"button": "a"}))
-    assert res.data["reward"] == pytest.approx(10.0)
-    assert "badge_earned" in [e.type for e in p.drain_events()]
-
-
-def test_new_map_gives_exploration_reward(tmp_path):
-    p, emu = _plugin(tmp_path)  # baseline map 0
-    emu.mem[mm.ADDR_MAP_ID] = 5
-    res = p.handle(_tc("press_button", {"button": "up"}))
-    assert res.data["reward"] == pytest.approx(1.0)
-
-
-# -- gateway ------------------------------------------------------------------
-
-def test_gateway_rejects_unknown_tool(tmp_path):
-    p, _ = _plugin(tmp_path)
-    gw = Gateway(p, POKEMON_SANDBOX)
-    res = gw.execute(_tc("fly_away", {}))
-    assert res.ok is False and "unknown tool" in res.error
-
-
-def test_gateway_permission_denies_out_of_sandbox(tmp_path):
-    p, _ = _plugin(tmp_path)
-    gw = Gateway(p, Allowlist({"wait"}))  # press_button NOT allowed
-    res = gw.execute(_tc("press_button", {"button": "a"}))
-    assert res.ok is False and "denied" in res.error
-
-
-def test_gateway_passes_allowed_call(tmp_path):
-    p, _ = _plugin(tmp_path)
-    gw = Gateway(p, POKEMON_SANDBOX)
-    res = gw.execute(_tc("press_button", {"button": "a"}))
-    assert res.ok is True and res.cost_charged == 1
-
-
-# -- runner episode -----------------------------------------------------------
-
-def test_full_episode_runs_with_scripted_brain(tmp_path):
-    p, _ = _plugin(tmp_path)
-    gw = Gateway(p, POKEMON_SANDBOX)
-    brain = ScriptedBrain("agent-1", seed=42)
-    summary = run_episode(gw, p, brain, "agent-1", max_steps=8)
-    assert summary["steps"] == 8
-    assert summary["event_counts"].get("tool_called") == 8
-
-
-# -- helpers ------------------------------------------------------------------
-
-def _tc(tool, args):
-    from core.contracts import ToolCall
-    return ToolCall(tool=tool, args=args, agent_id="agent-1", call_id="call-1")

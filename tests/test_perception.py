@@ -12,10 +12,13 @@ import numpy as np
 
 from core.brains import _call
 from core.perception import PerceptMemory, Perceiver, StubPerceiver, SymbolicState
+from games.pokemon_red import PokemonRedPlugin
 from games.pokemon_red import memory_map as mm
 from games.pokemon_red.perceiver import OverworldPerceiver, _dominant_dir
-from games.pokemon_red.plugin import PokemonRedPlugin
 from tests.test_pokemon_red import FakeEmulator
+
+# The lean PokemonRedPlugin's `watch` map (mirrors world_mcp.py's GAMES["pokemon_red"]["watch"]).
+_WATCH = {"x": mm.ADDR_X, "y": mm.ADDR_Y, "map": mm.ADDR_MAP_ID}
 
 
 def _frame(val: int):
@@ -57,11 +60,12 @@ def test_stub_satisfies_the_perceiver_protocol():
     assert isinstance(StubPerceiver(), Perceiver)
 
 
-def test_plugin_without_perceiver_is_unchanged(tmp_path):
-    p = PokemonRedPlugin(emulator=FakeEmulator(), out_dir=str(tmp_path))
-    obs = p.observe("a")
-    assert "map_id" in obs.data and "screen_path" in obs.data       # legacy RAM obs
-    assert not (tmp_path / "oracle.jsonl").exists()                 # no oracle log without perception
+def test_plugin_requires_a_perceiver(tmp_path):
+    # The lean PerceptionPlugin is perception-only BY CONSTRUCTION (no legacy RAM-obs fallback) —
+    # a stronger no-leak guarantee than the archived heavy plugin's optional perceiver kwarg.
+    import pytest
+    with pytest.raises(ValueError):
+        PokemonRedPlugin(emulator=FakeEmulator(), out_dir=str(tmp_path), perceiver=None)
 
 
 def test_plugin_with_perceiver_emits_symbolic_and_does_not_leak_ram(tmp_path):
@@ -69,7 +73,7 @@ def test_plugin_with_perceiver_emits_symbolic_and_does_not_leak_ram(tmp_path):
     emu.mem[mm.ADDR_MAP_ID] = 38
     emu.mem[mm.ADDR_X] = 3
     emu.mem[mm.ADDR_Y] = 7
-    p = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=StubPerceiver())
+    p = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=StubPerceiver(), watch=_WATCH)
     obs = p.observe("a")
 
     # The agent sees the role-named SymbolicState...
@@ -78,9 +82,10 @@ def test_plugin_with_perceiver_emits_symbolic_and_does_not_leak_ram(tmp_path):
     # ...and RAM is NOT leaked into the agent's input.
     assert "x" not in obs.data and "y" not in obs.data and "map_id" not in obs.data
 
-    # RAM ground-truth lives only in the oracle side-channel, paired with the perceiver's verdict.
+    # RAM ground-truth lives only in the oracle side-channel (under `watch`), paired with the
+    # perceiver's verdict.
     rec = json.loads((tmp_path / "oracle.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    assert rec["map_id"] == 38 and rec["x"] == 3 and rec["y"] == 7
+    assert rec["watch"] == {"map": 38, "x": 3, "y": 7}
     assert "perceived" in rec  # the paired (truth ⟂ perceived) record the scorer reads
 
 
@@ -250,25 +255,6 @@ def test_scene_cut_without_a_fade_flag_still_warps():
     per.perceive(_scroll(_scene(1), dx_tiles=1), mem, {"last_action": "right+right"})   # a real move
     s = per.perceive(_scene(7), mem, {"last_action": "right+right"})          # scene cut, no fade flag
     assert s.pose["area"] == 1
-
-
-def test_plugin_threads_emulator_fade_into_perceiver_context(tmp_path):
-    # Wiring: the plugin must hand the emulator's fade flag to the perceiver as context['transition'],
-    # so a warp resets the dead-reckoning frame. Verified with a spy perceiver.
-    from core.contracts import ToolCall
-    seen: dict = {}
-
-    class Spy:
-        def perceive(self, frame, memory, context=None):
-            seen.update(context or {})
-            return SymbolicState(confidence=0.4, context="overworld", raw_ref="")
-
-    emu = FakeEmulator()
-    emu._faded = True
-    p = PokemonRedPlugin(emulator=emu, out_dir=str(tmp_path), perceiver=Spy())
-    p.handle(ToolCall(tool="press_button", args={"button": "up"}, agent_id="a", call_id="c"))
-    p.observe("a")
-    assert seen.get("transition") is True
 
 
 def test_detect_mode_separates_overworld_menu_dialog_battle():
