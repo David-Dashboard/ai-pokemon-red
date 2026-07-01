@@ -82,6 +82,29 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒ NEWEST (2026-07-01, evening) — STAGE-1 FRONT: NDS touch coarsened to `touch_target(id)` (soft, no contract
+change). On branch `feat/touch-target-coarsening`, off `origin/main`; PR #38 (merge-ready).**
+- **What landed:** a coarse `touch_target(id)` tool on `NDSPerceptionPlugin` (`core/nds_perception_plugin.py`) —
+  resolves a 0-based id against the perceiver's already-surfaced `spatial_memory["touch_targets"]` (area-sorted)
+  → the target's center → the existing tap machinery (extracted to a shared `_tap()`). No raw coordinates on the
+  wire. Wired end-to-end: advertised in `tools()`, mirrored into `world_mcp._NDS_ACTION_TOOLS` (freshness) + the
+  NDS sandbox allowlist (`_nds_sandbox`) so the Gateway permits it. Raw `touch(x,y)` KEPT as a fallback (the blob
+  detector misses some targets).
+- **Why:** the Stage-1-front skill-coarsening from ADR-003 — fixes the "coordinate leak" (blind touch coords are
+  exactly what tapped Mario Kart DS through "erase all save → OK" in the hybrid validation). Same coarsening as
+  `goto`/`navigate`.
+- **Guardrails:** frozen `core/contracts.py` UNTOUCHED (soft; empty diff verified throughout). 428 tests (+13).
+- **Reviewed (merge-ready):** adversarial review DISPROVED a cache-staleness/TOCTOU risk — the MCP driver
+  re-`observe()`s after every action (`world_mcp.World.call`), so `_last_touch_targets` can't go stale. Gating
+  parity + freshness + all reject-paths confirmed. Two low-severity fixes applied (count `touch_target` as a wake;
+  correct a misleading cache comment). *(Implementer crashed mid-run on a transient API overload; resumed cleanly,
+  no work lost.)*
+- **Caveat:** `touch_target` is wired through the full contract surface but NOT yet exercised by a live agent
+  (no aria Brain wired to a game — that's It1); cache-resolution correctness is covered by an e2e unit test.
+- **⇒ NEXT:** merge #38; then the migration is parked at the gate again — the rest of Stage 1 (full
+  skill-coarsening: `navigate_to`/`interact`) and Stages 3–4 wait on It2/It4. Binding constraint remains
+  closing **It1**.
+
 **⇒ NEWEST (2026-07-01, later) — STAGE 0: embodiment north-star contract recorded (ADR-003, doc-only). On
 branch `docs/adr-003-embodiment-contract`, off `origin/main`.**
 - **What landed:** ADR-003 (`reports/_archive/2026-07-01-adr-003-embodiment-north-star-contract.md`) records
