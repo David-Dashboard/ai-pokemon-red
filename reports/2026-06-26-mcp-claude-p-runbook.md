@@ -87,10 +87,16 @@ seam). The MP4 is **our** visual log, not the brain's input.
 
 ## Registry & states (current)
 `world_mcp.py` `GAMES`: `cave_noire` (localizer), `cave_noire_baseline` (A/B dead-reckon control),
-`gauntlet` (follow-cam). States: `cn_open.state`, `gauntlet_play.state`. Watch addrs live in the GAMES entry.
+`gauntlet` (follow-cam), `pokemon_red` (overworld; It1's "get your first Pokémon" task — see
+`runs/brain_red_starter/`). States: `cn_open.state`, `gauntlet_play.state`, `red_start.state`
+(`python new_game.py --rom roms/PokemonRed.gb --out runs/red_start.state`). Watch addrs live in the
+GAMES entry.
 
-## Pokemon caveat
-`PokemonRedPlugin` is the original `GamePlugin` (not a lean `PerceptionPlugin`) — it doesn't take
-`world_mcp`'s `watch=`/`render_header=` kwargs and has its own oracle path. To add it: subclass it to
-`PerceptionPlugin` (or shim `world_mcp.World`). ROM (`roms/PokemonRed.gb`), states (`run*_end`/`progress`),
-and RAM (`x=0xD362 y=0xD361 map=0xD35E`) are all present.
+## Pokemon notes
+`pokemon_red` is now a lean `PerceptionPlugin` world like the others (the heavy pre-seam `GamePlugin`
+was archived to `games/pokemon_red/_archive/`). One difference from cave_noire/gauntlet: it's the only
+game with its own `emulator.py` (a fade-detecting PyBoy wrapper) — but `world_mcp.World` builds the
+plugin via `rom_path=` only, so it gets the GENERIC `core.gb_emulator.PyBoyEmulator`, not Red's own. The
+perceiver's own scene-cut detection still catches warps (incl. non-fading stairs) without the fade flag;
+a fading door-warp right after a mis-classified menu frame is the one edge case that loses its extra
+robustness aid under the seam (known, accepted for It1 — see the perceiver's `_AREA_THRESHOLD` notes).
