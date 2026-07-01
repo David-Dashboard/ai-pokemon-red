@@ -82,6 +82,36 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒⇒ COLD-START BRIDGE (2026-07-01 session end) — READ FIRST if resuming with no chat history. ⇒⇒**
+The chat history was wiped; this block + the ones below are the only continuity. Run `git fetch origin` +
+`gh pr list --state all` before trusting local state.
+
+- **Three open threads (all 2026-07-01):**
+  - **PR #38 (OPEN, merge-ready) — THIS branch `feat/touch-target-coarsening`:** the `touch_target(id)`
+    coarsening (Stage-1-front). Block directly below. 428 tests, frozen untouched, reviewed.
+  - **PR #37 (MERGED → `main`):** ADR-003, the embodiment north-star contract (doc-only). Block below.
+  - **PR #36 (OPEN, merge-ready) — branch `feat/nds-reachability`:** the boot-to-gameplay navigator arc +
+    UI-TARS hybrid, LIVE-VALIDATED across 27 games (the biggest recent chunk). ⚠ **Its HANDOFF detail — the
+    06-29/06-30/07-01 hybrid + validation blocks, the `a`-collapse finding, the env/server notes — is NOT on
+    this branch or `main`. Read it: `git show origin/feat/nds-reachability:HANDOFF.md`.**
+  - **⇒ Merging #36 then #38 to `main` consolidates all three arcs' HANDOFF onto `main` (fixes this
+    fragmentation). David's call — do NOT self-merge.**
+- **Servers (WSL, user `nvidia`, RTX-3080):** **UI-TARS-2B is UP on `:8080`** (`UI-TARS-2B-SFT-Q4_K_M` +
+  `mmproj-Qwen2-VL-2B-Instruct-f16`, `--image-min-tokens 1024`); text `:8081` DOWN; the two original 3Bs
+  stopped. Health-check `curl :8080/v1/models`. Restore UI-TARS (from WSL, detached):
+  `setsid nohup /home/nvidia/llama.cpp/build/bin/llama-server -m /home/nvidia/models/UI-TARS-2B-SFT-Q4_K_M.gguf
+  --mmproj /home/nvidia/models/mmproj-Qwen2-VL-2B-Instruct-f16.gguf -ngl 99 --host 127.0.0.1 --port 8080 -c 4096
+  --no-webui --image-min-tokens 1024 >/tmp/uitars.log 2>&1 &`. ⚠ Drive WSL via a script file + PowerShell, not
+  inline (the `wsl-command-quoting` auto-memory has the pattern).
+- **North-star position:** the on-ramp is built (GB/GBA/NDS world-interfaces, a System-1 perception + reflex
+  floor, the `ai-aria`-over-MCP seam) but **the loop is NOT closed — no human-grade task has been run
+  end-to-end through the aria brain in any world.** Migration: Stage 0 done (#37), Stage-1-front done (#38); the
+  rest is gated on It2/It4. **Binding constraint = close It1** (Pokémon Red · the `ai-aria` brain · one task ·
+  measure success / constancy / wakes). Everything else — including all three PRs above — is scaffolding for that.
+- **Gone with the wipe (session-local scratchpad):** the sweep / montage / server-launch scripts + the 27 hybrid
+  strips. The 3 hybrid contact-sheets ARE committed (on #36 at `reports/assets/2026-07-01-hybrid-validation/`);
+  re-derive sweeps from `eval/bakeoff.py`.
+
 **⇒ NEWEST (2026-07-01, evening) — STAGE-1 FRONT: NDS touch coarsened to `touch_target(id)` (soft, no contract
 change). On branch `feat/touch-target-coarsening`, off `origin/main`; PR #38 (merge-ready).**
 - **What landed:** a coarse `touch_target(id)` tool on `NDSPerceptionPlugin` (`core/nds_perception_plugin.py`) —
