@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-07-01 (It1 seam closed end-to-end + generalized across 3 games; #39 merged)._
 
 ---
 
@@ -81,6 +81,36 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 **⇒ Read the TOP block first — this section is append-on-top (newest → oldest). Picking up COLD? `git fetch` +
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
+
+**⇒⇒ NEWEST (2026-07-01, night) — IT1 SEAM *CLOSED* END-TO-END + GENERALIZED TO 3 GAMES; PR #39 MERGED.
+This SUPERSEDES the cold-start bridge below (its "loop NOT closed / #38+#36 open" is now stale). ⇒⇒**
+
+- **The loop is CLOSED.** For the first time in any world, a real System-2 brain (`claude -p`) drove a game
+  live through the inverted ADR-001 MCP seam **end-to-end**. On **Pokémon Red**, then **generalized live to
+  Cave Noire and Gauntlet** with the SAME brain (only the perceiver + task brief differ) — the north-star
+  constancy bet, validated across 3 games. Dual-process cost held (the free `explore`/`goto` autopilot did the
+  routine travel; the brain woke only at decisions and stopped when a wake stopped paying).
+- **It1's *mechanism* is proven; its *task* is NOT yet complete.** Red reached Oak's intercept but stalled one
+  dialog short (party stayed 0). **Every game's ceiling was world-side PERCEPTION, never the brain:** Red =
+  dialog decode fails + pose breaks during `dialog` (the perceiver's `context['transition']` fade signal isn't
+  wired through the lean path); Cave Noire = dead-reckon drift sealed it in (the strand bug); Gauntlet =
+  wall-staleness. Full write-up + numbers: **`reports/2026-07-01-it1-close-status.md`**.
+- **Merged this session:** **#38** (NDS touch coarsening → `main`); **#39** (Pokémon Red wired into
+  `world_mcp.py` as a lean `PerceptionPlugin` world — heavy `PokemonRedPlugin` archived to
+  `games/pokemon_red/_archive/`, 5 pre-seam drivers retired, `eval/score_red_task.py` added; reviewed, 411
+  tests). **Closed:** **#36** (NDS navigator — not needed for It1; it broke clean-checkout tests). Red is now a
+  registered game: `GAMES["pokemon_red"]`, `watch` = x/y/map/party/badges → oracle only, never on the wire.
+- **⇒ NEXT (task #5 — the binding work):** the **perception fix** — decode the forced-dialog text
+  (`games/pokemon_red/textbox.py`), hold/repair pose during `dialog` context, and wire the
+  `context['transition']` fade signal (the lean generic `core/gb_emulator` lacks `faded()`). Then **re-run the
+  account-B audit to complete It1's task (party 0→1)**. Cave Noire's drift is the same perception family.
+- **Ops (new):** paid `claude -p` runs go on a **2nd Claude account** via `CLAUDE_CONFIG_DIR=~/.claude-b`
+  (account A hit its 5-hr session cap; the limit is account-level). A fresh config treats the workspace as
+  untrusted → pass `--mcp-config .mcp.json` + pre-set `projects[<cwd>].hasTrustDialogAccepted`. See the
+  `mcp-claude-p-harness` auto-memory. Make Pokémon start-states with `make_state.py` (robust), not `new_game.py`.
+- **Still open (low priority):** `chore/archive-report-run` branch (report_run archive) has **no PR yet**;
+  README's dead `play_pokemon.py` refs + stale eval scorers (`score_perception`/`tune_threshold` still read the
+  old *flat* oracle schema, broken since the nested-`watch` seam) — noted, not urgent.
 
 **⇒⇒ COLD-START BRIDGE (2026-07-01 session end) — READ FIRST if resuming with no chat history. ⇒⇒**
 The chat history was wiped; this block + the ones below are the only continuity. Run `git fetch origin` +
