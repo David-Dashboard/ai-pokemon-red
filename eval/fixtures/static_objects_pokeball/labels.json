@@ -1,0 +1,105 @@
+{
+  "_comment": "Hand-labeled ground truth for the static-object gate harness (reports/2026-07-03-referential-grounding-design.md). One entry per fixture frame. 'targets' = ground-truth object bboxes (the Poke Ball table balls) in [x0,y0,x1,y1] px (160x144 frame). Distractor frames have an empty 'targets' list and MUST score 0 phantom candidates. bboxes were derived from the exact red-saliency connected components (area~80, collinear) documented in the design doc's Channel B probe -- verified per-frame via eval/score_static_objects.py's own inspection, not guessed.",
+  "frames": [
+    {
+      "file": "red_lab_balls_321.png",
+      "note": "Oak's lab, Poke Ball table, camera framing #1 (design doc probe frame)",
+      "targets": [[83, 63, 92, 72], [99, 63, 108, 72], [115, 63, 124, 72]]
+    },
+    {
+      "file": "red_lab_balls_366.png",
+      "note": "same table, camera scrolled ~2 tiles (design doc probe frame, fingerprint-recurrence check)",
+      "targets": [[83, 95, 92, 104], [99, 95, 108, 104], [115, 95, 124, 104]]
+    },
+    {
+      "file": "red_lab_balls_381.png",
+      "note": "same table, camera scrolled further (design doc probe frame)",
+      "targets": [[115, 31, 124, 40], [131, 31, 140, 40], [147, 31, 156, 40]]
+    },
+    {
+      "file": "red_lab_balls_430.png",
+      "note": "Poke Ball table, only 2 balls visible on-screen (3rd off left edge)",
+      "targets": [[67, 31, 76, 40], [83, 31, 92, 40]]
+    },
+    {
+      "file": "red_lab_balls_450.png",
+      "note": "Poke Ball table, only 2 balls visible on-screen (3rd occluded/off-frame)",
+      "targets": [[83, 47, 92, 56], [99, 47, 108, 56]]
+    },
+    {
+      "file": "red_lab_balls_340.png",
+      "note": "Poke Ball table, only 2 balls visible on-screen (3rd off left edge, different framing from 430)",
+      "targets": [[131, 31, 140, 40], [147, 31, 156, 40]]
+    },
+    {
+      "file": "red_lab_balls_400.png",
+      "note": "Poke Ball table, 3 balls visible, camera framing #4",
+      "targets": [[19, 63, 28, 72], [35, 63, 44, 72], [51, 63, 60, 72]]
+    },
+    {
+      "file": "red_lab_balls_420.png",
+      "note": "Poke Ball table, 3 balls visible, camera framing #5",
+      "targets": [[19, 47, 28, 56], [35, 47, 44, 56], [51, 47, 60, 56]]
+    },
+    {
+      "file": "red_bedroom_001.png",
+      "note": "DISTRACTOR: Red's bedroom, no balls (TV, plant, no red table objects)",
+      "targets": []
+    },
+    {
+      "file": "red_lab_no_balls_100.png",
+      "note": "DISTRACTOR: Oak's lab, desk/bookshelves in view, ball table NOT on-screen",
+      "targets": []
+    },
+    {
+      "file": "red_lab_no_balls_350.png",
+      "note": "DISTRACTOR: Oak's lab, a different camera framing with the ball table NOT on-screen",
+      "targets": []
+    },
+    {
+      "file": "red_battle_1500.png",
+      "note": "DISTRACTOR: a Pokemon Red battle screen (HP bars, sprites) -- adversarial, same game/palette",
+      "targets": []
+    },
+    {
+      "file": "zelda_gameplay_050.png",
+      "note": "DISTRACTOR: different game (Zelda-like), colour gameplay",
+      "targets": []
+    },
+    {
+      "file": "red_overworld_250.png",
+      "note": "DISTRACTOR: Pallet Town overworld, grass/trees",
+      "targets": []
+    },
+    {
+      "file": "red_overworld_300.png",
+      "note": "DISTRACTOR: Pallet Town overworld near the lab building exterior",
+      "targets": []
+    },
+    {
+      "file": "kirby_gameplay_100.png",
+      "note": "DISTRACTOR: different game (Kirby's Dream Land), grayscale, no red objects",
+      "targets": []
+    },
+    {
+      "file": "kirby_gameplay_200.png",
+      "note": "DISTRACTOR: different game, grayscale gameplay",
+      "targets": []
+    },
+    {
+      "file": "gold_lab_000.png",
+      "note": "DISTRACTOR (hard/adversarial): a different Pokemon game's lab interior with a RED machine/appliance sprite on the desk -- same red-hue trap as core/entities.py's known false-positive class",
+      "targets": []
+    },
+    {
+      "file": "cavenoire_menu_039.png",
+      "note": "DISTRACTOR: different game, stat menu screen",
+      "targets": []
+    },
+    {
+      "file": "gauntlet_title_030.png",
+      "note": "DISTRACTOR: different game, title/score screen with colored sprite portraits",
+      "targets": []
+    }
+  ]
+}
