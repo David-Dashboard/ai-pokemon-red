@@ -4,7 +4,12 @@ _The durable, version-controlled statement of where this project is going. Pinne
 Companion docs: [`HANDOFF.md`](HANDOFF.md) (current status + the near-term plan), `ai-aria/PROMPT_ARCHITECTURE.md`
 (the prompt/brain architecture). Last painted: 2026-06-20._
 
-_**Proposed revisions under evaluation (NOT yet adopted, gated on the ADR-002 probe):** `reports/_archive/2026-06-25-roadmap-v2-discovery-loop.md` + the design backlog `reports/_archive/2026-06-25-design-backlog-future-experiments.md`. This document (ADR-001) stands until that gate PASSES._
+_**ADOPTED (2026-07-03 — the ADR-002 §9 gate PASSED live):** the roadmap-v2 discovery-loop recast
+(`reports/_archive/2026-06-25-roadmap-v2-discovery-loop.md`) is now in force: the per-world UNIT changes from
+"hand-build a perceiver" to "run the discovery loop" (brain hypothesizes → behaviour grounds → compile to
+System-1). The LADDER, discontinuities, and invariants below are UNCHANGED — only the per-rung unit of work
+is recast. The design backlog (`reports/_archive/2026-06-25-design-backlog-future-experiments.md`) remains a
+gate-sequenced menu, not a build order. Gate evidence: ARCHITECTURE.md's ADR-002 entry + HANDOFF 2026-07-03._
 
 ## The one bet
 
