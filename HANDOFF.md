@@ -82,6 +82,49 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
+**⇒⇒ NEWEST (2026-07-02, later session) — "PATIENCE" AUTO-ADVANCE REFLEX BUILT (the 07-02-designed System-1
+gated-static skip). Branch `feat/patience-auto-advance`, off `origin/main` at `5216153`; PR TBD.**
+
+- **What landed:** `core/patience.py` (new) — `classify(context) -> {"gated-static","choice","free-control"}`
+  + `AdvanceLearner` (per-run, blank-every-run control-grounded button memory) + `Patience.advance()` (the
+  loop). Wired into `core/perception_plugin.py::observe()`: after the normal perceive, if the frame classifies
+  gated-static, auto-press (candidate-then-learned button) and re-perceive in a loop, capped at
+  `DEFAULT_BUDGET=40`, before ever returning to the brain. `Observation.data["patience_advances"]` +
+  `oracle.jsonl`'s `patience_advances` carry the free-advance count (traceability). On by DEFAULT (a bare
+  `PerceptionPlugin(...)` now gets `Patience()`) — safe because `classify()` only fires on contexts positively
+  known to be gated-static; every other context (including any world's plain `"menu"`) defaults to `"choice"`
+  and the loop never runs.
+- **State classifier:** `GATED_STATIC_CONTEXTS = {"dialog", "battle_text", "static"}` (Red's decoder-backed
+  `dialog`/`battle_text` — its `detect_mode` already keeps a YES/NO choice OUT of these labels via the
+  upper-right-box heuristic — plus the generic `core/modality.py` `"static"` frozen-screen label for
+  text-less worlds/titles). `CHOICE_CONTEXTS = {"menu", "battle"}` — Red's real decision surfaces, AND a
+  generic world's `"menu"` (deliberately included: `detect_modality` cannot distinguish a plain textbox from
+  a YES/NO choice the way Red's heuristic can, so its `"menu"` must fail safe to "might be a choice"). Anything
+  else (`"unknown"`, a future world's novel label) also defaults to `"choice"` — the fail-safe/erase-save guard.
+- **Learned-button mechanics:** `AdvanceLearner` cycles a candidate ladder (`a`, `start`, `b`) per press; the
+  first button whose press produces an OBSERVED change (not just "pressed") gets `confirm()`ed and reused for
+  the rest of the run. "Observed change" needed to be more than the bare context label — two consecutive
+  dialog LINES both read `context=="dialog"` — so `_press_and_reperceive` in `perception_plugin.py` compares
+  `screen_text` (Red's decoded line) first, then falls back to a strict raw-pixel-equality check
+  (`_is_frame_equal`) for text-less gated-static screens (a generic title/naming screen with no decoder) — this
+  is the exact Emerald-naming-screen case (`a` loops silently, `start` confirms) reproduced as a scripted test.
+- **Validation done (free, no ROM needed in this sandbox):** unit tests on `classify`/`AdvanceLearner`/
+  `Patience.advance()` + 2 tests against REAL recorded frames (`eval/fixtures/starter_cutscene_pose/`,
+  `detect_mode` on an actual Oak-cutscene dialog frame) + a scripted closed-loop proof through the real
+  `PokemonRedPlugin.observe()` (no ROM/LLM, a `_ScriptedDialogEmulator`/`_ScriptedPerceiver` test double): a
+  12-line dialog chain auto-advances to completion in ONE `observe()` call (`patience_advances == 12`), stopping
+  exactly at a `"menu"` (choice) frame with zero further auto-advances; a budget-exhaustion case; the
+  Emerald-style a-loops/start-confirms case. Full suite: **460 passed, 4 skipped** (baseline was 436 passed, 4
+  skipped — same skip count, so cross-world regression on cave_noire/gauntlet/nds is intact).
+- **Deviations from the brief:** the mandated **live/ROM closed-loop proof on `runs/red_start.state`** (task
+  item #2) was NOT run — no ROM or `.state` file is present in this sandbox (`roms/`/`*.state` are gitignored
+  and this worktree has neither); substituted a scripted no-ROM closed-loop proof through the real plugin
+  instead (above). The `kirby_title_menu` fixture and `runs/brain_emerald/world/` frames named in the task also
+  don't exist in this checkout (not committed) — the Emerald a-loops/start-confirms case is covered by a
+  scripted reproduction, not real recorded Emerald frames. **⇒ NEXT (if picking this up): run the real
+  `red_start.state` closed-loop wake-count comparison (with/without patience) on a machine with the ROM +ES,
+  and carve the real Emerald fixture, to close this gap for real.**
+
 **⇒⇒ NEWEST (2026-07-03, overnight autonomous session) — IT1 TASK COMPLETE (party 0→1, ORACLE-VERIFIED) +
 THE SAME BRAIN PLAYED GB + GBA + NDS LIVE THROUGH ONE SEAM. PRs #43 + #44 MERGED (main `5d9f26d`);
 PR #45 (Dockerfile NDS libs) OPEN for David. This supersedes the 07-02 block below. ⇒⇒**
