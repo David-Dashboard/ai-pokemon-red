@@ -88,4 +88,6 @@ def test_assert_action_tools_fresh_gb_generic_world(tmp_path):
 
 
 def test_gb_generic_worlds_frozenset_contains_only_gb_generic():
-    assert _GB_GENERIC_WORLDS == frozenset({"gb_generic"})
+    """kirby_dreamland also uses this sandbox-dispatch branch (see test_world_mcp_kirby_dreamland.py)
+    -- it has no game-specific package either, same as gb_generic."""
+    assert _GB_GENERIC_WORLDS == frozenset({"gb_generic", "kirby_dreamland"})

@@ -72,9 +72,11 @@ _MINIWOB_TASK_NAMES = {"miniwob_click_button": "click-button",
                        "miniwob_click_checkboxes": "click-checkboxes",
                        "miniwob_focus_text": "focus-text"}
 # Worlds that get the foveated region tools (ADR-002 Phase D probe: read_region + whats_changed). Scoped
-# to cave_noire (the gate world) + its A/B control + the other lean GB world (gauntlet) — NOT the NDS/GBA
-# worlds (no proven need there yet) and NOT pokemon_red (its own perceiver/prompt already ships screen_text).
-_REGION_TOOL_WORLDS = frozenset({"cave_noire", "cave_noire_baseline", "gauntlet"})
+# to cave_noire (the gate world) + its A/B control + the other lean GB world (gauntlet), plus
+# kirby_dreamland (the entity-gate v2 port target — needs foveation for ENT boxes + NEAR corroboration,
+# same as cave_noire) — NOT the NDS/GBA worlds (no proven need there yet) and NOT pokemon_red (its own
+# perceiver/prompt already ships screen_text).
+_REGION_TOOL_WORLDS = frozenset({"cave_noire", "cave_noire_baseline", "gauntlet", "kirby_dreamland"})
 
 # Lazy import so world_mcp.py is importable without py-desmume installed.
 def _nds_sandbox():
@@ -147,8 +149,20 @@ GAMES = {
                    "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                    "rom": "roms/PLACEHOLDER.gb",   # always override with --rom; no default GB ROM makes sense here
                    "watch": {}},
+    # Kirby's Dream Land: entity-grounding gate v2 port target (Cave Noire -> Kirby, per
+    # runs/entity_world_port_findings.md). Same shared-plugin pattern as gb_generic (no game-specific
+    # package exists for Kirby) — PerceptionPlugin + FollowCameraPerceiver + the generic-GB sandbox.
+    # hp @ 0xD086 is a PLAIN integer 0-5 (1 unit per HUD pip), NOT BCD — verified by a free offline probe
+    # (5/5 -> 4/5 -> 3/5 matched the HUD exactly across two contact-damage hits, continuous process, no
+    # save/load in between). score_entity_gate_v2.py's _bcd() decode ((b>>4)*10 + (b&0xF)) is the IDENTITY
+    # function for any raw byte in 0-9 (high nibble 0 at this range), so the v2 scorer works UNCHANGED on
+    # this plain-int oracle — do not touch the scorer, this is a documentation note only.
+    "kirby_dreamland": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
+                        "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
+                        "rom": "roms/Kirby's Dream Land (USA, Europe).gb",
+                        "watch": {"hp": 0xD086}},
 }
-_GB_GENERIC_WORLDS = frozenset({"gb_generic"})   # game keys that need the locally-built generic-GB sandbox
+_GB_GENERIC_WORLDS = frozenset({"gb_generic", "kirby_dreamland"})   # game keys needing the generic-GB sandbox
 
 _AGENT = "mcp-brain"
 _PROTOCOL = "2024-11-05"
