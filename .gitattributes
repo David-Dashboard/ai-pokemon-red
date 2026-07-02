@@ -1,0 +1,2 @@
+# Shell scripts run in WSL/Linux — never let Windows autocrlf turn them into CRLF (bash chokes).
+*.sh text eol=lf
