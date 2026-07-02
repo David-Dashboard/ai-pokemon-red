@@ -16,12 +16,15 @@ whatever numeric VALUE the brain itself reported for a region while playing (its
 only ever appears in `world/oracle.jsonl` on disk, read here for scoring only (the no-leak rule, same
 discipline as score_hud_grounding.py).
 
-Alignment (transcript reading <-> oracle hp at that moment): every `remember` tool call triggers exactly
-one `plugin.observe()` inside world_mcp.py (see World.call's "elif name == remember" branch), which is
-IMMEDIATELY followed by that observe's own oracle.jsonl append — so the ground truth for a HYP/DECLARE/
-REJECT `remember` call is the oracle record whose wall-clock timestamp is closest to that tool call's own
-`tool_result` timestamp (both processes share the same host clock; oracle.jsonl logs `time.time()`,
-the transcript logs an ISO `timestamp` on the tool_result message).
+Alignment (transcript reading <-> oracle hp at that moment): by EXACT world-step match ONLY. The
+`read_region`/`whats_changed` result text reports `step=<N>` — the plugin's _obs_count for the frame
+shown, which is exactly the `step` field of the oracle.jsonl row logged for that frame — and the brain is
+briefed to copy that step verbatim into its HYP line. NO wall-clock timestamps anywhere in the verdict
+path: the oracle's `t` is written inside the Docker container while the transcript's `timestamp` is
+written on the host/WSL, and clock skew between the two was shown to spuriously INFLATE agreement (a
+skewed clock can fake a PASS — PR #55 review). HYP lines whose step has no oracle row are counted as
+UNMATCHED and reported; if more than UNMATCHED_MAX_FRACTION of all HYP lines are unmatched, the verdict
+is INSUFFICIENT_DATA (selective dropping must not be able to inflate agreement).
 
 Usage:
     uv run python -m eval.score_gate_run runs/brain_cn_gate/transcript.jsonl runs/brain_cn_gate/world/oracle.jsonl
@@ -32,7 +35,6 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timezone
 
 WRAM0 = 0xC000
 HP_ADDR = 0xC120   # ADR-002 gate life oracle -- BCD (see reports/2026-07-03-adr002-gate-plan.md)
@@ -46,7 +48,8 @@ _REJECT_RE = re.compile(r"REJECT\s+region=\((-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?
 TRUTH_THRESHOLD = 0.90
 DECOY_MAX = 0.50
 DECOY_GAP_MIN = 0.30
-MIN_READINGS = 10   # a declared region with fewer readings than this = insufficient data, no verdict
+MIN_READINGS = 10           # a declared region with fewer readings than this = insufficient data, no verdict
+UNMATCHED_MAX_FRACTION = 0.05   # unmatched HYP steps must stay STRICTLY below this fraction of all lines
 
 
 def _bcd(b: int) -> int:
@@ -62,17 +65,11 @@ def _region_key(x0, y0, x1, y1) -> tuple[int, int, int, int]:
     return (int(x0), int(y0), int(x1), int(y1))
 
 
-def _parse_iso(ts: str) -> float:
-    # Claude's stream-json timestamps are ISO-8601 UTC with a trailing 'Z'.
-    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-
-
-def parse_remember_calls(transcript: list[dict]) -> list[dict]:
-    """Walk the transcript for `remember` tool calls; pair each `tool_use` (the `lesson` text) with its
-    `tool_result`'s timestamp (when world_mcp.py answered — right after logging that observe's oracle
-    record). Returns entries in transcript order: {"lesson": str, "t": float | None}."""
-    pending: dict[str, str] = {}   # tool_use_id -> lesson text, awaiting its tool_result's timestamp
-    out: list[dict] = []
+def parse_remember_calls(transcript: list[dict]) -> list[str]:
+    """Walk the transcript for `remember` tool calls; return each call's `lesson` text, in transcript
+    order, counting only calls whose `tool_result` actually arrived (the call completed)."""
+    pending: dict[str, str] = {}   # tool_use_id -> lesson text, awaiting its tool_result
+    out: list[str] = []
     for msg in transcript:
         content = (msg.get("message") or {}).get("content")
         if not isinstance(content, list):
@@ -86,50 +83,45 @@ def parse_remember_calls(transcript: list[dict]) -> list[dict]:
             elif block.get("type") == "tool_result":
                 tool_use_id = block.get("tool_use_id")
                 if tool_use_id in pending:
-                    ts = msg.get("timestamp")
-                    t = _parse_iso(ts) if ts else None
-                    out.append({"lesson": pending.pop(tool_use_id), "t": t})
+                    out.append(pending.pop(tool_use_id))
     return out
 
 
-def _nearest_oracle_hp(oracle: list[dict], t: float | None) -> int | None:
-    """BCD-decoded hp of the oracle record whose wall-clock `t` is closest to the given timestamp.
-    None if there's no timestamp to align on, or no oracle record carries an hp watch value."""
-    if t is None:
-        return None
-    best = None
-    best_dt = None
+def _oracle_hp_by_step(oracle: list[dict]) -> dict[int, int | None]:
+    """step -> BCD-decoded hp (None = row exists but hp missing / out-of-range transition garbage)."""
+    by_step: dict[int, int | None] = {}
     for rec in oracle:
-        raw = (rec.get("watch") or {}).get("hp")
-        rt = rec.get("t")
-        if raw is None or rt is None:
+        step = rec.get("step")
+        if step is None:
             continue
-        dt = abs(rt - t)
-        if best_dt is None or dt < best_dt:
-            best_dt, best = dt, raw
-    if best is None:
-        return None
-    v = _bcd(int(best))
-    return v if 0 <= v <= 10 else None
+        raw = (rec.get("watch") or {}).get("hp")
+        if raw is None:
+            by_step[int(step)] = None
+            continue
+        v = _bcd(int(raw))
+        by_step[int(step)] = v if 0 <= v <= 10 else None
+    return by_step
 
 
 def parse_transcript(transcript: list[dict], oracle: list[dict]) -> dict:
-    """Extract HYP readings (per region), the DECLAREd region, and REJECTed regions + reasons, each HYP
-    reading paired with the oracle hp value nearest its `remember` call's timestamp."""
-    calls = parse_remember_calls(transcript)
-    readings: dict[tuple, list[dict]] = {}   # region -> [{"step": n, "reading": v, "oracle_hp": h|None}]
+    """Extract HYP readings (per region), the DECLAREd region, and REJECTed regions + reasons. Each HYP
+    reading is aligned to the oracle row with the EXACT same step (matched=False if no such row)."""
+    lessons = parse_remember_calls(transcript)
+    hp_by_step = _oracle_hp_by_step(oracle)
+    readings: dict[tuple, list[dict]] = {}   # region -> [{"step", "reading", "oracle_hp", "matched"}]
     declared: tuple | None = None
     rejected: dict[tuple, str] = {}
 
-    for c in calls:
-        lesson = c["lesson"]
+    for lesson in lessons:
         m = _HYP_RE.search(lesson)
         if m:
             x0, y0, x1, y1, step, reading = m.groups()
             region = _region_key(x0, y0, x1, y1)
-            oracle_hp = _nearest_oracle_hp(oracle, c["t"])
+            step = int(step)
+            matched = step in hp_by_step
             readings.setdefault(region, []).append(
-                {"step": int(step), "reading": float(reading), "oracle_hp": oracle_hp})
+                {"step": step, "reading": float(reading),
+                 "oracle_hp": hp_by_step.get(step), "matched": matched})
             continue
         m = _DECLARE_RE.search(lesson)
         if m:
@@ -144,10 +136,14 @@ def parse_transcript(transcript: list[dict], oracle: list[dict]) -> dict:
 
 
 def _agreement(entries: list[dict]) -> tuple[float, int]:
-    """Exact-value agreement rate between a region's logged readings and the aligned oracle hp, over
-    entries where the oracle value is known and in-range (same discipline as score_hud_grounding.py)."""
+    """Exact-value agreement rate between a region's logged readings and the step-aligned oracle hp, over
+    entries whose step matched an oracle row AND whose oracle value is in-range (same discipline as
+    score_hud_grounding.py). Unmatched entries never enter the denominator here — the unmatched-fraction
+    guard in score() is what prevents that exclusion from inflating agreement."""
     agree = total = 0
     for e in entries:
+        if not e["matched"]:
+            continue
         oh = e["oracle_hp"]
         if oh is None:
             continue
@@ -163,10 +159,23 @@ def score(transcript_path: str, oracle_path: str) -> dict:
     parsed = parse_transcript(transcript, oracle)
     readings, declared, rejected = parsed["readings"], parsed["declared"], parsed["rejected"]
 
-    result: dict = {"declared": declared, "rejected": rejected, "regions_seen": sorted(readings)}
+    all_entries = [e for entries in readings.values() for e in entries]
+    n_hyp = len(all_entries)
+    n_unmatched = sum(1 for e in all_entries if not e["matched"])
+    result: dict = {"declared": declared, "rejected": rejected, "regions_seen": sorted(readings),
+                    "hyp_lines": n_hyp, "unmatched_lines": n_unmatched}
 
     if declared is None:
         result["verdict"] = "NO_DECLARE"
+        return result
+
+    # Anti-gaming guard: if too many HYP lines point at steps with no oracle row, refuse a verdict —
+    # excluding unmatched lines from the denominator must not become a way to inflate agreement.
+    # Unmatched lines are tolerated (and excluded) only while STRICTLY below the fraction cap.
+    if n_hyp and n_unmatched and (n_unmatched / n_hyp) >= UNMATCHED_MAX_FRACTION:
+        result["verdict"] = "INSUFFICIENT_DATA"
+        result["reason"] = (f"{n_unmatched}/{n_hyp} HYP lines reference steps with no oracle row "
+                            f"(>= {UNMATCHED_MAX_FRACTION:.0%} — must stay below)")
         return result
 
     truth_entries = readings.get(declared, [])
@@ -177,6 +186,7 @@ def score(transcript_path: str, oracle_path: str) -> dict:
 
     if truth_n < MIN_READINGS:
         result["verdict"] = "INSUFFICIENT_DATA"
+        result["reason"] = f"declared region has {truth_n} scoreable readings (< {MIN_READINGS})"
         return result
 
     # decoy = the best-scoring REJECTED candidate (the hardest case to reject, per SS9's arm (b)).
@@ -212,15 +222,20 @@ def score(transcript_path: str, oracle_path: str) -> dict:
 
 def format_report(r: dict) -> str:
     lines = ["=== ADR-002 Phase D gate score ==="]
+    if r.get("unmatched_lines"):
+        lines.append(f"unmatched HYP lines (step has no oracle row): {r['unmatched_lines']}/{r['hyp_lines']}")
     if r.get("declared") is None:
         lines.append("no DECLARE line found in the transcript's `remember` calls.")
         lines.append(f"regions seen (HYP only): {r.get('regions_seen')}")
         lines.append("\nVERDICT: NO_DECLARE (nothing to score)")
         return "\n".join(lines)
+    if r["verdict"] == "INSUFFICIENT_DATA" and "truth_region" not in r:
+        lines.append(f"\nVERDICT: INSUFFICIENT_DATA ({r.get('reason')})")
+        return "\n".join(lines)
     lines.append(f"DECLAREd region (truth): {r['truth_region']}")
     lines.append(f"  truth agreement: {r['truth_agreement']:.3f} ({r['truth_readings']} readings)")
     if r["verdict"] == "INSUFFICIENT_DATA":
-        lines.append(f"\nVERDICT: INSUFFICIENT_DATA (< {MIN_READINGS} readings for the declared region)")
+        lines.append(f"\nVERDICT: INSUFFICIENT_DATA ({r.get('reason')})")
         return "\n".join(lines)
     if r.get("decoy_region") is not None:
         lines.append(f"best-scoring REJECTED (decoy): {r['decoy_region']} "

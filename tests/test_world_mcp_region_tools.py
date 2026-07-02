@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import os
+import re
 
 import numpy as np
 import pytest
@@ -176,6 +178,57 @@ def test_whats_changed_reports_changed_after_a_move(tmp_path):
         texts = " ".join(c["text"] for c in result if c.get("type") == "text")
         assert "changed" in texts or "unchanged" in texts
         assert "mean-abs-diff=" in texts
+    finally:
+        w.plugin.close()
+
+
+def _last_oracle_step(out_dir: str) -> int:
+    """The `step` of the LAST row logged to <out>/oracle.jsonl."""
+    with open(os.path.join(out_dir, "oracle.jsonl"), encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    return rows[-1]["step"]
+
+
+@pytest.mark.skipif(not _cave_noire_available(), reason="cave_noire ROM / cn_open.state not available")
+def test_read_region_step_matches_last_logged_oracle_row(tmp_path):
+    """PR #55 sev-1 pin: the step reported by read_region must be EXACTLY the `step` of the last
+    oracle.jsonl row (the frame being read), so the scorer's exact-step alignment is off-by-one-free.
+    Checked after one observe AND again after a second observe (the step must track the newest row)."""
+    out = str(tmp_path / "out")
+    args = _args("cave_noire", init_state="runs/cn_open.state", out=out)
+    w = World(args)
+    try:
+        w.call("observe", {})
+        result = w.call("read_region", {"x0": 16, "y0": 128, "x1": 34, "y1": 136})
+        texts = " ".join(c["text"] for c in result if c.get("type") == "text")
+        m = re.search(r"read_region step=(\d+)", texts)
+        assert m, f"read_region result must report step=<N>, got: {texts!r}"
+        assert int(m.group(1)) == _last_oracle_step(out)
+
+        w.call("observe", {})   # a SECOND observe logs a new oracle row; read_region must report ITS step
+        result = w.call("read_region", {"x0": 16, "y0": 128, "x1": 34, "y1": 136})
+        texts = " ".join(c["text"] for c in result if c.get("type") == "text")
+        m = re.search(r"read_region step=(\d+)", texts)
+        assert m
+        assert int(m.group(1)) == _last_oracle_step(out)
+    finally:
+        w.plugin.close()
+
+
+@pytest.mark.skipif(not _cave_noire_available(), reason="cave_noire ROM / cn_open.state not available")
+def test_whats_changed_step_matches_last_logged_oracle_row(tmp_path):
+    """Same off-by-one pin for whats_changed: its current-frame step must equal the last oracle row's."""
+    out = str(tmp_path / "out")
+    args = _args("cave_noire", init_state="runs/cn_open.state", out=out)
+    w = World(args)
+    try:
+        w.call("observe", {})
+        w.call("press_button", {"button": "a"})
+        result = w.call("whats_changed", {"x0": 16, "y0": 128, "x1": 34, "y1": 136})
+        texts = " ".join(c["text"] for c in result if c.get("type") == "text")
+        m = re.search(r"whats_changed step=(\d+)", texts)
+        assert m, f"whats_changed result must report step=<N>, got: {texts!r}"
+        assert int(m.group(1)) == _last_oracle_step(out)
     finally:
         w.plugin.close()
 

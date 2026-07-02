@@ -171,7 +171,9 @@ _READ_REGION_TOOL = {
                     "IMAGE (upscaled 3x, nearest-neighbor, so small text is legible). Use this to look "
                     "closely at ONE hypothesized region (e.g. a HUD box you think might be your life) — "
                     f"NOT a full screenshot. Capped at {_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} source pixels; "
-                    "a bigger request is rejected loudly with the cap in the error."),
+                    "a bigger request is rejected loudly with the cap in the error. The result reports "
+                    "`step=<N>` — the world step of the frame shown; if you log a reading of it, copy "
+                    "that exact step."),
     "inputSchema": {"type": "object",
                     "properties": {"x0": {"type": "integer", "minimum": 0},
                                    "y0": {"type": "integer", "minimum": 0},
@@ -184,7 +186,8 @@ _WHATS_CHANGED_TOOL = {
     "description": ("Compare a pixel region between the LAST TWO frames you observed (mean absolute "
                     "pixel difference) and report changed/unchanged with the score — a symbolic (no "
                     "image) way to check whether a hypothesized region's value just moved, e.g. while "
-                    "you fight, without spending a read_region look every step."),
+                    "you fight, without spending a read_region look every step. The result reports "
+                    "`step=<N>` for the current frame compared."),
     "inputSchema": {"type": "object",
                     "properties": {"x0": {"type": "integer", "minimum": 0},
                                    "y0": {"type": "integer", "minimum": 0},
@@ -436,12 +439,17 @@ class World:
     # gateway/sandbox actions; they piggyback on whatever frame the last observe/action already produced.
 
     def _track_frame(self) -> None:
-        """Keep the last <=2 observed frames (numpy HxWxC) so whats_changed can diff them."""
+        """Keep the last <=2 observed (step, frame) pairs so whats_changed can diff them and both region
+        tools can report WHICH world step the frame belongs to. `step` is the plugin's _obs_count at
+        capture time — observe() increments _obs_count and then _log_oracle writes that same value as the
+        oracle.jsonl row's "step", and _track_frame runs right after that observe returns, so this step is
+        EXACTLY the oracle row logged for the frame being read (the scorer aligns on it; no wall clocks)."""
         try:
             frame = self.plugin.emu.screen_ndarray()
         except Exception:
             return
-        self._frame_hist.append(frame)
+        step = int(getattr(self.plugin, "_obs_count", 0))
+        self._frame_hist.append((step, frame))
         del self._frame_hist[:-2]
 
     @staticmethod
@@ -466,7 +474,7 @@ class World:
             self._track_frame()
         if not self._frame_hist:
             return [{"type": "text", "text": "read_region: no frame available yet — call observe first."}]
-        frame = self._frame_hist[-1]
+        step, frame = self._frame_hist[-1]
         err = self._validate_region(x0, y0, x1, y1, frame)
         if err:
             return [{"type": "text", "text": f"read_region error: {err}"}]
@@ -477,7 +485,10 @@ class World:
         buf = io.BytesIO()
         im.save(buf, format="PNG")
         png_b64 = base64.b64encode(buf.getvalue()).decode()
-        return [{"type": "text", "text": f"[read_region ({x0},{y0})-({x1},{y1}), upscaled {_REGION_UPSCALE}x]"},
+        return [{"type": "text",
+                 "text": f"[read_region step={step} ({x0},{y0})-({x1},{y1}), upscaled {_REGION_UPSCALE}x — "
+                         f"when logging a reading of this image, use this exact step: "
+                         f"HYP region=({x0},{y0},{x1},{y1}) step={step} reading=<value>]"},
                 {"type": "image", "data": png_b64, "mimeType": "image/png"}]
 
     def _whats_changed(self, args: dict) -> list[dict]:
@@ -489,7 +500,7 @@ class World:
             return [{"type": "text",
                     "text": "whats_changed: need two observed frames yet (only have "
                             f"{len(self._frame_hist)}) — call observe/press again first."}]
-        prev, curr = self._frame_hist[-2], self._frame_hist[-1]
+        (prev_step, prev), (curr_step, curr) = self._frame_hist[-2], self._frame_hist[-1]
         err = self._validate_region(x0, y0, x1, y1, curr)
         if err:
             return [{"type": "text", "text": f"whats_changed error: {err}"}]
@@ -499,7 +510,7 @@ class World:
         mad = float(np.mean(np.abs(a - b)))
         changed = mad >= 2.0   # small dead-zone against emulator/encoding noise on a static region
         return [{"type": "text",
-                "text": f"[whats_changed ({x0},{y0})-({x1},{y1}): "
+                "text": f"[whats_changed step={curr_step} (vs step={prev_step}) ({x0},{y0})-({x1},{y1}): "
                         f"{'changed' if changed else 'unchanged'} (mean-abs-diff={mad:.2f})]"}]
 
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
