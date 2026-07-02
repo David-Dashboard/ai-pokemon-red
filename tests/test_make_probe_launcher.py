@@ -45,7 +45,7 @@ def test_make_launcher_gb_writes_expected_files(tmp_path):
     assert not os.path.isfile(os.path.join(out_dir, "gba_server.sh"))
 
     mcp = json.load(open(os.path.join(out_dir, ".mcp.json"), encoding="utf-8"))
-    server = mcp["mcpServers"]["MyGame"]
+    server = mcp["mcpServers"]["world"]
     assert server["command"] == "docker"
     assert "gb_generic" in server["args"]
     assert "--rom" in server["args"]
@@ -54,7 +54,7 @@ def test_make_launcher_gb_writes_expected_files(tmp_path):
     assert "CLAUDE_CONFIG_DIR=/home/nvidia/.claude-b" in run_sh
     assert "timeout 1200" in run_sh
     assert "> transcript.jsonl" in run_sh
-    assert "mcp__MyGame" in run_sh
+    assert "--allowedTools mcp__world" in run_sh
 
     brief = open(os.path.join(out_dir, "CLAUDE.md"), encoding="utf-8").read()
     assert "MyGame" in brief
@@ -70,7 +70,7 @@ def test_make_launcher_gba_writes_gba_server(tmp_path):
 
     assert os.path.isfile(os.path.join(out_dir, "gba_server.sh"))
     mcp = json.load(open(os.path.join(out_dir, ".mcp.json"), encoding="utf-8"))
-    server = mcp["mcpServers"]["SomeGame"]
+    server = mcp["mcpServers"]["world"]
     assert server["command"] == "bash"
     assert server["args"][0].endswith("gba_server.sh")
 
@@ -87,7 +87,7 @@ def test_make_launcher_nds_uses_docker_nds_game(tmp_path):
     out_dir = make_launcher(rom, repo_root=str(tmp_path))
 
     mcp = json.load(open(os.path.join(out_dir, ".mcp.json"), encoding="utf-8"))
-    server = mcp["mcpServers"]["SomeDS"]
+    server = mcp["mcpServers"]["world"]
     assert server["command"] == "docker"
     assert "nds" in server["args"]
     assert not os.path.isfile(os.path.join(out_dir, "gba_server.sh"))
@@ -144,3 +144,29 @@ def test_restamping_same_rom_reuses_same_dir(tmp_path):
     out_1 = make_launcher(rom, repo_root=str(tmp_path))
     out_2 = make_launcher(rom, repo_root=str(tmp_path))
     assert out_1 == out_2
+
+
+def test_server_name_constant_and_allowed_tools_match(tmp_path):
+    """Regression (live bug, 2026-07-03 first queue run): slug-derived MCP server names can contain
+    "__" (e.g. slug "..._World__U" from "Super Mario World (U)"), and claude's --allowedTools matcher
+    splits mcp__<server>__<tool> on "__" — so `--allowedTools mcp__<slug-with-__>` can NEVER match its
+    own tools; all 6 probes burned ~$0.25 each on permission-denied. The server name must be a CONSTANT
+    safe name with no "__" beyond the mcp__ prefix, and allowedTools must be exactly "mcp__" + server."""
+    # The exact ROM naming style that triggered the live failure.
+    rom = _write_fake_rom(tmp_path, "Super Mario Advance 2 - Super Mario World (U).gba")
+    out_dir = make_launcher(rom, repo_root=str(tmp_path))
+
+    mcp = json.load(open(os.path.join(out_dir, ".mcp.json"), encoding="utf-8"))
+    (server_name,) = mcp["mcpServers"].keys()
+    assert "__" not in server_name
+    assert server_name == "world"
+
+    run_sh = open(os.path.join(out_dir, "run.sh"), encoding="utf-8").read()
+    allowed = [tok for line in run_sh.splitlines() if "--allowedTools" in line
+               for tok in line.split() if tok.startswith("mcp__")]
+    assert allowed == [f"mcp__{server_name}"]
+    assert "__" not in allowed[0][len("mcp__"):]
+
+    # the brief's server-name mention must reference the same constant name
+    brief = open(os.path.join(out_dir, "CLAUDE.md"), encoding="utf-8").read()
+    assert f"MCP server `{server_name}`" in brief
