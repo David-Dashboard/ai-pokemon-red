@@ -6,6 +6,20 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-07-03 (later) — the ADR-002 §9 gate PASSED live (and the two runs it took teach the method)
+- **What:** the HUD-grounding probe ran end-to-end paid: a region-neutral brain over MCP hypothesized
+  "region R = my life" in Cave Noire combat, ground it through damage (readings tracked hp 10→8→5 at 1.000
+  agreement over 15 step-aligned readings), and rejected the ENEMY-counter decoy with a causal argument.
+  GATE: PASS at the pre-pinned 0.90/0.50/0.30 + variation guard. ADR-002's load-bearing claim (behaviour can
+  ground a hypothesized ontology beyond walkability) is validated; promotion PR opened for David.
+- **Method lessons (the real payload):** (1) **a gate must be able to fail in ways you didn't imagine** —
+  the first run PASSED the letter degenerately (constant hp=10 matched constantly; a static box would've
+  scored the same). We invalidated our own PASS, tightened the guard, re-ran. Tighten-then-pass is credible;
+  pass-then-explain is not. (2) **kill clocks in cross-process scoring** — container-vs-host skew could FAKE
+  a pass; exact step-index alignment is skew-proof by construction. (3) The foveated `read_region` primitive
+  (small hypothesized crop, never full-frame) held the no-screenshot line while giving the brain real vision
+  where IT chose to look — the `focus` idea from the design backlog, earning its place.
+
 ## 2026-07-03 — It1 COMPLETE (party 0→1) + one brain across GB/GBA/NDS live
 - **What:** the first human-given task ran end-to-end through the seam and was oracle-verified (Charmander,
   $3.66, 77 decisions); the SAME `claude -p` brain then played Emerald (GBA, WSL mgba) and Kirby SSU (NDS,
