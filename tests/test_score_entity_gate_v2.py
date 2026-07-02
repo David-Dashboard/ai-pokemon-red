@@ -176,20 +176,53 @@ def test_near_logged_after_a_later_step_is_retroactive():
     assert 1 not in parsed["nears"]
 
 
-def test_observe_result_step_field_advances_the_watermark():
-    """observe's payload carries `"step": N` (JSON field, not `step=` text) — the watermark must pick
-    that up too, or an observe-only brain could never be flagged retroactive."""
+def test_real_read_region_and_whats_changed_texts_advance_the_watermark():
+    """The REAL wire shapes (verbatim from world_mcp.py's _read_region/_whats_changed text) must
+    advance the watermark — these are the only tools that report `step=<N>` to the brain."""
+    read_region_text = ("[read_region step=42 (0,125)-(64,138), upscaled 3x — when logging a reading "
+                        "of this image, use this exact step: HYP region=(0,125,64,138) step=42 "
+                        "reading=<value>]")
+    whats_changed_text = ("[whats_changed step=44 (vs step=43) (0,125)-(64,138): changed "
+                          "(mean-abs-diff=5.31)]")
+    transcript = [
+        {"message": {"content": [{"type": "tool_use", "id": "r1", "name": f"{SERVER}__read_region",
+                                  "input": {"x0": 0, "y0": 125, "x1": 64, "y1": 138}}]}},
+        {"message": {"content": [{"type": "tool_result", "tool_use_id": "r1",
+                                  "content": [{"type": "text", "text": read_region_text}]}]}},
+        {"message": {"content": [{"type": "tool_use", "id": "w1", "name": f"{SERVER}__whats_changed",
+                                  "input": {"x0": 0, "y0": 125, "x1": 64, "y1": 138}}]}},
+        {"message": {"content": [{"type": "tool_result", "tool_use_id": "w1",
+                                  "content": [{"type": "text", "text": whats_changed_text}]}]}},
+    ]
+    transcript += _remember_pair("c1", "NEAR id=1 step=43")   # watermark is 44 > 43 -> retroactive
+    parsed = parse_transcript(transcript, [_oracle_rec(43, 5)])
+    assert parsed["retroactive"] == 1
+    assert 1 not in parsed["nears"]
+
+
+def test_real_bare_observe_text_does_not_advance_the_watermark():
+    """A REAL bare observe() result (perception_plugin._render_symbolic's text, entities line included)
+    carries NO step token — world_mcp's _content() serializes only obs.text and drops obs.data["step"].
+    The watermark therefore does NOT advance on bare observe. Documented residual leak (PR #61 finding
+    2): self-mitigating because step numbers reach the brain ONLY via read_region/whats_changed, which
+    DO advance it — an accurate `NEAR ... step=n` implies the watermark already reached n; a guessed
+    step lands in the unmatched guard. Do not 'fix' this test by fabricating a payload shape the
+    harness never emits."""
+    observe_text = ("Your position (dead-reckoned, approximate): (3, 4).\n"
+                    "Last move 'up' -> moved.\n"
+                    "Unexplored/open directions from here (head toward these to make progress): up, left.\n"
+                    "Cells explored in this area so far: 12.\n"
+                    "Entities on screen (sprites/enemies/items): 2 at (40,60), (81,22).")
     observe_pair = [
         {"message": {"content": [{"type": "tool_use", "id": "o1", "name": f"{SERVER}__observe",
                                   "input": {}}]}},
         {"message": {"content": [{"type": "tool_result", "tool_use_id": "o1",
-                                  "content": [{"type": "text",
-                                               "text": '{"pose": [3, 4], "step": 9}'}]}]}},
+                                  "content": [{"type": "text", "text": observe_text}]}]}},
     ]
     transcript = observe_pair + _remember_pair("c1", "NEAR id=1 step=5")
     parsed = parse_transcript(transcript, [_oracle_rec(5, 5)])
-    assert parsed["retroactive"] == 1
-    assert 1 not in parsed["nears"]
+    assert parsed["retroactive"] == 0        # watermark never advanced -> nothing to be retroactive to
+    assert len(parsed["nears"][1]) == 1
 
 
 def test_pure_retroactive_transcript_gets_no_verdict():
@@ -394,3 +427,31 @@ def test_benign_with_too_few_nears_not_counted_as_correctly_rejected():
     result = _run_score(calls, _oracle_98())
     assert result["benign_scores"][2]["insufficient"] is True
     assert result["verdict"] == "INSUFFICIENT_DATA"
+
+
+def test_conflicting_declaration_excluded_from_both_arms():
+    """An id declared BOTH threat and benign/REJECTed is CONFLICTING (PR #61 finding 4): excluded from
+    both arms and reported, while the consistent declarations still produce a verdict."""
+    calls = _near_calls(1, (18, 37, 56, 75, 96), "c1_")   # consistent threat, grounds
+    calls += _near_calls(2, BENIGN_EARLY, "c2_")          # consistent benign, correctly rejected
+    calls += _near_calls(3, (5, 6, 7), "c3_")             # the conflicted id, with plenty of NEARs
+    calls += _declares()
+    calls += _remember_pair("d3a", "DECLARE threat=3")
+    calls += _remember_pair("d3b", "REJECT id=3 reason=changed my mind")
+    result = _run_score(calls, _oracle_98())
+    assert result["conflicting_declarations"] == [3]
+    assert 3 not in result["threat_scores"]
+    assert 3 not in result["benign_scores"]
+    assert result["verdict"] == "PASS"
+
+
+def test_conflicting_declaration_starving_an_arm_is_no_declare():
+    """If excluding the conflicted id leaves an arm with no declared id at all, the verdict is
+    NO_DECLARE (the contradiction cannot supply either arm), with the conflict named in the reason."""
+    calls = _near_calls(1, (18, 37, 56, 75, 96), "c1_")
+    calls += _remember_pair("d1", "DECLARE threat=1")
+    calls += _remember_pair("d2", "REJECT id=1 reason=second thoughts")   # same id: conflict
+    result = _run_score(calls, _oracle_98())
+    assert result["conflicting_declarations"] == [1]
+    assert result["verdict"] == "NO_DECLARE"
+    assert "CONFLICTING" in result["reason"]

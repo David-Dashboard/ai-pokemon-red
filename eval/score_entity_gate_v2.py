@@ -40,6 +40,10 @@ THE PINNED METRIC (backward attribution over a window before each hp-drop event)
     (`q_j >= b_j + MARGIN`).
   * PASS = >=1 declared threat GROUNDED AND >=1 declared-benign/REJECTed entity correctly rejected. Both
     arms required. NO_DECLARE if either declaration side missing.
+  * CONFLICTING declarations (an id appearing in BOTH declared_threats AND benign/REJECT) are excluded
+    from both arms, counted, and reported; if the exclusion leaves either arm with no declared id, the
+    verdict is NO_DECLARE (a self-contradictory declaration cannot supply either arm). Tightening added
+    at review (PR #61 finding 4) -- stricter-only, pre-run.
 
 SESSION GUARDS:
   * `MIN_TOTAL_STEPS = 30` scoreable steps overall, else INSUFFICIENT_DATA.
@@ -309,13 +313,23 @@ def score(transcript_path: str, oracle_path: str) -> dict:
         return result
 
     benign_ids = declared_benign | set(rejected)
+    # CONFLICTING-DECLARE guard (PR #61 finding 4, stricter-only): an id declared BOTH threat and
+    # benign/REJECTed is self-contradictory -- excluded from both arms, counted, reported. It must not
+    # be scored as if the declarations were consistent.
+    conflicting = declared_threats & benign_ids
+    result["conflicting_declarations"] = sorted(conflicting)
+    declared_threats = declared_threats - conflicting
+    benign_ids = benign_ids - conflicting
+    conflict_note = (f" ({len(conflicting)} id(s) excluded as CONFLICTING: declared both threat and "
+                     f"benign/REJECTed: {sorted(conflicting)})") if conflicting else ""
     if not declared_threats:
         result["verdict"] = "NO_DECLARE"
-        result["reason"] = "no DECLARE threat=<id> line found"
+        result["reason"] = "no DECLARE threat=<id> line found" + conflict_note
         return result
     if not benign_ids:
         result["verdict"] = "NO_DECLARE"
-        result["reason"] = "no DECLARE benign=<id> or REJECT id=<id> line found -- arm (b) unexercised"
+        result["reason"] = ("no DECLARE benign=<id> or REJECT id=<id> line found -- arm (b) unexercised"
+                            + conflict_note)
         return result
 
     hp_by_step = _oracle_hp_by_step(oracle)
@@ -400,6 +414,9 @@ def format_report(r: dict) -> str:
     if r.get("retroactive_lines"):
         lines.append(f"RETROACTIVE NEAR lines (logged after a later step's outcome was observable, "
                      f"excluded): {r['retroactive_lines']}")
+    if r.get("conflicting_declarations"):
+        lines.append(f"CONFLICTING declarations (id declared both threat AND benign/REJECTed, excluded "
+                     f"from both arms): {r['conflicting_declarations']}")
     if r["verdict"] == "NO_DECLARE":
         lines.append(f"declared threats: {r.get('declared_threats')}  declared benign: "
                      f"{r.get('declared_benign')}  rejected: {list(r.get('rejected', {}))}")

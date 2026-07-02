@@ -121,6 +121,35 @@ otherwise mirrors v1: `PASS / FAIL / INSUFFICIENT_DATA / INSUFFICIENT_DROPS / NO
   observing-then-logging (v1's drops sat 4-14 steps from any CONTACT — `W=15` comfortably covers that same
   slack for a NEAR reported shortly before the drop), but bounded so a NEAR logged in a totally different
   part of the session cannot retroactively "explain" an unrelated drop.
+- **Residual risk — sparse-burst NEAR (PR #61 review, finding 1; NOT mechanically closable):** the spam
+  rebuttal above only covers "NEAR every step." The cheaper strategy — logging `NEAR id=<chosen threat>`
+  ONLY in short (≤15-step) bursts just before drops and nowhere else — drives `b_k` toward 0 while `q_k`
+  hits 1.0, and it requires only drop-imminence awareness (any pre-outcome tell that damage is coming),
+  not entity-specific knowledge: the brain can pre-commit to a "threat" id and reflexively burst-log it
+  whenever things look risky, fabricating proximity. Because `NEAR` is brain-asserted, no scorer rule can
+  distinguish a fabricated burst from a real sighting. This is closed PROCEDURALLY, not mechanically:
+  **mandatory post-run audit item** — the reviewer of the live run MUST check (a) whether the declared
+  threat's NEARs are suspiciously clustered only in pre-drop windows with near-zero coverage elsewhere,
+  and (b) that each NEAR is corroborated by a nearby `read_region`/`whats_changed` look at that entity's
+  claimed region in the surrounding transcript. Uncorroborated drop-hugging NEAR clusters invalidate the
+  run's arm (a) regardless of the computed verdict.
+- **Residual leak — bare `observe()` never advances the watermark (PR #61 review, finding 2; inherited
+  from v1, documented not fixed):** traced against the real harness: `world_mcp.py::_content()` serializes
+  only `obs.text` (and a screenshot), dropping `obs.data["step"]`, and `perception_plugin._render_symbolic`
+  never emits a "step" token — so a real bare-`observe()` tool_result contains no step and cannot advance
+  the revealed-step watermark, even though `__observe` is listed among the revealing tool suffixes. Only
+  `read_region`/`whats_changed` (which literally print `step=<N>`) advance it. This is self-mitigating in
+  practice: step numbers reach the brain ONLY via those step-reporting tools, so a brain cannot write an
+  ACCURATE `NEAR ... step=n` without having tripped the watermark to at least `n` first; a wrong/guessed
+  step number falls to the unmatched guard (`UNMATCHED_MAX_FRACTION = 0.05`) instead. The unit tests pin
+  both real wire shapes (the verbatim `read_region`/`whats_changed` text advances the watermark; the
+  verbatim symbolic `observe` text does not) so this cannot silently regress into false confidence again.
+- **Residual limitation — fraction-guard denominators are diluteable (PR #61 review, finding 3; inherited
+  v1 limitation):** the malformed/unmatched/retroactive caps are fractions whose denominators can be
+  inflated by flooding cheap legitimate lines (extra `ENT`/`DECLARE` lines, throwaway-id NEARs), letting a
+  fixed absolute number of bad lines slip under the caps; this cannot manufacture a PASS by itself (it only
+  suppresses an INSUFFICIENT_DATA that should have fired) and is flagged for the post-run audit, not
+  mechanically closed.
 
 ## Stricter-only clause
 
