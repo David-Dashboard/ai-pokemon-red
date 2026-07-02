@@ -315,6 +315,9 @@ class World:
                              init_state=args.init_state, perceiver=Perceiver(),
                              watch=spec["watch"],   # RAM -> oracle.jsonl ONLY, never the wire (incl. the hp oracle)
                              render_header=header, record_path=record_path)
+        # --keep-frames: PATIENCE's intermediate auto-advance frames then get unique PNG paths
+        # (audit logs) instead of overwriting one temp path per observe.
+        self.plugin.keep_frames = self.keep_frames
         self.gw = Gateway(self.plugin, sandbox)
         self.explore = ExploreBrain(_AGENT, single_step=True)   # turn-based / one press = one move
         # within-run self-improvement state (discarded at process end — the learning-boundary law)
