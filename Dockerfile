@@ -12,8 +12,10 @@ FROM python:3.11-slim
 WORKDIR /app
 # Runtime for world_mcp.py: PyBoy (headless "null" window — no SDL/display) + numpy + pillow, and
 # imageio(+ffmpeg) for the optional --record MP4. ffmpeg is bundled by imageio-ffmpeg (no apt install).
+# py-desmume enables --game nds in the container (manylinux wheels available). mgba/--game kirby_gba
+# /emerald_gba are NOT installed here (known-blocked in Docker) — GBA runs come from the WSL spike env.
 RUN pip install --no-cache-dir "pyboy>=2.0" "numpy>=1.21" "pillow>=9.0" \
-                               "imageio>=2.37.3" "imageio-ffmpeg>=0.6.0"
+                               "imageio>=2.37.3" "imageio-ffmpeg>=0.6.0" "py-desmume>=0.0.9"
 
 # All worlds' code (core/ + games/) so --game can serve any of them. roms/ and runs/ are mounted, not copied.
 COPY core/ ./core/
