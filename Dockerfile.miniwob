@@ -1,0 +1,43 @@
+# A MiniWoB++ computer-use world as an MCP (stdio) server — SEPARATE image from the main Dockerfile
+# (GB/GBA/NDS emulator worlds). MiniWoB tasks run in a real headless Chromium via Selenium, so this
+# image is built FROM selenium/standalone-chromium (ships Chrome + matched chromedriver already) instead
+# of python:3.11-slim + apt-installed browser bits.
+#
+# Pinned versions match the free probe that proved the pixels-only loop closes (see
+# runs/miniwob_probe/PROBE_REPORT.md): miniwob 1.0 (Farama's gymnasium-API rewrite, NOT the legacy
+# `gym.make("miniwob/...")` package), selenium 4.21.0. numpy/pillow are left to the image's own resolver
+# (the probe didn't need to hand-pin those; only miniwob/selenium/chrome were asked to be pinned).
+#
+# miniwob/selenium live ONLY in this image — never added to the main project's pyproject.toml/uv.lock
+# (per-project rule: a new dependency for the main env is a separate conversation; this is a
+# throwaway/opt-in computer-use track, not the main perception-plugin path).
+#
+# Build:
+#   docker build -f Dockerfile.miniwob -t miniwob-mcp-world .
+# Run (mounts runs/ for oracle.jsonl; no ROMs needed — MiniWoB tasks are bundled HTML/JS, not ROMs):
+#   docker run -i --rm -v "$PWD/runs:/app/runs" miniwob-mcp-world \
+#          --game miniwob_click_button --out runs/mcp_miniwob
+#
+# world_mcp.py speaks JSON-RPC on stdout (fd1 is redirected to stderr internally to keep the channel
+# clean, same as the main Dockerfile's world_mcp.py entrypoint).
+#
+# PINNED base (tag + digest): the 177px clickable-viewport measurement (core/miniwob_world.py
+# VIEWPORT_HEIGHT) is a fact about THIS Chromium build — an unpinned `latest` could silently drift the
+# browser and invalidate the clamp/reject band. This is the exact image the PR #64 live validation ran
+# against (selenium 4.45.0; `latest` resolved to this same digest at validation time).
+FROM selenium/standalone-chromium:4.45.0@sha256:9b10a9ccf68e3a18153a68a0705577157e20665d88d00bd4393a42e5839aa3d3
+
+USER root
+WORKDIR /app
+
+# The image's own Python (already has Chrome/chromedriver version-matched — confirmed in the probe, zero
+# skew debugging needed at Chromium 149.0.7827.155). Install miniwob/selenium + the numpy/pillow this
+# repo's core/blob.py and world_mcp.py need for the observe/read_region tools.
+RUN pip install --no-cache-dir "miniwob==1.0" "selenium==4.21.0" numpy pillow
+
+# All worlds' code (core/) + world_mcp.py so --game can serve any miniwob_* entry. games/ is NOT needed
+# here (miniwob worlds have no pkg/plugin entry in world_mcp.GAMES — see the registry comment).
+COPY core/ ./core/
+COPY world_mcp.py ./
+
+ENTRYPOINT ["python", "world_mcp.py"]

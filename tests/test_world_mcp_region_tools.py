@@ -40,7 +40,11 @@ def test_region_tools_advertised_for_cave_noire_family():
 
 
 def test_region_tools_not_advertised_for_other_worlds():
-    for game in sorted(set(GAMES) - _REGION_TOOL_WORLDS):
+    # miniwob_* worlds are a separate dispatch path (world_mcp.MiniWobSession, not the GB emulator's
+    # World/_REGION_TOOL_WORLDS plumbing) that legitimately ships its own read_region/whats_changed —
+    # see tests/test_miniwob_world.py for that family's own tools/list coverage.
+    other_worlds = set(GAMES) - _REGION_TOOL_WORLDS - world_mcp._MINIWOB_WORLDS
+    for game in sorted(other_worlds):
         names = [t["name"] for t in _static_tools(game)]
         assert "read_region" not in names, f"{game} must not advertise read_region"
         assert "whats_changed" not in names, f"{game} must not advertise whats_changed"
