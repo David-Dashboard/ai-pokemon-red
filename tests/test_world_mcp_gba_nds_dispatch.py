@@ -14,8 +14,9 @@ checksum mismatch!"). This file proves:
   4. The existing tools/list <-> live-plugin freshness invariant (assert_action_tools_fresh) stays
      green for the NDS and the two new GBA worlds.
 
-All tests avoid booting a real PyBoy/mgba/py-desmume ROM session — they monkeypatch the lazy import
-points inside World.__init__ so this file has zero heavy runtime deps beyond what's already imported.
+Most tests monkeypatch the lazy import points inside World.__init__ so no py-desmume/mgba install is
+required. ROMs are gitignored (roms/.gitignore excludes everything), so any test needing a real ROM
+file — including booting a real PyBoy — skips when the ROM is absent (CI has no ROMs).
 """
 from __future__ import annotations
 
@@ -106,7 +107,9 @@ def test_gb_rom_does_not_touch_nds_or_gba_lazy_imports(monkeypatch, tmp_path):
 
     monkeypatch.setattr("core.nds_emulator.DeSmuMEEmulator", _boom_nds)
     monkeypatch.setattr("core.gba_emulator.GBAEmulator", _boom_gba)
-    # cave_noire's real ROM ships in the repo; PyBoy is an existing hard dependency of the test suite.
+    # Boots a real PyBoy with cave_noire's ROM — gitignored, so skip where ROMs aren't present (CI).
+    if not os.path.exists(GAMES["cave_noire"]["rom"]):
+        pytest.skip("cave_noire ROM not available in this environment")
     args = _args("cave_noire", out=str(tmp_path / "out"))
     w = World(args)
     w.plugin.close()
@@ -152,6 +155,9 @@ def test_game_nds_world_construction_uses_desmume_not_pyboy(tmp_path):
 @pytest.mark.parametrize("game", sorted(_GBA_WORLDS))
 def test_gba_world_rom_path_exists(game):
     rom = GAMES[game]["rom"]
+    assert rom.lower().endswith(".gba")   # entry shape is checkable everywhere
+    if not os.path.isdir("roms/gba"):
+        pytest.skip("roms are gitignored and absent in this environment (CI)")
     assert os.path.exists(rom), f"{game}'s ROM does not exist: {rom}"
 
 
@@ -172,6 +178,26 @@ def test_gba_world_watch_is_empty(game):
 def test_gba_worlds_registered_in_games():
     assert "kirby_gba" in GAMES
     assert "emerald_gba" in GAMES
+
+
+def test_mismatched_rom_and_game_family_fails_loud(tmp_path):
+    """A .gba ROM on a GB world must die at startup with a clear message, not later via a misleading
+    "static tools are STALE" SystemExit from assert_action_tools_fresh."""
+    fake_rom = tmp_path / "x.gba"
+    fake_rom.write_bytes(b"\x00" * 16)
+    with pytest.raises(SystemExit, match="mismatched"):
+        World(_args("cave_noire", rom=str(fake_rom), out=str(tmp_path / "out")))
+
+
+def test_record_rejected_for_injected_emulator_worlds(tmp_path):
+    """--record only threads through the default PyBoy path; GBA/NDS worlds must reject it loudly
+    instead of silently writing no session.mp4."""
+    fake_rom = tmp_path / "x.gba"
+    fake_rom.write_bytes(b"\x00" * 16)
+    args = _args("kirby_gba", rom=str(fake_rom), out=str(tmp_path / "out"))
+    args.record = True
+    with pytest.raises(SystemExit, match="--record is not supported"):
+        World(args)
 
 
 # ---------------------------------------------------------------------------

@@ -288,6 +288,19 @@ class World:
         record_path = os.path.join(args.out, "session.mp4") if args.record else None
         os.makedirs(args.out, exist_ok=True)   # the recorder opens <out>/session.mp4 before the plugin makedirs
         rom_path = args.rom or spec["rom"]
+        # --rom must match --game's family: the extension dispatch below and the game-keyed
+        # sandbox/static-tools would otherwise disagree and die later with a misleading
+        # "static tools are STALE" SystemExit from assert_action_tools_fresh.
+        ext = "nds" if rom_path.lower().endswith(".nds") else ("gba" if rom_path.lower().endswith(".gba") else "gb")
+        fam = "nds" if args.game in _NDS_WORLDS else ("gba" if args.game in _GBA_WORLDS else "gb")
+        if ext != fam:
+            raise SystemExit(f"--game {args.game} is a {fam.upper()} world but ROM {rom_path!r} "
+                             f"looks {ext.upper()} — mismatched --rom/--game?")
+        if args.record and ext != "gb":
+            raise SystemExit("--record is not supported for GBA/NDS worlds yet: recording threads only "
+                             "through the default PyBoy emulator path (core/perception_plugin.py); "
+                             "injected GBA/NDS emulators have no recorder. Use --keep-frames instead "
+                             "(per-step PNGs are plugin-side and work for any emulator).")
         # Emulator dispatch by ROM extension (mirrors play_generic.py:75-77). Imports are LAZY so a
         # GB-only session never pays the mgba/py-desmume import cost (mgba isn't importable on Windows;
         # py-desmume may be absent in some envs) — the base PyBoy path below is unchanged.
