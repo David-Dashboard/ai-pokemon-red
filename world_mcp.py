@@ -61,6 +61,16 @@ import importlib                            # noqa: E402  (worlds loaded by --ga
 # Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
 _NDS_WORLDS = frozenset({"nds"})   # game keys that are NDS worlds (get touch + NDS buttons)
 _GBA_WORLDS = frozenset({"kirby_gba", "emerald_gba"})   # game keys that are GBA worlds (mgba, no touch)
+# MiniWoB++ computer-use worlds: a task-per-entry registry (mirrors the rest of GAMES — one key per
+# concrete playable task, e.g. "kirby_gba" is one ROM) rather than a generic "--game miniwob --task foo"
+# passthrough. Reasons: (1) --game's argparse `choices=` validation stays uniform and fails loud on typos
+# instead of accepting an arbitrary --task string; (2) tools/list can answer per-task without booting a
+# browser, same as every other world here; (3) a MiniWoB task IS the "ROM" for this family — one task,
+# one fixed action surface, matches the existing one-entry-per-playable-thing shape exactly.
+_MINIWOB_WORLDS = frozenset({"miniwob_click_button", "miniwob_click_checkboxes", "miniwob_focus_text"})
+_MINIWOB_TASK_NAMES = {"miniwob_click_button": "click-button",
+                       "miniwob_click_checkboxes": "click-checkboxes",
+                       "miniwob_focus_text": "focus-text"}
 # Worlds that get the foveated region tools (ADR-002 Phase D probe: read_region + whats_changed). Scoped
 # to cave_noire (the gate world) + its A/B control + the other lean GB world (gauntlet) — NOT the NDS/GBA
 # worlds (no proven need there yet) and NOT pokemon_red (its own perceiver/prompt already ships screen_text).
@@ -113,6 +123,14 @@ GAMES = {
                     "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                     "rom": "roms/gba/Pokemon - Emerald Version (U).gba",
                     "watch": {}},
+    # MiniWoB++ computer-use worlds: no pkg/plugin/rom/perceiver (no PyBoy/DeSmuME/mgba emulator, no
+    # GamePlugin/Gateway — MiniWobSession below is a standalone dispatch path, not core.gateway.Gateway).
+    # "watch" stays {} structurally (mirrors the GBA worlds' no-oracle shape) — MiniWob's real oracle is
+    # the env's reward + dom_elements, which MiniWobSession logs straight to oracle.jsonl itself and NEVER
+    # exposes as a `watch` dict (the RAM-address shape doesn't apply to a browser task).
+    "miniwob_click_button": {"task": _MINIWOB_TASK_NAMES["miniwob_click_button"], "watch": {}},
+    "miniwob_click_checkboxes": {"task": _MINIWOB_TASK_NAMES["miniwob_click_checkboxes"], "watch": {}},
+    "miniwob_focus_text": {"task": _MINIWOB_TASK_NAMES["miniwob_focus_text"], "watch": {}},
 }
 
 _AGENT = "mcp-brain"
@@ -249,6 +267,76 @@ _TOUCH_TOOL = {
                     "required": ["x", "y"]},
 }
 
+# --- MiniWoB++ computer-use tool specs. Same observe/read_region/whats_changed NAMES and meaning as the
+# GB region-tool worlds (a symbolic, no-DOM "things at (x,y)" view + a foveated crop) but observe() here
+# returns a blob-segmented entity list (core/blob.py) instead of a GridPerceiver's pose/walls/frontiers —
+# there is no tile grid in a browser task. click/type_text/press_key/reset_episode replace press_button
+# et al: a browser task's action vocabulary is mouse+keyboard, not a fixed game-button set.
+_MINIWOB_OBSERVE_TOOL = {
+    "name": "observe",
+    "description": ("Look at the task page RIGHT NOW without acting. Returns the task instruction "
+                    "(utterance), the screen size, and a list of foreground BLOBS detected on screen "
+                    "(x,y centroid + bbox + area — meaning-free \"things here\", like a GB HUD blob scan; "
+                    "NOT a DOM, NOT element names). Call it first, and after any click/type/key."),
+    "inputSchema": {"type": "object", "properties": {}},
+}
+_MINIWOB_CLICK_TOOL = {
+    "name": "click",
+    "description": ("Click at pixel (x, y) on the task page. Coordinates are clamped to the real "
+                    "clickable viewport (0-159 x, 0-176 y) — clicking beyond that raises an "
+                    "out-of-bounds error in the underlying browser, so this tool clamps first."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
+                    "required": ["x", "y"]},
+}
+_MINIWOB_TYPE_TOOL = {
+    "name": "type_text",
+    "description": "Type text into whatever element currently has focus (click it first to focus it).",
+    "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+}
+_MINIWOB_KEY_TOOL = {
+    "name": "press_key",
+    "description": "Press a single keyboard key (e.g. \"Enter\", \"Tab\", \"ArrowDown\") on the task page.",
+    "inputSchema": {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
+}
+_MINIWOB_RESET_TOOL = {
+    "name": "reset_episode",
+    "description": "Start a fresh episode of this task (new random instance of the same task template).",
+    "inputSchema": {"type": "object", "properties": {}},
+}
+_MINIWOB_READ_REGION_TOOL = {
+    "name": "read_region",
+    "description": ("Crop the CURRENT screenshot to a small pixel region (x0,y0)-(x1,y1) and return it "
+                    f"as an IMAGE (upscaled {_REGION_UPSCALE}x, nearest-neighbor). Use this to look "
+                    "closely at one hypothesized region, NOT a full screenshot. Capped at "
+                    f"{_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} source pixels."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x0": {"type": "integer", "minimum": 0},
+                                   "y0": {"type": "integer", "minimum": 0},
+                                   "x1": {"type": "integer", "minimum": 0},
+                                   "y1": {"type": "integer", "minimum": 0}},
+                    "required": ["x0", "y0", "x1", "y1"]},
+}
+_MINIWOB_WHATS_CHANGED_TOOL = {
+    "name": "whats_changed",
+    "description": ("Compare a pixel region between the LAST TWO screenshots you observed (mean absolute "
+                    "pixel difference) and report changed/unchanged with the score."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x0": {"type": "integer", "minimum": 0},
+                                   "y0": {"type": "integer", "minimum": 0},
+                                   "x1": {"type": "integer", "minimum": 0},
+                                   "y1": {"type": "integer", "minimum": 0}},
+                    "required": ["x0", "y0", "x1", "y1"]},
+}
+_MINIWOB_ACTION_TOOLS = [_MINIWOB_CLICK_TOOL, _MINIWOB_TYPE_TOOL, _MINIWOB_KEY_TOOL, _MINIWOB_RESET_TOOL]
+
+
+def _miniwob_static_tools() -> list[dict]:
+    """tools/list response for any miniwob_* world — identical across tasks (same fixed action surface)."""
+    return [_MINIWOB_OBSERVE_TOOL, _MINIWOB_READ_REGION_TOOL, _MINIWOB_WHATS_CHANGED_TOOL,
+            *_MINIWOB_ACTION_TOOLS]
+
+
 _TOUCH_TARGET_TOOL = {
     "name": "touch_target",
     "description": ("Tap the id-th detected touch target from observe()'s touch_targets list "
@@ -267,6 +355,8 @@ _GBA_ACTION_TOOLS = _make_press_tools(_gba_emu_mod.BUTTONS)
 
 def _static_tools(game: str) -> list[dict]:
     """Return the correct tools/list response for `game` WITHOUT booting the emulator."""
+    if game in _MINIWOB_WORLDS:
+        return _miniwob_static_tools()
     nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
     if game in _REGION_TOOL_WORLDS:
         nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
@@ -599,8 +689,164 @@ class World:
         return ([{"type": "text", "text": pre}, *body] if pre else body)
 
 
+class MiniWobSession:
+    """One live MiniWoB++ episode, served as an MCP tool surface. Standalone (not core.gateway.Gateway
+    or a GamePlugin) — MiniWoB's action vocabulary (click/type/key) and observation shape (utterance +
+    screenshot, no tile grid) don't fit the emulator-plugin abstraction the `World` class above wraps, so
+    this is a parallel, equally-thin dispatch path. Same no-leak law as `World`: reward/dom_elements are
+    the oracle here, logged to <out>/oracle.jsonl by _log_oracle, NEVER placed in a tool result."""
+
+    def __init__(self, args) -> None:
+        from core.miniwob_world import MiniWobWorld, VIEWPORT_HEIGHT, VIEWPORT_WIDTH
+        self._viewport_h = VIEWPORT_HEIGHT
+        self._viewport_w = VIEWPORT_WIDTH
+        task = GAMES[args.game]["task"]
+        os.makedirs(args.out, exist_ok=True)
+        self._oracle_path = os.path.join(args.out, "oracle.jsonl")
+        self._step_count = 0
+        self._task = task
+        self.mw = MiniWobWorld(task)
+        self.mw.reset()
+        self._frame_hist: list = []   # last <=2 (step, frame) pairs, for whats_changed (mirrors World)
+        self._log_oracle(done=False)
+        self._track_frame()
+
+    # -- oracle logging (scoring only; never in a tool result) -----------------------------------------
+
+    def _log_oracle(self, done: bool) -> None:
+        info = self.mw.last_info or {}
+        rec = {"step": self._step_count, "task": self._task,
+              "reward": float(info.get("reward", 0.0)), "done": bool(done)}
+        try:
+            with open(self._oracle_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    # -- frame tracking for read_region/whats_changed (same shape as World._track_frame) ----------------
+
+    def _track_frame(self) -> None:
+        self._frame_hist.append((self._step_count, self.mw.screenshot))
+        del self._frame_hist[:-2]
+
+    # -- observe: utterance + screen size + blob-segmented entities (core/blob.py) — no DOM, no reward --
+
+    def _observe_content(self) -> list[dict]:
+        from core.blob import RollingBg, segment_blobs
+        frame = self.mw.screenshot
+        h, w = frame.shape[0], frame.shape[1]
+        # A fresh RollingBg per observe (no cross-call background model kept) means segment_blobs needs
+        # >= 3 frames of history to report anything; for a single static frame we fall back to a
+        # non-background pixel heuristic (mirrors the probe's ad hoc "non-white pixel" mask) so observe
+        # is never a silent no-op. This is a coarse "things at (x,y)" view, same spirit as the GB blob
+        # scan in PROBE_REPORT.md — not a precise segmentation.
+        bg = RollingBg(window=3)
+        blobs = []
+        for _ in range(3):   # feed the same frame 3x so RollingBg has enough history to score foreground
+            blobs = segment_blobs(frame, bg=bg)
+        lines = [f"Task: \"{self.mw.utterance}\"", f"Screen size: {w}x{h}."]
+        if blobs:
+            shown = sorted(blobs, key=lambda b: -b.area)[:20]
+            items = ", ".join(f"({b.cx:.0f},{b.cy:.0f}) area={b.area}" for b in shown)
+            lines.append(f"Detected {len(blobs)} blob(s) (x,y area, largest first): {items}.")
+        else:
+            lines.append("No blobs detected.")
+        return [{"type": "text", "text": "\n".join(lines)}]
+
+    # -- read_region / whats_changed: same crop/upscale-PNG + mean-abs-diff helpers as World -------------
+
+    def _read_region(self, args: dict) -> list[dict]:
+        try:
+            x0, y0, x1, y1 = (int(args["x0"]), int(args["y0"]), int(args["x1"]), int(args["y1"]))
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "read_region needs integer x0, y0, x1, y1."}]
+        step, frame = self._frame_hist[-1] if self._frame_hist else (self._step_count, self.mw.screenshot)
+        err = World._validate_region(x0, y0, x1, y1, frame)
+        if err:
+            return [{"type": "text", "text": f"read_region error: {err}"}]
+        crop = frame[y0:y1, x0:x1]
+        from PIL import Image
+        im = Image.fromarray(crop).convert("RGB")
+        im = im.resize((im.width * _REGION_UPSCALE, im.height * _REGION_UPSCALE), Image.NEAREST)
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        png_b64 = base64.b64encode(buf.getvalue()).decode()
+        return [{"type": "text",
+                 "text": f"[read_region step={step} ({x0},{y0})-({x1},{y1}), upscaled {_REGION_UPSCALE}x]"},
+                {"type": "image", "data": png_b64, "mimeType": "image/png"}]
+
+    def _whats_changed(self, args: dict) -> list[dict]:
+        try:
+            x0, y0, x1, y1 = (int(args["x0"]), int(args["y0"]), int(args["x1"]), int(args["y1"]))
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "whats_changed needs integer x0, y0, x1, y1."}]
+        if len(self._frame_hist) < 2:
+            return [{"type": "text",
+                    "text": "whats_changed: need two observed frames yet (only have "
+                            f"{len(self._frame_hist)}) — call observe/click/etc. again first."}]
+        (prev_step, prev), (curr_step, curr) = self._frame_hist[-2], self._frame_hist[-1]
+        err = World._validate_region(x0, y0, x1, y1, curr)
+        if err:
+            return [{"type": "text", "text": f"whats_changed error: {err}"}]
+        import numpy as np
+        a = prev[y0:y1, x0:x1].astype(np.float32)
+        b = curr[y0:y1, x0:x1].astype(np.float32)
+        mad = float(np.mean(np.abs(a - b)))
+        changed = mad >= 2.0
+        return [{"type": "text",
+                "text": f"[whats_changed step={curr_step} (vs step={prev_step}) ({x0},{y0})-({x1},{y1}): "
+                        f"{'changed' if changed else 'unchanged'} (mean-abs-diff={mad:.2f})]"}]
+
+    # -- dispatch ----------------------------------------------------------------------------------------
+
+    def call(self, name: str, args: dict) -> list[dict]:
+        args = args or {}
+        if name == "observe":
+            return self._observe_content()
+        if name == "read_region":
+            return self._read_region(args)
+        if name == "whats_changed":
+            return self._whats_changed(args)
+        if name == "reset_episode":
+            self.mw.reset()
+            self._step_count += 1
+            self._log_oracle(done=False)
+            self._track_frame()
+            return [{"type": "text", "text": "[reset_episode -> new episode started]"},
+                    *self._observe_content()]
+        if name == "click":
+            if "x" not in args or "y" not in args:
+                return [{"type": "text", "text": "click needs integer x and y."}]
+            x_in, y_in = int(args["x"]), int(args["y"])
+            cx = max(0, min(self._viewport_w - 1, x_in))
+            cy = max(0, min(self._viewport_h - 1, y_in))
+            _, done = self.mw.click(x_in, y_in)
+            clamp_note = "" if (cx, cy) == (x_in, y_in) else f" (clamped from ({x_in},{y_in}))"
+            head = f"[click ({cx},{cy}){clamp_note} -> done={done}]"
+        elif name == "type_text":
+            if "text" not in args:
+                return [{"type": "text", "text": "type_text needs a string `text`."}]
+            _, done = self.mw.type_text(str(args["text"]))
+            head = f"[type_text -> done={done}]"
+        elif name == "press_key":
+            if "key" not in args:
+                return [{"type": "text", "text": "press_key needs a string `key`."}]
+            _, done = self.mw.press_key(str(args["key"]))
+            head = f"[press_key {args['key']} -> done={done}]"
+        else:
+            return [{"type": "text", "text": f"unknown tool: {name}"}]
+        self._step_count += 1
+        self._log_oracle(done=done)
+        self._track_frame()
+        return [{"type": "text", "text": head}, *self._observe_content()]
+
+    def close(self) -> None:
+        self.mw.close()
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="MCP (stdio) server exposing a Game Boy world as tools.")
+    ap = argparse.ArgumentParser(description="MCP (stdio) server exposing a Game Boy (or MiniWoB++ "
+                                              "computer-use) world as tools.")
     ap.add_argument("--game", default="cave_noire", choices=sorted(GAMES),  # noqa: GAMES includes "nds"
                     help="which world to serve (registry in world_mcp.py)")
     ap.add_argument("--rom", default=None, help="ROM path; defaults to the chosen game's ROM")
@@ -616,15 +862,25 @@ def main() -> int:
                          "PNG pairs with its oracle.jsonl step (RAM truth) + the symbolic view the brain saw.")
     args = ap.parse_args()
 
-    # LAZY: do NOT boot the emulator here. `initialize`/`tools/list` must answer instantly or the MCP client
-    # times out the startup handshake and marks the server "not connected". The World (PyBoy) is built on the
-    # first tool CALL, which the client waits on as a normal request (no startup timeout).
+    # LAZY: do NOT boot the emulator/browser here. `initialize`/`tools/list` must answer instantly or the
+    # MCP client times out the startup handshake and marks the server "not connected". The World (PyBoy)
+    # or MiniWobSession (Selenium) is built on the first tool CALL, which the client waits on as a normal
+    # request (no startup timeout).
+    _is_miniwob = args.game in _MINIWOB_WORLDS
     _world: list = [None]
+    def _close_world(w) -> None:
+        # World's emulator lives at w.plugin; MiniWobSession closes itself directly — same lazy-boot
+        # slot, two shapes, so shutdown/EOF-close needs to know which.
+        (w.close() if _is_miniwob else w.plugin.close())
+
     def world():
         if _world[0] is None:
-            w = World(args)
-            assert_action_tools_fresh(w.plugin, args.game)   # catch static-tool drift on first boot (exact equality)
-            _world[0] = w
+            if _is_miniwob:
+                _world[0] = MiniWobSession(args)
+            else:
+                w = World(args)
+                assert_action_tools_fresh(w.plugin, args.game)   # catch static-tool drift on first boot (exact equality)
+                _world[0] = w
         return _world[0]
 
     # The MCP client (claude) usually TERMINATES the server (SIGTERM) instead of closing stdin (EOF), which
@@ -633,7 +889,7 @@ def main() -> int:
     def _shutdown(*_):
         if _world[0] is not None:
             try:
-                _world[0].plugin.close()
+                _close_world(_world[0])
             except Exception:
                 pass
         raise SystemExit(0)
@@ -681,10 +937,11 @@ def main() -> int:
         else:
             _send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}})
 
-    # client disconnected (stdin EOF) -> stop the emulator and FINALIZE the --record MP4 (imageio needs close()).
+    # client disconnected (stdin EOF) -> stop the emulator/browser and FINALIZE the --record MP4 (imageio
+    # needs close()).
     if _world[0] is not None:
         try:
-            _world[0].plugin.close()
+            _close_world(_world[0])
         except Exception:
             pass
     return 0
