@@ -5,7 +5,36 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (ADR-002 gate-scoring harness built + oracle-address verdict resolved; IT1 complete + patience measured; keystone static-object detector KILLED CHEAP with a reusable gate harness; #43–#52 merged)._
+_Last updated: 2026-07-03 (**ADR-002 §9 GATE: PASS** — live Phase-D run, tightened protocol; promotion PR opened for David; It1 complete + patience measured; #43–#56 merged)._
+
+**⇒⇒ NEWEST (2026-07-03, cont.) — THE ADR-002 §9 GATE **PASSED** LIVE (Phase D, one paid run, $3.52). The
+self-built-ontology direction is VALIDATED at its own pre-stated gate; the promotion PR (ARCHITECTURE/ROADMAP
+per ADR-002's own promotion clause) is OPEN FOR DAVID — deliberately not self-merged (constitutional change). ⇒⇒**
+- **The run (runs/brain_cn_gate/, account B):** a fresh Claude over MCP played Cave Noire combat with only
+  `observe`/`explore`/`goto`/`press_*` + two new foveated primitives (`read_region` ≤96×96 crop→image,
+  `whats_changed` region-diff; PR #55). Brief was REGION-NEUTRAL (never says where HP is; oracle never on the
+  wire). It hypothesized candidate regions, logged step-indexed readings (`HYP region=... step=N reading=V`),
+  fought, took damage, and DECLARED region (0,125,64,138) = its life.
+- **Score (`eval/score_gate_run.py`, pre-pinned threshold 0.90/0.50/0.30 + the variation guard):** truth
+  agreement **1.000 over 15 readings spanning 3 distinct oracle values** (hp 10→8→5; 8 non-modal readings);
+  decoy (the ENEMY counter it rejected) **0.000** — and its rejection reason was CAUSAL: *"stayed 0 the whole
+  session while my HP fell 10→8→5; tracks enemies remaining, not my life."* **ARM (a) PASS, ARM (b) PASS →
+  GATE: PASS.**
+- **The verdict survived an adversarial protocol, which is why it's credible:** (1) a sev-1 review finding
+  killed wall-clock alignment BEFORE the run (container-vs-host clock skew could fake a PASS) → replaced by
+  exact world-step alignment, skew-proof by construction (PR #55 fix). (2) The FIRST paid run scored PASS and
+  was **invalidated by us as DEGENERATE** — all readings sat at hp=10 (no damage taken), constant-matching-
+  constant; the scorer was TIGHTENED (variation guard: ≥2 distinct oracle values + ≥3 non-modal readings, else
+  DEGENERATE_CONSTANT; PR #56) and the run REPEATED under the stricter bar. Tightened-then-passed, never
+  loosened.
+- **What PASS means (per ADR-002's own §9):** behaviour CAN ground a brain-hypothesized ontology beyond
+  walkability. Promotion = ADR-002 → Accepted in ARCHITECTURE.md + the roadmap-v2 discovery-loop recast —
+  **left as an OPEN PR for David** (a constitutional change warrants his eyes even under standing autonomy).
+  Next per the ADR on PASS: generalize the loop to ENTITIES, and the naming/anchoring layer this greenlights
+  is the path to referential grounding (the "Poké Ball" keystone — whose cheap-detector alternative was killed
+  at its own gate earlier today, PR #52).
+- **Run ledger today:** It1 audits ≈$13.4 (+$1.55 patience re-audit), Emerald $1.31, Kirby $1.25, gate runs
+  $3.52+$3.52 ≈ $7.0 → ≈ **$24.6 total**, every run oracle-scored.
 
 **⇒⇒ NEWEST (2026-07-03, cont.) — ADR-002 SS9 gate: offline scoring harness BUILT + BASELINED (free/offline
 half of roadmap-v2 Rung 0 Phase B/C); the 0xC120-vs-0xD389 oracle question is RESOLVED. Report:
