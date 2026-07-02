@@ -64,7 +64,11 @@ def _slug(name: str) -> str:
 def _registry():
     """world_mcp.GAMES, imported with its module-level side effects undone (it dups fd1->stderr and
     chdirs to the repo root to keep its JSON-RPC channel clean — protocol hygiene we don't want here)."""
-    saved_fd, saved_stdout, saved_cwd = os.dup(1), sys.stdout, os.getcwd()
+    saved_fd, saved_stdout = os.dup(1), sys.stdout
+    try:
+        saved_cwd = os.getcwd()
+    except OSError:          # launched from a deleted dir (e.g. an ephemeral WSL docker bind-mount)
+        saved_cwd = None
     try:
         import world_mcp
         return world_mcp.GAMES
@@ -72,7 +76,8 @@ def _registry():
         os.dup2(saved_fd, 1)
         os.close(saved_fd)
         sys.stdout = saved_stdout
-        os.chdir(saved_cwd)
+        if saved_cwd is not None:
+            os.chdir(saved_cwd)
 
 
 def _build_plugin(rom_path: str, out_dir: str):

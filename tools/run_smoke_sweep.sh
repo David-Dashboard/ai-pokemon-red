@@ -15,6 +15,10 @@
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# WSL sessions can start in an EPHEMERAL docker-desktop bind-mount dir that a finished container
+# tears down mid-script — a later os.getcwd() in the GBA phase then dies with FileNotFoundError
+# (seen live 2026-07-03). Stand somewhere stable before anything else runs.
+cd "$REPO" || exit 3
 ROMS="${ROMS_DIR:-$REPO/roms}"
 OUT="$REPO/runs/smoke_sweep"
 mkdir -p "$OUT"
