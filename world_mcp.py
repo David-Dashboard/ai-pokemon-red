@@ -39,6 +39,7 @@ except Exception:
 
 import argparse
 import base64
+import io
 import json
 import signal
 import uuid
@@ -60,6 +61,10 @@ import importlib                            # noqa: E402  (worlds loaded by --ga
 # Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
 _NDS_WORLDS = frozenset({"nds"})   # game keys that are NDS worlds (get touch + NDS buttons)
 _GBA_WORLDS = frozenset({"kirby_gba", "emerald_gba"})   # game keys that are GBA worlds (mgba, no touch)
+# Worlds that get the foveated region tools (ADR-002 Phase D probe: read_region + whats_changed). Scoped
+# to cave_noire (the gate world) + its A/B control + the other lean GB world (gauntlet) — NOT the NDS/GBA
+# worlds (no proven need there yet) and NOT pokemon_red (its own perceiver/prompt already ships screen_text).
+_REGION_TOOL_WORLDS = frozenset({"cave_noire", "cave_noire_baseline", "gauntlet"})
 
 # Lazy import so world_mcp.py is importable without py-desmume installed.
 def _nds_sandbox():
@@ -152,6 +157,44 @@ _REMEMBER_TOOL = {
                     "Within-run only: forgotten when the session ends (that's intentional)."),
     "inputSchema": {"type": "object", "properties": {"lesson": {"type": "string"}}, "required": ["lesson"]},
 }
+# --- ADR-002 Phase D: the two foveated-region primitives a brain needs to HYPOTHESIZE "region R = my
+# life" and ground it, without ever seeing a full-frame screenshot (that stays forbidden). Both take a
+# pixel box on the CURRENT (already-observed) frame — no new emulator ticks, no state change, so they are
+# NOT gateway/sandbox actions on the plugin; they read the last frame the World already has in hand.
+_REGION_MAX_SIDE = 96          # source-pixel cap per side (loudly enforced) — a small hypothesized region,
+                               # not a full-frame screenshot (160x144 GB screen).
+_REGION_UPSCALE = 3            # nearest-neighbor upscale so an 8px GB font is legible to a vision model.
+
+_READ_REGION_TOOL = {
+    "name": "read_region",
+    "description": ("Crop the CURRENT frame to a small pixel region (x0,y0)-(x1,y1) and return it as an "
+                    "IMAGE (upscaled 3x, nearest-neighbor, so small text is legible). Use this to look "
+                    "closely at ONE hypothesized region (e.g. a HUD box you think might be your life) — "
+                    f"NOT a full screenshot. Capped at {_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} source pixels; "
+                    "a bigger request is rejected loudly with the cap in the error. The result reports "
+                    "`step=<N>` — the world step of the frame shown; if you log a reading of it, copy "
+                    "that exact step."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x0": {"type": "integer", "minimum": 0},
+                                   "y0": {"type": "integer", "minimum": 0},
+                                   "x1": {"type": "integer", "minimum": 0},
+                                   "y1": {"type": "integer", "minimum": 0}},
+                    "required": ["x0", "y0", "x1", "y1"]},
+}
+_WHATS_CHANGED_TOOL = {
+    "name": "whats_changed",
+    "description": ("Compare a pixel region between the LAST TWO frames you observed (mean absolute "
+                    "pixel difference) and report changed/unchanged with the score — a symbolic (no "
+                    "image) way to check whether a hypothesized region's value just moved, e.g. while "
+                    "you fight, without spending a read_region look every step. The result reports "
+                    "`step=<N>` for the current frame compared."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x0": {"type": "integer", "minimum": 0},
+                                   "y0": {"type": "integer", "minimum": 0},
+                                   "x1": {"type": "integer", "minimum": 0},
+                                   "y1": {"type": "integer", "minimum": 0}},
+                    "required": ["x0", "y0", "x1", "y1"]},
+}
 # Static action-tool specs (mirror the live plugin's tools()) so `tools/list` can answer WITHOUT booting
 # the emulator — the emulator is built lazily on the first tool CALL (see main()). This keeps the
 # `initialize`/`tools/list` handshake instant so the MCP client doesn't time out waiting on a boot.
@@ -225,6 +268,8 @@ _GBA_ACTION_TOOLS = _make_press_tools(_gba_emu_mod.BUTTONS)
 def _static_tools(game: str) -> list[dict]:
     """Return the correct tools/list response for `game` WITHOUT booting the emulator."""
     nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
+    if game in _REGION_TOOL_WORLDS:
+        nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
     if game in _NDS_WORLDS:
         return [*nav, *_NDS_ACTION_TOOLS]
     if game in _GBA_WORLDS:
@@ -325,11 +370,16 @@ class World:
         self.decisions = 0       # your LLM wakes (press/goto/explore) — the cost the north star keeps LOW
         self.auto_tiles = 0      # tiles the free System-1 autopilot walked for you (free; NOT the cost metric)
         self.visited = 0         # cells explored so far (progress); improvement = more cells per decision (wake)
+        self.region_tools = args.game in _REGION_TOOL_WORLDS   # ADR-002 Phase D: read_region/whats_changed
+        self._frame_hist: list = []   # last <=2 observed frames (numpy HxWxC), for whats_changed's frame-diff
 
     def tools(self) -> list[dict]:
         action = [{"name": s.name, "description": s.description, "inputSchema": s.schema}
                   for s in self.plugin.tools(_AGENT)]
-        return [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL, *action]
+        nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
+        if self.region_tools:
+            nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
+        return [*nav, *action]
 
     # -- self-improvement preamble (re-injected every turn) --------------------
 
@@ -368,6 +418,8 @@ class World:
         sm = (obs.data or {}).get("spatial_memory") or {}
         if isinstance(sm.get("visited"), int):
             self.visited = sm["visited"]        # track progress (cells explored) for the cost-per-progress signal
+        if self.region_tools:
+            self._track_frame()
         content: list[dict] = [{"type": "text", "text": self._fix_text(obs.text)}]
         p = (obs.data or {}).get("screen_path") or ""
         if p and os.path.exists(p):
@@ -381,6 +433,85 @@ class World:
                 except OSError:
                     pass
         return content
+
+    # -- ADR-002 Phase D: foveated region primitives (read_region / whats_changed) --------------------------
+    # Both read the CURRENT frame already in the emulator (no new ticks, no state change) — they are NOT
+    # gateway/sandbox actions; they piggyback on whatever frame the last observe/action already produced.
+
+    def _track_frame(self) -> None:
+        """Keep the last <=2 observed (step, frame) pairs so whats_changed can diff them and both region
+        tools can report WHICH world step the frame belongs to. `step` is the plugin's _obs_count at
+        capture time — observe() increments _obs_count and then _log_oracle writes that same value as the
+        oracle.jsonl row's "step", and _track_frame runs right after that observe returns, so this step is
+        EXACTLY the oracle row logged for the frame being read (the scorer aligns on it; no wall clocks)."""
+        try:
+            frame = self.plugin.emu.screen_ndarray()
+        except Exception:
+            return
+        step = int(getattr(self.plugin, "_obs_count", 0))
+        self._frame_hist.append((step, frame))
+        del self._frame_hist[:-2]
+
+    @staticmethod
+    def _validate_region(x0: int, y0: int, x1: int, y1: int, frame) -> str | None:
+        """Return an error string if the region is out of bounds or exceeds the size cap; else None."""
+        h, w = frame.shape[0], frame.shape[1]
+        if not (0 <= x0 < x1 <= w and 0 <= y0 < y1 <= h):
+            return (f"region ({x0},{y0})-({x1},{y1}) out of bounds for a {w}x{h} frame "
+                    "(need 0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height)")
+        rw, rh = x1 - x0, y1 - y0
+        if rw > _REGION_MAX_SIDE or rh > _REGION_MAX_SIDE:
+            return (f"region {rw}x{rh} exceeds the {_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} source-pixel cap "
+                    "— hypothesize a SMALLER region, not a full-frame screenshot")
+        return None
+
+    def _read_region(self, args: dict) -> list[dict]:
+        try:
+            x0, y0, x1, y1 = (int(args["x0"]), int(args["y0"]), int(args["x1"]), int(args["y1"]))
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "read_region needs integer x0, y0, x1, y1."}]
+        if not self._frame_hist:
+            self._track_frame()
+        if not self._frame_hist:
+            return [{"type": "text", "text": "read_region: no frame available yet — call observe first."}]
+        step, frame = self._frame_hist[-1]
+        err = self._validate_region(x0, y0, x1, y1, frame)
+        if err:
+            return [{"type": "text", "text": f"read_region error: {err}"}]
+        crop = frame[y0:y1, x0:x1]
+        from PIL import Image
+        im = Image.fromarray(crop).convert("RGB")
+        im = im.resize((im.width * _REGION_UPSCALE, im.height * _REGION_UPSCALE), Image.NEAREST)
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        png_b64 = base64.b64encode(buf.getvalue()).decode()
+        return [{"type": "text",
+                 "text": f"[read_region step={step} ({x0},{y0})-({x1},{y1}), upscaled {_REGION_UPSCALE}x — "
+                         f"when logging a reading of this image, use this exact step: "
+                         f"HYP region=({x0},{y0},{x1},{y1}) step={step} reading=<value>]"},
+                {"type": "image", "data": png_b64, "mimeType": "image/png"}]
+
+    def _whats_changed(self, args: dict) -> list[dict]:
+        try:
+            x0, y0, x1, y1 = (int(args["x0"]), int(args["y0"]), int(args["x1"]), int(args["y1"]))
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "whats_changed needs integer x0, y0, x1, y1."}]
+        if len(self._frame_hist) < 2:
+            return [{"type": "text",
+                    "text": "whats_changed: need two observed frames yet (only have "
+                            f"{len(self._frame_hist)}) — call observe/press again first."}]
+        (prev_step, prev), (curr_step, curr) = self._frame_hist[-2], self._frame_hist[-1]
+        err = self._validate_region(x0, y0, x1, y1, curr)
+        if err:
+            return [{"type": "text", "text": f"whats_changed error: {err}"}]
+        import numpy as np
+        a = prev[y0:y1, x0:x1].astype(np.float32)
+        b = curr[y0:y1, x0:x1].astype(np.float32)
+        mad = float(np.mean(np.abs(a - b)))
+        changed = mad >= 2.0   # small dead-zone against emulator/encoding noise on a static region
+        return [{"type": "text",
+                "text": f"[whats_changed step={curr_step} (vs step={prev_step}) ({x0},{y0})-({x1},{y1}): "
+                        f"{'changed' if changed else 'unchanged'} (mean-abs-diff={mad:.2f})]"}]
 
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 
@@ -452,6 +583,10 @@ class World:
             self.auto_tiles += steps
             body = [{"type": "text", "text": f"[goto {tuple(target)} -> {why} after {steps} step(s)]"},
                     *self._content(self.plugin.observe(_AGENT))]
+        elif name == "read_region" and self.region_tools:
+            body = self._read_region(args)
+        elif name == "whats_changed" and self.region_tools:
+            body = self._whats_changed(args)
         else:
             # a direct action (press_button / press_sequence / wait / touch / touch_target): route through the gateway.
             if name in ("press_button", "press_sequence", "wait", "touch", "touch_target"):
