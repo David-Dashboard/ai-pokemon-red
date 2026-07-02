@@ -77,6 +77,13 @@ def _gba_sandbox():
     from core.permissions import Allowlist
     return Allowlist({"press_button", "press_sequence", "wait"})
 
+
+# Locally-built sandbox for the generic GB/GBC lean world (gb_generic) — mirrors _gba_sandbox()/_nds_sandbox();
+# no game package to pull a *_SANDBOX constant from since gb_generic has no game-specific plugin.
+def _gb_generic_sandbox():
+    from core.permissions import Allowlist
+    return Allowlist({"press_button", "press_sequence", "wait"})
+
 GAMES = {
     "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
                    "perceiver_mod": "games.cave_noire.perceiver", "perceiver": "CaveNoirePerceiver",
@@ -113,7 +120,17 @@ GAMES = {
                     "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                     "rom": "roms/gba/Pokemon - Emerald Version (U).gba",
                     "watch": {}},
+    # Generic GB/GBC lean world: any .gb/.gbc ROM via --rom, no game-specific plugin/oracle (probe-only —
+    # watch={}, no oracle entries for generic worlds). Mirrors kirby_gba/emerald_gba's shared-plugin pattern,
+    # GB family instead of GBA: PerceptionPlugin (default PyBoy emulator, no injection needed) +
+    # FollowCameraPerceiver + a locally-built sandbox (_gb_generic_sandbox — no game package to source one from).
+    "gb_generic": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
+                   "sandbox": "GB_GENERIC_MCP_SANDBOX",
+                   "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
+                   "rom": "roms/PLACEHOLDER.gb",   # always override with --rom; no default GB ROM makes sense here
+                   "watch": {}},
 }
+_GB_GENERIC_WORLDS = frozenset({"gb_generic"})   # game keys that need the locally-built generic-GB sandbox
 
 _AGENT = "mcp-brain"
 _PROTOCOL = "2024-11-05"
@@ -316,12 +333,14 @@ class World:
         spec = GAMES[args.game]
         pkg = importlib.import_module(spec["pkg"])
         Plugin = getattr(pkg, spec["plugin"])
-        # Resolve sandbox: NDS/GBA worlds use a locally-built Allowlist (no shared module); GB worlds
-        # get their sandbox from the game's own package (e.g. CAVE_NOIRE_SANDBOX).
+        # Resolve sandbox: NDS/GBA/generic-GB worlds use a locally-built Allowlist (no shared module);
+        # per-game GB worlds get their sandbox from the game's own package (e.g. CAVE_NOIRE_SANDBOX).
         if args.game in _NDS_WORLDS:
             sandbox = _nds_sandbox()
         elif args.game in _GBA_WORLDS:
             sandbox = _gba_sandbox()
+        elif args.game in _GB_GENERIC_WORLDS:
+            sandbox = _gb_generic_sandbox()
         else:
             sandbox = getattr(pkg, spec["sandbox"])
         Perceiver = getattr(importlib.import_module(spec["perceiver_mod"]), spec["perceiver"])
