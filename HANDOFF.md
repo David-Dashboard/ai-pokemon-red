@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (IT1 TASK COMPLETE — party 0→1 oracle-verified; same brain played GB+GBA+NDS live; #43/#44 merged, #45 open)._
+_Last updated: 2026-07-03 (IT1 complete + patience reflex MERGED & measured: Oak dialog now free, $3.66/77dec → $1.55/32dec; #43–#49 merged)._
 
 ---
 
@@ -134,10 +134,15 @@ PR #45 (Dockerfile NDS libs) OPEN for David. This supersedes the 07-02 block bel
   (e.g. #45) still need his click or per-PR authorization. Agent-teamwork gotcha: two implementers sharing the
   main working tree collided (branch switches discard sibling edits) — use `git worktree` per agent, always.
 
-**⇒ (2026-07-02, after the 07-03 handoff above was written) — "PATIENCE" AUTO-ADVANCE REFLEX BUILT +
-REVIEW-HARDENED (the 07-02-designed System-1 gated-static skip). Branch `feat/patience-auto-advance`
-(PR #49, includes the fix round for both adversarial reviews). Sits below the 07-03 block only because
-that block is the session-status TOP block; this is sibling work, not superseded by it.**
+**⇒ (2026-07-03) — "PATIENCE" AUTO-ADVANCE REFLEX MERGED (PR #49) + MEASURED LIVE ON RED. main `850c69a`.**
+**Measured win (It1 Red, patience on): party 0→1, `$1.55 / 32 decisions` vs the pre-patience `$3.66 / 77`
+— 94 dialog/cutscene frames auto-advanced FREE across 10 observes, and the brain correctly WOKE at the
+starter `menu` choice (the S1 safety fix held; nothing auto-committed).** (Also merged: PR #48 lean/NDS render
+fix — `_render_symbolic` had gated the whole spatial view on Pokémon's `overworld` label, silently degrading
+cave_noire/gauntlet/NDS since #39; now `gameplay` renders + NDS `touch_targets` surface. PR #47 fixed a
+cross-PR CI red: #44's `emu.frame` read × #43's test fakes — RULE: wait for PR CI, not just the local suite.)**
+Open follow-up: a SEMANTIC gated-vs-choice classifier for TEXT-LESS worlds is the primitive that lets
+Emerald/NDS opt into patience (Emerald's scripted intro is still the unsolved cost sink there).**
 
 - **What landed:** `core/patience.py` (new) — `classify(context) -> {"gated-static","choice","free-control"}`
   + `AdvanceLearner` (per-run, blank-every-run control-grounded button memory) + `Patience` (the budgeted
