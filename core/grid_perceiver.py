@@ -510,3 +510,14 @@ class GridPerceiver:
             screen_text="",
             raw_available=bool(raw_ref), raw_ref=raw_ref,
         )
+
+
+class FollowCameraPerceiver(GridPerceiver):
+    """Zero-arg GridPerceiver for follow-camera worlds (GBA titles: Kirby, Pokemon Emerald, ...).
+
+    Same shape as games/gauntlet/perceiver.GauntletPerceiver (GridPerceiver + CameraScrollSignal), kept
+    here so a GBA world doesn't have to import a Gauntlet-named class. world_mcp instantiates
+    `perceiver()` with no args, so this just supplies the default move signal."""
+
+    def __init__(self) -> None:
+        super().__init__(CameraScrollSignal())

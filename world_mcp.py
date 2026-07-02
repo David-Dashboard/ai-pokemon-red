@@ -51,6 +51,7 @@ from core.contracts import ToolCall         # noqa: E402
 from core.gateway import Gateway            # noqa: E402
 from core.gb_emulator import BUTTONS as _GB_BUTTONS   # noqa: E402  (cheap import — no PyBoy; for the static tool list)
 import core.nds_emulator as _nds_emu_mod   # noqa: E402  (for NDS BUTTONS; lazy-guard: import succeeds even without py-desmume)
+import core.gba_emulator as _gba_emu_mod   # noqa: E402  (for GBA BUTTONS; lazy-guard: import succeeds even without mgba)
 
 import importlib                            # noqa: E402  (worlds loaded by --game from GAMES — game-agnostic)
 
@@ -58,11 +59,18 @@ import importlib                            # noqa: E402  (worlds loaded by --ga
 # import paths + the per-world bits (default ROM, the RAM `watch` for the SCORING oracle — never on the wire).
 # Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
 _NDS_WORLDS = frozenset({"nds"})   # game keys that are NDS worlds (get touch + NDS buttons)
+_GBA_WORLDS = frozenset({"kirby_gba", "emerald_gba"})   # game keys that are GBA worlds (mgba, no touch)
 
 # Lazy import so world_mcp.py is importable without py-desmume installed.
 def _nds_sandbox():
     from core.permissions import Allowlist
     return Allowlist({"press_button", "press_sequence", "wait", "touch", "touch_target"})
+
+
+# Lazy import so world_mcp.py is importable without mgba installed (GB-only sessions pay no cost).
+def _gba_sandbox():
+    from core.permissions import Allowlist
+    return Allowlist({"press_button", "press_sequence", "wait"})
 
 GAMES = {
     "cave_noire": {"pkg": "games.cave_noire", "plugin": "CaveNoirePlugin", "sandbox": "CAVE_NOIRE_SANDBOX",
@@ -87,6 +95,19 @@ GAMES = {
                     "perceiver_mod": "games.pokemon_red.perceiver", "perceiver": "OverworldPerceiver",
                     "rom": "roms/PokemonRed.gb",
                     "watch": {"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163, "badges": 0xD356}},
+    # GBA worlds: use the shared PerceptionPlugin (as play_generic.py does) + FollowCameraPerceiver
+    # (core.grid_perceiver) + a locally-built sandbox (_gba_sandbox — mirrors _nds_sandbox()).
+    # mgba is not importable on Windows; the emulator is only constructed lazily on first tool CALL.
+    "kirby_gba": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
+                  "sandbox": "GBA_MCP_SANDBOX",
+                  "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
+                  "rom": "roms/gba/Kirby - Nightmare in Dreamland (U) [!].gba",
+                  "watch": {}},
+    "emerald_gba": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
+                    "sandbox": "GBA_MCP_SANDBOX",
+                    "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
+                    "rom": "roms/gba/Pokemon - Emerald Version (U).gba",
+                    "watch": {}},
 }
 
 _AGENT = "mcp-brain"
@@ -138,6 +159,7 @@ _REMEMBER_TOOL = {
 # IMPORTANT: the button set is game-dependent.
 #   GB worlds  (cave_noire, gauntlet, …) → _GB_BUTTONS (8 buttons; NO touch)
 #   NDS worlds (nds)                     → _nds_emu_mod.BUTTONS (12 buttons) + _TOUCH_TOOL
+#   GBA worlds (kirby_gba, emerald_gba)  → _gba_emu_mod.BUTTONS (10 buttons incl. l/r; NO touch)
 #
 # _static_tools(game) returns the correct per-game list; the `tools/list` handler calls it.
 # assert_action_tools_fresh() does an EXACT-EQUALITY check (not intersection) so static==live is always true.
@@ -194,9 +216,10 @@ _TOUCH_TARGET_TOOL = {
                     "required": ["id"]},
 }
 
-# Pre-built per-world action-tool lists (no touch on GB; touch/touch_target + NDS buttons on NDS).
+# Pre-built per-world action-tool lists (no touch on GB/GBA; touch/touch_target + NDS buttons on NDS).
 _GB_ACTION_TOOLS = _make_press_tools(_GB_BUTTONS)
 _NDS_ACTION_TOOLS = [*_make_press_tools(_nds_emu_mod.BUTTONS), _TOUCH_TOOL, _TOUCH_TARGET_TOOL]
+_GBA_ACTION_TOOLS = _make_press_tools(_gba_emu_mod.BUTTONS)
 
 
 def _static_tools(game: str) -> list[dict]:
@@ -204,6 +227,8 @@ def _static_tools(game: str) -> list[dict]:
     nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
     if game in _NDS_WORLDS:
         return [*nav, *_NDS_ACTION_TOOLS]
+    if game in _GBA_WORLDS:
+        return [*nav, *_GBA_ACTION_TOOLS]
     return [*nav, *_GB_ACTION_TOOLS]
 
 
@@ -213,7 +238,13 @@ def assert_action_tools_fresh(plugin, game: str) -> None:
 
     Invariant (EXACT EQUALITY): the set of static action tools must equal the live plugin's tools
     exactly — same names, same schemas. Fail LOUD rather than silently mislead the brain."""
-    static = {t["name"]: t["inputSchema"] for t in (_NDS_ACTION_TOOLS if game in _NDS_WORLDS else _GB_ACTION_TOOLS)}
+    if game in _NDS_WORLDS:
+        action_tools = _NDS_ACTION_TOOLS
+    elif game in _GBA_WORLDS:
+        action_tools = _GBA_ACTION_TOOLS
+    else:
+        action_tools = _GB_ACTION_TOOLS
+    static = {t["name"]: t["inputSchema"] for t in action_tools}
     live = {s.name: s.schema for s in plugin.tools(_AGENT)}
     # Exact equality: static action tools == live plugin tools (no extras allowed on either side).
     drift = {nm: (static[nm], live[nm]) for nm in static if nm in live and static[nm] != live[nm]}
@@ -240,10 +271,12 @@ class World:
         spec = GAMES[args.game]
         pkg = importlib.import_module(spec["pkg"])
         Plugin = getattr(pkg, spec["plugin"])
-        # Resolve sandbox: NDS worlds use a locally-built Allowlist (no shared module); GB worlds get
-        # their sandbox from the game's own package (e.g. CAVE_NOIRE_SANDBOX).
+        # Resolve sandbox: NDS/GBA worlds use a locally-built Allowlist (no shared module); GB worlds
+        # get their sandbox from the game's own package (e.g. CAVE_NOIRE_SANDBOX).
         if args.game in _NDS_WORLDS:
             sandbox = _nds_sandbox()
+        elif args.game in _GBA_WORLDS:
+            sandbox = _gba_sandbox()
         else:
             sandbox = getattr(pkg, spec["sandbox"])
         Perceiver = getattr(importlib.import_module(spec["perceiver_mod"]), spec["perceiver"])
@@ -254,7 +287,31 @@ class World:
                   "Top-down exploration. You perceive only this symbolic view — reason from it.")
         record_path = os.path.join(args.out, "session.mp4") if args.record else None
         os.makedirs(args.out, exist_ok=True)   # the recorder opens <out>/session.mp4 before the plugin makedirs
-        self.plugin = Plugin(rom_path=args.rom or spec["rom"], out_dir=args.out, headless=True,
+        rom_path = args.rom or spec["rom"]
+        # --rom must match --game's family: the extension dispatch below and the game-keyed
+        # sandbox/static-tools would otherwise disagree and die later with a misleading
+        # "static tools are STALE" SystemExit from assert_action_tools_fresh.
+        ext = "nds" if rom_path.lower().endswith(".nds") else ("gba" if rom_path.lower().endswith(".gba") else "gb")
+        fam = "nds" if args.game in _NDS_WORLDS else ("gba" if args.game in _GBA_WORLDS else "gb")
+        if ext != fam:
+            raise SystemExit(f"--game {args.game} is a {fam.upper()} world but ROM {rom_path!r} "
+                             f"looks {ext.upper()} — mismatched --rom/--game?")
+        if args.record and ext != "gb":
+            raise SystemExit("--record is not supported for GBA/NDS worlds yet: recording threads only "
+                             "through the default PyBoy emulator path (core/perception_plugin.py); "
+                             "injected GBA/NDS emulators have no recorder. Use --keep-frames instead "
+                             "(per-step PNGs are plugin-side and work for any emulator).")
+        # Emulator dispatch by ROM extension (mirrors play_generic.py:75-77). Imports are LAZY so a
+        # GB-only session never pays the mgba/py-desmume import cost (mgba isn't importable on Windows;
+        # py-desmume may be absent in some envs) — the base PyBoy path below is unchanged.
+        emulator = None
+        if rom_path.lower().endswith(".nds"):
+            from core.nds_emulator import DeSmuMEEmulator
+            emulator = DeSmuMEEmulator(rom_path, headless=True)
+        elif rom_path.lower().endswith(".gba"):
+            from core.gba_emulator import GBAEmulator
+            emulator = GBAEmulator(rom_path)
+        self.plugin = Plugin(rom_path=rom_path, emulator=emulator, out_dir=args.out, headless=True,
                              init_state=args.init_state, perceiver=Perceiver(),
                              watch=spec["watch"],   # RAM -> oracle.jsonl ONLY, never the wire (incl. the hp oracle)
                              render_header=header, record_path=record_path)

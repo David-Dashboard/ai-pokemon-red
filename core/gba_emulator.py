@@ -45,6 +45,11 @@ _GBA_W, _GBA_H = 240, 160
 class GBAEmulator:
     """Live mgba-backed GBA emulator satisfying the Emulator Protocol."""
 
+    # Expose the module-level BUTTONS as a class attribute (single source of truth) so
+    # PerceptionPlugin._buttons() can discover it via getattr(type(self.emu), "BUTTONS") — mirrors
+    # DeSmuMEEmulator.BUTTONS in core/nds_emulator.py.
+    BUTTONS = BUTTONS
+
     def __init__(self, rom_path: str):
         if not os.path.exists(rom_path):
             raise FileNotFoundError(
