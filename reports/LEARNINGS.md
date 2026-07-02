@@ -6,6 +6,19 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-07-03 (latest) — entity gate v1 FAILED, and the failure taught more than a pass would have
+- **What:** the entities generalization of the grounding loop ran its first gate ($4.02): the brain claimed
+  threat/benign entities with contact-first logging (a scorer-side revealed-step watermark made retroactive
+  tagging worthless — it caught exactly 1 line). Declared threat: p_k=0.000 over 3 clean contacts; GATE: FAIL.
+- **The finding:** diagnosis ruled out scorer bugs and damage latency — the 2 hp drops sat 4-14 steps from any
+  logged contact; Cave Noire enemies act on their own initiative (one hit came from OFF-SCREEN). **Forward
+  contact-logging is the wrong causal model**: HUD grounding passed because life is a persistent readable
+  STATE; entity grounding failed because harm is a sparse EVENT needing temporal credit assignment. The next
+  design is consequence-anchored (backward) attribution — from each drop, what was observed near the avatar —
+  pre-registered before any paid run. Run 1's FAIL stays on the books; run 2 tests the new model out-of-sample.
+- **Method note:** gates that PASS validate a claim; gates that FAIL, with an honest diagnosis, locate the
+  hard sub-problem. Today produced one of each — state-grounding works, event-attribution is the frontier.
+
 ## 2026-07-03 (later) — the ADR-002 §9 gate PASSED live (and the two runs it took teach the method)
 - **What:** the HUD-grounding probe ran end-to-end paid: a region-neutral brain over MCP hypothesized
   "region R = my life" in Cave Noire combat, ground it through damage (readings tracked hp 10→8→5 at 1.000

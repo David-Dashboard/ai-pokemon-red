@@ -5,7 +5,32 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (**ADR-002 §9 GATE: PASS** — live Phase-D run, tightened protocol; promotion PR opened for David; It1 complete + patience measured; #43–#56 merged)._
+_Last updated: 2026-07-03 (ADR-002 ACCEPTED (#58 merged by David); HUD gate PASS; **entity gate v1: FAIL — informative** (causal-model mismatch, redesign spec'd); #43–#59 merged)._
+
+**⇒⇒ NEWEST (2026-07-03, latest) — ENTITY-GROUNDING GATE v1: **FAIL**, and the failure is the finding.
+PR #59 (scorer + retroactive-contact defense) MERGED; one paid run ($4.02) scored FAIL; diagnosis below.
+ADR-002 itself stands ACCEPTED (the HUD arm passed; #58 merged by David) — this bounds the entities
+generalization, it does not un-accept the ADR. ⇒⇒**
+- **The run (runs/brain_cn_entity/):** the brain claimed a threat + benigns and logged contact-first CONTACT
+  events (the scorer's revealed-step watermark excluded 1 retroactive line — the defense worked). Score:
+  declared threat p_k=0.000 over 3 clean contacts vs p_base=0.017; only 2 hp drops in 116 steps; arm (b)
+  passed (benign correctly rejected), **arm (a) FAILED → GATE: FAIL.**
+- **Diagnosis (free, from the run data):** NOT a scorer artifact, NOT ±1 damage latency — the drops (steps 37,
+  89) are 4-14 steps from ANY logged contact, and the brain itself noted an "off-screen attacker" hit. Cave
+  Noire enemies act on their own turn: damage arrives without player-perceived adjacency. **Forward
+  contact-logging is the wrong causal model for this world** — the protocol asked the brain to predict
+  consequences from touches; the world delivers consequences from enemy initiative.
+- **What it means:** consequence ATTRIBUTION (temporal/causal credit assignment) is the hard half of
+  entity-grounding — exactly ADR-002's own caveat ("grounding needs consequence"). HUD grounding passed
+  because the signal is a persistent readable STATE; entity grounding failed because the signal is a sparse
+  EVENT needing credit assignment. That distinction is the day's second real scientific result.
+- **⇒ NEXT (spec'd, not built — fresh session recommended):** redesign the gate around **consequence-anchored
+  (backward) attribution**: from each hp-drop step k, ground on what was observed near the avatar in [k-w, k]
+  (the brain's ENT region logs + read_region evidence), rather than forward-claimed contacts. Pre-register the
+  metric before any paid run (stricter-only thereafter); require a session with ≥5 drops (the 2-drop session
+  starved arm (a) — brief must push sustained melee or a lower-hp start state). Run 1's FAIL stays on the
+  books regardless; run 2 tests the amended model out-of-sample.
+- **Run ledger addendum:** entity gate $4.02 → day total ≈ **$28.6**.
 
 **⇒⇒ NEWEST (2026-07-03, cont.) — THE ADR-002 §9 GATE **PASSED** LIVE (Phase D, one paid run, $3.52). The
 self-built-ontology direction is VALIDATED at its own pre-stated gate; the promotion PR (ARCHITECTURE/ROADMAP
