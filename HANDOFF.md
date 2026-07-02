@@ -5,7 +5,50 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (ADR-002 ACCEPTED (#58 merged by David); HUD gate PASS; **entity gate v1: FAIL — informative** (causal-model mismatch, redesign spec'd); #43–#59 merged)._
+_Last updated: 2026-07-04 (three new rungs opened: MiniWoB computer-use world MERGED (#64), ViZDoom GATE-3D design pinned (#63), paid GBA probe sweep ran (6 games, $3.9); entity gate v2 pre-registered (#61) but Cave Noire retired as its instrument after 7 runs — porting to a contact-damage GB world; #60–#66 merged)._
+
+**⇒⇒ NEWEST (2026-07-04) — THREE FRONTS OPENED IN ONE PASS (Max-20x parallel build); entity gate v2
+STILL VERDICT-LESS after 7 runs — Cave Noire retired as the instrument, port in progress. ⇒⇒**
+- **Entity gate v2 (PR #61 MERGED, metric pre-registered + review-hardened):** consequence-anchored
+  backward attribution (NEAR protocol, W=15, q_k >= b_k+0.30, >=5 session drops, watermark carried).
+  Seven paid runs (~$57 total): v1-FAIL + 6 × INSUFFICIENT (2/1/2/5-but-camped/4/1/3 drops). Each failure
+  produced a real finding: heal = +4 capped (not to-full); `a` facing an enemy = ATTACK not menu; seam
+  presses = 24 frames so the enemy AI's first strike lands at pass #17 (recipes MUST be validated through
+  the seam — a direct-PyBoy-verified recipe failed live, $7 lesson); camping inflates b_k by design;
+  alternation + Cave Noire's slow attack schedule can't produce 5 drops in a 60-decision session.
+  **Verdict: wrong instrument, not wrong metric.** Port: same pinned scorer, new world with instant
+  contact damage (Link's Awakening preferred / Kirby fallback — hearts/hp oracle hunt + start state in
+  flight, free). All 7 runs archived under runs/brain_cn_entity/run*_*/.
+- **MiniWoB++ computer-use world (PR #64 MERGED, live-validated on-seam):** pixels+utterance to the brain,
+  click/type/key actions, reward -> oracle.jsonl only. Live validation caught two would-be paid-run
+  killers pre-merge: MiniWoB's ~10s wall-clock JS episode timer (fixed: throwaway-reset -> inject
+  EPISODE_MAX_TIME -> real reset, raw_reward processor; slow FIRST episode now scores +1.0) and a `done=`
+  leak. Docker image pinned (Dockerfile.miniwob). First brain run is ready to launch (launcher snippets in
+  the PR body).
+- **ViZDoom 3D rung (PR #63 MERGED — GATE-3D is pinned law):** probe showed the 2D floor mostly DEAD in 3D
+  (blob-segment drowned by texture parallax; best_shift silently wrong on rotation AND saturating its
+  ±18px cap). Design: two primitives only (YawBandFlow ego-rotation w/ confidence+None; StationaryMovers
+  gated on ego-stationary pairs — 199-pair evidence: ~7x pixel-frac separation), GATE-3D pre-registered
+  (basic.wad, 30 pinned seeds, kill_rate >= max(0.60, R+0.30) vs measured random baseline, P1
+  sign-agreement >= 0.90 arm, blind-spinner + ATTACK-only must-fail decoys, one-attempt-per-seed).
+  Build order: PC-1/PC-2 free pre-checks -> primitives -> adapter -> paid gate run.
+- **Paid GBA probe sweep (PRs #62/#65/#66 MERGED; 6 games run, $3.88):** smoke sweep (free) says 16/20
+  runnable; the paid probes returned structured gap lists. **Convergent findings across all 6:** (1) NO
+  TEXT CHANNEL is the #1 gap (menus/dialog unreadable -> stuck_dialog/other verdicts; glyph-read is the
+  ADR-002 floor primitive still missing); (2) no screen-role labeling (title/menu/gameplay
+  indistinguishable); (3) genre mismatch — the top-down grid model fabricates walls/xy on side-scrollers
+  and fighters (SMA2, MK Advance); (4) `read_region` foveation is NOT exposed outside cave_noire — the
+  cheapest unlock, since the HUD-gate brain proved it can self-read pixels when allowed to look.
+  Queue-runner infra hardened by review (bounded limit-retries, atomic lock, collision-guarded slugs,
+  `--allowedTools` double-underscore bug found live for $1.50).
+- **Ops notes:** account B = Pro, saturate don't ration (David 2026-07-03); Docker Desktop wedged once
+  (admin restart needed; WSL venv /home/nvidia/venv-seamprobe validated as an equivalent seam for GB
+  worlds). Day-2 paid total ≈ $66 (gate runs ~$57 + probes ~$9).
+- **⇒ NEXT (priority order):** (1) entity-gate port world prep lands -> pre-run seam validation of the
+  recipe -> ONE paid run -> verdict; (2) MiniWoB first brain run (click-button, ~$1) -> computer-use
+  constancy datapoint; (3) GATE-3D PC-1/PC-2 free pre-checks -> primitive build PRs; (4) expose
+  read_region to all worlds + a glyph-read floor primitive design (the sweep's #1 gap, and the naming
+  layer's prerequisite).
 
 **⇒⇒ NEWEST (2026-07-03, latest) — ENTITY-GROUNDING GATE v1: **FAIL**, and the failure is the finding.
 PR #59 (scorer + retroactive-contact defense) MERGED; one paid run ($4.02) scored FAIL; diagnosis below.
