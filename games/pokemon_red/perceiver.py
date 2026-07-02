@@ -10,12 +10,14 @@ RAM is never touched (it's the scoring oracle). Phase B upgraded the odometry/ar
   one-tile step, and recording the true 1-or-2 tiles makes it overshoot/oscillate. (The full
   measured-distance odometry — the complete dead-reckoning drift fix — waits on a controller that
   understands variable step sizes; the shift magnitude is already computed for when it lands.)
-- **Topological place-graph:** a map WARP is detected as a scene cut (no translation aligns the
-  frames) OR a fade (the emulator's pixels-only flag, robust right after a menu). On a warp the
-  perceiver crosses to another PLACE, reusing a KNOWN place (restoring its accumulated map) via a
-  direction-independent door edge, else minting a new one — so a building round-trip returns to the
-  same map instead of re-exploring it (the run-#4 lab-entrance fix). Stairs (which don't fade) are
-  caught by the translation signal.
+- **Topological place-graph:** a map WARP (place transition) requires POSITIVE evidence: a live FADE
+  (ctx["transition"], sampled by the plugin while ticking the action) AND a single unambiguous commanded
+  direction. On a warp the perceiver crosses to another PLACE, reusing a KNOWN place (restoring its
+  accumulated map) via a direction-independent door edge, else minting a new one — so a building
+  round-trip returns to the same map instead of re-exploring it (the run-#4 lab-entrance fix). A
+  scene-cut residual WITHOUT a fade (stairs, cutscene auto-walks, warps during `wait`) never transits:
+  pose drops to an honest UNKNOWN and re-anchors to a fresh place once frames settle (the 2026-07-02
+  Oak's-lab corruption fix — residual+direction alone used to mint bogus places).
 """
 from __future__ import annotations
 
@@ -63,6 +65,22 @@ def _dominant_dir(action: Optional[str]) -> Optional[str]:
         return None
     toks = [t for t in str(action).replace("+", " ").split() if t in _DIRS]
     return toks[-1] if toks else None
+
+
+def _single_dir(action: Optional[str]) -> Optional[str]:
+    """The direction of an action, but ONLY if every directional token in it agrees (e.g. 'up+up' and
+    'up+a' both -> 'up') -- None if the action is directionless OR MIXED ('down+left+up+right', the
+    starter-cutscene auto-walk probe). A mixed multi-directional press is not "you walked into a door
+    facing one way"; it is a scripted multi-step traversal whose net displacement/residual can't be
+    attributed to a single commanded step. Distinguishing this from `_dominant_dir` is the fix for the
+    Oak's-lab corruption (2026-07-02 diagnosis): a warp/scene-change signal must only mint or reuse a
+    place on an UNAMBIGUOUS single-direction command, never on a multi-directional probe."""
+    if not action:
+        return None
+    toks = [t for t in str(action).replace("+", " ").split() if t in _DIRS]
+    if not toks or len(set(toks)) > 1:
+        return None
+    return toks[0]
 
 
 def _has_frontier(cells: dict) -> bool:
@@ -279,6 +297,12 @@ class OverworldPerceiver:
         m.setdefault("steps", 0)
         m.setdefault("resync", False)
         m.setdefault("tilemap", TileFunctionMap())   # online behaviour-labelled appearance->function map
+        # pose_confidence: "full" (dead-reckoning trusted) or "unknown" (a scene-change was seen that we
+        # could not attribute to one commanded step -- e.g. a cutscene auto-walk). While unknown, no
+        # walls/visited cells/edges are written (the Oak's-lab corruption: a cutscene-spiked residual
+        # used to mint a bogus place and a stale cell-keyed edge then teleported pose through it). See
+        # `_transit`/`_single_dir` and the re-anchor branch below.
+        m.setdefault("pose_confidence", "full")
         m["steps"] += 1
         cells = m["places"].setdefault(m["place"], {})   # the CURRENT place's map
 
@@ -303,10 +327,16 @@ class OverworldPerceiver:
                 raw_available=True, raw_ref=ctx.get("frame_path", ""))
 
         action = ctx.get("last_action")
-        direction = _dominant_dir(action)
+        # `direction` gates wall/transit writes: it is None for BOTH a directionless action (wait/A) AND
+        # a MIXED multi-directional one (the starter-cutscene auto-walk probe 'down+left+up+right') — a
+        # scene-change signal must never mint/reuse a place, or seal a wall, off an ambiguous command.
+        # `_dominant_dir` (the last-token net facing) is kept only for callers that want "which way did
+        # this net out to" without the single-direction guarantee (none remain in this module today).
+        direction = _single_dir(action)
         prev = m["prev_frame"]
         first = prev is None or m["resync"]   # re-baseline after a menu/battle/transition
         m["resync"] = False
+        was_unknown = m["pose_confidence"] == "unknown"
 
         # Ego-motion vs scene-cut, from PIXELS: the best translation that aligns prev->frame. A low
         # residual means a shift aligns them (same map, the camera scrolled); a high residual means no
@@ -315,13 +345,69 @@ class OverworldPerceiver:
         if not first and prev is not None and frame is not None:
             shift_diff, (sdx, sdy) = _best_shift(_gray(prev), _gray(frame))
 
-        # A WARP: a FADE (emulator flag — robust even right after a menu, run #4's dominant miss) OR no
-        # translation aligns the frames (a scene cut — this also catches interior STAIRS, which don't
-        # fade). Needs a direction (you walked into the warp).
-        transitioned = direction is not None and (
-            bool(ctx.get("transition")) or ((not first) and shift_diff > self.area_threshold))
+        # A suspected SCENE CHANGE: the live FADE watch fired (ctx["transition"], sampled by the plugin
+        # while ticking the action) OR no translation aligns the frames (a scene-cut residual). Neither
+        # alone may mint or reuse a place (the Oak's-lab corruption: a cutscene auto-walk spiked the
+        # residual with no real warp; PR-#44 review then showed residual+single-direction ALSO mints
+        # bogus places — f538->f539 'up' at diff 42.87 reproduced the original bug). A real, attributed
+        # transition therefore requires POSITIVE evidence: a fade actually seen AND a single unambiguous
+        # commanded direction (a real door walk). Everything else — residual-only scene cuts (including
+        # interior STAIRS, which don't fade: they now re-anchor honestly instead of transiting — a known,
+        # accepted trade), fades during wait/mixed actions — drops pose to UNKNOWN and recovers via the
+        # re-anchor path below instead of guessing.
+        scene_change = bool(ctx.get("transition")) or ((not first) and shift_diff > self.area_threshold)
+        transitioned = direction is not None and bool(ctx.get("transition"))
 
         x, y = m["cursor"]
+
+        # Pose is LOST when an unattributed scene change happens OR it was already lost last step and
+        # hasn't settled yet. "Settled" requires an ACTUAL single-direction commanded step with a low
+        # residual AND real emulator progress: two consecutive observes can return the byte-identical
+        # frame (the frame counter sat still — f539/f540 both logged frame 13224), where diff=0 is not
+        # evidence of anything; ctx["frames_advanced"] == 0 identifies exactly that (s555's legitimate
+        # diff=0 settle DID advance frames). While lost, write NOTHING (no wall, no visited cell, no
+        # edge): guessing here is exactly what corrupted the place graph during the starter cutscene.
+        advanced = ctx.get("frames_advanced")   # None when the caller doesn't track it (direct tests)
+        still_lost = (scene_change and not transitioned) or (
+            was_unknown and (first or scene_change or direction is None
+                             or (advanced is not None and advanced <= 0)))
+        if still_lost:
+            m["pose_confidence"] = "unknown"
+            m["prev_frame"] = np.asarray(frame).copy() if frame is not None else None
+            cells = m["places"][m["place"]]
+            return SymbolicState(
+                confidence=0.2, context="overworld",
+                pose={"frame": "grid", "value": [x, y], "uncertain": True, "area": m["place"],
+                      "lost": True},
+                # walls_here/map/frontiers are deliberately empty -- the cell at (x, y) is only the last
+                # KNOWN cursor, not a trusted current position, so surfacing its (possibly stale) walls
+                # here would relabel unrelated geometry as "here" while pose is lost.
+                spatial_memory={"kind": "occupancy-grid", "area": m["place"],
+                                "visited": sum(1 for c in cells.values() if c.get("visited")),
+                                "walls_here": [], "map": [], "frontiers": [],
+                                "rois": [], "place_portals": [], "place_frontiers": [],
+                                "places_known": len(m["places"]), "tile_predictions": [], "novel_tiles": [],
+                                "tile_types_seen": len(m["tilemap"]), "ego_motion": ego_direction(sdx, sdy)},
+                affordances=[],
+                last_action={"action": action, "outcome": "unknown", "diff": round(shift_diff, 2), "tiles": 0},
+                raw_available=True, raw_ref=ctx.get("frame_path", ""))
+
+        if was_unknown:
+            # RECOVERY: pose was lost and this step actually MEASURED a settled residual on real
+            # emulator progress (`still_lost` above is False) -- re-anchor ONCE, deliberately, to a
+            # FRESH place at (0,0), rather than guessing which known place/cell we're back at. Transit
+            # (and thus any edge write) now needs a live fade + a single commanded direction, so a
+            # residual spike can no longer mint a place whose stale edge a later scene change could
+            # teleport pose through.
+            m["place"] = m["next_place"]
+            m["next_place"] += 1
+            m["places"][m["place"]] = {}
+            m["cursor"] = (0, 0)
+            m["pose_confidence"] = "full"
+            cells = m["places"][m["place"]]
+            x, y = m["cursor"]
+            # Fall through to the normal move/blocked handling below, now on the fresh place/anchor.
+
         cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
         cell["visited"] = True
 
@@ -336,10 +422,10 @@ class OverworldPerceiver:
             cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
             cell["visited"] = True
             # Re-baseline the next frame's TRANSLATION check (not the fade): the frame right after a warp
-            # is the arrival, and a normal move from it can score a high best-shift residual -> a spurious
-            # transition that, at the entry cell, hits the reverse edge and lumps the two maps. Suppress
-            # just the translation path for one frame; a genuine door RETURN still fires via the fade
-            # flag. (Both doors are sealed in _transit, so the autopilot won't choose to re-cross anyway.)
+            # is the arrival, and a normal move from it can score a high best-shift residual — which would
+            # now falsely drop the fresh pose to LOST. Suppress just the translation path for one frame; a
+            # genuine door RETURN still fires via the fade flag. (Both doors are sealed in _transit, so
+            # the autopilot won't choose to re-cross anyway.)
             m["resync"] = True
             outcome = "moved"
         elif not first and direction:
@@ -408,11 +494,21 @@ class OverworldPerceiver:
         # Motion-detected entities (NPCs) as candidate interaction targets, most-seen first.
         rois = sorted(([cx, cy] for (cx, cy), c in cells.items() if c.get("motion")),
                       key=lambda rc: -cells[(rc[0], rc[1])]["motion"])
-        # Place-graph for a GLOBAL (cross-place) explorer: every portal edge (door cell + crossing
-        # direction + destination place) and which places still have a frontier. Lets the controller
-        # leave an exhausted room and resume exploring elsewhere instead of getting stuck (the lab trap).
-        place_portals = [[p, list(c), d, dest] for (p, c), (dest, _e, d) in m["edges"].items()]
-        place_frontiers = [pid for pid, pcells in m["places"].items() if _has_frontier(pcells)]
+        # Place-graph for a GLOBAL (cross-place) explorer: portal edges (door cell + crossing direction +
+        # destination place) and which places still have a frontier — RESTRICTED to places reachable from
+        # HERE via known door edges. After a lost-pose re-anchor the fresh place has no edges, so
+        # pre-cutscene places (no longer navigable to) must not be advertised as exploration targets.
+        reachable, queue = {m["place"]}, [m["place"]]
+        while queue:
+            here = queue.pop()
+            for (src, _c), (dest, _e, _d) in m["edges"].items():
+                if src == here and dest not in reachable:
+                    reachable.add(dest)
+                    queue.append(dest)
+        place_portals = [[p, list(c), d, dest] for (p, c), (dest, _e, d) in m["edges"].items()
+                         if p in reachable]
+        place_frontiers = [pid for pid, pcells in m["places"].items()
+                           if pid in reachable and _has_frontier(pcells)]
         # Full map + frontier cells, so a LOCAL controller can pathfind without the LLM. A frontier
         # is a visited cell with a non-wall direction into an unvisited (unknown) cell.
         grid, frontiers = [], []

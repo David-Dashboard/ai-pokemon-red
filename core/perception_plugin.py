@@ -1,8 +1,9 @@
 """PerceptionPlugin — a perception-only GamePlugin for the lean worlds (the constancy infra).
 
 Lifted from games/gauntlet/plugin.py the second time it was needed (Gauntlet + Cave Noire): NO RAM in the
-observation (a perceiver is required), no reward tracker, no map-warp/fade handling, no Gen-1 battle
-settling. The agent sees a `SymbolicState` (pixels-derived); RAM, if a `watch` map is supplied, goes ONLY
+observation (a perceiver is required), no reward tracker, no Gen-1 battle settling. A lightweight fade
+watch samples the screen while ticking actions and surfaces ctx["transition"] (+ ctx["frames_advanced"])
+to the perceiver — pixels-only, ignored by perceivers that don't read those keys. The agent sees a `SymbolicState` (pixels-derived); RAM, if a `watch` map is supplied, goes ONLY
 to oracle.jsonl for offline scoring and NEVER into Observation.data (the no-leak rule, structural). The
 emulator is injected, so the class is exercisable with a FakeEmulator and no ROM. The only per-world bits
 are flavor text (button descriptions + the render header) — injected, not subclassed.
@@ -14,6 +15,8 @@ import os
 import time
 from typing import Optional
 
+import numpy as np
+
 from core.contracts import Event, Observation, ToolCall, ToolResult, ToolSpec
 from core.gb_emulator import BUTTONS, Emulator, PyBoyEmulator
 from core.perception import PerceptMemory, Perceiver
@@ -23,6 +26,23 @@ _DEFAULT_BUTTON_DESC = ("Press one Game Boy button (a, b, start, select, up, dow
 _DEFAULT_SEQUENCE_DESC = ("Press several buttons in order in one call — efficient for walking a few "
                           "steps. Diagonals are two presses (e.g. up then left).")
 _DEFAULT_RENDER_HEADER = "Top-down maze exploration. Perception is approximate; a screenshot is attached."
+
+# A map-warp FADE frame is near-uniform (all-dark or all-bright): measured std 0.0 on real Gen-1 fades vs
+# > 65 on real gameplay/UI frames (games/pokemon_red/perceiver.detect_mode uses the same 6.0 guard).
+_FADE_STD = 6.0
+# Sample the screen for a fade every this many ticks during `wait` (a fade holds for many frames, so a
+# coarse stride still catches it; sampling is a read-only screen copy, no extra emulator ticks).
+_FADE_SAMPLE_TICKS = 4
+
+
+def _is_fade_frame(frame) -> bool:
+    """True if the frame is a near-uniform dark/bright fade frame (pixels only)."""
+    if frame is None:
+        return False
+    g = np.asarray(frame)
+    if g.ndim == 3:
+        g = g[..., :3].mean(axis=2)
+    return float(g.std()) < _FADE_STD
 
 
 class PerceptionPlugin:
@@ -67,6 +87,14 @@ class PerceptionPlugin:
         self._watch = dict(watch or {})        # name -> WRAM addr; RAM goes to the oracle log ONLY
         self._last_action: Optional[str] = None  # fed to the perceiver for odometry
         self._extra_context: dict = {}           # transient caller-injected context (e.g. goto_fails)
+        # Live fade watch (2026-07-02 review of PR #44): the perceiver's ctx["transition"] fade flag
+        # existed but was NEVER wired on the lean path, so warp detection fell back to the best-shift
+        # residual — which a cutscene can spike with no real warp. The plugin now samples intermediate
+        # frames while it ticks the emulator (after each button press; every ~4 ticks during `wait`) and
+        # flags a near-uniform fade frame. Game-agnostic and additive: perceivers that don't read the key
+        # (core.grid_perceiver) ignore it.
+        self._fade_seen = False
+        self._frame_at_obs = self.emu.frame   # for ctx["frames_advanced"] (frozen-frame settle guard)
         self._button_desc = button_desc
         self._sequence_desc = sequence_desc
         self._render_header = render_header
@@ -120,7 +148,12 @@ class PerceptionPlugin:
                 return self._do_buttons(call, buttons, hold=8)
             if call.tool == "wait":
                 frames = int(call.args.get("frames", 24))
-                self.emu.tick(max(1, min(frames, 600)))
+                remaining = max(1, min(frames, 600))
+                while remaining > 0:           # tick in short chunks so the fade watch can sample
+                    step = min(_FADE_SAMPLE_TICKS, remaining)
+                    self.emu.tick(step)
+                    remaining -= step
+                    self._sample_fade()
                 return self._post_action(call, action=f"wait {frames}")
             return self._reject(call, f"unknown tool: {call.tool}",
                                 extra={"available": ["press_button", "press_sequence", "wait"]})
@@ -138,7 +171,16 @@ class PerceptionPlugin:
             pixels = self.emu.screen_ndarray()
         except Exception:
             pixels = None
-        context = {"frame_path": screen_path, "last_action": self._last_action, **self._extra_context}
+        # transition: the live fade watch (a near-uniform frame seen while ticking the last action) —
+        # positive evidence of a map-warp fade. frames_advanced: emulator frame-counter delta since the
+        # last observe; 0 means the screen could not have changed (a frozen frame pair), which gates the
+        # perceiver's settle/recovery path. Both are ignored by perceivers that don't read them.
+        context = {"frame_path": screen_path, "last_action": self._last_action,
+                   "transition": self._fade_seen,
+                   "frames_advanced": self.emu.frame - self._frame_at_obs,
+                   **self._extra_context}
+        self._fade_seen = False                  # consumed — re-arm the watch for the next action
+        self._frame_at_obs = self.emu.frame
         self._extra_context = {}   # consumed — clear so it doesn't leak to the next observe()
         sym = self.perceiver.perceive(pixels, self._percept_memory, context)
         self._log_oracle(screen_path, sym)
@@ -191,6 +233,14 @@ class PerceptionPlugin:
                 lines.append(f"You are in a {sym.context}, NOT free movement.")
             return "\n".join(lines)
 
+        if pose.get("lost"):
+            # A perceiver may flag pose as LOST after an unattributed scene change (a cutscene, a warp it
+            # couldn't pin to a commanded step) instead of guessing — game-agnostic: only ever set by a
+            # perceiver that tracks pose_confidence; absent otherwise, so other worlds are unaffected.
+            lines.append("Position lost: the last screen change couldn't be explained by your move. "
+                         "The map below is not yet trustworthy; keep moving one step at a time to "
+                         "re-establish where you are.")
+            return "\n".join(lines)
         if pose.get("value") is not None:
             lines.append(f"Your position (dead-reckoned, approximate): {tuple(pose['value'])}.")
         action, outcome = la.get("action"), la.get("outcome")
@@ -231,7 +281,18 @@ class PerceptionPlugin:
                 return self._reject(call, f"invalid button: {b!r}", extra={"valid_buttons": list(valid)})
         for b in buttons:
             self.emu.press(b.lower(), hold_frames=max(1, min(int(hold), 120)))
+            self._sample_fade()   # a door-walk fade shows right after the press's hold+settle ticks
         return self._post_action(call, action="+".join(str(b) for b in buttons))
+
+    def _sample_fade(self) -> None:
+        """Peek at the current screen (read-only, no ticks) and latch whether a fade frame was seen.
+        The latch holds until the next observe() consumes it into ctx["transition"]."""
+        if self._fade_seen:
+            return
+        try:
+            self._fade_seen = _is_fade_frame(self.emu.screen_ndarray())
+        except Exception:
+            pass
 
     def _post_action(self, call: ToolCall, action: str) -> ToolResult:
         self._last_action = action  # remembered so the next observe() can do odometry

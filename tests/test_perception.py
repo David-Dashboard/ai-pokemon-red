@@ -189,24 +189,26 @@ def test_perceiver_no_roi_when_camera_scrolled():
 
 
 def test_area_change_resets_the_coordinate_frame():
+    # A transition needs POSITIVE evidence since the PR-#44 fix: the live fade flag (ctx["transition"])
+    # AND a single commanded direction — a big residual alone no longer transits (it goes pose-LOST).
     per, mem = OverworldPerceiver(move_threshold=4.0, area_threshold=100.0), PerceptMemory()
     per.perceive(_frame(0), mem, {"last_action": None})            # prime
     per.perceive(_frame(10), mem, {"last_action": "down+down"})    # diff 10 ⇒ moved within area -> (0,1)
-    s = per.perceive(_frame(200), mem, {"last_action": "down+down"})  # big diff (still overworld) ⇒ AREA transition
+    s = per.perceive(_frame(200), mem, {"last_action": "down+down", "transition": True})  # fade => AREA transition
     assert s.last_action["outcome"] == "moved"
     assert s.pose["value"] == [0, 0] and s.pose["area"] == 1       # fresh frame, area incremented
 
 
 def test_place_graph_round_trip_returns_to_the_known_place():
-    """Place-graph (the run-#4 lab fix): a WARP (no translation aligns the frames) mints a NEW place;
-    taking the door BACK returns to the SAME place with its accumulated map restored — not a freshly
-    minted place 2 — and the door we left by is sealed as a portal (walkable, not a frontier), so the
-    autopilot can't ping-pong the seam (the old door-oscillation bug)."""
+    """Place-graph (the run-#4 lab fix): a WARP (fade-confirmed + a single commanded direction) mints a
+    NEW place; taking the door BACK returns to the SAME place with its accumulated map restored — not a
+    freshly minted place 2 — and the door we left by is sealed as a portal (walkable, not a frontier), so
+    the autopilot can't ping-pong the seam (the old door-oscillation bug)."""
     per, mem = OverworldPerceiver(), PerceptMemory()
     a, b = _scene(1), _scene(2)                                    # two unrelated 'maps' (no shift aligns)
     per.perceive(a, mem, {"last_action": None})                    # place 0, (0,0)
     per.perceive(_scroll(a, dy_tiles=1), mem, {"last_action": "down+down"})   # -> (0,1) in place 0
-    s1 = per.perceive(b, mem, {"last_action": "down+down"})        # scene cut => WARP to a new place
+    s1 = per.perceive(b, mem, {"last_action": "down+down", "transition": True})  # fade+dir => WARP
     assert s1.pose["area"] == 1 and s1.pose["value"] == [0, 0]
     # door-back: a real door warp FADES, so the fade flag fires through the post-warp re-baseline and
     # the reverse edge restores place 0 (the translation path alone is suppressed for that one frame).
@@ -226,7 +228,7 @@ def test_warp_seals_both_doors_but_keeps_the_arrival_explorable():
     a, b = _scene(1), _scene(2)
     per.perceive(a, mem, {"last_action": None})
     per.perceive(_scroll(a, dy_tiles=1), mem, {"last_action": "down+down"})   # -> (0,1) in place 0
-    s = per.perceive(b, mem, {"last_action": "down+down"})        # warp into place 1 (entered moving down)
+    s = per.perceive(b, mem, {"last_action": "down+down", "transition": True})  # warp in, moving down
     cells = {(c["x"], c["y"]): c for c in s.spatial_memory["map"]}
     assert s.pose["value"] == [0, 0]
     assert cells[(0, 0)].get("portal") is None                   # arrival stays explorable
@@ -247,14 +249,21 @@ def test_fade_flag_triggers_transition_even_right_after_a_menu():
     assert s.pose["area"] == 1                                                # transitioned despite first
 
 
-def test_scene_cut_without_a_fade_flag_still_warps():
-    # A warp that does NOT fade (interior stairs) is still caught: no translation aligns the frames, so
-    # the scene-cut residual exceeds the threshold => a new place. No emulator fade flag needed.
+def test_scene_cut_without_a_fade_goes_lost_then_reanchors_fresh():
+    # A scene cut WITHOUT a fade (interior stairs, a cutscene jump) must NOT transit — a residual spike
+    # plus a direction was exactly the PR-#44 false-mint (the reviewer reproduced the Oak's-lab bug with
+    # a single-direction 'up' at diff 42.87). Instead pose goes LOST (no place minted, no edge), and once
+    # a single-direction step settles the perceiver re-anchors ONCE to a fresh place. Stairs thus cost an
+    # honest re-anchor instead of a door edge — the known, accepted trade.
     per, mem = OverworldPerceiver(), PerceptMemory()
     per.perceive(_scene(1), mem, {"last_action": None})
     per.perceive(_scroll(_scene(1), dx_tiles=1), mem, {"last_action": "right+right"})   # a real move
     s = per.perceive(_scene(7), mem, {"last_action": "right+right"})          # scene cut, no fade flag
-    assert s.pose["area"] == 1
+    assert s.pose.get("lost") is True and s.pose["area"] == 0                 # lost, NOT a minted place
+    assert s.spatial_memory["places_known"] == 1
+    s2 = per.perceive(_scroll(_scene(7), dx_tiles=1), mem, {"last_action": "right+right"})  # settles
+    assert s2.pose.get("lost") is None and s2.pose["area"] == 1               # ONE fresh re-anchor
+    assert mem.data["edges"] == {}                                            # and no phantom door edge
 
 
 def test_detect_mode_separates_overworld_menu_dialog_battle():
