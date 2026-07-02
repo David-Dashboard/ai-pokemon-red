@@ -134,6 +134,52 @@ PR #45 (Dockerfile NDS libs) OPEN for David. This supersedes the 07-02 block bel
   (e.g. #45) still need his click or per-PR authorization. Agent-teamwork gotcha: two implementers sharing the
   main working tree collided (branch switches discard sibling edits) — use `git worktree` per agent, always.
 
+**⇒ (2026-07-02, after the 07-03 handoff above was written) — "PATIENCE" AUTO-ADVANCE REFLEX BUILT +
+REVIEW-HARDENED (the 07-02-designed System-1 gated-static skip). Branch `feat/patience-auto-advance`
+(PR #49, includes the fix round for both adversarial reviews). Sits below the 07-03 block only because
+that block is the session-status TOP block; this is sibling work, not superseded by it.**
+
+- **What landed:** `core/patience.py` (new) — `classify(context) -> {"gated-static","choice","free-control"}`
+  + `AdvanceLearner` (per-run, blank-every-run control-grounded button memory) + `Patience` (the budgeted
+  loop). Wired into `core/perception_plugin.py::observe()`: after the normal perceive, if the frame classifies
+  gated-static, auto-press (candidate-then-learned button) and re-perceive in a loop before ever returning to
+  the brain. Traceability: `Observation.data["patience_advances"]` (count), the advanced-past dialog lines
+  appended to the SAME observe's render (`[auto-advanced past N frame(s): ...]`), and a per-press
+  `patience_trail` (button + context + text) on the observe's `oracle.jsonl` record.
+- **State classifier (S1-hardened):** `GATED_STATIC_CONTEXTS = {"dialog", "battle_text"}` — DECODER-BACKED
+  labels ONLY. Red's `detect_mode` keeps a YES/NO choice out of `dialog` (the upper-right-box heuristic), and
+  `OverworldPerceiver._battle_context`/`textbox.battle_subscreen` (positive-ID-for-advance) keep decisions out
+  of `battle_text`. The generic `core/modality.py` `"static"` label was in this set at first and the
+  adversarial review PROVED it unsafe on real Kirby save-screen frames: "static" is a MOTION label ("nothing
+  moved"), and an idle save-select menu is frozen too — blind-pressing it is the erase-save scenario. So
+  `"static"` now defaults to `"choice"` (wake); a world with a trustworthy gated-static signal opts in via
+  `Patience(extra_gated_contexts=("static",))` through the plugin's `patience=` kwarg (default OFF everywhere —
+  generic worlds are deliberately INERT until opted in). `{"menu","battle"}` and anything unrecognized also
+  default to `"choice"` — the fail-safe/erase-save guard, now pinned by a Kirby-fixture regression test.
+- **Learned-button mechanics (review-hardened):** per-CONTEXT-LABEL lock (a global lock would reuse dialog's
+  `a` forever on a later screen type needing `start`); a button locks only after its effect is observed TWICE
+  in a row (one pixel-diff can be an animation blink — the single-success hypothesis is retried, and dropped
+  if it doesn't repeat); a locked button unlocks after 3 consecutive failures (ladder resumes). "Observed
+  change" = `screen_text`/context change, else strict raw-pixel-equality fallback, all gated on
+  `frames_advanced > 0` (the #44 frozen-frame lesson: an unticked emulator can't have changed the screen).
+- **Budget (S2-hardened):** `DEFAULT_BUDGET=40` per gated EPISODE, persisted across `observe()` calls — a
+  stuck screen burns 40 presses ONCE, then patience stays quiet until the state leaves gated-static or the
+  brain issues a DIFFERENT action than its previous one (each new idea re-arms one fresh episode). The naive
+  per-observe budget re-burned 40 presses every turn forever (the driver observes after every tool call).
+- **Validation (free, no ROM in this sandbox):** 32 tests (`tests/test_patience.py`) — classification incl.
+  REAL Red dialog frames (`eval/fixtures/starter_cutscene_pose/`) and the REAL Kirby save/title frames
+  (`eval/fixtures/kirby_title_menu/`, the S1 regression); learner lock/unlock/animation-mis-lock; episode
+  budget persistence; scripted closed-loop through the real `PokemonRedPlugin.observe()` (12-line dialog chain
+  → ONE observe, `patience_advances == 12`, wakes exactly at the `menu` choice; Emerald a-loops/start-confirms
+  via the opt-in; budget cap fires once per episode); S5 attribution (a patience press exiting into the
+  overworld mints no phantom step/wall — real `OverworldPerceiver` end-to-end). Full suite: **478 passed,
+  4 skipped** on the tree merged with main `f232786` (#48).
+- **Deviations / open:** the live/ROM closed-loop proof on `runs/red_start.state` and a real recorded Emerald
+  fixture are still NOT run/carved — no ROM/`.state` in this sandbox. With `"static"` opt-in defaulting OFF,
+  the live Emerald intro-chain payoff is DEFERRED until someone with ROM access validates an opt-in run.
+  **⇒ NEXT: real `red_start.state` wake-count comparison (with/without patience) + carve the Emerald fixture +
+  decide per-world opt-ins (a GAMES-registry knob) on measured evidence.**
+
 **⇒⇒ (2026-07-02) — IT1 DIALOG-PERCEPTION FIXED + VALIDATED END-TO-END; PR #41 MERGED (main `2360713`).
 Brain now clears Oak's whole intro cutscene and reaches the lab + starter prompt. Party still 0 — remaining
 blocker is the INTERIOR POSE bug (task #7). This supersedes the 07-01 "task one dialog short" item below. ⇒⇒**

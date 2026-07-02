@@ -19,6 +19,7 @@ import numpy as np
 
 from core.contracts import Event, Observation, ToolCall, ToolResult, ToolSpec
 from core.gb_emulator import BUTTONS, Emulator, PyBoyEmulator
+from core.patience import Patience
 from core.perception import PerceptMemory, Perceiver
 
 _DEFAULT_BUTTON_DESC = ("Press one Game Boy button (a, b, start, select, up, down, left, right). "
@@ -33,6 +34,9 @@ _FADE_STD = 6.0
 # Sample the screen for a fade every this many ticks during `wait` (a fade holds for many frames, so a
 # coarse stride still catches it; sampling is a read-only screen copy, no extra emulator ticks).
 _FADE_SAMPLE_TICKS = 4
+# How many auto-advanced-past dialog lines PATIENCE surfaces in the observe render (the newest ones;
+# older lines are counted but omitted). Mirrors core/brains._TRANSCRIPT_CAP — cap the prompt, not the log.
+_TRAIL_RENDER_CAP = 12
 
 
 def _is_fade_frame(frame) -> bool:
@@ -43,6 +47,17 @@ def _is_fade_frame(frame) -> bool:
     if g.ndim == 3:
         g = g[..., :3].mean(axis=2)
     return float(g.std()) < _FADE_STD
+
+
+# PATIENCE's control-grounding fallback (a candidate advance button produced no context/text change):
+# a pixel-identical frame pair means the button was a true no-op (e.g. Emerald's naming screen: 'a'
+# loops silently). Exact equality only — any real redraw (even a blinking cursor) must count as changed,
+# so this stays a strict identity check, not a fuzzy diff.
+def _is_frame_equal(a, b) -> bool:
+    if a is None or b is None:
+        return a is b
+    a, b = np.asarray(a), np.asarray(b)
+    return a.shape == b.shape and bool(np.array_equal(a, b))
 
 
 class PerceptionPlugin:
@@ -64,6 +79,7 @@ class PerceptionPlugin:
         button_desc: str = _DEFAULT_BUTTON_DESC,
         sequence_desc: str = _DEFAULT_SEQUENCE_DESC,
         render_header: str = _DEFAULT_RENDER_HEADER,
+        patience: Optional[Patience] = None,
     ) -> None:
         if perceiver is None:
             raise ValueError("PerceptionPlugin is perception-only — pass a perceiver")
@@ -98,6 +114,16 @@ class PerceptionPlugin:
         self._button_desc = button_desc
         self._sequence_desc = sequence_desc
         self._render_header = render_header
+        # PATIENCE (2026-07-02 design): auto-advance a plain gated-static screen (a decoder-backed
+        # dialog/cutscene textbox) for free, so the brain's next observe() never lands mid-textbox.
+        # On by default and SAFE by default (PR #49 S1): the default Patience trusts only the
+        # decoder-backed labels (Red's dialog/battle_text); a generic world's motion-derived
+        # "static"/"menu" labels classify as choice and the loop never fires there. A world with a
+        # trustworthy gated-static signal opts in by passing patience=Patience(extra_gated_contexts=...).
+        self.patience = patience if patience is not None else Patience()
+        # Set True by a driver that keeps per-step PNGs as logs (world_mcp --keep-frames): patience's
+        # intermediate frames then get unique paths instead of overwriting one temp path.
+        self.keep_frames = False
 
     # -- GamePlugin surface --------------------------------------------------
 
@@ -162,7 +188,83 @@ class PerceptionPlugin:
 
     def observe(self, agent_id: str) -> Observation:
         self._obs_count += 1
-        screen_path = os.path.join(self.out_dir, f"frame_{self._obs_count:06d}.png")
+        sym, screen_path = self._perceive_once()
+
+        # PATIENCE: if the frame is gated-static (a plain textbox/cutscene waiting for an advance
+        # input — never a choice), auto-advance it FOR FREE right here, before returning to the brain,
+        # so the caller's next observe() lands on free-control or a real choice. Re-perceives after
+        # each press (settle-to-stable IS the re-perceive: the perceiver only reports free control
+        # once the screen has actually changed), so a slow-fading textbox is never skipped past.
+        advanced = 0
+        trail: list[dict] = []   # per-press audit trail: what was advanced past, with which button
+        self.patience.note_state_class(self.patience.classify(sym.context))
+        if self.patience.classify(sym.context) == "gated-static":
+            def _press_and_reperceive(button: str):
+                nonlocal sym, screen_path
+                prev_context, prev_text = sym.context, sym.screen_text
+                frame_before = self.emu.frame
+                try:
+                    prev_pixels = self.emu.screen_ndarray()
+                except Exception:
+                    prev_pixels = None
+                # S4 traceability: record the frame being advanced PAST (its decoded text) + the button.
+                trail.append({"button": button, "context": prev_context, "text": prev_text})
+                self.emu.press(button, hold_frames=8)
+                self._sample_fade()
+                self._last_action = button   # keep ctx["last_action"] honest for this internal press
+                # Unique PNGs for intermediate frames only when the driver keeps frames as logs
+                # (world_mcp --keep-frames sets plugin.keep_frames); otherwise reuse one path so the
+                # loop doesn't accumulate frame debris the driver never sees to delete.
+                suffix = f"_p{len(trail):02d}" if self.keep_frames else ""
+                sym, screen_path = self._perceive_once(suffix=suffix)
+                # "changed" needs more than the bare context label: two consecutive dialog LINES both
+                # read as context=="dialog", so a no-op button (Emerald's 'a' on the naming screen) would
+                # look identical to a working one if we only compared context. screen_text catches real
+                # progress through a textbox (Red); a context change alone also counts (dialog ->
+                # free-control). Fall back to a raw pixel diff for text-less gated-static screens (an
+                # opted-in world with no text decoder): any world can be control-grounded this way.
+                # frames_advanced==0 gates it all (the #44 frozen-frame lesson): if the emulator's frame
+                # counter didn't move, the screen could not have changed — never credit the button.
+                changed = (sym.context != prev_context) or (sym.screen_text != prev_text)
+                if not changed and prev_pixels is not None:
+                    try:
+                        changed = not _is_frame_equal(prev_pixels, self.emu.screen_ndarray())
+                    except Exception:
+                        pass
+                if self.emu.frame - frame_before <= 0:
+                    changed = False
+                return sym.context, changed
+
+            _, advanced = self.patience.advance(sym.context, _press_and_reperceive)
+            # sym/screen_path were updated in-place by _press_and_reperceive on every press; the
+            # returned final_context is the same as sym.context by now (kept for Patience's own API).
+
+        self._log_oracle(screen_path, sym, advanced=advanced, trail=trail)
+        data = sym.to_dict()
+        data["step"] = self._obs_count
+        data["screen_path"] = sym.raw_ref  # alias so an image-capable brain still finds the frame
+        data["patience_advances"] = advanced   # PATIENCE traceability: free auto-advances this observe() ate
+        text = self._render_symbolic(sym)
+        # S4: the advanced-past dialog content must reach the brain (the #41 render intent) — surface
+        # the skipped lines (deduped consecutively; a held frame repeats its line between presses) in
+        # the SAME observe's render, capped so a long chain can't bloat the prompt.
+        skipped = []
+        for t in trail:
+            if t["text"] and (not skipped or skipped[-1] != t["text"]):
+                skipped.append(t["text"])
+        if skipped:
+            shown = skipped[-_TRAIL_RENDER_CAP:]
+            omitted = len(skipped) - len(shown)
+            head = f"[auto-advanced past {advanced} frame(s)"
+            if omitted > 0:
+                head += f"; first {omitted} line(s) omitted"
+            text += "\n" + head + ": " + " / ".join(f'"{s}"' for s in shown) + "]"
+        return Observation(data=data, text=text, agent_id=agent_id, t=time.time())
+
+    def _perceive_once(self, suffix: str = ""):
+        """Grab the current frame, build the perceiver context, and perceive() once. Shared by observe()
+        and the PATIENCE auto-advance loop (which re-perceives after each free button press)."""
+        screen_path = os.path.join(self.out_dir, f"frame_{self._obs_count:06d}{suffix}.png")
         try:
             self.emu.save_screen(screen_path)
         except Exception:
@@ -183,17 +285,20 @@ class PerceptionPlugin:
         self._frame_at_obs = self.emu.frame
         self._extra_context = {}   # consumed — clear so it doesn't leak to the next observe()
         sym = self.perceiver.perceive(pixels, self._percept_memory, context)
-        self._log_oracle(screen_path, sym)
-        data = sym.to_dict()
-        data["step"] = self._obs_count
-        data["screen_path"] = sym.raw_ref  # alias so an image-capable brain still finds the frame
-        return Observation(data=data, text=self._render_symbolic(sym), agent_id=agent_id, t=time.time())
+        return sym, screen_path
 
-    def _log_oracle(self, screen_path: str, sym) -> None:
+    def _log_oracle(self, screen_path: str, sym, advanced: int = 0,
+                    trail: Optional[list] = None) -> None:
         """Append a (truth ⟂ perceived) record for SCORING ONLY — never an agent input. The watched RAM
         (if any) is the truth; the perceiver's verdict goes under `perceived`. RAM never enters obs."""
         rec = {"step": self._obs_count, "t": time.time(), "frame": self.emu.frame,
-               "screen_path": screen_path}
+               "screen_path": screen_path, "patience_advances": advanced}
+        if trail:
+            # S4 audit trail: WHAT was auto-advanced past (per-press button + context + decoded text),
+            # not just how many times. Compact list on the observe record, one entry per free press —
+            # also distinguishes auto presses from brain-commanded ones (these have a `button` here;
+            # the brain's actions land in `perceived.action` via _post_action).
+            rec["patience_trail"] = trail
         if self._watch:
             try:
                 rec["watch"] = {nm: int(self.emu.read(ad)) for nm, ad in self._watch.items()}
@@ -326,6 +431,10 @@ class PerceptionPlugin:
 
     def _post_action(self, call: ToolCall, action: str) -> ToolResult:
         self._last_action = action  # remembered so the next observe() can do odometry
+        # PATIENCE budget (S2): a brain-commanded action DIFFERENT from its previous one re-arms the
+        # per-episode auto-advance budget (the brain is trying something new); repeating the same
+        # action on the same stuck gated screen does not.
+        self.patience.note_brain_action(action)
         self._events.append(Event(type="tool_called", t=time.time(), agent_id=call.agent_id,
                                   data={"action": action, "frame": self.emu.frame}))
         return ToolResult(call_id=call.call_id, ok=True,
