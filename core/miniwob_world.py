@@ -82,14 +82,28 @@ class MiniWobWorld:
         self._utterance: str = ""
         self._screenshot: Optional[np.ndarray] = None
         self._seed_counter = seed if seed is not None else 0
+        self._timer_armed = False   # the JS override has been injected into the live page at least once
 
     # -- lifecycle -------------------------------------------------------------
 
     def reset(self, seed: Optional[int] = None) -> np.ndarray:
         """Start a new episode; return the initial screenshot. `dom_elements`/`fields` are read from the
-        obs dict here but immediately discarded — only utterance + screenshot survive onto self."""
+        obs dict here but immediately discarded — only utterance + screenshot survive onto self.
+
+        Timer-injection ORDER matters (PR #64 re-validation, live-proven): the task JS schedules the
+        episode's ~10s timeout AT episode start, reading core.EPISODE_MAX_TIME at that moment — so an
+        injection AFTER a reset is too late for the episode that reset started (it only helps the next
+        one: session's episode 1 scored -1.0, episode 2 scored +1.0 with identical 30s idles). On the
+        FIRST reset we therefore do a throwaway env.reset() (boots the browser + task page), inject the
+        override, then run the real reset below — every brain-visible episode starts with the raised
+        limit already armed. The global persists across resets (proven by episode 2's behavior), but we
+        keep re-injecting after each reset as cheap insurance against a page reload resetting it."""
         use_seed = seed if seed is not None else self._seed_counter
         self._seed_counter = use_seed + 1
+        if not self._timer_armed:
+            self.env.reset(seed=use_seed)    # throwaway: only exists to give the injection a live page
+            self._disable_episode_timer()
+            self._timer_armed = True
         obs, info = self.env.reset(seed=use_seed)
         self._disable_episode_timer()
         self.last_info = dict(info or {})
@@ -98,10 +112,9 @@ class MiniWobWorld:
         return self._screenshot
 
     def _disable_episode_timer(self) -> None:
-        """Raise the task page's JS episode timer (core.EPISODE_MAX_TIME) to effectively-untimed —
-        MUST run after every reset (each episode re-arms the timer from the page's global). Deliberately
-        NOT wrapped in try/except: if the injection fails, every slow episode silently scores -1.0 (the
-        exact wasted-paid-run failure this exists to prevent) — fail loud instead."""
+        """Raise the task page's JS episode timer (core.EPISODE_MAX_TIME) to effectively-untimed.
+        Deliberately NOT wrapped in try/except: if the injection fails, every slow episode silently
+        scores -1.0 (the exact wasted-paid-run failure this exists to prevent) — fail loud instead."""
         driver = self.env.unwrapped.instance.driver
         driver.execute_script(f"core.EPISODE_MAX_TIME = {EPISODE_MAX_TIME_MS};")
 

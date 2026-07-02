@@ -30,22 +30,25 @@ from world_mcp import GAMES, MiniWobSession, _MINIWOB_WORLDS, _static_tools
 # ---------------------------------------------------------------------------
 
 class _FakeDriver:
-    """Records execute_script calls so tests can assert the EPISODE_MAX_TIME JS injection happened."""
-    def __init__(self):
+    """Records execute_script calls (own list + the env's shared call-order log), so tests can assert
+    both THAT the EPISODE_MAX_TIME injection happened and WHEN, relative to env.reset calls."""
+    def __init__(self, calls: list):
         self.scripts: list[str] = []
+        self._calls = calls
 
     def execute_script(self, script, *args):
         self.scripts.append(script)
+        self._calls.append(("execute_script", script))
 
 
 class _FakeInstance:
-    def __init__(self):
-        self.driver = _FakeDriver()
+    def __init__(self, calls: list):
+        self.driver = _FakeDriver(calls)
 
 
 class _FakeUnwrapped:
-    def __init__(self):
-        self.instance = _FakeInstance()
+    def __init__(self, calls: list):
+        self.instance = _FakeInstance(calls)
 
     def create_action(self, action_type, **kwargs):
         return {"type": action_type, **kwargs}
@@ -54,12 +57,15 @@ class _FakeUnwrapped:
 class _FakeMiniwobEnv:
     """Minimal stand-in for miniwob.envs.miniwob_envs.ClickButtonEnv etc. Deliberately includes
     dom_elements/fields in its obs dict (like the real env) so MiniWobWorld's withholding is
-    exercised, not just assumed. Accepts reward_processor like the real MiniWoBEnvironment."""
+    exercised, not just assumed. Accepts reward_processor like the real MiniWoBEnvironment.
+    `calls` is a chronological log of ("reset", seed) / ("execute_script", script) events shared
+    with the fake driver — the injection-ordering regression asserts against it."""
 
     def __init__(self, render_mode=None, reward_processor=None):
         self.render_mode = render_mode
         self.reward_processor = reward_processor
-        self.unwrapped = _FakeUnwrapped()
+        self.calls: list = []
+        self.unwrapped = _FakeUnwrapped(self.calls)
         self._step_n = 0
 
     def _obs(self):
@@ -73,6 +79,7 @@ class _FakeMiniwobEnv:
         }
 
     def reset(self, seed=None):
+        self.calls.append(("reset", seed))
         self._step_n = 0
         return self._obs(), {"info_marker": "reset"}
 
@@ -334,9 +341,10 @@ def test_click_tool_schema_requires_x_and_y():
 
 
 # ---------------------------------------------------------------------------
-# 5. Wall-clock episode timer (PR #64 critical finding): the ~10s JS timer must be overridden on EVERY
-#    reset (each episode re-arms it) and the env constructed with the raw-reward processor, so a slow
-#    (deliberating LLM) brain isn't auto-failed at -1.0 / time-decayed.
+# 5. Wall-clock episode timer (PR #64 critical finding + re-validation): the ~10s JS timeout is
+#    scheduled AT episode start, reading core.EPISODE_MAX_TIME at that moment — so the override must be
+#    injected BEFORE the episode the caller receives. Live-proven failure mode of the naive version:
+#    session's episode 1 scored -1.0, episode 2 scored +1.0 with identical 30s idles.
 # ---------------------------------------------------------------------------
 
 def test_reset_injects_episode_max_time_override(fake_env_cls):
@@ -348,14 +356,35 @@ def test_reset_injects_episode_max_time_override(fake_env_cls):
     w.close()
 
 
-def test_every_reset_reapplies_the_timer_override(fake_env_cls):
-    """The override targets the live page's global, which each episode re-arms — one injection at
-    construction is not enough; every reset must re-apply it."""
+def test_first_reset_injects_override_before_the_episode_the_caller_receives(fake_env_cls):
+    """THE injection-ordering regression (PR #64 re-validation blocker): the first brain-visible
+    episode must start with the override already armed — i.e. the call order on the first reset() is
+    reset (throwaway, boots the page), execute_script (inject), reset (the real episode). An injection
+    only AFTER the last reset arms episode 2 but leaves episode 1 on the ~10s clock (-1.0)."""
+    w = MiniWobWorld("click-button")
+    w.reset()
+    kinds = [kind for kind, _ in w.env.calls]
+    assert kinds[:3] == ["reset", "execute_script", "reset"], \
+        f"first reset() must be: throwaway reset -> inject -> real reset; got {w.env.calls}"
+    # And the injection between the two resets is the EPISODE_MAX_TIME override, not something else.
+    assert "core.EPISODE_MAX_TIME" in w.env.calls[1][1]
+    # The episode the caller received is the one started by the LAST reset — no reset after it without
+    # a preceding armed override.
+    assert kinds.count("reset") == 2
+    w.close()
+
+
+def test_subsequent_resets_inject_after_each_reset(fake_env_cls):
+    """After the first (arming) reset, each reset re-injects once as page-reload insurance: first
+    reset -> 2 injections (arm + post), second reset -> 1 more."""
     w = MiniWobWorld("click-button")
     w.reset()
     w.reset()
     scripts = [s for s in w.env.unwrapped.instance.driver.scripts if "core.EPISODE_MAX_TIME" in s]
-    assert len(scripts) == 2
+    assert len(scripts) == 3
+    # the second reset happens with the override already in place (armed on the first).
+    kinds = [kind for kind, _ in w.env.calls]
+    assert kinds == ["reset", "execute_script", "reset", "execute_script", "reset", "execute_script"]
     w.close()
 
 
@@ -406,8 +435,22 @@ def test_action_exception_is_sanitized_to_class_plus_first_line(fake_env_cls, tm
         sess.close()
 
 
-def test_record_fails_loud_for_miniwob_family(fake_env_cls, tmp_path):
-    args = _args("miniwob_click_button", str(tmp_path / "out"))
-    args.record = True
+def test_record_fails_loud_at_launch_for_miniwob_family(monkeypatch):
+    """PR #64 re-validation nit: the --record rejection must fire in main()'s argument validation
+    (at LAUNCH, before the server speaks), not inside the lazily-built MiniWobSession where the
+    SystemExit would escape mid-protocol on the first tool call. No fake env needed — main() must
+    exit before any world construction (and before reading stdin)."""
+    import sys
+    monkeypatch.setattr(sys, "argv", ["world_mcp.py", "--game", "miniwob_click_button", "--record"])
     with pytest.raises(SystemExit, match="--record is not supported"):
-        MiniWobSession(args)
+        world_mcp.main()
+
+
+def test_record_still_accepted_for_gb_worlds_at_arg_validation(monkeypatch):
+    """The main()-level guard is miniwob-scoped: --record on a GB world must get past argument
+    validation (its serve loop then just waits on stdin — give it an empty one so main() returns)."""
+    import io
+    import sys
+    monkeypatch.setattr(sys, "argv", ["world_mcp.py", "--game", "cave_noire", "--record"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    assert world_mcp.main() == 0   # no SystemExit at validation; loop sees EOF and exits cleanly

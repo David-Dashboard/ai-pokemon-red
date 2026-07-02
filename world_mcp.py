@@ -701,12 +701,9 @@ class MiniWobSession:
     the oracle here, logged to <out>/oracle.jsonl by _log_oracle, NEVER placed in a tool result."""
 
     def __init__(self, args) -> None:
-        # --record only threads through the PyBoy recorder; failing loud beats silently writing no MP4
-        # (house rule — same guard the GBA/NDS injected-emulator worlds have in World.__init__).
-        if getattr(args, "record", False):
-            raise SystemExit("--record is not supported for miniwob worlds: recording threads only "
-                             "through the default PyBoy emulator path. There is no per-step frame log "
-                             "for this family yet either — drop --record.")
+        # NOTE: the --record rejection for this family lives in main()'s argument validation, NOT here —
+        # this session is built lazily on the first tool CALL, so a SystemExit from __init__ would kill
+        # the server mid-protocol instead of at launch (PR #64 re-validation nit).
         from core.miniwob_world import MiniWobWorld, VIEWPORT_HEIGHT, VIEWPORT_WIDTH
         self._viewport_h = VIEWPORT_HEIGHT
         self._viewport_w = VIEWPORT_WIDTH
@@ -896,6 +893,15 @@ def main() -> int:
                     help="KEEP every per-step frame PNG on disk (default drops them as debris). Max logging: each "
                          "PNG pairs with its oracle.jsonl step (RAM truth) + the symbolic view the brain saw.")
     args = ap.parse_args()
+
+    # Argument validation that must fail AT LAUNCH, not on the lazily-deferred first tool call (a
+    # SystemExit escaping mid-protocol kills the server after the handshake — worse than refusing to
+    # start). --record only threads through the default PyBoy recorder path; miniwob has no frame
+    # pipeline (house rule: fail loud rather than silently write no MP4, same as the GBA/NDS guard).
+    if args.record and args.game in _MINIWOB_WORLDS:
+        raise SystemExit("--record is not supported for miniwob worlds: recording threads only "
+                         "through the default PyBoy emulator path. There is no per-step frame log "
+                         "for this family yet either — drop --record.")
 
     # LAZY: do NOT boot the emulator/browser here. `initialize`/`tools/list` must answer instantly or the
     # MCP client times out the startup handshake and marks the server "not connected". The World (PyBoy)
