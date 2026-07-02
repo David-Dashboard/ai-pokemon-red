@@ -5,7 +5,33 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (IT1 complete + patience reflex MERGED & measured: Oak dialog now free, $3.66/77dec → $1.55/32dec; #43–#49 merged)._
+_Last updated: 2026-07-03 (IT1 complete + patience measured; keystone static-object detector KILLED CHEAP with a reusable gate harness; #43–#52 merged)._
+
+**⇒⇒ NEWEST (2026-07-03, cont.) — KEYSTONE PROBE: general STATIC-OBJECT detector KILLED CHEAP (PR #51 design + #52
+harness/detector, both merged). main `42c23f6`. The referential-grounding rung is scoped + gated; the naming
+layer (ADR-002), not a cheap pixel detector, is the real path. ⇒⇒**
+- **What we asked:** can a CHEAP, GENERAL (color-agnostic) static-object channel find "the Poké Ball" on screen —
+  the missing piece that forced It1's brief to hard-code "balls are on the tiles EAST of you"? Design doc:
+  `reports/2026-07-03-referential-grounding-design.md` (decomposition: DETECT / NAME / RESOLVE; only detect+resolve
+  were in scope — NAME is the gated ADR-002 direction).
+- **Verdict: KILL CHEAP, gate-first, TWICE-confirmed.** The scored harness (`eval/score_static_objects.py` +
+  `eval/fixtures/static_objects_pokeball/`, 8 lab + 12 distractor frames, IoU≥0.3) demands recall≥0.9 / precision≥0.8
+  / 0 phantoms on distractors. A general R0 saliency+connected-components detector (`core/static_objects.py`) scored
+  **recall 0.0 / precision 0.0 / 154 phantoms** — GB tile-art is full of naturally-repeating equal blobs, so
+  "distinct blob in a row" fires everywhere; a uniform object also fragments into a hollow ring under 4-connectivity.
+  A parallel attempt reached 0.86/0.76/0 ONLY via a **saturation floor (`min_sat=60`)** — a palette/color-specific
+  lever (vivid red balls vs muted BG) that the gate explicitly disqualifies (won't generalize). Both attempts
+  converge: general detection fails; color-gating is a Red-lab-only R1 template, deliberately NOT lifted to `core/`.
+- **Banked, not wasted:** the gate harness + fixture are the reusable bar for any future R2/R3 (small-CNN / VLM)
+  attempt; the negative result is honest probe-first science (the direction dies cheap, per the constitution). The
+  It1 brief-hint STAYS; the un-bridge re-audit is DEFERRED until a naming/anchoring layer exists.
+- **⇒ NEXT (unchanged priority, now sharper):** referential grounding's real lever is the **naming/anchoring layer**
+  — behaviour-grounded, hypothesize-then-confirm (the `TileFunctionMap` pattern, `screen_text` as label source),
+  which is the gated **ADR-002 self-built-ontology** move. That is a design/gate rung, not a cheap-probe rung. Also
+  still open from the patience work: a **semantic gated-vs-choice classifier for text-less worlds** (unlocks
+  patience opt-in for Emerald/NDS). Process note: a mis-dispatched duplicate agent collided on this branch — root
+  cause was my premature "process died" watcher; **verify a subagent's real output/branch before re-dispatching**
+  ([[cross-console-run-launchers]] worktree-per-agent rule).
 
 ---
 
