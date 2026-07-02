@@ -151,6 +151,34 @@ gate pins the equivalent guards **before** its first paid run, not after:
   gate) — too many unmatched steps (would-be-gameable by dropping inconvenient contacts) refuses a
   verdict entirely (`INSUFFICIENT_DATA`).
 
+### Tightening amendment (2026-07-03, sev-1 review on PR #59 — stricter, never looser): retroactive CONTACTs
+
+The as-first-pinned metric had a hole: nothing checked WHEN a `CONTACT id=k step=n` was logged relative
+to when the brain could have learned step `n`'s hp outcome. A brain that feels the hit first (observes
+its life fall) can retroactively tag CONTACTs onto exactly the drop steps for its chosen "threat" id
+(`p_k = 1.0` trivially) and never tag the benign id on a drop step — both arms faked by post-hoc
+outcome-matching with zero predictive grounding. The HUD gate's `HYP` lines never had this hole because
+each reading is tethered to the `read_region` result it was copied from; `CONTACT` needed an equivalent
+ordering tether. Pinned fix (scorer-enforced, per the project's own PR #56 lesson that unenforced
+protocol discipline gets gamed):
+
+- **Reveal rule (exact):** the scorer walks the transcript in order, maintaining a *revealed-step
+  watermark* = the highest world step any `observe`/`read_region`/`whats_changed` tool-result has
+  reported so far. A `CONTACT id=k step=n` counts ONLY if, at its transcript position, the watermark is
+  `<= n` (strictly-greater ⇒ RETROACTIVE). The result that reports step `n` itself is allowed — it is
+  what gives the brain the step number to log at all; but once any LATER-step observation has arrived,
+  the brain has had the opportunity to see step `n`'s consequence, and a contact logged after that is a
+  post-hoc claim, not a predictive one.
+- Retroactive contacts are counted, reported, and excluded from `C_k`; **`RETROACTIVE_MAX_FRACTION =
+  0.20`** — retroactive lines at/above 20% of all CONTACT lines taint the whole contact log
+  (`INSUFFICIENT_DATA`, no verdict), same shape as the malformed-fraction guard.
+- **Residual leak, documented deliberately:** a `read_region` pointed at the HUD *within* step `n`'s own
+  window could reveal hp before the CONTACT is logged. The scorer cannot know which pixel boxes carry hp,
+  so this is closed belt-and-braces: the launcher brief mandates contact-first, hp-blind logging order
+  (log the CONTACT the moment adjacency/attack animation is seen, BEFORE any further look), and a
+  reviewer can audit the transcript for a same-window HUD read preceding a CONTACT. The strictly-greater
+  rule closes the cheap mechanical exploit (observe outcomes later, back-tag earlier steps).
+
 ### Why an absolute margin instead of a formal significance test
 
 A binomial/Fisher exact test was considered and rejected for this pass: (1) it needs a dependency

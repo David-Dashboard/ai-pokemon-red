@@ -45,6 +45,14 @@ lesson — PR #56 invalidated a technically-passing but degenerate live run):
     dropped; `MALFORMED_MAX_FRACTION` too many -> INSUFFICIENT_DATA.
   * Duplicate (id, step) CONTACT encodings dedupe: first occurrence wins, repeats counted and reported,
     never double-counted toward an entity's contact set.
+  * RETROACTIVE-CONTACT GUARD (2026-07-03 tightening amendment — sev-1 review on PR #59, stricter never
+    looser): a `CONTACT id=k step=n` counts ONLY if it was logged BEFORE any observe/read_region/
+    whats_changed tool_result reported a world step strictly greater than n — otherwise the brain could
+    watch its hp fall and back-tag drop steps onto whichever entity it wants (p_k=1.0 for the threat,
+    never tag the benign: both arms faked with zero grounding). Retroactive contacts are counted,
+    reported, and excluded; `RETROACTIVE_MAX_FRACTION` at/above 20% of CONTACT lines -> the whole
+    contact log is tainted, INSUFFICIENT_DATA. Exact reveal rule + residual-leak note: see
+    parse_transcript's docstring.
 
 Usage:
     uv run python -m eval.score_entity_gate runs/brain_cn_entity/transcript.jsonl runs/brain_cn_entity/world/oracle.jsonl
@@ -74,6 +82,7 @@ MIN_SESSION_DROPS = 1             # a session with 0 drop steps anywhere -> DEGE
 MIN_TOTAL_STEPS = 10              # fewer scoreable oracle steps overall -> INSUFFICIENT_DATA
 UNMATCHED_MAX_FRACTION = 0.05     # unmatched CONTACT/ENT steps must stay STRICTLY below this fraction
 MALFORMED_MAX_FRACTION = 0.20     # malformed lines at/above this fraction of all lines -> INSUFFICIENT_DATA
+RETROACTIVE_MAX_FRACTION = 0.20   # retroactive CONTACTs at/above this fraction of CONTACT lines -> tainted
 
 
 def _bcd(b: int) -> int:
@@ -85,12 +94,32 @@ def load_jsonl(path: str) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def parse_remember_calls(transcript: list[dict]) -> list[str]:
-    """Walk the transcript for `remember` tool calls; return each call's `lesson` text, in transcript
-    order, counting only calls whose `tool_result` actually arrived (the call completed). Identical
-    logic to score_gate_run.py::parse_remember_calls."""
-    pending: dict[str, str] = {}
-    out: list[str] = []
+# World-observation tools whose results reveal a step's on-screen outcome to the brain. A tool_result
+# from any of these carrying a step number ADVANCES the "revealed step" watermark used by the
+# retroactive-CONTACT guard below.
+_REVEALING_TOOL_SUFFIXES = ("__observe", "__read_region", "__whats_changed")
+# NB: the block is matched as json.dumps(block), where nested quotes arrive escaped (\") — hence the
+# backslash in the delimiter class.
+_STEP_IN_RESULT_RE = re.compile(r"step[\"'=:\\\s]+(\d+)")
+
+
+def _max_step_in_result(block: dict) -> int | None:
+    """Extract the highest world step mentioned in a tool_result block (read_region/whats_changed report
+    `step=<N>` in their text; observe's payload carries `"step": N`). None if no step is present."""
+    steps = [int(s) for s in _STEP_IN_RESULT_RE.findall(json.dumps(block))]
+    return max(steps) if steps else None
+
+
+def parse_remember_calls(transcript: list[dict]) -> list[tuple[str, int]]:
+    """Walk the transcript for `remember` tool calls; return (lesson text, revealed_step_at_log) pairs
+    in transcript order, counting only calls whose `tool_result` actually arrived (the call completed).
+    `revealed_step_at_log` is the highest world step any observe/read_region/whats_changed tool_result
+    had reported BEFORE this remember call completed (-1 if none yet) — the retroactive-CONTACT guard's
+    input. Otherwise identical logic to score_gate_run.py::parse_remember_calls."""
+    pending: dict[str, str] = {}            # remember tool_use_id -> lesson text
+    pending_reveal: dict[str, bool] = {}    # observe/read_region/whats_changed tool_use_id -> True
+    revealed = -1                           # highest world step revealed so far
+    out: list[tuple[str, int]] = []
     for msg in transcript:
         content = (msg.get("message") or {}).get("content")
         if not isinstance(content, list):
@@ -98,13 +127,20 @@ def parse_remember_calls(transcript: list[dict]) -> list[str]:
         for block in content:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") == "tool_use" and str(block.get("name", "")).endswith("__remember"):
-                lesson = (block.get("input") or {}).get("lesson", "")
-                pending[block["id"]] = lesson
+            if block.get("type") == "tool_use":
+                name = str(block.get("name", ""))
+                if name.endswith("__remember"):
+                    pending[block["id"]] = (block.get("input") or {}).get("lesson", "")
+                elif name.endswith(_REVEALING_TOOL_SUFFIXES):
+                    pending_reveal[block["id"]] = True
             elif block.get("type") == "tool_result":
                 tool_use_id = block.get("tool_use_id")
                 if tool_use_id in pending:
-                    out.append(pending.pop(tool_use_id))
+                    out.append((pending.pop(tool_use_id), revealed))
+                elif pending_reveal.pop(tool_use_id, False):
+                    step = _max_step_in_result(block)
+                    if step is not None:
+                        revealed = max(revealed, step)
     return out
 
 
@@ -149,7 +185,19 @@ def _drop_steps(hp_by_step: dict[int, int | None]) -> tuple[set[int], int]:
 
 def parse_transcript(transcript: list[dict], oracle: list[dict]) -> dict:
     """Extract ENT/CONTACT/DECLARE/REJECT lines. CONTACT lines are deduped by (id, step); malformed
-    lines (unparseable) are counted, never silently dropped."""
+    lines (unparseable) are counted, never silently dropped.
+
+    RETROACTIVE-CONTACT GUARD (2026-07-03 tightening amendment, sev-1 review on PR #59 — stricter,
+    never looser): a `CONTACT id=k step=n` counts ONLY if, at the moment it was logged, no
+    observe/read_region/whats_changed tool_result had yet reported a world step STRICTLY GREATER than
+    n. The result that reports step n itself is allowed (it is what gives the brain the step number to
+    log at all); but once any LATER-step observation has arrived, the brain has had the opportunity to
+    see step n's consequence (the post-hit frame/HUD), so a CONTACT logged after that point is
+    post-hoc outcome-matching, not a predictive adjacency claim — counted + reported as RETROACTIVE and
+    excluded from the metric. Residual leak documented deliberately: a same-step read_region pointed at
+    the HUD could reveal hp within the allowed window; the launcher brief forbids that ordering
+    (contact-first, hp-blind) and a reviewer can audit the transcript for it — the strictly-greater rule
+    closes the cheap, mechanical exploit (observe the outcome later, then back-tag the drop steps)."""
     lessons = parse_remember_calls(transcript)
     hp_by_step = _oracle_hp_by_step(oracle)
 
@@ -160,10 +208,11 @@ def parse_transcript(transcript: list[dict], oracle: list[dict]) -> dict:
     rejected: dict[int, str] = {}
     malformed = 0
     duplicates = 0
+    retroactive = 0
     seen_contacts: set[tuple[int, int]] = set()     # (id, step) pairs already counted
 
     n_lines = 0
-    for lesson in lessons:
+    for lesson, revealed_at_log in lessons:
         m = _ENT_RE.search(lesson)
         if m:
             n_lines += 1
@@ -175,6 +224,9 @@ def parse_transcript(transcript: list[dict], oracle: list[dict]) -> dict:
         if m:
             n_lines += 1
             eid, step = int(m.group(1)), int(m.group(2))
+            if revealed_at_log > step:
+                retroactive += 1     # logged after a later step's outcome was already observable
+                continue
             key = (eid, step)
             if key in seen_contacts:
                 duplicates += 1
@@ -207,7 +259,8 @@ def parse_transcript(transcript: list[dict], oracle: list[dict]) -> dict:
 
     return {"ent_claims": ent_claims, "contacts": contacts,
             "declared_threats": declared_threats, "declared_benign": declared_benign,
-            "rejected": rejected, "malformed": malformed, "duplicates": duplicates, "n_lines": n_lines}
+            "rejected": rejected, "malformed": malformed, "duplicates": duplicates,
+            "retroactive": retroactive, "n_lines": n_lines}
 
 
 def _contact_rate(entries: list[dict], hp_by_step: dict[int, int | None],
@@ -240,17 +293,33 @@ def score(transcript_path: str, oracle_path: str) -> dict:
     declared_threats, declared_benign, rejected = (
         parsed["declared_threats"], parsed["declared_benign"], parsed["rejected"])
     n_malformed, n_duplicates, n_lines = parsed["malformed"], parsed["duplicates"], parsed["n_lines"]
+    n_retroactive = parsed["retroactive"]
 
     result: dict = {
         "declared_threats": sorted(declared_threats), "declared_benign": sorted(declared_benign),
         "rejected": rejected, "entities_seen": sorted(parsed["ent_claims"]),
         "malformed_lines": n_malformed, "duplicate_lines": n_duplicates,
+        "retroactive_lines": n_retroactive,
     }
 
     if n_lines and n_malformed and (n_malformed / n_lines) >= MALFORMED_MAX_FRACTION:
         result["verdict"] = "INSUFFICIENT_DATA"
         result["reason"] = (f"{n_malformed}/{n_lines} protocol lines are malformed "
                             f"(>= {MALFORMED_MAX_FRACTION:.0%} -- must stay below)")
+        return result
+
+    # RETROACTIVE-CONTACT taint (2026-07-03 amendment, sev-1 review on PR #59 -- see parse_transcript's
+    # docstring for the rule): too many CONTACTs logged after their step's outcome was already
+    # observable means the contact log as a whole cannot be trusted as predictive -> no verdict.
+    # Denominator = accepted unique contacts + retroactive (duplicates excluded, same discipline as the
+    # malformed fraction).
+    n_accepted_contacts = sum(len(v) for v in contacts.values())
+    n_contact_pool = n_accepted_contacts + n_retroactive
+    if n_contact_pool and n_retroactive and (n_retroactive / n_contact_pool) >= RETROACTIVE_MAX_FRACTION:
+        result["verdict"] = "INSUFFICIENT_DATA"
+        result["reason"] = (f"{n_retroactive}/{n_contact_pool} CONTACT lines are RETROACTIVE (logged "
+                            f"after a later step's outcome was already observable) "
+                            f"(>= {RETROACTIVE_MAX_FRACTION:.0%} -- must stay below)")
         return result
 
     benign_ids = declared_benign | set(rejected)
@@ -333,6 +402,9 @@ def format_report(r: dict) -> str:
         lines.append(f"malformed protocol lines: {r['malformed_lines']}")
     if r.get("duplicate_lines"):
         lines.append(f"duplicate CONTACT lines (repeat (id, step), first kept): {r['duplicate_lines']}")
+    if r.get("retroactive_lines"):
+        lines.append(f"RETROACTIVE CONTACT lines (logged after a later step's outcome was observable, "
+                     f"excluded): {r['retroactive_lines']}")
     if r["verdict"] == "NO_DECLARE":
         lines.append(f"declared threats: {r.get('declared_threats')}  declared benign: "
                      f"{r.get('declared_benign')}  rejected: {list(r.get('rejected', {}))}")

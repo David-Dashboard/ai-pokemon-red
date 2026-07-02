@@ -13,6 +13,7 @@ from eval.score_entity_gate import (
     MARGIN,
     MIN_CONTACTS,
     MIN_TOTAL_STEPS,
+    RETROACTIVE_MAX_FRACTION,
     UNMATCHED_MAX_FRACTION,
     _bcd,
     _drop_steps,
@@ -28,6 +29,18 @@ def _remember_pair(call_id: str, lesson: str) -> list[dict]:
         {"message": {"content": [{"type": "tool_use", "id": call_id, "name": f"{SERVER}__remember",
                                   "input": {"lesson": lesson}}]}},
         {"message": {"content": [{"type": "tool_result", "tool_use_id": call_id, "content": "ok"}]}},
+    ]
+
+
+def _reveal_pair(call_id: str, step: int, tool: str = "whats_changed") -> list[dict]:
+    """A world-observation tool call + its result reporting `step=<N>` — advances the retroactive
+    guard's revealed-step watermark, the way a real observe/read_region/whats_changed result does."""
+    return [
+        {"message": {"content": [{"type": "tool_use", "id": call_id, "name": f"{SERVER}__{tool}",
+                                  "input": {"x0": 0, "y0": 0, "x1": 8, "y1": 8}}]}},
+        {"message": {"content": [{"type": "tool_result", "tool_use_id": call_id,
+                                  "content": [{"type": "text",
+                                               "text": f"[{tool} step={step} (0,0)-(8,8): unchanged]"}]}]}},
     ]
 
 
@@ -289,3 +302,96 @@ def test_margin_boundary_exactly_at_threshold_grounds():
     assert abs(threat["p_k"] - 1 / 3) < 1e-9
     # 1/3 vs p_base(1/9)+0.30 ~ 0.411 -> should NOT ground (below margin) -- pins the inequality direction.
     assert threat["grounded"] == (1 / 3 >= p_base + MARGIN)
+
+
+# ---------------------------------------------------------------------------
+# 4. Retroactive-CONTACT guard (2026-07-03 tightening amendment, sev-1 review on PR #59): a CONTACT
+#    logged after a LATER step's outcome was already observable is post-hoc outcome-matching, not a
+#    predictive adjacency claim -- excluded and, at/above 20% of CONTACT lines, taints the whole run.
+# ---------------------------------------------------------------------------
+
+def _drop_oracle_20():
+    """Steps 1..20, hp 10 with a 1-point drop at steps 5, 10, 15 -> drop steps {5,10,15},
+    19 scoreable steps, p_base = 3/19."""
+    oracle = []
+    hp = 10
+    for step in range(1, 21):
+        if step in (5, 10, 15):
+            hp -= 1
+        oracle.append(_oracle_rec(step, 0x10 if hp == 10 else hp))
+    return oracle
+
+
+def _contact_first_calls():
+    """Legitimate contact-first transcript: each CONTACT is logged right after the world result that
+    reported ITS OWN step (revealed == step, never greater). Threat id=1 contacts all 3 drop steps,
+    benign id=2 contacts 3 non-drop steps."""
+    contact_steps = {5: [1], 10: [1], 15: [1], 2: [2], 7: [2], 17: [2]}
+    calls = []
+    for s in sorted(contact_steps):
+        calls += _reveal_pair(f"r{s}", s)
+        for eid in contact_steps[s]:
+            calls += _remember_pair(f"c{eid}_{s}", f"CONTACT id={eid} step={s}")
+    calls += _remember_pair("d1", "DECLARE threat=1")
+    calls += _remember_pair("d2", "REJECT id=2 reason=never near me when hp dropped")
+    return calls
+
+
+def test_contact_first_transcript_still_passes():
+    result = _run_score(_contact_first_calls(), _drop_oracle_20())
+    assert result["retroactive_lines"] == 0
+    assert result["verdict"] == "PASS"
+
+
+def test_pure_retroactive_transcript_gets_no_verdict():
+    """The sev-1 exploit shape: the brain observes the whole session first (revealed step reaches 20),
+    THEN back-tags CONTACTs onto the drop steps for its chosen threat and onto non-drop steps for the
+    benign. Every CONTACT is retroactive -> the contact log is tainted -> INSUFFICIENT_DATA, not PASS."""
+    calls = _reveal_pair("r_end", 20)   # outcome of every step now observable
+    for i, s in enumerate((5, 10, 15)):
+        calls += _remember_pair(f"c1_{i}", f"CONTACT id=1 step={s}")
+    for i, s in enumerate((2, 7, 17)):
+        calls += _remember_pair(f"c2_{i}", f"CONTACT id=2 step={s}")
+    calls += _remember_pair("d1", "DECLARE threat=1")
+    calls += _remember_pair("d2", "REJECT id=2 reason=never near me when hp dropped")
+    result = _run_score(calls, _drop_oracle_20())
+    assert result["retroactive_lines"] == 6
+    assert result["verdict"] == "INSUFFICIENT_DATA"
+    assert "RETROACTIVE" in result["reason"]
+
+
+def test_mixed_retroactive_below_cap_is_reported_but_verdict_stands():
+    """A few retroactive lines strictly below the 20% cap are excluded + reported; the verdict from the
+    legitimate contact-first majority stands."""
+    calls = _contact_first_calls()
+    # after the last reveal (step 17), back-tag one extra contact for an already-revealed step:
+    calls += _remember_pair("late", "CONTACT id=1 step=5")   # 1 retro / (6 valid + 1) = 14.3% < 20%
+    result = _run_score(calls, _drop_oracle_20())
+    assert result["retroactive_lines"] == 1
+    assert (result["retroactive_lines"] / (result["retroactive_lines"] + 6)) < RETROACTIVE_MAX_FRACTION
+    assert result["verdict"] == "PASS"
+
+
+def test_contact_at_exactly_the_revealed_step_is_not_retroactive():
+    """The reveal rule is STRICTLY-greater: the result reporting step n is what gives the brain the step
+    number to log at all, so a CONTACT at the current revealed step must count."""
+    transcript = _reveal_pair("r1", 7) + _remember_pair("c1", "CONTACT id=1 step=7")
+    parsed = parse_transcript(transcript, [_oracle_rec(7, 5)])
+    assert parsed["retroactive"] == 0
+    assert len(parsed["contacts"][1]) == 1
+
+
+def test_observe_result_step_field_advances_the_watermark():
+    """observe's payload carries `"step": N` (JSON field, not `step=` text) -- the watermark must pick
+    that up too, or an observe-only brain could never be flagged retroactive."""
+    observe_pair = [
+        {"message": {"content": [{"type": "tool_use", "id": "o1", "name": f"{SERVER}__observe",
+                                  "input": {}}]}},
+        {"message": {"content": [{"type": "tool_result", "tool_use_id": "o1",
+                                  "content": [{"type": "text",
+                                               "text": '{"pose": [3, 4], "step": 9}'}]}]}},
+    ]
+    transcript = observe_pair + _remember_pair("c1", "CONTACT id=1 step=5")
+    parsed = parse_transcript(transcript, [_oracle_rec(5, 5)])
+    assert parsed["retroactive"] == 1
+    assert 1 not in parsed["contacts"]
