@@ -191,6 +191,14 @@ class PerceptionPlugin:
                 lines.append(f"You are in a {sym.context}, NOT free movement.")
             return "\n".join(lines)
 
+        if pose.get("lost"):
+            # A perceiver may flag pose as LOST after an unattributed scene change (a cutscene, a warp it
+            # couldn't pin to a commanded step) instead of guessing — game-agnostic: only ever set by a
+            # perceiver that tracks pose_confidence; absent otherwise, so other worlds are unaffected.
+            lines.append("Position lost: the last screen change couldn't be explained by your move. "
+                         "The map below is not yet trustworthy; keep moving one step at a time to "
+                         "re-establish where you are.")
+            return "\n".join(lines)
         if pose.get("value") is not None:
             lines.append(f"Your position (dead-reckoned, approximate): {tuple(pose['value'])}.")
         action, outcome = la.get("action"), la.get("outcome")
