@@ -95,8 +95,11 @@ guardrail that v1's file is untouched.
   data.
 
 **PASS** = `>= 1` declared threat GROUNDED AND `>= 1` declared-benign/REJECTed entity correctly rejected.
-Both arms required. `NO_DECLARE` if either declaration side is missing entirely. Verdict vocabulary
-otherwise mirrors v1: `PASS / FAIL / INSUFFICIENT_DATA / INSUFFICIENT_DROPS / NO_DECLARE`.
+Both arms required. `NO_DECLARE` if either declaration side is missing entirely. An id declared BOTH ways
+(`DECLARE threat=k` and `DECLARE benign=k`/`REJECT id=k`) is CONFLICTING — excluded from both arms and
+reported; if the exclusion starves an arm, the verdict is `NO_DECLARE` naming the conflict (2026-07-03
+review tightening on PR #61, finding 4). Verdict vocabulary otherwise mirrors v1:
+`PASS / FAIL / INSUFFICIENT_DATA / INSUFFICIENT_DROPS / NO_DECLARE`.
 
 ## Anti-gaming analysis
 
