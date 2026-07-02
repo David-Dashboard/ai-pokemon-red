@@ -5,7 +5,7 @@ Design + gate plan only — **no primitives are built by this pass**. Scope disc
 Ladder R0-first), and the house pre-registration style of `reports/2026-07-03-adr002-gate-plan.md` /
 `reports/2026-07-03-entity-gate-v2-plan.md`. Evidence base: `runs/vizdoom_probe/PROBE_REPORT.md` +
 `analysis_results.json` (2026-07-02 offline probe, `vizdoom==1.3.0` in Docker) plus one new free
-analysis run for this doc (§1.3 below; script output `runs/vizdoom_probe/stationary_mover_check.json`,
+analysis run for this doc (§1.3 below; script output `runs/vizdoom_probe/stationary_mover_check_full.json`,
 gitignored like the rest of `runs/`).
 
 ## 0. What the probe established (the re-tier ADR-002 §10 predicted)
@@ -96,20 +96,24 @@ frames exist to verify before any live wiring.
 ### 1.3 Quantified: do movers pop out of the noise when ego-stationary? (new free analysis)
 
 The probe's headline "frame-diff mean 13.4 even standing still" is a *global* number over a scripted
-run that was turning most of the time. Re-analysis of the same 200 `defend_the_center` frames,
-splitting pairs by global diff (< 3.0 = ego-stationary; the scripted round-robin left 34/199 such
-pairs):
+run that was turning most of the time. Re-analysis over **all 199 consecutive pairs** of the same 200
+`defend_the_center` frames (threshold `pix_t=25/255`, `min_area=30`, 4-connectivity; split by global
+mean diff < 3.0 = ego-stationary — the scripted round-robin left 34 such pairs). The medians below are
+computed over the FULL split and match `runs/vizdoom_probe/stationary_mover_check_full.json` exactly
+(a first draft of this table quoted medians from a 12+6-pair sample against the full-split pair counts
+— caught in review, regenerated over all pairs; the old `stationary_mover_check.json` is superseded):
 
 | Regime | pairs | global diff mean | frac pixels changed (median) | components ≥ 30px (median) |
 |---|---|---|---|---|
-| Ego-stationary | 34 | **0.76** | **0.011** | **5** |
-| Turning | 165 | 9.50 | 0.108 | 18 |
+| Ego-stationary | 34 | **0.76** | **0.0109** | **4.5** |
+| Turning | 165 | 9.50 | 0.0758 | 19 |
 
 On stationary pairs the residual diff concentrates into a handful of compact blobs (top areas ~80-150px
-— consistent with the approaching zombiemen + weapon idle), i.e. **≈10× separation in changed-pixel
-fraction and ≈4× in component count**. The mechanism is viable *when gated*; ungated it is exactly the
-probe's 40-105 phantom-blob failure. (Script: one-off, scratchpad; numeric dump at
-`runs/vizdoom_probe/stationary_mover_check.json`.)
+— consistent with the approaching zombiemen + weapon idle), i.e. **≈7× separation in changed-pixel
+fraction and ≈4× in component count**. This is a directional signal from ONE scripted run, not a
+threshold-calibration dataset — PR-B's fixture probe re-derives `pix_t`/`min_area` on its own committed
+fixtures rather than inheriting these constants as settled. The mechanism is viable *when gated*;
+ungated it is exactly the probe's 40-105 phantom-blob failure.
 
 **Honest caveat → pre-check PC-1 (§2.4):** `defend_the_center`'s monsters *walk toward you*;
 `basic`'s monster mostly stands still and only its idle/animation frames produce diff. Whether that
@@ -153,12 +157,16 @@ sensorium build-out, exactly as ADR-002 §9 died-or-passed for HUD grounding.
 > **GATE-3D (pre-registered 2026-07-04).** A region-neutral brain over the MCP seam, receiving only
 > the symbolic 3D-floor payload (P1 yaw + P2 movers + episode status; no screenshot, no game
 > variables), plays `basic_gate.cfg` for **N = 30 episodes** on **30 distinct pinned seeds**, at most
-> **40 brain decisions per episode** (System-1 tool calls execute between decisions).
+> **40 brain decisions per episode** (System-1 tool calls execute between decisions). **Action grain
+> is pinned equal across arms and baselines: every action executes with `tics = 4` fixed** — the gate
+> world's tools take no `tics` parameter — so brain and scripted policies share the identical
+> 300-tic / ~75-action-step episode budget, and R is measured under that same budget.
 >
 > **ARM (a) — task.** `kill_rate` = (episodes with oracle `KILLCOUNT ≥ 1` before the 300-tic
 > timeout) / 30. PASS requires `kill_rate ≥ max(0.60, R + 0.30)`, where **R** = the random-policy
-> kill rate over **200 free scripted episodes** (uniform over the 3 actions, tics=4, same cfg and
-> seed procedure), measured and written into the scorer BEFORE the paid run.
+> kill rate over **200 free scripted episodes** (uniform over the 3 actions, `tics=4`, the same
+> 300-tic / ~75-step episode budget, same cfg and seed procedure), measured and written into the
+> scorer BEFORE the paid run.
 >
 > **ARM (b) — grounding honesty.** Scored from the run's own logs (commanded actions are the truth;
 > no oracle involved): over all commanded discrete turns with a P1 reading, sign agreement between
@@ -167,8 +175,10 @@ sensorium build-out, exactly as ADR-002 §9 died-or-passed for HUD grounding.
 > `best_shift` failure) fails this arm even if the brain lucks into kills.
 >
 > **Degenerate guards (any fires → no PASS is recordable):**
-> - **Blind-spinner guard:** the scripted policy "TURN_LEFT + ATTACK every step" (multi-hot, 200 free
->   episodes) must NOT itself clear ARM (a)'s bar. Measured BEFORE the paid run; if it clears, the
+> - **Perception-free-decoy guard:** each pre-registered scripted decoy — **blind spinner**
+>   ("TURN_LEFT + ATTACK every step", multi-hot) and **ATTACK-only** ("ATTACK every step, never
+>   turn" — catches a centered-enough spawn making aiming unnecessary) — is run for 200 free
+>   episodes and must NOT clear ARM (a)'s bar. Measured BEFORE the paid run; if either clears, the
 >   scenario is re-pinned harder (shorter timeout / ammo cap) before any paid run, and this document
 >   is amended stricter-only.
 > - **Variation guard:** the 30 seeds are distinct and pinned in the launcher; kill episodes must show
@@ -178,6 +188,9 @@ sensorium build-out, exactly as ADR-002 §9 died-or-passed for HUD grounding.
 >   used for alignment (the sev-1 lesson from PR #55).
 > - **Episode-boundary guard:** any observation after `is_episode_finished()` must return an explicit
 >   `episode_finished` marker (never a stale frame) — `get_state()` is `None` after finish.
+> - **One attempt per seed:** the harness enforces exactly one attempt per pinned seed — a
+>   `new_episode` issued before the current episode finishes counts that seed's episode as FAILED
+>   (no kill) and advances to the next seed. No re-rolling a bad start.
 > - **Completion floor:** < 25/30 episodes completed → `INSUFFICIENT_DATA` (harness fault, not FAIL).
 >
 > **Both arms required.** Verdict vocabulary: `PASS / FAIL / DEGENERATE / INSUFFICIENT_DATA`.
@@ -189,9 +202,12 @@ sensorium build-out, exactly as ADR-002 §9 died-or-passed for HUD grounding.
   CPU. `basic`'s room is small and the pistol is hitscan, so random may be nontrivial; the relative
   bar (`R + 0.30`) protects against that, and the absolute floor (0.60) protects against a
   pathologically bad R making a mediocre brain look good.
-- **The blind spinner is the decoy arm's analogue** for a motor task: it is the cheapest strategy that
-  ignores perception entirely. The gate is only meaningful if perception-free play does not pass —
-  hence it is measured first and the scenario hardened pre-registration-style if needed.
+- **The perception-free decoys (blind spinner, ATTACK-only) are the decoy arm's analogue** for a
+  motor task: they are the cheapest strategies that ignore perception entirely (ATTACK-only also
+  probes whether the spawn is centered enough that no aiming is ever needed). The gate is only
+  meaningful if perception-free play does not pass — hence both are measured first and the scenario
+  hardened pre-registration-style if needed. Note ATTACK-only also cannot vacuously pass ARM (b): a
+  run with < 20 scored turn steps fails ARM (b)'s minimum-count requirement rather than passing empty.
 - **ARM (b) exists because of the probe's headline surprise:** `best_shift` failed *quietly*. A 3D
   floor whose ego-rotation channel confabulates would corrupt everything above it; the gate makes
   "fails loudly when uncertain" a scored requirement, not an aspiration.
@@ -227,15 +243,29 @@ last_action: echo of the last tool call + tics
 
 No pose, no map, no entity names — the brain hypothesizes meaning ("the recurring mover at stable
 azimuth is probably the target") and grounds it by behaviour (turn toward it → azimuth → 0 → attack →
-episode ends). Screenshot stays behind `--with-screenshot` (debug only). The foveated
+episode ends).
+
+**Payload honesty — what this gate does and does not test.** In `basic_gate.cfg` (one monster, one
+room) the `movers` list will typically contain **≤ 1 entry**, so "the only mover's azimuth" is de
+facto target-lock even though the primitive attaches no label and genuinely does not know it is a
+monster. Said out loud: **GATE-3D primarily tests turn-to-azimuth control + P1's grounding honesty,
+NOT entity discrimination.** Discriminating among multiple movers (which one is the threat, which is
+benign) is deliberately deferred to a later multi-monster gate (`defend_the_center`-class scenario,
+where the single-mover shortcut breaks by construction) — that future gate tightens from this
+explicitly recorded baseline, stricter-only.
+
+Screenshot stays behind `--with-screenshot` (debug only). The foveated
 `read_region`/`whats_changed` tools are NOT extended to this world pre-gate (`_REGION_TOOL_WORLDS`
 stays as-is): no proven need yet — adding them unasked is sensorium creep.
 
 ### 3.2 Action tools
 
-- `turn_left { tics: 1..20 }`, `turn_right { tics: 1..20 }`, `attack { tics: 1..8 }` — each builds the
-  multi-hot vector over `get_available_buttons()` by *name lookup*, never positional index (the probe:
-  the variable/button arrays are order-sensitive; zip by name once at init).
+- `turn_left {}`, `turn_right {}`, `attack {}` — **no `tics` parameter in the gate world; every call
+  executes with `tics = 4` fixed** (the gate's action-grain equivalence pin, §2.2 — brain and scripted
+  baselines act on the identical step cadence). A variable-`tics` schema is a post-gate extension, not
+  a flag to add quietly. Each tool builds the multi-hot vector over `get_available_buttons()` by
+  *name lookup*, never positional index (the probe: the variable/button arrays are order-sensitive;
+  zip by name once at init).
 - `new_episode {}` — explicit reset; `observe` after finish returns `episode.finished=true` and every
   frame-reading path guards `get_state() is None` (probe integration fact #4). Auto-advancing to the
   next episode implicitly is forbidden — the brain must see the boundary.
@@ -255,7 +285,7 @@ result. The scorer (`eval/score_doom_gate.py`) joins transcript ↔ oracle on (e
 | **PR-A (this)** | `reports/2026-07-04-vizdoom-3d-floor-design.md` — docs only | review = does the gate pre-registration hold water |
 | **PR-B** | `core/flow3d.py` (P1) + `core/movers.py` (P2), both to the 7-slot contract; `eval/fixtures/vizdoom_flow/` (a ~30-frame committed subset of the probe's `defend_the_center` captures + an `actions.jsonl` reconstructed from the probe's scripted round-robin — regenerate the capture WITH an action log if ambiguous, free) + `eval/fixtures/vizdoom_stationary/` (~12 stationary pairs); offline tests pin PC-2's bar and the §1.3 stationary/turning separation. **No live ViZDoom dependency in tests** — pure PNG fixtures. | PC-2 passes at R0, else the R1 climb decision is made HERE, cheaply |
 | **PR-C** | `games/vizdoom/` adapter (plugin + perceiver emitting §3.1; lazy import so `world_mcp.py` stays importable without vizdoom — the mgba pattern); `scenarios/basic_gate.cfg`; `GAMES["doom_basic"]` entry; oracle→jsonl wiring; Docker run recipe note | `assert_action_tools_fresh` + a scripted smoke episode end-to-end |
-| **PR-D** | `eval/score_doom_gate.py` with §2.2's constants verbatim + unit tests on synthetic transcripts (PASS/FAIL/DEGENERATE/INSUFFICIENT_DATA each pinned, the score_gate_run.py pattern); the two free baseline runs (random R, blind spinner) executed and their numbers written into the scorer + this doc's addendum | baselines measured; blind-spinner guard evaluated BEFORE any paid run |
+| **PR-D** | `eval/score_doom_gate.py` with §2.2's constants verbatim + unit tests on synthetic transcripts (PASS/FAIL/DEGENERATE/INSUFFICIENT_DATA each pinned, the score_gate_run.py pattern); the three free baseline runs (random R, blind spinner, ATTACK-only) executed and their numbers written into the scorer + this doc's addendum; harness enforcement of one-attempt-per-seed | baselines measured; perception-free-decoy guard evaluated BEFORE any paid run |
 | **paid run** | one live Claude-over-MCP session (account B, per standing authorization), 30 episodes, scored | GATE-3D verdict; results PR appends the verdict — never edits §2.2 |
 
 Every PR through the standard loop: plan → branch → Sonnet implements → <5 adversarial reviewers →
@@ -269,7 +299,7 @@ triage → David merges.
 | **Over-build the 3D sensorium pre-gate** (full optical-flow field, depth map, SLAM, ForwardStreamCue "while we're at it") | Build ONLY P1 + P2. §1.4's deferrals are pinned; a third primitive appears only with a new pre-registered gate that needs it. |
 | **A yaw estimator that is silently wrong** (the `best_shift` re-run) | `None` is a first-class output; ARM (b) scores sign-agreement + None-rate from the run's own action log; PR-B's fixture tests pin `None` on ambiguous input (blank-wall frames). |
 | **Tune thresholds on the paid run** | `pix_t`/`min_area`/prominence floor are pinned from fixtures in PR-B; gate constants are pinned HERE. Stricter-only amendments, per the entity-gate-v2 clause. |
-| **A gate that can't fail** ("it moved toward the monster, looks right") | §2.2's numeric bars + measured random AND blind-spinner baselines; the blind spinner is the "decoy" that a perception-free policy must not beat. |
+| **A gate that can't fail** ("it moved toward the monster, looks right") | §2.2's numeric bars + measured random, blind-spinner AND attack-only baselines; the decoys are the perception-free policies that must not pass. |
 | **Wall-clock alignment** | Episode index + tic count only (PR #55 sev-1 lesson). |
 | **Oracle on the wire** (HEALTH/AMMO2/KILLCOUNT in a tool result) | game_variables → `oracle.jsonl` only; scorer-side join; reviewer checklist item on PR-C. |
 | **Screenshot to the brain** ("3D is too hard for symbols, just send the frame") | §4-confabulation law unchanged; `--with-screenshot` debug-only. If the symbolic payload proves too lossy, that is an ADR-level finding to report, not a flag to flip. |
