@@ -5,9 +5,35 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (IT1 complete + patience measured; keystone static-object detector KILLED CHEAP with a reusable gate harness; #43–#52 merged)._
+_Last updated: 2026-07-03 (ADR-002 gate-scoring harness built + oracle-address verdict resolved; IT1 complete + patience measured; keystone static-object detector KILLED CHEAP with a reusable gate harness; #43–#52 merged)._
 
-**⇒⇒ NEWEST (2026-07-03, cont.) — KEYSTONE PROBE: general STATIC-OBJECT detector KILLED CHEAP (PR #51 design + #52
+**⇒⇒ NEWEST (2026-07-03, cont.) — ADR-002 SS9 gate: offline scoring harness BUILT + BASELINED (free/offline
+half of roadmap-v2 Rung 0 Phase B/C); the 0xC120-vs-0xD389 oracle question is RESOLVED. Report:
+`reports/2026-07-03-adr002-gate-plan.md`. ⇒⇒**
+- **Oracle verdict:** `0xC120` read as **BCD** is the correct Cave Noire life register; `0xD389` is
+  **WRONG** (confirmed against `runs/2026-06-26_cavenoire_combat_auto`'s 2000-frame combat recording — at
+  frames with visible HP 6/2/1, `0xD389` reads a stuck `7`). `world_mcp.py` already wires `0xC120`
+  correctly; **`play_cave_noire.py` still hardcodes the wrong `0xD389`** — a one-line follow-up fix, not
+  done here (guardrail: no brain/perceiver edits this pass). The 2-anchor `eval/fixtures/cavenoire_hp_oracle`
+  fixture can't distinguish the two addresses (both happen to match at HP 7 and 10); needed a 3rd,
+  richer data point to disambiguate.
+- **Built:** `eval/score_hud_grounding.py` — replays recorded frames, runs a hand-written candidate
+  region-digit detector (self-calibrated from few oracle-known anchors, no segmentation, per roadmap-v2
+  Phase B), and scores it vs the `hp` oracle per SS9's two arms (grounds-truth + rejects-decoy), with a
+  pinned pre-stated threshold (truth agreement >=0.90 AND decoy <=0.50 AND gap >=0.30 — SS9 as written had
+  no metric, so this pass pins one per the SS11 "gate that can't fail" tripwire).
+- **Baseline (real, not rigged):** truth-region agreement = **0.362** (FAILS the 0.90 bar — genuine
+  headroom, not a bug: the naive detector misreads "10" as "20" and drops single digits under HUD noise);
+  decoy-region agreement = **0.000** (cleanly rejected). **GATE: FAIL** for this hand-written candidate —
+  expected and correct, since arm (a) is supposed to be gradeable-and-failable, not a rubber stamp.
+- **Out of scope this pass (by design):** the live brain-hypothesizes-region-R surface (`read_text` /
+  `whats_changed` / consequence primitives on `world_mcp.py`) — that's the one remaining PAID Phase D run,
+  fully spec'd in the report. The ADR-002 ontology/naming layer itself remains untouched and ungated.
+- **⇒ NEXT:** the smallest paid run that settles SS9 is one live Claude-over-MCP session hypothesizing "region
+  R = my life" + one decoy, scored by this harness (or a live variant) against the now-confirmed `0xC120`
+  oracle. See the report for the exact steps.
+
+**⇒⇒ PRIOR (2026-07-03) — KEYSTONE PROBE: general STATIC-OBJECT detector KILLED CHEAP (PR #51 design + #52
 harness/detector, both merged). main `42c23f6`. The referential-grounding rung is scoped + gated; the naming
 layer (ADR-002), not a cheap pixel detector, is the real path. ⇒⇒**
 - **What we asked:** can a CHEAP, GENERAL (color-agnostic) static-object channel find "the Poké Ball" on screen —
