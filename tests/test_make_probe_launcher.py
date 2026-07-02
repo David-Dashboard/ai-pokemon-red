@@ -77,6 +77,9 @@ def test_make_launcher_gba_writes_gba_server(tmp_path):
     gba_sh = open(os.path.join(out_dir, "gba_server.sh"), encoding="utf-8").read()
     assert "kirby_gba" in gba_sh
     assert "gba-spike" in gba_sh
+    # repo-path interpolations must be quoted (a repo root with a space would otherwise break cd/PYTHONPATH)
+    assert 'cd "' in gba_sh
+    assert 'export PYTHONPATH="' in gba_sh
 
 
 def test_make_launcher_nds_uses_docker_nds_game(tmp_path):
@@ -110,3 +113,34 @@ def test_probe_brief_identical_across_games_except_name(tmp_path):
     normalized_a = brief_a.replace("GameA", "X").replace("game_a", "x")
     normalized_b = brief_b.replace("GameB", "X").replace("game_b", "x")
     assert normalized_a == normalized_b
+
+
+def test_slug_collision_gets_hash_suffix_not_overwrite(tmp_path):
+    """Two ROMs whose sanitized names collide in the first 60 chars must NOT silently share a launcher
+    dir (review finding on PR #65) — the second gets a short-hash-suffixed slug."""
+    long_a = "X" * 70 + "A.gb"           # both truncate to the same 60-char slug
+    long_b = "X" * 70 + "B.gb"
+    rom_a = _write_fake_rom(tmp_path, long_a)
+    rom_b = _write_fake_rom(tmp_path, long_b)
+    assert slug_for(rom_a) == slug_for(rom_b)     # precondition: this IS a collision
+
+    out_a = make_launcher(rom_a, repo_root=str(tmp_path))
+    out_b = make_launcher(rom_b, repo_root=str(tmp_path))
+
+    assert out_a != out_b
+    assert os.path.isdir(out_a) and os.path.isdir(out_b)
+    # the first launcher still points at ROM A (not clobbered by B's stamp)
+    mcp_a = open(os.path.join(out_a, ".mcp.json"), encoding="utf-8").read()
+    assert long_a in mcp_a and long_b not in mcp_a
+    mcp_b = open(os.path.join(out_b, ".mcp.json"), encoding="utf-8").read()
+    assert long_b in mcp_b
+    # the suffixed slug still respects the 60-char bound
+    assert len(os.path.basename(out_b)) <= len("probe_") + 60
+
+
+def test_restamping_same_rom_reuses_same_dir(tmp_path):
+    """Re-running the generator for the SAME ROM must update in place, not spawn a hash-suffixed twin."""
+    rom = _write_fake_rom(tmp_path, "SameGame.gb")
+    out_1 = make_launcher(rom, repo_root=str(tmp_path))
+    out_2 = make_launcher(rom, repo_root=str(tmp_path))
+    assert out_1 == out_2

@@ -21,6 +21,7 @@ CI-safe: this module only writes files (no ROM/docker/network needed to test it)
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import stat
 
@@ -143,8 +144,8 @@ def _gba_server_sh(slug: str, rom_path: str, repo_wsl: str, repo_root: str) -> s
 # MCP world server for {slug} (GBA) — runs world_mcp.py directly in WSL using the ~/gba-spike mgba build
 # (mgba is not pip-installable; the Docker image is GB/NDS-only). Mirrors runs/brain_emerald/gba_server.sh.
 export LD_LIBRARY_PATH=/home/nvidia/gba-spike
-export PYTHONPATH=/home/nvidia/gba-spike/mgba-build/python/lib.linux-x86_64-3.8:{repo_wsl}
-cd {repo_wsl} || exit 3
+export PYTHONPATH="/home/nvidia/gba-spike/mgba-build/python/lib.linux-x86_64-3.8:{repo_wsl}"
+cd "{repo_wsl}" || exit 3
 exec /home/nvidia/gba-spike/py311/python/bin/python3.11 world_mcp.py --game {_GBA_CARRIER_GAME} --rom "{rel_rom}" \\
   --out runs/probe_{slug}/world --keep-frames
 """
@@ -196,8 +197,21 @@ def make_launcher(rom_path: str, game_name: str | None = None, out_root: str | N
     family = family_for(rom_path)
     slug = slug_for(rom_path)
     game_name = game_name or os.path.splitext(os.path.basename(rom_path))[0]
-    out_root = out_root or os.path.join(repo_root, "runs", f"probe_{slug}")
+    if out_root is None:
+        # Slug-collision guard (review finding on PR #65): two ROMs whose sanitized names collide in the
+        # first 60 chars (e.g. near-duplicate regional dumps) must not silently overwrite each other's
+        # launcher. A .rom marker in the dir records which ROM it was stamped for; a DIFFERENT rom path
+        # on an existing dir gets a short-hash-suffixed slug instead. Re-stamping the SAME rom is fine.
+        candidate = os.path.join(repo_root, "runs", f"probe_{slug}")
+        marker = os.path.join(candidate, ".rom")
+        if os.path.isdir(candidate) and os.path.isfile(marker):
+            with open(marker, encoding="utf-8") as f:
+                if f.read().strip() != rom_path:
+                    slug = f"{slug[:51]}_{hashlib.md5(rom_path.encode('utf-8')).hexdigest()[:8]}"
+        out_root = os.path.join(repo_root, "runs", f"probe_{slug}")
     os.makedirs(out_root, exist_ok=True)
+    with open(os.path.join(out_root, ".rom"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(rom_path + "\n")
 
     repo_wsl = _wsl_path(repo_root)
 

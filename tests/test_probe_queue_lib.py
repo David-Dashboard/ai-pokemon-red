@@ -6,6 +6,8 @@ import json
 import time
 
 from tools.probe_queue_lib import (
+    LIMIT_RETRIES_EXHAUSTED,
+    MAX_LIMIT_RETRIES,
     ledger_row,
     ledger_slugs,
     parse_session_limit,
@@ -87,6 +89,19 @@ def test_parse_total_cost_usd_none_when_no_result_line(tmp_path):
 
 def test_ledger_row_shape():
     row = ledger_row("game_a", 0, 12.345, 1.5)
-    assert row == {"slug": "game_a", "exit": 0, "duration": 12.3, "cost": 1.5}
+    assert row == {"slug": "game_a", "exit": 0, "duration": 12.3, "cost": 1.5, "limit_retries": 0}
     row_no_cost = ledger_row("game_b", 1, 5.0, None)
     assert row_no_cost["cost"] is None
+
+
+def test_ledger_row_limit_retries_exhausted():
+    """On retry-cap exhaustion the queue-runner writes exit=LIMIT_RETRIES_EXHAUSTED with the counter —
+    the row still counts the slug as attempted (idempotent skip applies) and shows up in the report."""
+    row = ledger_row("game_a", LIMIT_RETRIES_EXHAUSTED, 100.0, None, limit_retries=MAX_LIMIT_RETRIES)
+    assert row["exit"] == "limit_retries_exhausted"
+    assert row["limit_retries"] == MAX_LIMIT_RETRIES
+    assert row["cost"] is None
+
+
+def test_retry_cap_is_bounded_and_positive():
+    assert isinstance(MAX_LIMIT_RETRIES, int) and 1 <= MAX_LIMIT_RETRIES <= 24

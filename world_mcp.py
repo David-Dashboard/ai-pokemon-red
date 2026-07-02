@@ -123,9 +123,9 @@ GAMES = {
     # Generic GB/GBC lean world: any .gb/.gbc ROM via --rom, no game-specific plugin/oracle (probe-only —
     # watch={}, no oracle entries for generic worlds). Mirrors kirby_gba/emerald_gba's shared-plugin pattern,
     # GB family instead of GBA: PerceptionPlugin (default PyBoy emulator, no injection needed) +
-    # FollowCameraPerceiver + a locally-built sandbox (_gb_generic_sandbox — no game package to source one from).
+    # FollowCameraPerceiver + a locally-built sandbox (_gb_generic_sandbox — the _GB_GENERIC_WORLDS branch in
+    # World.__init__ short-circuits the "sandbox" key lookup, so this entry deliberately has none).
     "gb_generic": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
-                   "sandbox": "GB_GENERIC_MCP_SANDBOX",
                    "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                    "rom": "roms/PLACEHOLDER.gb",   # always override with --rom; no default GB ROM makes sense here
                    "watch": {}},

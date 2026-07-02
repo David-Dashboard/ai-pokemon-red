@@ -120,5 +120,16 @@ def parse_total_cost_usd(transcript_path: str) -> float | None:
     return None
 
 
-def ledger_row(slug: str, exit_code: int, duration_s: float, cost_usd: float | None) -> dict:
-    return {"slug": slug, "exit": exit_code, "duration": round(duration_s, 1), "cost": cost_usd}
+# Hard cap on session-limit retries per slug (review finding on PR #65: the retry loop was unbounded —
+# a wording drift in the limit message could re-bill a stuck slug once an hour forever). On exhaustion
+# the queue-runner records exit="limit_retries_exhausted" for the slug and MOVES ON to the next one.
+MAX_LIMIT_RETRIES = 6
+LIMIT_RETRIES_EXHAUSTED = "limit_retries_exhausted"
+
+
+def ledger_row(slug: str, exit_code: int | str, duration_s: float, cost_usd: float | None,
+               limit_retries: int = 0) -> dict:
+    """One probe attempt's ledger record. `exit_code` is run.sh's exit int, or the string
+    LIMIT_RETRIES_EXHAUSTED when the session-limit retry cap ran out for this slug."""
+    return {"slug": slug, "exit": exit_code, "duration": round(duration_s, 1), "cost": cost_usd,
+            "limit_retries": limit_retries}
