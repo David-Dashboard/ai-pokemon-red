@@ -6,6 +6,24 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-07-03 — It1 COMPLETE (party 0→1) + one brain across GB/GBA/NDS live
+- **What:** the first human-given task ran end-to-end through the seam and was oracle-verified (Charmander,
+  $3.66, 77 decisions); the SAME `claude -p` brain then played Emerald (GBA, WSL mgba) and Kirby SSU (NDS,
+  Docker DeSmuME) live — 3 consoles, zero brain edits, only launchers/perceivers differ. PRs #43/#44 merged.
+- **The failure ladder is the finding:** 5 Red runs each died one rung HIGHER — pose corruption (fixed: fade-
+  gated transitions + pose-LOST/re-anchor, PR #44) → static-object grounding ("which tile is a ball?" —
+  bridged in the brief, NOT solved; the keystone gap made concrete) → confabulated success ("I'm in a battle
+  so I must have a starter" — an evidence-only stop rule fixed it) → decision-budget variance. Perception and
+  briefing, never the brain: constancy held everywhere, again.
+- **Method lessons:** (1) the oracle beat the narration TWICE in one night — once brain-wrong (claimed battle
+  = starter), once brain-right (screen said "received", RAM counter lagged one dialog box; the metric's edge,
+  not the brain's error). Score only against the oracle, and define the predicate at a stable boundary (back
+  in free movement, not mid-textbox). (2) The FREE in-container JSON-RPC probe found 3 stacked native-lib
+  failures (glib→GL→SDL-driver) for $0 before any paid run — probe-first works for infra, not just perception.
+  (3) Two implementer agents sharing one working tree = discarded edits; per-agent `git worktree` is mandatory.
+- **Next leverage:** NDS symbolic render is nearly empty (Kirby's #1 gap); the "patience" auto-advance reflex
+  is now demanded by two worlds; then real referential grounding to un-bridge the Red brief.
+
 ## 2026-06-25 — S4 MCP harness (the WORLD as an MCP server) + four sharp-edge fixes
 - **What:** built `world_mcp.py` — a stdlib MCP stdio server wrapping Cave Noire so a fresh Claude Code instance
   IS the System-2 brain (ADR-001's S4, realized). Symbolic-only, dual-process, no-leak; verified end-to-end by a

@@ -5,7 +5,7 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-02 (It1 dialog-perception fixed + validated e2e; brain now reaches Oak's lab + starter prompt; #41 merged)._
+_Last updated: 2026-07-03 (IT1 TASK COMPLETE — party 0→1 oracle-verified; same brain played GB+GBA+NDS live; #43/#44 merged, #45 open)._
 
 ---
 
@@ -82,7 +82,59 @@ The whole framework is one small loop: `perceive → recall → decide → act �
 check `origin/main` and `gh pr list --state all` before trusting local branch state (a squash-merge orphans the
 source branch's commits → "N ahead of main" can mean already-merged).**
 
-**⇒⇒ NEWEST (2026-07-02) — IT1 DIALOG-PERCEPTION FIXED + VALIDATED END-TO-END; PR #41 MERGED (main `2360713`).
+**⇒⇒ NEWEST (2026-07-03, overnight autonomous session) — IT1 TASK COMPLETE (party 0→1, ORACLE-VERIFIED) +
+THE SAME BRAIN PLAYED GB + GBA + NDS LIVE THROUGH ONE SEAM. PRs #43 + #44 MERGED (main `5d9f26d`);
+PR #45 (Dockerfile NDS libs) OPEN for David. This supersedes the 07-02 block below. ⇒⇒**
+
+- **IT1 CLOSED (audit #5, account B, $3.66, 77 decisions): `watch.party` 0→1 at oracle step 380**, nickname
+  declined, back in free movement, clean stop on evidence. Run artifacts: `runs/brain_red_starter/`. It took
+  5 paid runs (~$13.4 total); each failed one rung HIGHER: #1 pose corruption (fixed in code, #44) → #2 object
+  grounding ("which tile is a ball?" — bridged in the brief; the REAL fix is the referential/semantic layer,
+  the documented keystone gap) → #3 stopped at the stats screen on a wrong inference → #4 travel variance ate
+  the 60-cap → #5 done at cap 90. **Residual known gaps, deliberately brief-bridged, NOT solved:** static-object
+  perception (the Poké-Ball tiles), and premature-stop/confabulated-success (fixed with an evidence-only stop
+  rule in the brief; a harness-side success-predicate check would be the durable fix).
+- **PR #44 (merged) — the interior-pose fix, live-validated:** pose held stable through the entire lab
+  cutscene/dialog in all 4 post-fix runs (the 07-02 (0,0)+mis-walled corruption is GONE). Design: transitions
+  now require FADE-CONFIRMED + single-unambiguous-direction (`_single_dir`); a residual-only scene cut → pose
+  LOST (no wall/cell/edge writes) → ONE deliberate re-anchor to a fresh place on a settled single-dir step with
+  `frames_advanced > 0`; the fade flag `ctx["transition"]` is now actually WIRED live (a cheap fade watch in
+  `core/perception_plugin.py` samples action ticks — it never was before, the whole flag path was dead);
+  reverse-edge reuse gated (bogus mints can't capture later scene changes); stranded places filtered from
+  advertised frontiers. Golden replay fixture `eval/fixtures/starter_cutscene_pose/` + regression tests.
+  2 adversarial reviewers (one REPRODUCED a surviving bug variant through the fixture — single-dir cutscene
+  steps could still mint; fixed via the fade gate) + a Sonnet re-review of the shared-core fade watch (clean;
+  open empirical gap: fade false-positive rate on dark caverns unmeasured). Stairs (no fade) now re-anchor
+  honestly instead of transiting — a known, accepted behavior change.
+- **PR #43 (merged) — GBA + NDS wired into `world_mcp`:** emulator dispatch by ROM extension (.nds→DeSmuME,
+  .gba→mgba `GBAEmulator`, lazy imports), fixed the live-confirmed bug that `--game nds` built a PyBoy and died;
+  `kirby_gba`/`emerald_gba` registered (`FollowCameraPerceiver` in `core/grid_perceiver.py`); GBA 10-button set
+  (incl. l/r); `--record` fails loud for injected emulators (`--keep-frames` works — plugin-side); --rom/--game
+  family validation; ROM-gated test skips (CI green). 424+ tests.
+- **CROSS-GAME LIVE AUDITS (the constancy bet, 3 consoles, same brain, zero brain edits):**
+  - **Emerald (GBA, $1.31):** booted title→naming→brief free movement (9 auto-walked tiles) via the WSL
+    `~/gba-spike` env (launcher `runs/brain_emerald/`; mgba NOT in Docker). Ceiling: Emerald's long scripted
+    intro chain (truck→mom→clock) ate the 40-cap — exactly the designed-but-unbuilt "patience/auto-advance"
+    System-1 reflex. Also: naming screen needed `start` to confirm (`a` loops) — learned live by the brain.
+  - **Kirby Super Star Ultra (NDS, $0.83 + $0.42 failed 1st try):** gameplay in ~16 decisions THROUGH the
+    touch-driven save menus (`touch_target`), then real platforming (jump/inhale/float). **World-side gap it
+    flagged: the NDS `observe` render is nearly EMPTY** (a context word; no touch_targets list/walls/outcome
+    despite tool descriptions promising them) — the brain tapped save menus blind. Fix the NDS symbolic render
+    next; also the side-scroller mismatch of the top-down grid autopilot is confirmed live.
+  - **Docker image now supports NDS** (PR #45: libglib2.0-0/libSDL2/libgl1 + `SDL_VIDEODRIVER=dummy` —
+    py-desmume imports fine but DeSmuME init dlopens these; found by iterating a FREE in-container JSON-RPC
+    probe, each error naming the next lib). Image rebuilt locally with the fix; **merge #45** to make it stick.
+- **⇒ NEXT (in order of leverage):** (1) **NDS symbolic render** — surface touch_targets/walls/outcome in
+  `observe` (the Kirby audit's #1 gap; world-side, small). (2) **"Patience" auto-advance reflex** (designed
+  2026-07-02, now demanded by TWO worlds: Emerald's intro chain + Red's cutscene cost). (3) **Static-object/
+  referential grounding** (the keystone: "the Poké Ball", "Oak's lab" — the It1 bridge was brief-side, not
+  perception). (4) Un-bridge the Red brief (remove the table-location hint) once (3) exists and re-audit.
+- **Ops:** account-B runs tonight totaled ≈ $16 across 8 sessions, no 429s. Reviewer-model policy (David):
+  Sonnet by default, Opus for risky shared-core. Merge policy: David authorized #43/#44 explicitly; new PRs
+  (e.g. #45) still need his click or per-PR authorization. Agent-teamwork gotcha: two implementers sharing the
+  main working tree collided (branch switches discard sibling edits) — use `git worktree` per agent, always.
+
+**⇒⇒ (2026-07-02) — IT1 DIALOG-PERCEPTION FIXED + VALIDATED END-TO-END; PR #41 MERGED (main `2360713`).
 Brain now clears Oak's whole intro cutscene and reaches the lab + starter prompt. Party still 0 — remaining
 blocker is the INTERIOR POSE bug (task #7). This supersedes the 07-01 "task one dialog short" item below. ⇒⇒**
 
