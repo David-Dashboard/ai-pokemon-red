@@ -45,6 +45,7 @@ class _FakeEmu:
     def __init__(self, rom_path: str, headless: bool = True):
         self.rom_path = rom_path
         self.headless = headless
+        self.frame = 0   # PerceptionPlugin reads emu.frame for ctx["frames_advanced"] (PR #44)
 
     def load_state(self, path):
         pass
