@@ -275,6 +275,15 @@ class PerceptionPlugin:
         except OSError:
             pass
 
+    # Contexts that mean "free movement" across the two perceiver vocabularies in use: pokemon_red's
+    # own perceiver emits "overworld"; the shared GridPerceiver (cave_noire, gauntlet, NDS) emits
+    # "gameplay" for the exact same situation. Treating only "overworld" as free-movement made every
+    # GridPerceiver-based world (including NDS) permanently render the degenerate branch below — the
+    # spatial view (pose/walls/frontiers/entities/touch_targets) never surfaced, and gameplay itself got
+    # mislabeled "NOT free movement". Everything else (static/menu/unknown/dialog/battle_text/...) is
+    # correctly non-free-movement and unaffected by this change.
+    _FREE_MOVEMENT_CONTEXTS = ("overworld", "gameplay")
+
     def _render_symbolic(self, sym) -> str:
         """Turn the SymbolicState into a navigation-useful prompt. Game-agnostic (reads only seam fields)."""
         pose = sym.pose or {}
@@ -282,10 +291,12 @@ class PerceptionPlugin:
         la = sym.last_action or {}
         lines = [self._render_header]
 
-        # Non-overworld: the exploration render (pose/cells/frontiers) is degenerate/stale during a
+        # Non-free-movement: the exploration render (pose/cells/frontiers) is degenerate/stale during a
         # dialog and previously confused the brain into thinking perception had frozen. Lead with the
-        # decoded text instead and skip the spatial lines.
-        if sym.context != "overworld":
+        # decoded text instead and skip the spatial lines. touch_targets and the last-move outcome are
+        # still surfaced here (unaffected by pose staleness) — a brain often needs to tap through exactly
+        # these screens (title/menus) and was otherwise flying blind.
+        if sym.context not in self._FREE_MOVEMENT_CONTEXTS:
             if sym.screen_text:
                 lines.append(f"On-screen text (you are in a {sym.context}, NOT free movement): "
                              f"\"{sym.screen_text}\"")
@@ -295,6 +306,18 @@ class PerceptionPlugin:
                     lines.append("This is a menu choice to read and decide, not a place to walk.")
             else:
                 lines.append(f"You are in a {sym.context}, NOT free movement.")
+            action, outcome = la.get("action"), la.get("outcome")
+            if action and outcome == "blocked":
+                lines.append(f"Last move '{action}' -> BLOCKED: you did NOT move.")
+            elif action and outcome == "moved":
+                lines.append(f"Last move '{action}' -> moved.")
+            touch_targets = sm.get("touch_targets") or []
+            if touch_targets:
+                tgts = ", ".join(
+                    f"{i}:({t['cx']},{t['cy']})" for i, t in enumerate(touch_targets[:12])
+                )
+                lines.append(f"Touch targets detected (id:(cx,cy), area-sorted): {tgts}. "
+                             f"Use touch_target(id) to tap one.")
             return "\n".join(lines)
 
         if pose.get("lost"):
@@ -330,6 +353,13 @@ class PerceptionPlugin:
                          f"Add 'GOTO: x y' to have a free pathfinder walk you to one.")
         if sym.screen_text:  # rare in overworld, but harmless to surface if present
             lines.append(f"On-screen text: \"{sym.screen_text}\"")
+        touch_targets = sm.get("touch_targets") or []
+        if touch_targets:
+            tgts = ", ".join(
+                f"{i}:({t['cx']},{t['cy']})" for i, t in enumerate(touch_targets[:12])
+            )
+            lines.append(f"Touch targets detected (id:(cx,cy), area-sorted): {tgts}. "
+                         f"Use touch_target(id) to tap one.")
         return "\n".join(lines)
 
     def drain_events(self) -> list[Event]:
