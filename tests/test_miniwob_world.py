@@ -2,11 +2,15 @@
 MiniWobSession/_miniwob_static_tools). CI-safe: no browser, no miniwob/selenium install — a FakeMiniWobEnv
 stands in for the real gymnasium env, monkeypatched into MiniWobWorld so these tests run anywhere.
 
-Covers (per the plan):
-  1. Click-coordinate clamping to the real 177px viewport (the probe's documented gotcha).
-  2. observe()'s payload shape (utterance + screen size + blobs; no DOM, no reward, no fields).
-  3. reward/dom never appear in ANY MiniWobSession.call() tool-result path (grep-style assertion).
+Covers (per the plan + the PR #64 fix round):
+  1. Click bounds: MiniWobWorld's defense-in-depth clamp AND MiniWobSession's loud out-of-viewport
+     rejection (the probe's 177px gotcha; silent clamping corrupts brain feedback).
+  2. observe()'s payload shape (utterance + screen size + episode status; no DOM, no reward, no fields).
+  3. reward/dom/done never appear in ANY MiniWobSession.call() action tool-result path (grep-style).
   4. tools/list wiring: miniwob_* worlds advertise exactly the expected tool set; other worlds unaffected.
+  5. The wall-clock episode-timer override: core.EPISODE_MAX_TIME is injected via JS on EVERY reset, and
+     the env is constructed with the raw (undiscounted) reward_processor.
+  6. Selenium exception sanitization + --record failing loud for this family.
 """
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ import numpy as np
 import pytest
 
 import world_mcp
-from core.miniwob_world import MiniWobWorld, VIEWPORT_HEIGHT, VIEWPORT_WIDTH
+from core.miniwob_world import EPISODE_MAX_TIME_MS, MiniWobWorld, VIEWPORT_HEIGHT, VIEWPORT_WIDTH
 from world_mcp import GAMES, MiniWobSession, _MINIWOB_WORLDS, _static_tools
 
 
@@ -25,7 +29,24 @@ from world_mcp import GAMES, MiniWobSession, _MINIWOB_WORLDS, _static_tools
 # Fake miniwob env: a gymnasium-shaped Env stand-in, no browser/selenium/miniwob install needed.
 # ---------------------------------------------------------------------------
 
+class _FakeDriver:
+    """Records execute_script calls so tests can assert the EPISODE_MAX_TIME JS injection happened."""
+    def __init__(self):
+        self.scripts: list[str] = []
+
+    def execute_script(self, script, *args):
+        self.scripts.append(script)
+
+
+class _FakeInstance:
+    def __init__(self):
+        self.driver = _FakeDriver()
+
+
 class _FakeUnwrapped:
+    def __init__(self):
+        self.instance = _FakeInstance()
+
     def create_action(self, action_type, **kwargs):
         return {"type": action_type, **kwargs}
 
@@ -33,10 +54,11 @@ class _FakeUnwrapped:
 class _FakeMiniwobEnv:
     """Minimal stand-in for miniwob.envs.miniwob_envs.ClickButtonEnv etc. Deliberately includes
     dom_elements/fields in its obs dict (like the real env) so MiniWobWorld's withholding is
-    exercised, not just assumed."""
+    exercised, not just assumed. Accepts reward_processor like the real MiniWoBEnvironment."""
 
-    def __init__(self, render_mode=None):
+    def __init__(self, render_mode=None, reward_processor=None):
         self.render_mode = render_mode
+        self.reward_processor = reward_processor
         self.unwrapped = _FakeUnwrapped()
         self._step_n = 0
 
@@ -136,19 +158,46 @@ def test_click_within_bounds_is_unchanged(fake_env_cls):
     w.close()
 
 
-def test_miniwob_session_click_reports_clamp_in_text(fake_env_cls, tmp_path):
+def test_miniwob_session_rejects_out_of_viewport_click(fake_env_cls, tmp_path):
+    """PR #64 finding 5: a click outside the clickable band must be REJECTED loudly, not silently
+    clamped to a different pixel — and the env must NOT be stepped."""
     args = _args("miniwob_click_button", str(tmp_path / "out"))
     sess = MiniWobSession(args)
     try:
-        result = sess.call("click", {"x": 50, "y": 999})
+        result = sess.call("click", {"x": 50, "y": 190})   # y in the unreachable 177-209 band
         text = " ".join(c["text"] for c in result if c.get("type") == "text")
-        assert "clamped" in text
+        assert "error" in text and "outside" in text
+        assert "No click was performed" in text
+        assert sess.mw.env._step_n == 0, "out-of-viewport click must not step the env"
+    finally:
+        sess.close()
+
+
+def test_miniwob_session_rejects_negative_click_coords(fake_env_cls, tmp_path):
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    sess = MiniWobSession(args)
+    try:
+        result = sess.call("click", {"x": -1, "y": 50})
+        text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        assert "error" in text and sess.mw.env._step_n == 0
+    finally:
+        sess.close()
+
+
+def test_miniwob_session_in_viewport_click_steps_env(fake_env_cls, tmp_path):
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    sess = MiniWobSession(args)
+    try:
+        result = sess.call("click", {"x": 25, "y": 105})
+        text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        assert "[click (25,105) -> ok]" in text
+        assert sess.mw.env._step_n == 1
     finally:
         sess.close()
 
 
 # ---------------------------------------------------------------------------
-# 2. observe()'s payload shape: utterance, screen size, blobs — no DOM, no fields, no reward.
+# 2. observe()'s payload shape: utterance, screen size, episode status — no DOM, no fields, no reward.
 # ---------------------------------------------------------------------------
 
 def test_miniwob_world_never_stores_dom_or_fields(fake_env_cls):
@@ -185,11 +234,31 @@ def test_observe_content_has_no_dom_or_field_keywords(fake_env_cls, tmp_path):
         sess.close()
 
 
+def test_observe_reports_episode_status(fake_env_cls, tmp_path):
+    """observe carries the episode status line (in progress -> over after a terminating action ->
+    back to in progress after reset_episode). This is the ONLY place episode-over surfaces."""
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    sess = MiniWobSession(args)
+    try:
+        text = sess.call("observe", {})[0]["text"]
+        assert "Episode in progress" in text
+        result = sess.call("click", {"x": 25, "y": 105})   # fake env terminates on CLICK_COORDS
+        text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        assert "Episode over" in text and "reset_episode" in text
+        result = sess.call("reset_episode", {})
+        text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        assert "Episode in progress" in text
+    finally:
+        sess.close()
+
+
 # ---------------------------------------------------------------------------
-# 3. reward/dom never appear in ANY MiniWobSession.call() tool-result path (mocked serve loop).
+# 3. reward/dom/done never appear in ANY MiniWobSession.call() tool-result path (mocked serve loop).
+#    "done" (PR #64 finding 3): the env's terminated flag is oracle-derived — the brain may see the
+#    plain-English episode-status line in observe, but never the raw done flag in an action result.
 # ---------------------------------------------------------------------------
 
-_FORBIDDEN_SUBSTRINGS = ("reward", "dom_element", "\"fields\"", "'fields'")
+_FORBIDDEN_SUBSTRINGS = ("reward", "dom_element", "\"fields\"", "'fields'", "done")
 
 
 def test_no_tool_result_ever_contains_reward_or_dom(fake_env_cls, tmp_path):
@@ -262,3 +331,83 @@ def test_click_tool_schema_requires_x_and_y():
     for spec in _static_tools("miniwob_click_button"):
         if spec["name"] == "click":
             assert set(spec["inputSchema"]["required"]) == {"x", "y"}
+
+
+# ---------------------------------------------------------------------------
+# 5. Wall-clock episode timer (PR #64 critical finding): the ~10s JS timer must be overridden on EVERY
+#    reset (each episode re-arms it) and the env constructed with the raw-reward processor, so a slow
+#    (deliberating LLM) brain isn't auto-failed at -1.0 / time-decayed.
+# ---------------------------------------------------------------------------
+
+def test_reset_injects_episode_max_time_override(fake_env_cls):
+    w = MiniWobWorld("click-button")
+    w.reset()
+    scripts = w.env.unwrapped.instance.driver.scripts
+    assert any("core.EPISODE_MAX_TIME" in s and str(EPISODE_MAX_TIME_MS) in s for s in scripts), \
+        f"reset() must inject the EPISODE_MAX_TIME JS override; scripts ran: {scripts}"
+    w.close()
+
+
+def test_every_reset_reapplies_the_timer_override(fake_env_cls):
+    """The override targets the live page's global, which each episode re-arms — one injection at
+    construction is not enough; every reset must re-apply it."""
+    w = MiniWobWorld("click-button")
+    w.reset()
+    w.reset()
+    scripts = [s for s in w.env.unwrapped.instance.driver.scripts if "core.EPISODE_MAX_TIME" in s]
+    assert len(scripts) == 2
+    w.close()
+
+
+def test_session_reset_episode_reapplies_the_timer_override(fake_env_cls, tmp_path):
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    sess = MiniWobSession(args)
+    try:
+        before = len([s for s in sess.mw.env.unwrapped.instance.driver.scripts
+                      if "core.EPISODE_MAX_TIME" in s])
+        sess.call("reset_episode", {})
+        after = len([s for s in sess.mw.env.unwrapped.instance.driver.scripts
+                     if "core.EPISODE_MAX_TIME" in s])
+        assert after == before + 1
+    finally:
+        sess.close()
+
+
+def test_env_constructed_with_raw_reward_processor(fake_env_cls):
+    """reward_processor must be the undiscounted raw_reward mapper — without it, even an untimed
+    episode's reward is scaled by the JS timer's linear decay."""
+    w = MiniWobWorld("click-button")
+    rp = w.env.reward_processor
+    assert rp is not None, "env must be constructed with reward_processor="
+    assert rp({"raw_reward": 0.7}) == pytest.approx(0.7)
+    assert rp({"raw_reward": -1}) == pytest.approx(-1.0)
+    w.close()
+
+
+# ---------------------------------------------------------------------------
+# 6. Selenium exception sanitization + --record fails loud (PR #64 findings 4 and 7).
+# ---------------------------------------------------------------------------
+
+def test_action_exception_is_sanitized_to_class_plus_first_line(fake_env_cls, tmp_path):
+    """A Selenium exception's str() can embed multi-line page/element/session dumps — only the class
+    name + first line may reach the brain."""
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    sess = MiniWobSession(args)
+    try:
+        secret = "SECRET-DOM-DUMP: <button ref=1>Ok</button>"
+        def _boom(action):
+            raise RuntimeError(f"element not interactable\n{secret}\nSession info: chrome=149")
+        sess.mw.env.step = _boom
+        result = sess.call("click", {"x": 25, "y": 105})
+        text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        assert "RuntimeError" in text and "element not interactable" in text
+        assert secret not in text and "Session info" not in text
+    finally:
+        sess.close()
+
+
+def test_record_fails_loud_for_miniwob_family(fake_env_cls, tmp_path):
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    args.record = True
+    with pytest.raises(SystemExit, match="--record is not supported"):
+        MiniWobSession(args)

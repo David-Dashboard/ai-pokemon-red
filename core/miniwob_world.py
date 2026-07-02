@@ -29,6 +29,23 @@ import numpy as np
 VIEWPORT_HEIGHT = 177
 VIEWPORT_WIDTH = 160  # TASK_WIDTH; the probe found no width surprise (only height was short of nominal).
 
+# MiniWoB tasks run a ~10s wall-clock JS timer (core.EPISODE_MAX_TIME in the task page's core.js) with
+# linear reward decay — a deliberating LLM brain scores -1.0 on every episode despite correct clicks
+# (validated live on PR #64: delay 0s -> +0.99, 5s -> +0.49, >=12s -> -1.0 with the env auto-terminating).
+# Every other world in this repo has the "the game waits between tool calls" property; this override is
+# that fix for the browser family. There is no episode_max_time kwarg on MiniWoBEnvironment.__init__
+# (checked), so the limit is overridden by JS injection into the live page on every reset, and the
+# matching _raw_reward reward_processor removes the linear time-scaling from the reported reward.
+EPISODE_MAX_TIME_MS = 86_400_000   # 24h — effectively untimed for an attended run
+
+
+def _raw_reward(metadata: dict) -> float:
+    """reward_processor for the env: the UNDISCOUNTED task reward (metadata["raw_reward"]), not the
+    time-scaled default. The JS override above stops the timer's early termination; this stops the
+    timer's linear decay from scaling whatever reward the (now effectively untimed) episode reports."""
+    return float(metadata["raw_reward"])
+
+
 # miniwob 1.0's own env classes, keyed by the short task names this world serves (registry mirrors
 # world_mcp.GAMES' one-entry-per-task convention). Extend this dict to add another miniwob task.
 _TASK_ENV_CLASSES = {
@@ -57,7 +74,9 @@ class MiniWobWorld:
 
         env_cls = getattr(miniwob_envs, _TASK_ENV_CLASSES[task_name])
         self.task_name = task_name
-        self.env = env_cls(render_mode=None if headless else "human")
+        # reward_processor=_raw_reward: undiscounted reward (the JS timer override in reset() handles
+        # the termination half of the wall-clock problem; this handles the reward-scaling half).
+        self.env = env_cls(render_mode=None if headless else "human", reward_processor=_raw_reward)
         self.last_info: dict = {}       # reward/done live here ONLY — caller (world_mcp) reads this for
                                         # oracle.jsonl logging; never forwarded to a tool result.
         self._utterance: str = ""
@@ -72,10 +91,19 @@ class MiniWobWorld:
         use_seed = seed if seed is not None else self._seed_counter
         self._seed_counter = use_seed + 1
         obs, info = self.env.reset(seed=use_seed)
+        self._disable_episode_timer()
         self.last_info = dict(info or {})
         self._utterance = str(obs.get("utterance", ""))
         self._screenshot = np.asarray(obs["screenshot"])
         return self._screenshot
+
+    def _disable_episode_timer(self) -> None:
+        """Raise the task page's JS episode timer (core.EPISODE_MAX_TIME) to effectively-untimed —
+        MUST run after every reset (each episode re-arms the timer from the page's global). Deliberately
+        NOT wrapped in try/except: if the injection fails, every slow episode silently scores -1.0 (the
+        exact wasted-paid-run failure this exists to prevent) — fail loud instead."""
+        driver = self.env.unwrapped.instance.driver
+        driver.execute_script(f"core.EPISODE_MAX_TIME = {EPISODE_MAX_TIME_MS};")
 
     @property
     def utterance(self) -> str:
@@ -93,7 +121,10 @@ class MiniWobWorld:
 
     def click(self, x: int, y: int) -> tuple[np.ndarray, bool]:
         """Click at (x, y), CLAMPED to the real clickable viewport (0..VIEWPORT_WIDTH-1 x
-        0..VIEWPORT_HEIGHT-1 — see the module docstring's viewport-height gotcha)."""
+        0..VIEWPORT_HEIGHT-1 — see the viewport-height gotcha above). The clamp here is defense-in-depth
+        against MoveTargetOutOfBoundsException; the MCP layer (world_mcp.MiniWobSession) REJECTS
+        out-of-viewport clicks loudly before ever calling this, so the brain is never silently
+        misclicked — targets rendered below y=176 are unreachable and the brain must be told so."""
         cx = _clamp(int(x), 0, VIEWPORT_WIDTH - 1)
         cy = _clamp(int(y), 0, VIEWPORT_HEIGHT - 1)
         action = self.env.unwrapped.create_action("CLICK_COORDS", coords=np.array([cx, cy]))

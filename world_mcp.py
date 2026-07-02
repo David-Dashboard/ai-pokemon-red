@@ -268,23 +268,27 @@ _TOUCH_TOOL = {
 }
 
 # --- MiniWoB++ computer-use tool specs. Same observe/read_region/whats_changed NAMES and meaning as the
-# GB region-tool worlds (a symbolic, no-DOM "things at (x,y)" view + a foveated crop) but observe() here
-# returns a blob-segmented entity list (core/blob.py) instead of a GridPerceiver's pose/walls/frontiers —
-# there is no tile grid in a browser task. click/type_text/press_key/reset_episode replace press_button
-# et al: a browser task's action vocabulary is mouse+keyboard, not a fixed game-button set.
+# GB region-tool worlds (a symbolic, no-DOM view + a foveated crop) — there is no tile grid in a browser
+# task. click/type_text/press_key/reset_episode replace press_button et al: a browser task's action
+# vocabulary is mouse+keyboard, not a fixed game-button set. NOTE (PR #64 review): observe deliberately
+# ships NO entity list — core/blob.py's RollingBg segmentation is motion-based (frame-vs-background diff)
+# and returns zero foreground on a static UI, so a blob list here was structurally dead code. Static-UI
+# segmentation is a NAMING-layer problem (what counts as a widget on a still frame), not a motion one —
+# deferred; until then the brain sees the page by tiling read_region crops (live-validated workable).
 _MINIWOB_OBSERVE_TOOL = {
     "name": "observe",
     "description": ("Look at the task page RIGHT NOW without acting. Returns the task instruction "
-                    "(utterance), the screen size, and a list of foreground BLOBS detected on screen "
-                    "(x,y centroid + bbox + area — meaning-free \"things here\", like a GB HUD blob scan; "
-                    "NOT a DOM, NOT element names). Call it first, and after any click/type/key."),
+                    "(utterance), the screen size, and the episode status (in progress / over). To SEE "
+                    "the page, tile read_region crops over it and read the upscaled images — there is "
+                    "no entity list and no DOM. Call observe first, and after any click/type/key."),
     "inputSchema": {"type": "object", "properties": {}},
 }
 _MINIWOB_CLICK_TOOL = {
     "name": "click",
-    "description": ("Click at pixel (x, y) on the task page. Coordinates are clamped to the real "
-                    "clickable viewport (0-159 x, 0-176 y) — clicking beyond that raises an "
-                    "out-of-bounds error in the underlying browser, so this tool clamps first."),
+    "description": ("Click at pixel (x, y) on the task page. (x, y) must be inside the real clickable "
+                    "viewport (x 0-159, y 0-176): the page is 210px tall but the headless browser can "
+                    "only click down to y=176, so a click outside that band is REJECTED with an error "
+                    "(never silently moved) — anything rendered below y=176 is unreachable."),
     "inputSchema": {"type": "object",
                     "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
                     "required": ["x", "y"]},
@@ -697,6 +701,12 @@ class MiniWobSession:
     the oracle here, logged to <out>/oracle.jsonl by _log_oracle, NEVER placed in a tool result."""
 
     def __init__(self, args) -> None:
+        # --record only threads through the PyBoy recorder; failing loud beats silently writing no MP4
+        # (house rule — same guard the GBA/NDS injected-emulator worlds have in World.__init__).
+        if getattr(args, "record", False):
+            raise SystemExit("--record is not supported for miniwob worlds: recording threads only "
+                             "through the default PyBoy emulator path. There is no per-step frame log "
+                             "for this family yet either — drop --record.")
         from core.miniwob_world import MiniWobWorld, VIEWPORT_HEIGHT, VIEWPORT_WIDTH
         self._viewport_h = VIEWPORT_HEIGHT
         self._viewport_w = VIEWPORT_WIDTH
@@ -705,6 +715,8 @@ class MiniWobSession:
         self._oracle_path = os.path.join(args.out, "oracle.jsonl")
         self._step_count = 0
         self._task = task
+        self._episode_over = False   # env terminated/truncated flag; surfaced ONLY as observe's
+                                     # episode-status line, never in an action result (PR #64 fix)
         self.mw = MiniWobWorld(task)
         self.mw.reset()
         self._frame_hist: list = []   # last <=2 (step, frame) pairs, for whats_changed (mirrors World)
@@ -729,28 +741,21 @@ class MiniWobSession:
         self._frame_hist.append((self._step_count, self.mw.screenshot))
         del self._frame_hist[:-2]
 
-    # -- observe: utterance + screen size + blob-segmented entities (core/blob.py) — no DOM, no reward --
+    # -- observe: utterance + screen size + episode status — no DOM, no reward, no entity list ----------
+    # (PR #64 review, finding 2: the previous blob entity list was structurally dead code — core/blob.py's
+    # RollingBg segmentation is motion-based, and the median background of N identical frames IS the
+    # frame, so a static UI always yielded zero foreground. Static-UI segmentation is a NAMING-layer
+    # problem — deciding what counts as a widget on a still frame — not a motion one; deferred. The brain
+    # sees the page by tiling read_region crops, which the live validation proved sufficient.)
 
     def _observe_content(self) -> list[dict]:
-        from core.blob import RollingBg, segment_blobs
         frame = self.mw.screenshot
         h, w = frame.shape[0], frame.shape[1]
-        # A fresh RollingBg per observe (no cross-call background model kept) means segment_blobs needs
-        # >= 3 frames of history to report anything; for a single static frame we fall back to a
-        # non-background pixel heuristic (mirrors the probe's ad hoc "non-white pixel" mask) so observe
-        # is never a silent no-op. This is a coarse "things at (x,y)" view, same spirit as the GB blob
-        # scan in PROBE_REPORT.md — not a precise segmentation.
-        bg = RollingBg(window=3)
-        blobs = []
-        for _ in range(3):   # feed the same frame 3x so RollingBg has enough history to score foreground
-            blobs = segment_blobs(frame, bg=bg)
-        lines = [f"Task: \"{self.mw.utterance}\"", f"Screen size: {w}x{h}."]
-        if blobs:
-            shown = sorted(blobs, key=lambda b: -b.area)[:20]
-            items = ", ".join(f"({b.cx:.0f},{b.cy:.0f}) area={b.area}" for b in shown)
-            lines.append(f"Detected {len(blobs)} blob(s) (x,y area, largest first): {items}.")
-        else:
-            lines.append("No blobs detected.")
+        status = ("Episode over — call reset_episode to start a fresh one."
+                  if self._episode_over else "Episode in progress.")
+        lines = [f"Task: \"{self.mw.utterance}\"", f"Screen size: {w}x{h}.", status,
+                 f"To see the page, tile read_region crops (max {_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} "
+                 "source pixels each) over the screen and read the upscaled images."]
         return [{"type": "text", "text": "\n".join(lines)}]
 
     # -- read_region / whats_changed: same crop/upscale-PNG + mean-abs-diff helpers as World -------------
@@ -799,6 +804,14 @@ class MiniWobSession:
 
     # -- dispatch ----------------------------------------------------------------------------------------
 
+    @staticmethod
+    def _sanitize_exc(e: BaseException) -> str:
+        """Exception class + the FIRST line of its message only (truncated). Selenium exceptions can
+        embed multi-line page/element/session dumps in str(e) — DOM-adjacent detail the brain must not
+        see (PR #64 finding 4); the first line is the human-readable summary."""
+        first = (str(e).splitlines() or [""])[0]
+        return f"{type(e).__name__}: {first[:200]}"
+
     def call(self, name: str, args: dict) -> list[dict]:
         args = args or {}
         if name == "observe":
@@ -808,35 +821,57 @@ class MiniWobSession:
         if name == "whats_changed":
             return self._whats_changed(args)
         if name == "reset_episode":
-            self.mw.reset()
+            try:
+                self.mw.reset()
+            except Exception as e:
+                return [{"type": "text", "text": f"reset_episode error: {self._sanitize_exc(e)}"}]
+            self._episode_over = False
             self._step_count += 1
             self._log_oracle(done=False)
             self._track_frame()
             return [{"type": "text", "text": "[reset_episode -> new episode started]"},
                     *self._observe_content()]
+        # Action results deliberately do NOT include the env's terminated flag — that is the oracle's
+        # verdict (PR #64 finding 3). The flag only updates observe's episode-status line + oracle.jsonl.
         if name == "click":
             if "x" not in args or "y" not in args:
                 return [{"type": "text", "text": "click needs integer x and y."}]
             x_in, y_in = int(args["x"]), int(args["y"])
-            cx = max(0, min(self._viewport_w - 1, x_in))
-            cy = max(0, min(self._viewport_h - 1, y_in))
-            _, done = self.mw.click(x_in, y_in)
-            clamp_note = "" if (cx, cy) == (x_in, y_in) else f" (clamped from ({x_in},{y_in}))"
-            head = f"[click ({cx},{cy}){clamp_note} -> done={done}]"
+            # REJECT out-of-viewport clicks loudly instead of silently clamping: a silent clamp turns
+            # "I clicked the thing at (50,190)" into an unrelated click at (50,176) — corrupted feedback
+            # the brain can't detect (PR #64 finding 5). The band below y=176 is genuinely unreachable.
+            if not (0 <= x_in < self._viewport_w and 0 <= y_in < self._viewport_h):
+                return [{"type": "text",
+                         "text": f"click error: ({x_in},{y_in}) is outside the clickable viewport "
+                                 f"(x 0-{self._viewport_w - 1}, y 0-{self._viewport_h - 1}). The page "
+                                 f"is taller than the viewport; anything below y={self._viewport_h - 1} "
+                                 "is unreachable in this headless browser. No click was performed."}]
+            try:
+                _, ep_over = self.mw.click(x_in, y_in)
+            except Exception as e:
+                return [{"type": "text", "text": f"click error: {self._sanitize_exc(e)}"}]
+            head = f"[click ({x_in},{y_in}) -> ok]"
         elif name == "type_text":
             if "text" not in args:
                 return [{"type": "text", "text": "type_text needs a string `text`."}]
-            _, done = self.mw.type_text(str(args["text"]))
-            head = f"[type_text -> done={done}]"
+            try:
+                _, ep_over = self.mw.type_text(str(args["text"]))
+            except Exception as e:
+                return [{"type": "text", "text": f"type_text error: {self._sanitize_exc(e)}"}]
+            head = "[type_text -> ok]"
         elif name == "press_key":
             if "key" not in args:
                 return [{"type": "text", "text": "press_key needs a string `key`."}]
-            _, done = self.mw.press_key(str(args["key"]))
-            head = f"[press_key {args['key']} -> done={done}]"
+            try:
+                _, ep_over = self.mw.press_key(str(args["key"]))
+            except Exception as e:
+                return [{"type": "text", "text": f"press_key error: {self._sanitize_exc(e)}"}]
+            head = f"[press_key {args['key']} -> ok]"
         else:
             return [{"type": "text", "text": f"unknown tool: {name}"}]
+        self._episode_over = ep_over
         self._step_count += 1
-        self._log_oracle(done=done)
+        self._log_oracle(done=ep_over)
         self._track_frame()
         return [{"type": "text", "text": head}, *self._observe_content()]
 
@@ -928,8 +963,13 @@ def main() -> int:
                 content = world().call(p.get("name", ""), p.get("arguments") or {})
                 _send({"jsonrpc": "2.0", "id": mid, "result": {"content": content}})
             except Exception as e:               # a tool error is an observation, not a crash (invariant 4)
+                # MiniWob family: a raw Selenium exception message can embed page/element/session dumps
+                # (DOM-adjacent detail) — forward only class + first line (PR #64 finding 4). MiniWob
+                # in-session action errors are already sanitized inside MiniWobSession.call; this covers
+                # construction-time failures (browser boot, first reset) that surface here.
+                text = f"error: {MiniWobSession._sanitize_exc(e)}" if _is_miniwob else f"error: {e}"
                 _send({"jsonrpc": "2.0", "id": mid,
-                       "result": {"content": [{"type": "text", "text": f"error: {e}"}], "isError": True}})
+                       "result": {"content": [{"type": "text", "text": text}], "isError": True}})
         elif method == "ping":
             _send({"jsonrpc": "2.0", "id": mid, "result": {}})
         elif method is None:

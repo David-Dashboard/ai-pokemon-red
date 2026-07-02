@@ -20,7 +20,12 @@
 #
 # world_mcp.py speaks JSON-RPC on stdout (fd1 is redirected to stderr internally to keep the channel
 # clean, same as the main Dockerfile's world_mcp.py entrypoint).
-FROM selenium/standalone-chromium:latest
+#
+# PINNED base (tag + digest): the 177px clickable-viewport measurement (core/miniwob_world.py
+# VIEWPORT_HEIGHT) is a fact about THIS Chromium build — an unpinned `latest` could silently drift the
+# browser and invalidate the clamp/reject band. This is the exact image the PR #64 live validation ran
+# against (selenium 4.45.0; `latest` resolved to this same digest at validation time).
+FROM selenium/standalone-chromium:4.45.0@sha256:9b10a9ccf68e3a18153a68a0705577157e20665d88d00bd4393a42e5839aa3d3
 
 USER root
 WORKDIR /app
