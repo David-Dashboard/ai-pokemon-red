@@ -7,6 +7,17 @@ Pinned so we don't drift. Companion docs: [`ROADMAP.md`](ROADMAP.md) (where the 
 - **Status:** Accepted — 2026-06-20.
 - **Supersedes:** the implicit "ai-pokemon-red is the harness that drives aria as a per-wake decision
   endpoint" model. The control is **inverted** relative to that: aria is the agent; the world serves it.
+- **Revised by ADR-002 (ACCEPTED 2026-07-03 — its §9 gate PASSED live):** the self-built-ontology move —
+  push the hand-code/learn boundary DOWN to a small fixed sensorimotor floor (`core/`); the per-world
+  perceiver's role is progressively taken by an ontology the **brain hypothesizes** and **behaviour grounds**,
+  compiled to System-1 skills; the seam becomes **queryable** (the foveated `read_region`/`whats_changed`
+  primitives are its first live instances); constancy = **the loop, not the schema**. Gate evidence: a
+  region-neutral live brain grounded "region R = my life" at 1.000 agreement across 3 distinct oracle hp
+  values and causally rejected a decoy (tightened protocol; degenerate first pass invalidated by us).
+  Full ADR + gate record: [`reports/_archive/2026-06-25-adr-002-ontology-discovery.md`](reports/_archive/2026-06-25-adr-002-ontology-discovery.md),
+  [`reports/2026-07-03-adr002-gate-plan.md`](reports/2026-07-03-adr002-gate-plan.md). ADR-001's dual-process
+  split, no-leak rule, and repo boundary stand unchanged; what ADR-002 revises is *where perception's
+  hand-coded line sits* and *what the seam can be asked*. Build-out stays gate-first (entities next).
 - **See also:** ADR-003 (Proposed) — the embodiment north-star contract —
   [`reports/_archive/2026-07-01-adr-003-embodiment-north-star-contract.md`](reports/_archive/2026-07-01-adr-003-embodiment-north-star-contract.md).
 

@@ -1,9 +1,19 @@
-# ADR-002 (PROPOSED) — Self-built ontology: move the hand-code/learn boundary DOWN
+# ADR-002 (ACCEPTED 2026-07-03) — Self-built ontology: move the hand-code/learn boundary DOWN
 
-**Status:** PROPOSED (2026-06-25). **Gated** on the grounding probe (§9). Revises — does not yet replace —
+**Status: ACCEPTED (2026-07-03) — the §9 gate PASSED live.** One paid Phase-D run (runs/brain_cn_gate/,
+$3.52): a region-neutral brain over MCP hypothesized "region R = my life" in Cave Noire combat, ground it
+through damage — truth agreement **1.000 over 15 step-aligned readings spanning 3 distinct oracle hp values**
+(10→8→5) — and rejected the ENEMY-counter decoy (0.000 agreement) with a causal argument. Scored by
+`eval/score_gate_run.py` at the pre-pinned 0.90/0.50/0.30 threshold PLUS the variation guard (a first,
+degenerate constant-hp PASS was invalidated by us and the protocol TIGHTENED before the passing re-run —
+see `reports/2026-07-03-adr002-gate-plan.md` + HANDOFF 2026-07-03). Promotion into `ARCHITECTURE.md` and the
+ROADMAP recast per this ADR's own clause below. ADR-001's seam remains in force where not revised here;
+build-out (entities generalization, the naming/anchoring layer) proceeds gate-first per §10.
+*(Original header follows.)*
+**Was:** PROPOSED (2026-06-25). **Gated** on the grounding probe (§9). Revises — does not yet replace —
 ADR-001 (`ARCHITECTURE.md`). ADR-001 stays **Accepted** until the probe validates the load-bearing claim;
 on PASS this is promoted into `ARCHITECTURE.md` as Accepted ADR-002 and ROADMAP is updated.
-**Origin:** the 2026-06-25 design discussion (System-1 ontology + primitives). **Not yet built.**
+**Origin:** the 2026-06-25 design discussion (System-1 ontology + primitives).
 
 ---
 
