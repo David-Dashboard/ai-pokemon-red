@@ -5,7 +5,37 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-04 (MINIWOB FIRST BRAIN RUN: **5/5 episodes, reward 1.0 each, $1.36** — constancy now spans GB/GBA/NDS/browser; entity gate v2 FAIL banked; GATE-3D pre-checks in flight)._
+_Last updated: 2026-07-04 (GATE-3D: **FAIL** — pre-registered verdict computed (27/30 episodes); ARC-AGI-3 world merged (#77) + first open-ended discovery run launched; MiniWoB 5/5 banked)._
+
+**⇒⇒ NEWEST (2026-07-04, latest) — GATE-3D VERDICT: **FAIL** (runs/brain_gate3d/run3_v_FAIL/), and the
+failure decomposes into one pass, one honest miss, and one real scientific finding. ARC-AGI-3 merged
+(#77) and its first zero-instruction discovery run is in flight. ⇒⇒**
+- **GATE-3D score (eval/score_gate3d.py, bar as pinned by A2 before the run):** arm (a-2) ammo
+  efficiency **PASS** (KPS 0.2402 vs bar 0.2375 — fire discipline beats blind spinning); arm (a-1) kill
+  margin **FAIL** (K=4.074 vs 5.610 — at spinner level; efficiency traded away volume); arm (b)
+  grounding honesty **FAIL** (P1 in-run sign-agreement 0.774 vs 0.90 — **the finding: YawBandFlow's R0
+  realizer degrades in busy combat scenes** (moving sprites/muzzle flash) vs its 0.964 on clean-scene
+  fixtures/live checks. The 3D floor's gap is now precisely located: turn-estimation under dynamic
+  clutter. Next design options (fresh pre-registration required): multi-band voting with outlier
+  rejection, or excluding mover-occupied bands from the correlation — R1 climb is justified by measured
+  in-distribution failure, exactly per the Realizer Ladder.)
+- **Protocol breach, reported:** the verdict run cost **$82.86 vs the gate's own <=$10 target** (1000
+  turns; the brain rode the 40-decision hard cap; pacing guidance ignored). Mechanical fix adopted:
+  every paid launcher now sets `claude -p --max-turns` as a hard budget — briefs are not budget
+  enforcement (same lesson-shape as watermark-vs-brief-wording).
+- **Run ledger (GATE-3D):** run1 $3.01 dead-MCP flail (launcher not seam-validated: seeds file wasn't in
+  the Docker image; fix: seeds via mounted runs/ + MCP_UNAVAILABLE guard now standard in all briefs);
+  run2 $?~5 timeout 17/30 (INSUFFICIENT; interim K=5.06/KPS=0.205 at full-clip spray); run3 $82.86 FAIL.
+- **ARC-AGI-3 (PR #77 MERGED, live-validated):** external benchmark behind the seam — 64x64 discrete
+  color grid rendered lossless as text (the grid IS the screen), act/ACTION1-7 (+x,y on ACTION6),
+  score/levels oracle-only, polite throttle + bounded 429 backoff, launch-time key guard. First
+  OPEN-ENDED run (game wa30, zero instructions, brain must discover rules/goal/action semantics itself)
+  launched on account B with --max-turns 100.
+- **⇒ NEXT:** (1) score the ARC discovery run (levels_completed + HYP/GOAL log quality); (2) GATE-3D
+  redesign pre-registration (P1 robustness under clutter) — NOT another paid run under the failed
+  design; (3) sweep stage-2 (remaining consoles) + glyph-read design remain queued; (4) entity-gate v3
+  design notes (exposure-control S1 skill) fold into the same primitives conversation as (2).
+_Prior update: 2026-07-04 (MINIWOB FIRST BRAIN RUN: **5/5 episodes, reward 1.0 each, $1.36** — constancy now spans GB/GBA/NDS/browser; entity gate v2 FAIL banked; GATE-3D pre-checks in flight)._
 
 **⇒⇒ NEWEST (2026-07-04, latest) — COMPUTER-USE FIRST DATAPOINT: the same brain pattern completed 5/5
 MiniWoB click-button episodes PIXELS-ONLY, perfect rewards, $1.36 (runs/brain_miniwob/). ⇒⇒**
