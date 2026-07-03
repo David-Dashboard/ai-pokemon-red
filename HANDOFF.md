@@ -5,7 +5,57 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-05 (day close: #80-#84 merged; glyph cache VALIDATED / R0 text-detector killed; A3-PC PASS with the onset rule as the real fix; ARC wa30 = 1/9 across 3 framings — the L2 wall is the planning-depth frontier; paid GATE-3D-A3 re-run HELD pending free ceiling test)._
+_Last updated: 2026-07-03 (day close: SKILL GATE PASS 2.94x — the ARC wa30 L2 wall fell; #86-#90 merged;
+GATE-3D ceiling test verdict (bar stands, K=7.33 reachable); glyph R1 design merged; MKDS probe banked)._
+
+**⇒⇒ NEWEST (2026-07-03, day close) — SKILL-COMPILATION RUNG-1 GATE: **PASS** (2.94x, pinned bar 1.3x).
+The ARC wa30 level-2 wall — standing since 2026-07-04, unbroken across 3 prior framings — FELL under
+the `define_skill`/`run_skill` mechanism. First paid-gate PASS for a capability mechanism since the
+ADR-002 HUD gate. Full verdict: `reports/2026-07-03-skill-rung1-ab-verdict.md`. ⇒⇒**
+- **The numbers (verified against `runs/brain_skill_ab_armA/` + `runs/brain_skill_ab_armB/` raw
+  transcripts/oracle/skills logs, and `eval/score_skill_rung1.py --score-only`):** Arm A (baseline,
+  `act`/`observe`/`remember`/`reset_game` only) — 50 `act` calls, 57 total tool calls, `num_turns` 58,
+  $7.78, `levels_completed` **1/9**. Arm B (`ARC_SKILLS=1`, + `define_skill`/`run_skill`) — 18 `act` +
+  16 `run_skill` = 34 decisions, 15 `define_skill` calls, 62 total tool calls, `num_turns` 63, $8.83,
+  `levels_completed` **2/9** (level 3 loaded+mapped at budget end). Qualifying calls (executed step
+  count >= 3, the degenerate-strategy guard): **15 of 16** `run_skill` calls — guard satisfied.
+- **The pinned metric:** levels per 100 decisions — Arm A = 2.00, Arm B = 5.88, **ratio = 2.94x** vs the
+  pre-registered `>= 1.3x` bar. **PASS.** Zero-denominator rule not triggered (Arm A ≠ 0). Robustness
+  check (non-pinned): an all-tool-calls denominator gives 1.75 vs 3.23 = 1.84x — still PASS, so the
+  result isn't an artifact of exactly which calls count as "decisions." Arm B alone also clears the
+  pinned absolute floor (>= 2 levels). **Mechanism-scope caveat (PR #91 review):** all 15 Arm-B skills
+  were flat fixed-length step lists — `stop_when`/`repeat_until` never fired (0/15 definitions use it),
+  so this PASS validates the BATCHING half of the mechanism (N primitives per decision: 130 world steps
+  for 34 decisions vs Arm A's 50-for-50), NOT the conditional-loop half — that half is untested in any
+  paid run and should be a stated objective of the next port's gate.
+- **Honest bounds:** one game (wa30), one world class, one attempt per arm — no variance estimate. The
+  M1-M7 milestone fallback was never needed (clean levels_completed signal, no tie). Launch discipline
+  followed exactly as pinned: Arm A first, Arm A's $7.78 spend stayed under the $10 trigger so Arm B's
+  cap was left untouched, `--max-turns 80` both arms, blank-agent memory wipe in both launchers, and a
+  seam-validation transcript confirmed Arm A genuinely could not see the skill tools.
+- **The day's other banked results (brief):** **PRs #86-#90 merged** (skill-compilation design →
+  rung-1 build → `ARC_SKILLS` A/B-isolation flag; GATE-3D ceiling test; glyph R1 design). **GATE-3D
+  ceiling-test verdict:** the K>=5.61 bar STANDS — a scripted-optimum azimuth-seeker reaches **K=7.33**
+  at 8px firing tolerance (31% margin over the bar), so the paid brain's 4.07 shortfall is a brain/
+  perception gap, not an unreachable bar; tolerance-tuning alone is proven necessary-if-anything-is
+  but not proven sufficient (perception latency/blind-window contributions still undecomposed).
+  **Glyph R1 design merged:** cache-driven (bitwise-match-to-confirmed-glyph) text-region detector,
+  gated on a measured pre-check — live `read_region` crops are only 31% mod-8-y-aligned, so snap-to-
+  grid quantization at confirm time is now a pinned implementation requirement before R1 can be built.
+  **MKDS probe:** a Mario Kart DS race reached (vision-guided navigation past the menu maze); race
+  savestate banked (`runs/nds3d_probe/mkds_race_start.state`); idle continuous-time = **12.2%
+  mean/frame** with zero player input (vs GB/GBA's ~0% idle baseline — confirms the "world never
+  stops" hypothesis for the 3D/continuous-time lane); 3 perception-primitive breaks confirmed live
+  (rotating non-tile minimap, continuous camera roll/bank, free-form non-tile-aligned font).
+- **⇒ NEXT (priority order):** (1) **skill ports** — Kirby exposure-control macro (entity-gate v3) and
+  doom scan-and-center macro (GATE-3D), each per the design doc's later-rung formalism, each pinning
+  its own `stop_when` enum from its own world's wire in its own build PR; (2) **MKDS/continuous-time +
+  resolution design doc** (David greenlit the NDS 3D lane) — the `stop_when` bridge from discrete-step
+  to continuous-time worlds is an open question this doc should resolve; (3) **glyph R1 build** against
+  its pinned gate (snap-to-grid mitigation + the warm-cache fixture plan); (4) **GATE-3D A3 paid re-run
+  decision** with the tolerance lever now measured but unproven on the brain's noisier instrument;
+  (5) **sweep stage-2**.
+_Prior update: 2026-07-05 (day close: #80-#84 merged; glyph cache VALIDATED / R0 text-detector killed; A3-PC PASS with the onset rule as the real fix; ARC wa30 = 1/9 across 3 framings — the L2 wall is the planning-depth frontier; paid GATE-3D-A3 re-run HELD pending free ceiling test)._
 
 **⇒⇒ NEWEST (2026-07-05, day close) — CONSOLIDATION: five merges, two validated primitives-of-record,
 two honest kills, one capability wall located. ⇒⇒**
