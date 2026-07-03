@@ -19,10 +19,19 @@ collapse None into 0.0-meaning-idle.
 
 R0: numpy + PIL only. Swappable to R1 (Farneback / Lucas-Kanade horizontal component) if a future
 fixture bar fails this rung -- no such failure yet (PC-2 passed; see PRECHECK_REPORT.md).
+
+Multi-band voting (reports/2026-07-05-p1-clutter-redesign.md S2(a), PR-F): re-scoped by review to
+mechanism 2 ONLY (late-episode clutter -- a genuine P1 degradation as movers corrupt a single band's
+correlation). Mechanism 1 (turn-onset ramp mis-scoring, run_pos<=1) is NOT an estimator defect -- the
+world genuinely rotates ~0px on onset tics and every band would agree on that correct near-zero
+reading -- it is fixed entirely by the GATE-3D-A3 pinned SCORING rule (eval/score_a3_precheck.py), not
+here. `yaw_band_flow`'s default (`bands=None`) is BYTE-IDENTICAL to the pre-redesign single-band
+behavior -- no blast radius for any caller not opting in (S4/anti-drift table: "don't change the
+multi-band default for OTHER callers").
 """
 from __future__ import annotations
 
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Sequence
 
 import numpy as np
 
@@ -31,6 +40,17 @@ BAND = (84, 156)  # rows 0.35H-0.65H of a 240-row frame; excludes weapon sprite 
 NCC_FLOOR = 0.2
 PROM_FLOOR = 0.02
 NONADJ = 8  # shifts within this many px of the peak count as the same peak (not a competitor)
+
+# Multi-band voting (design S2(a)): 3 bands centered at 0.40H/0.50H/0.60H of a 240-row frame, each the
+# current 0.30H-tall (72px) window -- the MIDDLE band is exactly today's BAND re-derived from the same
+# center/height rule; top/bottom bands re-slice the SAME frames (no new capture): 60px is still below
+# the ceiling range PC-2's fixtures were curated against, 180px is still above the weapon sprite.
+# Pinned here, not re-derived per-caller; a caller opts in by passing `bands=DEFAULT_BANDS`.
+DEFAULT_BANDS: tuple[tuple[int, int], ...] = ((60, 132), (84, 156), (108, 180))
+MIN_BANDS_CLEARING = 2  # fewer bands clearing the floor than this -> fall back to single-band (never
+                        # regress below today's behavior, design S2(a) verbatim)
+MAX_OUTLIER_BANDS = 1   # more than this many clearing bands disagreeing in sign with the majority ->
+                        # direction=None (outlier rejection, design S2(a) verbatim)
 
 
 class YawReading(NamedTuple):
@@ -74,6 +94,55 @@ def _best_shift_1d(p_prev: np.ndarray, p_cur: np.ndarray, max_shift: int = MAX_S
     return best, best_s, prom
 
 
+def _direction_of(dx: int) -> str:
+    return "none" if dx == 0 else ("left" if dx > 0 else "right")
+
+
+def _single_band_reading(
+    prev_gray: np.ndarray,
+    cur_gray: np.ndarray,
+    band: tuple[int, int],
+    max_shift: int,
+    ncc_floor: float,
+    prom_floor: float,
+) -> YawReading:
+    """The pre-redesign R0 estimator on exactly one band -- unchanged logic, factored out so both the
+    single-band caller path and multi-band voting's per-band pass share one implementation."""
+    p_prev = band_profile(prev_gray, band)
+    p_cur = band_profile(cur_gray, band)
+    dx, ncc_best, prom = _best_shift_1d(p_prev, p_cur, max_shift=max_shift)
+    if ncc_best < ncc_floor or prom < prom_floor:
+        return YawReading(dx_px=None, direction=None, confidence=None)
+    return YawReading(dx_px=int(dx), direction=_direction_of(dx), confidence=round(float(prom), 4))
+
+
+def _vote_bands(readings: list[YawReading]) -> YawReading:
+    """Trimmed-median vote with outlier rejection over N>=2 per-band readings that already cleared the
+    floor (design S2(a)): dx = median dx among clearing bands; direction=None (outlier rejection) if
+    more than MAX_OUTLIER_BANDS of the clearing bands disagree in sign with the majority; confidence =
+    the MINIMUM confidence among the surviving (non-None) bands used in the vote, so a vote is never
+    reported more confident than its weakest supporting band."""
+    dxs = sorted(r.dx_px for r in readings)
+    n = len(dxs)
+    median_dx = dxs[n // 2] if n % 2 == 1 else round((dxs[n // 2 - 1] + dxs[n // 2]) / 2)
+
+    signs = [0 if r.dx_px == 0 else (1 if r.dx_px > 0 else -1) for r in readings]
+    n_pos = sum(1 for s in signs if s > 0)
+    n_neg = sum(1 for s in signs if s < 0)
+    if n_pos > 0 and n_neg > 0:
+        # Both turning signs present among clearing bands: real disagreement. Tolerate it only if the
+        # SMALLER side is a minority of at most MAX_OUTLIER_BANDS bands AND strictly smaller than the
+        # majority side (the median can absorb a lone dissenting band, not a tie or a majority flip);
+        # anything else -- including an exact tie -- is "disagree in sign by more than one band" -> None.
+        minority_turn = min(n_pos, n_neg)
+        if minority_turn > MAX_OUTLIER_BANDS or minority_turn == max(n_pos, n_neg):
+            return YawReading(dx_px=None, direction=None, confidence=None)
+
+    confidence = min(r.confidence for r in readings)
+    return YawReading(dx_px=int(median_dx), direction=_direction_of(median_dx),
+                       confidence=round(float(confidence), 4))
+
+
 def yaw_band_flow(
     prev_gray: np.ndarray,
     cur_gray: np.ndarray,
@@ -82,6 +151,7 @@ def yaw_band_flow(
     max_shift: int = MAX_SHIFT,
     ncc_floor: float = NCC_FLOOR,
     prom_floor: float = PROM_FLOOR,
+    bands: Optional[Sequence[tuple[int, int]]] = None,
 ) -> YawReading:
     """R0 YawBandFlow. `prev_gray`/`cur_gray` are 2D grayscale arrays (H, W), same shape.
 
@@ -89,16 +159,31 @@ def yaw_band_flow(
     view left, so the world image streams RIGHT (+dx), and TURN_RIGHT gives -dx. `direction` reports
     the EGO's turn direction (matching that convention: +dx -> "left", -dx -> "right"), not the raw
     image-flow direction -- this is what a caller commanding turns and reading back agreement expects.
+
+    `bands` (design S2(a), PR-F, opt-in only): a sequence of 3+ `(r0, r1)` band ranges (e.g.
+    `DEFAULT_BANDS`). When given, each band is scored independently with the SAME `max_shift`/
+    `ncc_floor`/`prom_floor`, and the result is a trimmed-median vote across the bands that clear the
+    floor, with outlier rejection (`_vote_bands`). If fewer than `MIN_BANDS_CLEARING` bands clear the
+    floor, this falls back to today's single-band result on `band` -- multi-band voting can only ever
+    do as well as or better than the single-band estimator, never worse (S2(a): "never regress below
+    current behavior"). `bands=None` (the default) is the ORIGINAL single-band code path, byte-for-byte
+    -- no behavior change for any existing caller that does not pass `bands`.
     """
-    p_prev = band_profile(prev_gray, band)
-    p_cur = band_profile(cur_gray, band)
-    dx, ncc_best, prom = _best_shift_1d(p_prev, p_cur, max_shift=max_shift)
+    if bands is None:
+        return _single_band_reading(prev_gray, cur_gray, band, max_shift, ncc_floor, prom_floor)
 
-    if ncc_best < ncc_floor or prom < prom_floor:
-        return YawReading(dx_px=None, direction=None, confidence=None)
+    if len(bands) < 3:
+        raise ValueError(f"multi-band voting needs >=3 bands, got {len(bands)}")
 
-    direction = "none" if dx == 0 else ("left" if dx > 0 else "right")
-    return YawReading(dx_px=int(dx), direction=direction, confidence=round(float(prom), 4))
+    per_band = [_single_band_reading(prev_gray, cur_gray, b, max_shift, ncc_floor, prom_floor)
+                for b in bands]
+    clearing = [r for r in per_band if r.direction is not None]
+
+    if len(clearing) < MIN_BANDS_CLEARING:
+        # Fall back to the plain single-band reading on the caller's nominal `band` (never regress).
+        return _single_band_reading(prev_gray, cur_gray, band, max_shift, ncc_floor, prom_floor)
+
+    return _vote_bands(clearing)
 
 
 def calibrate(commanded_turns: list[tuple[float, int]]) -> Optional[float]:
