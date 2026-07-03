@@ -7,6 +7,13 @@ Amends `reports/2026-07-05-glyph-read-design.md` ("the R0 doc") after its Gate 1
 (96.9% frac_free after warmup, 0 mismatches, per HANDOFF's 2026-07-05 entry) and is reused here
 unmodified — R1 is a new detector (piece a), not a new cache._
 
+_Amended 2026-07-03, same day, per the adversarial review posted on PR #88 (all findings accepted):
+the fixture plan is re-pinned against a measured per-game frame inventory (§4a — the prior revision's
+"free... no new fixture labeling" claim was wrong and is retracted); a grid-alignment pre-check was
+added, measured, and FAILED, so a snap-to-grid mitigation is now pinned (§4.0); the "sparse probes
+(15-19 tool calls)" claim is corrected to measured frame counts (14-41); and an attempt cap on
+inconclusive results is pinned (§4b)._
+
 ---
 
 ## 1. Why R0 died and what R1 inverts
@@ -53,6 +60,13 @@ reuses verbatim, `core/glyph_cache.py:61-65`) already assumes and pools to a fix
 reason. A grid-aligned scan is therefore not a shortcut that loses generality — it matches how the
 renderer actually produces the pixels the cache was confirmed against.
 
+**Conditional pin (amended per PR #88 review finding 3):** the above holds only if the CACHE-POPULATION
+crops are themselves grid-aligned, and measured on the one live `read_region` transcript on disk they
+are NOT (only 31% of live crop origins are mod-8 aligned in both axes — §4.0's pre-check, measured
+2026-07-03). The grid-aligned scan is therefore pinned TOGETHER WITH §4.0's snap-to-grid confirm-time
+mitigation, not standalone: a scanner aligned to tile boundaries can only match fingerprints that were
+also hashed at tile boundaries.
+
 A sliding window (scan every pixel offset, not just tile boundaries) would catch text that renders
 off-grid — proportional fonts, sub-tile-scrolled text during a scroll animation, or a game that
 doesn't tile-align its font at all. None of the 6 sweep games or Gen-1 Pokémon are known to do this;
@@ -75,9 +89,10 @@ already abstain via `lookup()`'s existing tie logic, so R1 inherits that honesty
 
 ### 2c. Cluster-size threshold (false-positive control)
 
-**Pinned: a candidate text region requires >= 3 hit cells in an unbroken run along one row**, exactly
-mirroring R0's `min_rows`-style denoise parameter but applied to horizontal cell runs instead of row
-bands (single-cell hits are exactly the hash-collision failure mode this threshold exists to kill —
+**Pinned: a candidate text region requires >= 3 hit cells in an unbroken run along one row** — a
+similar but deliberately STRICTER denoise threshold than R0's actual `_DEFAULT_MIN_ROWS = 2` default
+(`core/text_regions.py:46`; the prior revision said "exactly mirroring," which overstated the parallel),
+applied to horizontal cell runs instead of row bands (single-cell hits are exactly the hash-collision failure mode this threshold exists to kill —
 see collision estimate below). Adjacent hit-rows merge via `core.blob.connected_components` (reused
 unchanged from R0) into a bbox, same as R0's own band-merge step. A lone hit cell, or a run of 1-2,
 is dropped — not enough to distinguish "real recurring glyph" from "a coincidental single-tile hash
@@ -95,6 +110,12 @@ across a 20x18 or 30x20 grid (see §2d) is a plausible false accept once in a wh
 unbroken row** at even a pessimistic 1e-2 correlated-content collision rate is ~1e-6 per frame — the
 threshold buys several orders of magnitude of margin cheaply. This is an estimate, not a measured
 number; the fixture in §4 measures the real rate.
+
+One precedent note that makes the tolerance defensible rather than novel (added per PR #88 review
+finding 4): Gate 2's 96.9%/0-mismatch result already exercised this exact tolerant-match code path —
+`eval/score_glyph_cache.py` calls `cache.lookup()`, which routes through `_exact_or_near`'s
+Hamming<=4 + intensity-bucket matching (`core/glyph_cache.py:110-121`), not a stricter exact-only
+path — so the 0-mismatch precedent transfers to R1's matching rule as-is.
 
 ### 2d. Cost
 
@@ -150,7 +171,10 @@ Three candidates, evaluated honestly:
 **Pin: (2), brain-driven `read_region` requests, is the cold-start source.** It requires zero new code
 (the mechanism already exists and is already measured at 39% of calls in the one live run that has
 it), it does not reintroduce a per-game geometric constant into `core/`, and it does not resurrect R0's
-specific failure mode (texture-triggered phantom regions). The honest cost it accepts: **R1 provides
+specific failure mode (texture-triggered phantom regions). One requirement rides on this pin: when a
+brain-driven read feeds `GlyphCache.confirm()`, the cell slicing must snap to the tile grid per §4.0's
+measured pre-check — the brain's own crops are majority-OFF-grid (69% of live calls), so unsnapped
+confirms would be systematically invisible to the grid-aligned scan. The honest cost it accepts: **R1 provides
 zero value for however many turns it takes the brain to confirm its first few glyphs unprompted** —
 this is a real latency/cost tax on cold-start, not a solved problem, and is exactly what §4's warm-cache
 precondition below exists to fence off from the gate (the gate does NOT claim R1 helps cold-start; it
@@ -164,18 +188,52 @@ to be measured.
 ## 4. Pre-registered gate
 
 Reuses the exact Gate 1 fixture R0 failed on (`eval/fixtures/text_regions/`, `eval/score_text_regions.py`)
-for comparability, plus the exact Gate 2 cache-warmup mechanism (`eval/score_glyph_cache.py`,
-`runs/dialog/*` replay) to define "warm." Both free: fixture replay against frames already on disk, no
-paid LLM call.
+for comparability, plus Gate 2's exact cache-warmup procedure (`eval/score_glyph_cache.py`'s
+confirming-frame mechanism) to define "warm." **"Free" throughout this section means NO PAID RUNS
+ONLY** — the gate does require bounded prep work (labeling + one harness script), itemized in §4a;
+the prior revision's "no new fixture labeling" claim was wrong and is retracted (PR #88 review
+finding 1).
+
+### 4.0 Pre-check (numbered, own pass/fail — must resolve before the gate runs): are live-confirmed crops tile-grid-aligned?
+
+`GlyphCache.confirm()` does not enforce grid alignment (it hashes whatever crop the caller hands it),
+and the live population path (brain-driven `read_region`, §3) uses brain-chosen pixel coordinates. If
+live-confirmed crops are off-grid, the grid-aligned scan (§2a) hashes cells at tile boundaries that do
+not match the off-grid confirmed fingerprints — a 1-5px spatial shift changes the average-pooled dHash
+in a way the Hamming<=4 tolerance was never designed to absorb (it absorbs rendering/anti-aliasing
+noise, not phase shift). This was PR #88 review finding 3 (sev-1) and it is real.
+
+**Pass/fail rule (pinned):** if >= 80% of live `read_region` crop origins are mod-8 aligned in BOTH
+axes, proceed grid-aligned unmodified; below that, a mitigation must be pinned before the gate runs.
+
+**Measured (2026-07-03, free — `runs/brain_cn_gate/transcript.jsonl`, the only live `read_region`
+transcript on disk, 39 calls):**
+- `x0` mod-8 aligned: 39/39 (100%)
+- `y0` mod-8 aligned: 12/39 (31%) — observed `y0 % 8` values: {0: 12, 4: 7, 5: 17, 6: 3}
+- both axes aligned: 12/39 (**31%**)
+- The single most common crop, `(x0,y0,x1,y1) = (0,125,64,138)`, issued 17 times, is off-grid by 5px
+  in y (it targets the HP line inside the dialog box, not the tile grid).
+
+**Result: FAIL** (31% << 80%) — **mitigation required and hereby pinned: snap-to-grid quantization at
+confirm time.** Cells fed to `confirm()` must be sliced from the FULL FRAME at tile-grid boundaries,
+taking the tile cells that overlap the brain's crop rect (expand the rect outward to the enclosing
+mod-8 boundaries in frame coordinates). The brain still sees its own unmodified crop — only the
+cache-population slicing snaps. This is a pinned requirement on any implementation PR, decided now.
+The alternative mitigation — per-glyph phase-offset scanning (hash all 64 sub-tile phases per cell) —
+is rejected for cost (~64x §2d's per-frame work) unless snap-to-grid measurably fails.
+
+Bound stated honestly: 39 calls, one game (Cave Noire, GB), one run — a small sample, but it is the
+entire live evidence on disk, and the >= 80% bar cannot be met by this sample regardless of what future
+runs show, so the mitigation is pinned rather than deferred to more measurement.
 
 ### 4a. Warm-cache precondition (must hold before R1's own numbers mean anything)
 
-**Pinned: "warm" = the `GlyphCache` state that exists immediately after Gate 2's own pass condition is
-met** — i.e., replay `runs/dialog/*` through `eval/score_glyph_cache.py`'s exact procedure (first 5
-confirming frames per its `N_WARMUP_CONFIRMING_FRAMES`), take the resulting `GlyphCache` object
-(whatever distinct glyph fingerprints it has confirmed at that point — HANDOFF reports this state
-serves 96.9% of subsequent occurrences free), and hand that SAME cache object to the R1 detector before
-scoring it on Gate 1's fixture frames.
+**Pinned: "warm" = the `GlyphCache` state after the first 5 confirming frames of the game-under-test's
+OWN warmup sequence**, using `eval/score_glyph_cache.py`'s exact confirming-frame procedure
+(`N_WARMUP_CONFIRMING_FRAMES = 5`, `_MIN_REAL_CELLS = 4` — the same numbers, the same meaning, the same
+code path that produced Gate 2's validated 96.9%-free state on Gen-1). The warmup FRAMES come from the
+same game being scored (per-game inventory below); the warmup PROCEDURE and its parameters are Gate 2's,
+unmodified.
 
 **Why reuse Gate 2's warmup and not a fresh one:** Gate 2 already measured exactly how much
 confirmation is needed before the cache pays off (5 frames, 96.9% free after) — inventing a second,
@@ -192,15 +250,56 @@ because R1 is broken, but because **this specific cross-game combination has no 
 match against.** This is not a loophole; it is the honest reason §4b's gate is scoped to a
 same-game warm/measure pair, not "reuse Gate 2's literal cache object against Gate 1's literal frames."
 
-**Corrected precondition (same-game warm/measure pairing, still free):** for each game that has both
-warm-up frames and labeled Gate-1-style frames available, warm the cache on that game's OWN early
-frames (a prefix of its own recording, using the exact confirming-frame procedure from
-`eval/score_glyph_cache.py`, generalized only in which frames it reads — no change to the mechanism
-itself) before scoring R1 on that game's LATER, held-out labeled frames. `runs/dialog/*` (Gen-1) is the
-only sequence currently on disk with enough frames to define a proper warm/held-out split; the 6 GBA
-sweep sets (`runs/probe_*/world/`) are sparse probes (15-19 tool calls each, not a dense frame
-recording) and may not have enough same-game frames to self-warm from. **This is a fixture-availability
-gap, flagged honestly, not solved here** — §6 below lists it as an open question, not a pinned answer.
+**Concrete fixture plan (re-pinned per PR #88 review findings 1+2 — the prior revision's "sparse
+probes (15-19 tool calls each)" claim was wrong; counts below were measured directly on disk,
+2026-07-03):**
+
+| Game | Frame source (`runs/`) | Frames on disk | Labeled Gate-1 frames (targets + distractors) | Warmup candidates (probe minus labeled) |
+|---|---|---|---|---|
+| Mortal Kombat Advance | `probe_0247_-_Mortal_Kombat_Advance__U__Venom/world/` | 14 | 6 + 1 | 7 |
+| DBZ Legacy of Goku | `probe_2288_-_2_in_1_-_Dragon_Ball_Z_-_The_Legacy_of_Goku_I___II__U/world/` | 41 | 4 + 0 | 37 |
+| FFVI Advance | `probe_2689_-_Final_Fantasy_VI_Advance__U__Xenophobia/world/` | 28 | 3 + 1 | 24 |
+| Zelda Minish Cap | `probe_Legend_of_Zelda__The_-_The_Minish_Cap__U/world/` | 35 | 4 + 1 | 30 |
+| Naruto Ninja Council 2 | `probe_Naruto_-_Ninja_Council_2__U/world/` | 22 | 2 + 1 | 19 |
+| SMA2 Super Mario World | `probe_Super_Mario_Advance_2_-_Super_Mario_World__U/world/` | 37 | 7 + 1 | 29 |
+| Pokémon Red (Gen-1) | `dialog/` | 272 | **0** | n/a — cannot be scored |
+
+All 31 labeled fixture PNGs in `eval/fixtures/text_regions/` are **byte-identical copies** of
+probe-dir frames (verified by MD5 over both sets, 31/31 matched) — warmup and scoring frames come from
+the same recordings, so the split rule below is mechanically checkable, not honor-system.
+
+**Pinned split + qualification rule:**
+- **Warmup set per game** = that game's probe-dir frames EXCLUDING every frame byte-identical to a
+  labeled fixture frame (never warm on a frame that will be scored — the exclusion is enforced by the
+  same MD5 check used to build the table).
+- **A game QUALIFIES iff** it has **>= 3 labeled target-bearing frames** AND **>= 5 text-bearing
+  warmup frames** (5 = Gate 2's own `N_WARMUP_CONFIRMING_FRAMES`, same number, same meaning). By
+  labeled-frame count, **5 of 6 GBA games qualify on the first condition** (MK 6, DBZ 4, FFVI 3,
+  Zelda 4, SMA2 7); **Naruto (2) does not and is excluded now.** Whether each qualifying game's warmup
+  candidates contain >= 5 TEXT-BEARING frames is only knowable during the labeling pass below — a game
+  that comes up short **drops out at measurement time and is reported as excluded**, never silently
+  skipped.
+- **The gate runs on ALL qualifying games**; per-game and pooled recall/precision are both reported.
+- **Pokémon Red cannot be scored** (zero labeled Gate-1 frames); `runs/dialog/*` stays what it already
+  is — Gate 2's warmup fixture — and is not an R1 scoring input.
+
+**Prep work required — the full bill, stated plainly ("free" = no paid runs, NOT zero work):**
+1. **Hand-label text bboxes on up to 5 text-bearing warmup frames per qualifying game** (<= 25 frames
+   of new bbox labeling, same procedure as Gate 1's fixture). Needed because no `gen1_font.json`-style
+   glyph->char oracle exists for any GBA game — the labeled warmup bboxes define WHICH cells receive
+   simulated confirmation.
+2. **Simulated confirmation for warmup:** every non-blank 8x8 grid cell inside a labeled warmup bbox is
+   `confirm()`'d with a single shared placeholder reading. Placeholders are legitimate because this
+   gate tests DETECTION (`from_cache` boolean) only, not character identity — the identity half stays
+   validated by Gate 2 on Gen-1. One shared placeholder (not per-hash unique strings) so
+   `_exact_or_near`'s Hamming-near aggregation cannot manufacture spurious ties that would make
+   `lookup()` abstain.
+3. **One small harness extension:** a warmup-replay entry point that takes a probe dir + warmup labels
+   and returns a warmed `GlyphCache`, then reuses `eval/score_text_regions.py`'s IoU scoring unchanged.
+
+That is the whole bill: ~25 frames of bbox labeling + one harness script + zero paid calls. The gate
+is NOT runnable today as-is — it is runnable after that bounded prep, and this doc stops claiming
+otherwise.
 
 ### 4b. The gate itself
 
@@ -212,8 +311,8 @@ gap, flagged honestly, not solved here** — §6 below lists it as an open quest
   matches a confirmed glyph" has not actually fixed R0's failure mode.
 - **0 phantom boxes on distractor (no-text) frames** — same fail-safe rule as R0's gate, unchanged.
 - Measured ONLY on frames from a game whose cache was warmed on that same game's own frames per §4a's
-  corrected precondition. A game with no available same-game warm-up sequence is excluded from this
-  gate's scoring, not force-scored with a foreign-game cache (which would just re-measure "zero
+  concrete fixture plan (qualification rule + MD5-exclusion split). A non-qualifying game is excluded
+  from this gate's scoring, not force-scored with a foreign-game cache (which would just re-measure "zero
   vocabulary overlap," not R1's actual detection quality).
 
 **Kill criterion (pinned, mirrors R0's own 0.27 result as the reference for "this is a real kill, not
@@ -233,11 +332,19 @@ This mirrors the R0 doc's own "thresholds are NOT tuned post-hoc to pass" discip
 (`eval/score_text_regions.py`'s docstring) applied to future edits of this doc, not just the original
 authoring.
 
-**Both R1 gate components are free:** replay of frames already on disk (`runs/dialog/*` for warmup,
-`eval/fixtures/text_regions/` for scoring), reusing `GlyphCache`, `core.blob.connected_components`, and
-`eval/score_text_regions.py`'s IoU-matching machinery unchanged. No paid brain call, no new fixture
-labeling beyond what Gate 1 already built (the labels are reused verbatim — R1 does not get a new,
-possibly friendlier fixture).
+**Attempt cap (pinned, added per PR #88 review finding 5 — the stricter-only rule alone left
+scope-narrowing as unbounded shots on goal):** at most **2 total scoring attempts** of the same
+underlying detector under the pinned configuration — the original run, plus at most one re-run after a
+stricter-only amendment. Scope-narrowing amendments COUNT as attempts (the cap is on scoring attempts,
+not on docs). **A second inconclusive result pauses the lane and escalates to David with the measured
+numbers — no third attempt, no silent rescoping.** No standing repo convention existed for this
+(reviewer checked); this doc sets one for this lane.
+
+**Cost class of the gate:** no paid brain call anywhere — warmup is a labeled-bbox replay against probe
+frames on disk, scoring reuses `GlyphCache`, `core.blob.connected_components`, and
+`eval/score_text_regions.py`'s IoU-matching machinery unchanged, and the scoring labels are Gate 1's
+verbatim (R1 does not get a new, possibly friendlier scoring fixture). The bounded prep bill (warmup
+bbox labeling + one harness script) is itemized in §4a and is a prerequisite, not already done.
 
 ---
 
@@ -262,11 +369,16 @@ possibly friendlier fixture).
 
 ## 6. Open questions (not answered by this doc)
 
-- Does any of the 6 GBA sweep games have enough same-game recorded frames (beyond the sparse
-  `runs/probe_*` sets) to build a proper same-game warm/held-out split for §4a? If not, Gate 1's
-  corrected precondition can currently only be measured on Gen-1 Pokémon frames, and the "generalizes
-  across sweep games" claim stays unmeasured until a denser same-game recording exists for at least one
-  GBA title.
+- ~~Does any GBA sweep game have enough same-game frames for a warm/held-out split?~~ **Measured
+  2026-07-03 (§4a's inventory): yes by raw count** — 14-41 frames per probe dir, 7-37 warmup
+  candidates after excluding labeled frames. The RESIDUAL unknown: do >= 5 of each qualifying game's
+  warmup candidates actually BEAR TEXT (only knowable during the §4a labeling pass — a game short of 5
+  drops out at measurement time, reported).
+- Whether the placeholder-confirmation warmup (§4a prep item 2) faithfully proxies live brain-driven
+  confirms is untested — §4.0's snap-to-grid mitigation closes the known geometric divergence (live
+  crops are majority-off-grid), but a live warm cache could still differ from the simulated one in
+  which glyphs get confirmed first. Not resolvable offline; flagged for the eventual paid live run
+  (out of scope here, same as the R0 doc's Phase-D analogue).
 - Real per-frame wall-clock cost of the 360-600 fingerprint calls (§2d) is estimated by analogy to
   `TileFunctionMap`'s existing amortized cost, not measured directly — cheap to measure in the same
   pass as the gate replay, not done here.
@@ -286,19 +398,34 @@ possibly friendlier fixture).
 | **Lower the bar post-hoc if the measured result just misses it** | The stricter-only amendment rule (§4b) — any relaxation needs a fresh, separately-dated, separately-justified doc, not a same-day retune. |
 | **Bake a per-game dialog-window position into `core/text_regions.py` or a new R1 module** | Cold-start option (1) is flagged, not pinned, precisely because it's a per-game geometric constant — the same anti-pattern R0's doc already fenced off. If ever built, it lives as a per-game accelerant outside `core/`, with sign-off, not as a default. |
 | **Assume the 3-cell cluster threshold generalizes without checking** | §2c's collision estimate is a back-of-envelope bound assuming roughly uncorrelated content; textured/structured backdrops (the thing that killed R0) can correlate more than the bound assumes. The fixture replay in §4 measures the real phantom rate — if phantoms reappear even with the cluster threshold, raise it (stricter-only) before concluding R1 is clean. |
+| **Feed off-grid live crops into `confirm()` unsnapped** | §4.0's pre-check measured 69% of live crops off-grid — unsnapped confirms are systematically invisible to the grid-aligned scan (a silent recall killer that would surface as an unexplained gate FAIL). Snap-to-grid at confirm time is a pinned implementation requirement, not optional. |
+| **Warm the cache on a frame that will be scored** | The MD5 byte-identity exclusion (§4a) is mechanical — warming on a scored frame trivially guarantees detection on it and voids the measurement. Any harness that skips the exclusion check is scoring theater. |
+| **Iterate scope-narrowing amendments until a subset passes** | The attempt cap (§4b): 2 total scoring attempts, narrowing counts, second inconclusive = pause + escalate to David. Unbounded shots on goal through permitted "narrowing" was the reviewer-named loophole; it is closed by count, not by intent. |
 
 ---
 
 ## The pinned gate, verbatim
 
-> **R1 warm-cache precondition:** the `GlyphCache` used for scoring must be warmed on the SAME game's
-> own frames, using the exact confirming-frame procedure from `eval/score_glyph_cache.py`
-> (`N_WARMUP_CONFIRMING_FRAMES=5`), before being scored on that game's held-out labeled frames from
-> `eval/fixtures/text_regions/`. A game without a same-game warm-up sequence available is excluded from
-> scoring, not force-scored against a foreign-game cache.
+> **Pre-check 0 (resolved 2026-07-03):** live `read_region` crops measured 31% tile-aligned
+> (`runs/brain_cn_gate/transcript.jsonl`, 39 calls) vs the pinned >= 80% bar — FAIL. Mitigation pinned:
+> confirm-time snap-to-grid slicing (cells fed to `confirm()` sliced from the full frame at mod-8
+> boundaries overlapping the brain's crop). A requirement on any implementation PR; the gate below
+> presumes it.
+>
+> **R1 warm-cache precondition:** the `GlyphCache` used for scoring a game must be warmed on that SAME
+> game's own probe-dir frames, EXCLUDING every frame byte-identical (MD5) to a labeled fixture frame,
+> using Gate 2's exact confirming-frame procedure (`N_WARMUP_CONFIRMING_FRAMES=5`, `_MIN_REAL_CELLS=4`)
+> with labeled-warmup-bbox simulated confirmations (single shared placeholder reading). A game
+> qualifies iff >= 3 labeled target-bearing frames AND >= 5 text-bearing warmup frames; by current
+> inventory MK/DBZ/FFVI/Zelda/SMA2 qualify on labels, Naruto is excluded (2), and Pokémon Red cannot be
+> scored (0 labeled frames). The gate runs on ALL qualifying games; per-game + pooled numbers reported.
+>
+> **Prep prerequisite (the gate is NOT runnable today):** <= 25 frames of warmup text-bbox labeling
+> (up to 5 per qualifying game) + one warmup-replay harness script. "Free" means no paid runs only.
 >
 > **PASS** requires recall >= 0.85 AND precision >= 0.90 AND 0 phantom boxes on distractor frames,
-> measured only on same-game warm/held-out pairs.
+> measured only on qualifying same-game warm/held-out pairs, scoring labels reused verbatim from
+> `eval/fixtures/text_regions/labels.json`.
 >
 > **KILL** if recall <= 0.27 or precision <= 0.49 (R0's own failed numbers) on the same split — R1 has
 > not improved on what it was built to fix; fall back to brain-driven `read_region` alone (no detector).
@@ -306,11 +433,14 @@ possibly friendlier fixture).
 > Anything strictly between KILL and PASS is **inconclusive**, reported as such, never rounded to a
 > pass and never merged as if it cleared the bar.
 >
-> **Amendment rule:** any future change to these numbers may only move stricter or narrower, requires a
-> fresh dated design doc, and may never be a same-day post-hoc retune to convert a miss into a pass.
+> **Amendment rule + attempt cap:** any future change to these numbers may only move stricter or
+> narrower, requires a fresh dated design doc, and may never be a same-day post-hoc retune to convert a
+> miss into a pass. At most 2 total scoring attempts of the same underlying detector
+> (scope-narrowing amendments count); a second inconclusive pauses the lane and escalates to David with
+> the numbers — no third attempt.
 >
-> Free/offline only: replays `runs/dialog/*` (warmup) and `eval/fixtures/text_regions/` (scoring),
-> both already on disk. No paid brain call in this gate.
+> No paid brain call anywhere in this gate: warmup replays probe frames on disk, scoring replays
+> `eval/fixtures/text_regions/`.
 
 ---
 
