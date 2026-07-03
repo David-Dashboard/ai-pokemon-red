@@ -5,7 +5,63 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-03 (day close: SKILL GATE PASS 2.94x — the ARC wa30 L2 wall fell; #86-#90 merged;
+_Last updated: 2026-07-03 (day close: SKILL-COMPILATION RUNG-1 GATE PASS 2.94x (L2 wall fell, #91) still
+the day's headline; entity v3 banked INSUFFICIENT_DATA with the b_k repair VALIDATED (0.812→0.585) +
+skill guard working as designed + adjacency-invocation diagnosis located; #92/#93/#94 merged; NDS 3D lane
+opened (MKDS race savestate + idle-change 12.2%/frame + 3 perception breaks documented)._
+
+**⇒⇒ NEWEST (2026-07-03, day close) — DAY CLOSE: skill gate PASS stands as the headline; entity-v3
+INSUFFICIENT_DATA banked with the b_k camping-repair VALIDATED and a located adjacency-invocation
+diagnosis for v3.1; three infra PRs merged; NDS 3D lane opened. ⇒⇒**
+1. **SKILL-COMPILATION RUNG-1 GATE: PASS (2.94x, pinned bar 1.3x, already banked in PR #91, unchanged by
+   today's later work).** The ARC wa30 level-2 wall — standing since 2026-07-04, unbroken across 3 prior
+   framings — FELL under the `define_skill`/`run_skill` mechanism. First paid-gate PASS for a capability
+   mechanism since the ADR-002 HUD gate. Full verdict: `reports/2026-07-03-skill-rung1-ab-verdict.md`.
+   (Numbers unchanged from the block below — restated here only to keep this day-close block
+   self-contained as the single newest entry point.)
+2. **Entity-gate v3: INSUFFICIENT_DATA banked** (`reports/2026-07-03-entity-v3-verdict.md`,
+   `runs/brain_kirby_v3/`, scored by `eval/score_entity_gate_v3.py`) — the skill-mechanism guard fired
+   (15 `run_skill` calls, 2 qualifying `executed_step_count>=3`, **0 qualifying-conditional**), so the
+   verdict is `INSUFFICIENT_DATA`, not PASS/FAIL, per the pre-registration's own discipline. Grounding
+   numbers (reported for audit only): threat id=1 `q_k=0.400 b_k=0.585 n_near=3` → arm (a) FAIL (floor
+   0.80 not met); benign id=2 `q_k=0.600 b_k=0.508 n_near=4` → arm (b) PASS (correctly-rejected). **What
+   VALIDATED despite the verdict:** (i) the exposure macro drove `b_k` from v2's camping failure value
+   **0.812 down to 0.585** (<= the 0.70 ceiling) — the camping mechanism v2 diagnosed is FIXED; (ii) the
+   benign arm PASSed cleanly; (iii) the skill guard worked exactly as designed — it caught that every
+   conditional fire collapsed to `iterations=1` (bar two at `iterations=2`, still short of the
+   qualifying-step floor), meaning conditional-half evidence for the skill-compilation mechanism is
+   **still absent**, exactly what the guard exists to surface. **Mechanical diagnosis:** drops landed
+   INSIDE approach-macro spans (correctly unclaimable) while pre-approach NEARs mostly fell outside
+   `W=15` reach of the eventual drop steps (`q_k` starved at 0.400); `approach_suspect` was invoked only
+   when already adjacent to the target, so `region_changed` fired in 1 press almost every time — never
+   producing qualifying-conditional evidence. **v3.1 design note (NOT a pre-registration, just the
+   located question):** invoke the macro from DISTANCE — defines both more iterations (satisfying the
+   guard) and pre-approach NEARs that actually cover the contact window; a brief/protocol geometry fix,
+   machinery unchanged. Honest bounds: one attempt, one game — the q_k starvation and the guard failure
+   may share a single root cause (adjacency-invocation), not proven separable here.
+3. **Infrastructure merged:** #92 (Kirby port design + entity-v3 pre-registration, incl. Amendment A1),
+   #93 (Kirby port build — `define_skill`/`run_skill` on `World` gated `KIRBY_SKILLS=1`; **7/7 free
+   pre-check gates PASS**), #94 (entity-v3 scorer: repaired bar, macro-interior exclusion, skill guard,
+   + Amendment A1 fixing the multi-`repeat_until` combination ambiguity pre-scoring).
+4. **NDS 3D lane opened:** MKDS race savestate banked (`runs/nds3d_probe/mkds_race_start.state`); idle
+   continuous-time = **12.2%/frame** mean with zero player input (vs GB/GBA's ~0% idle baseline); 3
+   perception-primitive breaks documented live (`runs/nds3d_probe/FINDINGS.md`): rotating non-tile
+   minimap, continuous camera roll/bank, free-form non-tile-aligned font.
+5. **GATE-3D ceiling + glyph R1 stay as-is from earlier same-day blocks** (below) — unchanged by this
+   close.
+
+**⇒ NEXT (priority order):** (1) **v3.1 pre-registration** — a distance-invocation protocol for the
+exposure macro, same machinery, fresh pre-registration before any re-run; (2) **MKDS/continuous-time +
+resolution design doc** (the `stop_when` bridge from discrete-step to continuous-time worlds); (3)
+**glyph R1 build** against its pinned gate (snap-to-grid mitigation, warm-cache fixture plan); (4)
+**doom scan-and-center macro port** (the other skill-compilation rung named by the rung-1 verdict, GATE-3D
+side); (5) **ARC breadth / sweep stage-2**.
+
+**Paid ledger today (2026-07-03):** skill A/B $7.78+$8.83 ≈ $16.61 + entity v3 $4.32 ≈ **$21** total for
+today's paid runs. Cross-session total: prior figure ≈ $190 (2026-07-05 ledger block below) + today's
+≈$21 ≈ **$211** (informational running total; the per-block ledgers below remain the source of record
+for any individual figure).
+_Prior update: 2026-07-03 (day close: SKILL GATE PASS 2.94x — the ARC wa30 L2 wall fell; #86-#90 merged;
 GATE-3D ceiling test verdict (bar stands, K=7.33 reachable); glyph R1 design merged; MKDS probe banked)._
 
 **⇒⇒ NEWEST (2026-07-03, day close) — SKILL-COMPILATION RUNG-1 GATE: **PASS** (2.94x, pinned bar 1.3x).
