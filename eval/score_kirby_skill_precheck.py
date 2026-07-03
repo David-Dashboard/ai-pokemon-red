@@ -7,41 +7,68 @@ Gate summary (doc §6, numbered identically):
 
   1. --dry executor fixture: canned scripted-perceiver scenarios standing in for recorded frames,
      exercising the REAL World.define_skill/run_skill dispatch (world_mcp.py) -- an approach ending in
-     region_changed, a retreat ending in steps_elapsed(8), a move_blocked case (3rd-press wall_confirm
-     latency), and a max_iters cap-out. Runs headless, no ROM, no PyBoy -- CI-safe (mirrors
-     tests/test_kirby_skill_port.py's own scripted-perceiver harness).
-  2. Per-press executor overhead budget (mean <= 150 ms/press over >= 100 recorded frames). THIS
-     REPOSITORY CHECKOUT HAS NO recorded runs/brain_kirby_entity/run*/world/ PNG corpus (verified: the
-     directory does not exist here -- ROMs/run artifacts are gitignored) -- `--measure-overhead` runs
-     the REAL per-press path (World._kirby_press_and_observe) against a real PyBoy boot + ROM if
-     `--rom`/`--init-state` are supplied, or against >= 100 frames it finds under a `--frames-dir` you
-     point it at; it FAILS LOUD (never fabricates a number) if neither is available. Per the doc's
-     residual #3 (PR #92 verification comment): observe-only cost is reported SEPARATELY from full
-     per-press executor cost (press + observe + track_frame), not blended into one figure.
+     region_changed, a retreat ending in steps_elapsed(8), a move_blocked case, and a max_iters
+     cap-out. Runs headless, no ROM, no PyBoy -- CI-safe (mirrors tests/test_kirby_skill_port.py's own
+     scripted-perceiver harness).
+  2. Per-press executor overhead budget (mean <= 150 ms/press over >= 100 recorded frames, doc §2/§6).
+     The budget applies to the RE-OBSERVATION overhead the port adds per press (plugin.observe()'s
+     perceiver pass + _track_frame() + the predicate check -- doc §6 gate 2's own parenthetical), NOT
+     to the emulator tick itself (press hold+settle is game time the world already paid before this
+     port). Per residual #3 (PR #92 verification comment) observe-only cost is ALWAYS reported as its
+     own number, separately from the full overhead the budget is judged on.
   3. entity_count_changed admission check: runs core.entities.EntityDetector.detect() against a REAL
-     recorded enemy-approach frame sequence. Same honest-scoping note as gate 2 -- no such sequence is
-     committed to this checkout; `--check-entities FRAMES_DIR` runs the real detector against whatever
-     frame directory you supply (a `--frames-dir` of PNGs, chronological by filename).
+     recorded enemy-approach frame sequence (`--frames-dir` of PNGs, chronological by filename).
+     Flapping is judged ONLY across STATIONARY frame pairs (whole-frame MAD < 2.0, the same dead-zone
+     as whats_changed) per the doc's own pinning ("count stable across consecutive frames of a
+     stationary scene") -- so a genuine approach's real count changes (moving scene) never misfire it,
+     while a period-2 sprite flicker (1,0,1,0 on a static scene) IS flagged. NOTE this gate is an
+     ADMISSION DECISION, not a run blocker: a NOT_ADMITTED outcome keeps entity_count_changed demoted
+     (the macro's approach half already uses region_changed -- doc §6: "FAIL costs nothing") and still
+     satisfies the gate for --all's aggregate; only NEEDS_ASSETS (no decision made) fails it. RESULT
+     ON THE ARCHIVED 181-FRAME CORPUS (run live 2026-07-03 during the PR #93 fix round): fired=true,
+     flapping ACROSS STATIONARY PAIRS detected -> NOT_ADMITTED; entity_count_changed stays out of the
+     enum, exactly the §3 demotion's prediction.
   4. tools/list seam-isolation: pure logic, no ROM -- runs unconditionally in `main()`.
-  5. assert_action_tools_fresh drift check: pure logic, no ROM -- runs unconditionally in `main()`
-     (reuses world_mcp.assert_action_tools_fresh; needs a ROM only for the live-plugin comparison, so
-     this gate reports SKIPPED, not FAIL, when no ROM is present -- same convention as the existing
-     tests/test_world_mcp_kirby_dreamland.py::test_assert_action_tools_fresh_kirby_dreamland_world).
-  6. Seam-press physics re-validation (46/36 frames/press, 3-press wall_confirm latency ON THE SEAM):
-     needs a real PyBoy boot + a seed state for the v2 start position, which per the doc's own §6 gate
-     6 prep note DOES NOT EXIST in runs/brain_kirby_entity/ -- `--seam-physics --rom ... --init-state
-     ...` runs it for real when both are supplied; otherwise this gate reports
-     NEEDS_ASSETS_NOT_PRESENT, honestly, rather than skipping silently.
+  5. assert_action_tools_fresh drift check: needs a ROM for the live-plugin comparison. Standalone
+     (--dry) it reports SKIPPED without one (same convention as the existing
+     tests/test_world_mcp_kirby_dreamland.py freshness test); under --all a skip counts as NOT passed
+     (never green with partial coverage).
+  6. Seam-press physics re-validation: needs --rom AND --init-state. Verdict (`passed`) checks all of:
+     (a) the walk recipe (hold_frames=30) advances exactly 46 emulator frames per press and a
+     multi-press macro advances N*46; (b) the jump/mount recipe (hold_frames=20) advances exactly 36
+     frames per press -- the doc §5.5/§6 pinned constants; and (c) move_blocked's wall_confirm latency
+     fires on the 3rd consecutive blocked press through the seam.
   7. audit_skill_log-shape auditability check on gate 1's own skills.jsonl output -- reuses
-     eval/score_skill_rung1.py::audit_skill_log verbatim (world-agnostic: reads generic jsonl rows),
-     run here against gate 1's --dry output.
+     eval/score_skill_rung1.py::audit_skill_log verbatim (world-agnostic: reads generic jsonl rows).
 
-Usage:
-    uv run python -m eval.score_kirby_skill_precheck --dry
-    uv run python -m eval.score_kirby_skill_precheck --all      # gates 1,4,5,7 (+ 2/3/6 if assets given)
-    uv run python -m eval.score_kirby_skill_precheck --measure-overhead --rom <path> --init-state <path>
-    uv run python -m eval.score_kirby_skill_precheck --check-entities --frames-dir <dir>
-    uv run python -m eval.score_kirby_skill_precheck --seam-physics --rom <path> --init-state <path>
+ASSET AVAILABILITY (corrected after PR #93 review): the MAIN TREE HAS the gate-2/3/6 assets --
+`roms/Kirby's Dream Land (USA, Europe).gb`, 181 recorded PNGs across
+`runs/brain_kirby_entity/run{1_retro_taint,2_gapfalls,3_walled,4_v2_FAIL}/world/` (49+36+58+38; no
+single dir reaches the >=100 minimum, so consolidate first -- see below), and candidate seed states
+`runs/kirby_entity.state` / `runs/kirby_entity2.state`. These live in gitignored paths, so a fresh
+worktree/CI checkout does not see them; when they are absent the gates report NEEDS_ASSETS_NOT_PRESENT
+(exit nonzero, never a fabricated number).
+
+`--all` means ALL SEVEN gates: 2/3/6 run when their asset args are supplied and report
+NEEDS_ASSETS_NOT_PRESENT otherwise -- either way they are counted in the exit code, so `--all`
+without assets exits NONZERO. It can never be green with partial coverage.
+
+Usage (validated against the main tree's actual asset paths):
+    uv run python -m eval.score_kirby_skill_precheck --dry           # gates 1,4,5(skip-ok),7
+    uv run python -m eval.score_kirby_skill_precheck --all \\
+        --rom "roms/Kirby's Dream Land (USA, Europe).gb" \\
+        --init-state runs/kirby_entity.state --frames-dir <consolidated-dir>   # all seven
+
+    # gate-2/3 frames prerequisite: consolidate the 4 run dirs into one folder first, e.g.
+    #   mkdir -p /tmp/kirby_frames && i=0; for d in runs/brain_kirby_entity/run*/world; do
+    #     for f in "$d"/*.png; do cp "$f" "/tmp/kirby_frames/$(printf '%05d' $i).png"; i=$((i+1)); done
+    #   done
+    uv run python -m eval.score_kirby_skill_precheck --measure-overhead --frames-dir /tmp/kirby_frames
+    uv run python -m eval.score_kirby_skill_precheck --measure-overhead \\
+        --rom "roms/Kirby's Dream Land (USA, Europe).gb" --init-state runs/kirby_entity.state
+    uv run python -m eval.score_kirby_skill_precheck --check-entities --frames-dir /tmp/kirby_frames
+    uv run python -m eval.score_kirby_skill_precheck --seam-physics \\
+        --rom "roms/Kirby's Dream Land (USA, Europe).gb" --init-state runs/kirby_entity.state
 """
 from __future__ import annotations
 
@@ -60,6 +87,11 @@ from eval.score_skill_rung1 import audit_skill_log, format_audit_report, load_js
 
 PER_PRESS_BUDGET_MS = 150.0     # doc §6 gate 2, pinned: mean <= 150 ms/press over the recorded-frame corpus
 MIN_FRAMES_FOR_OVERHEAD = 100    # doc §6 gate 2: ">= 100 recorded Kirby frames"
+STATIONARY_MAD_MAX = 2.0         # gate 3 scene-stationarity dead-zone == whats_changed's own MAD>=2.0
+                                 # threshold (world_mcp.py::_whats_changed) -- a frame pair below this is
+                                 # "stationary" per doc §6 gate 3's pinning
+EXPECTED_WALK_FRAMES_PER_PRESS = 46   # hold_frames=30 + 16 settle (core/gb_emulator.py:114; doc §5.5/§6)
+EXPECTED_JUMP_FRAMES_PER_PRESS = 36   # hold_frames=20 + 16 settle (doc §5.5/§6 corrected constants)
 
 
 # ---------------------------------------------------------------------------
@@ -275,34 +307,81 @@ def run_dry(out_dir: str) -> dict:
 # fails loud (does not fabricate a number) if neither is supplied.
 # ---------------------------------------------------------------------------
 
+def _overhead_report(observe_ms: list[float], overhead_ms: list[float], *, mode: str,
+                     extra: dict | None = None) -> dict:
+    """Pure verdict builder (unit-testable without frames or a ROM): the gate-2 budget
+    (PER_PRESS_BUDGET_MS) is judged on the FULL per-press re-observation overhead (observe + track +
+    predicate check -- doc §6 gate 2's parenthetical); observe-only is ALWAYS its own separate number
+    (residual #3) and never carries the gate verdict, so it cannot be misread as a pass when only the
+    lower bound was measured."""
+    mean_observe = sum(observe_ms) / len(observe_ms)
+    mean_overhead = sum(overhead_ms) / len(overhead_ms)
+    rep = {"mode": mode, "n": len(overhead_ms),
+           "observe_only_mean_ms": mean_observe,
+           "full_overhead_mean_ms": mean_overhead,
+           "budget_ms": PER_PRESS_BUDGET_MS,
+           "observe_only_under_budget": mean_observe <= PER_PRESS_BUDGET_MS,
+           "passed": mean_overhead <= PER_PRESS_BUDGET_MS,
+           "note": "observe_only is the perceiver pass alone; full_overhead adds _track_frame's "
+                   "frame-pair bookkeeping + a region_changed MAD predicate check -- the per-press "
+                   "re-observation overhead doc §2/§6 budget at 150 ms/press. Reported separately "
+                   "per residual #3 (PR #92 verification comment)."}
+    if extra:
+        rep.update(extra)
+    return rep
+
+
 def measure_overhead(*, rom: str | None, init_state: str | None, frames_dir: str | None,
                      n_presses: int = 100) -> dict:
-    """Measure (a) observe-only cost (plugin.observe() alone) and (b) full per-press executor cost
-    (press_button + observe + _track_frame, i.e. World._kirby_press_and_observe's own path) SEPARATELY
-    -- doc residual #3, PR #92 verification comment. Requires a real PyBoy boot (--rom [+ --init-state])
-    so the timings reflect the real perceiver stack, not a FakeEmulator's near-zero cost. `--frames-dir`
-    is accepted for a future variant that replays recorded PNGs through the perceiver directly (observe-
-    only cost only -- pressing a button needs a live emulator, which recorded PNGs cannot provide), but
-    is NOT wired to a real measurement path here: this checkout has no recorded corpus to point it at
-    (verified: runs/brain_kirby_entity/ does not exist), so --frames-dir currently only enables the
-    observe-only half if the directory has >= MIN_FRAMES_FOR_OVERHEAD PNGs. Full per-press cost always
-    needs --rom."""
+    """Gate 2. The doc's own measurement (§6: 'measure the wall-clock cost of one per-press
+    re-observation (plugin.observe() + _track_frame() + predicate check) over >= 100 recorded Kirby
+    frames') runs from `--frames-dir` -- the MAIN TREE has the corpus (181 PNGs across
+    runs/brain_kirby_entity/run*/world/, 49+36+58+38; consolidate into one dir first since no single
+    run dir reaches the >=100 minimum -- see the module docstring's exact commands). `--rom`
+    [+ --init-state] additionally measures the same overhead against a live PyBoy boot (real emulator
+    frames instead of recorded ones), plus the end-to-end press cost for context. When neither is
+    available (e.g. a fresh worktree/CI checkout, where runs/ and roms/ are gitignored) this reports
+    NEEDS_ASSETS_NOT_PRESENT -- never a fabricated number."""
     if frames_dir:
         pngs = sorted(glob.glob(os.path.join(frames_dir, "*.png")))
         if len(pngs) < MIN_FRAMES_FOR_OVERHEAD:
             return {"error": f"--frames-dir {frames_dir!r} has {len(pngs)} PNG(s); need >= "
-                             f"{MIN_FRAMES_FOR_OVERHEAD} (doc §6 gate 2). NEEDS_ASSETS_NOT_PRESENT."}
-        return _measure_observe_only_from_frames(pngs)
+                             f"{MIN_FRAMES_FOR_OVERHEAD} (doc §6 gate 2). NEEDS_ASSETS_NOT_PRESENT. "
+                             "The main tree's corpus is split across 4 run dirs under "
+                             "runs/brain_kirby_entity/ (49+36+58+38 = 181 PNGs) -- consolidate them "
+                             "into one --frames-dir first (see the module docstring)."}
+        return _measure_overhead_from_frames(pngs)
     if not rom:
-        return {"error": "gate 2 needs either --rom [--init-state] (full per-press + observe-only "
-                         "measurement against a real PyBoy boot) or --frames-dir (observe-only only, "
-                         "needs >= 100 recorded PNGs). Neither was supplied. "
-                         "NEEDS_ASSETS_NOT_PRESENT -- this checkout ships no recorded Kirby frame "
-                         "corpus (runs/brain_kirby_entity/ does not exist here)."}
+        return {"error": "gate 2 needs --frames-dir (the doc's own recorded-frame measurement; the "
+                         "main tree HAS the corpus -- 181 PNGs under runs/brain_kirby_entity/run*/world/, "
+                         "consolidated per the module docstring) or --rom [--init-state] (same "
+                         "measurement against a live PyBoy boot). Neither was supplied. "
+                         "NEEDS_ASSETS_NOT_PRESENT in THIS invocation -- these paths are gitignored, "
+                         "so fresh worktree/CI checkouts do not see them."}
     return _measure_full_from_rom(rom, init_state, n_presses)
 
 
-def _measure_observe_only_from_frames(pngs: list[str]) -> dict:
+def _time_track_and_predicate(frame_hist: list, step: int, frame) -> float:
+    """One press's post-observe bookkeeping, timed: the _track_frame-shaped frame-pair update plus one
+    region_changed MAD predicate check (the most expensive pinned predicate -- move_blocked/
+    move_succeeded/steps_elapsed are field reads/counter compares, effectively free)."""
+    import numpy as np
+
+    t0 = time.perf_counter()
+    frame_hist.append((step, frame))
+    del frame_hist[:-2]
+    if len(frame_hist) == 2:
+        (_, prev), (_, curr) = frame_hist[-2], frame_hist[-1]
+        h, w = curr.shape[0], curr.shape[1]
+        x0, y0 = 0, 0
+        x1, y1 = min(96, w), min(96, h)   # a max-size (_REGION_MAX_SIDE) box: worst-case predicate cost
+        a = prev[y0:y1, x0:x1].astype(np.float32)
+        b = curr[y0:y1, x0:x1].astype(np.float32)
+        float(np.mean(np.abs(a - b)))
+    return (time.perf_counter() - t0) * 1000.0
+
+
+def _measure_overhead_from_frames(pngs: list[str]) -> dict:
     import numpy as np
     from PIL import Image
 
@@ -311,24 +390,24 @@ def _measure_observe_only_from_frames(pngs: list[str]) -> dict:
 
     perceiver = FollowCameraPerceiver()
     memory = PerceptMemory()
-    frames = [np.array(Image.open(p).convert("RGB")) for p in pngs[:max(MIN_FRAMES_FOR_OVERHEAD, len(pngs))]]
-    durations_ms = []
+    frames = [np.array(Image.open(p).convert("RGB")) for p in pngs]
+    observe_ms: list[float] = []
+    overhead_ms: list[float] = []
+    frame_hist: list = []
     for i, frame in enumerate(frames):
         ctx = {"frame_path": pngs[i], "last_action": "right", "transition": False, "frames_advanced": 1}
         t0 = time.perf_counter()
         perceiver.perceive(frame, memory, ctx)
-        durations_ms.append((time.perf_counter() - t0) * 1000.0)
-    mean_ms = sum(durations_ms) / len(durations_ms)
-    return {"mode": "observe_only_from_frames", "n": len(durations_ms), "mean_ms": mean_ms,
-           "budget_ms": PER_PRESS_BUDGET_MS, "passed": mean_ms <= PER_PRESS_BUDGET_MS,
-           "note": "perceiver-only cost (no press, no gateway dispatch) -- a LOWER BOUND on full "
-                   "per-press executor cost, reported separately per the doc's residual #3."}
+        obs_cost = (time.perf_counter() - t0) * 1000.0
+        track_cost = _time_track_and_predicate(frame_hist, i, frame)
+        observe_ms.append(obs_cost)
+        overhead_ms.append(obs_cost + track_cost)
+    return _overhead_report(observe_ms, overhead_ms, mode="overhead_from_frames")
 
 
 def _measure_full_from_rom(rom: str, init_state: str | None, n_presses: int) -> dict:
     import argparse as _argparse
 
-    import world_mcp
     from world_mcp import World
 
     args = _argparse.Namespace(game="kirby_dreamland", rom=rom, init_state=init_state,
@@ -339,24 +418,36 @@ def _measure_full_from_rom(rom: str, init_state: str | None, n_presses: int) -> 
     try:
         w.call("observe", {})   # prime _frame_hist / patience state before timing
         observe_ms: list[float] = []
-        full_ms: list[float] = []
-        for _ in range(n_presses):
+        overhead_ms: list[float] = []
+        end_to_end_ms: list[float] = []
+        for i in range(n_presses):
+            # Press first (UNtimed for the budget -- the emulator tick is game time the world already
+            # paid before this port), then time exactly the per-press RE-OBSERVATION overhead the port
+            # adds: observe + track + predicate (doc §6 gate 2's parenthetical).
+            t_press0 = time.perf_counter()
+            from core.contracts import ToolCall
+            import uuid as _uuid
+            w.gw.execute(ToolCall(tool="press_button", args={"button": "right", "hold_frames": 30},
+                                  agent_id="mcp-brain", call_id=str(_uuid.uuid4())))
             t0 = time.perf_counter()
-            w.plugin.observe("mcp-brain")
-            observe_ms.append((time.perf_counter() - t0) * 1000.0)
-
-            t0 = time.perf_counter()
-            w._kirby_press_and_observe("right", 30)   # the seam-validated walk recipe's hold_frames
-            full_ms.append((time.perf_counter() - t0) * 1000.0)
-        mean_observe = sum(observe_ms) / len(observe_ms)
-        mean_full = sum(full_ms) / len(full_ms)
-        return {"mode": "full_from_rom", "n": n_presses,
-               "observe_only_mean_ms": mean_observe, "full_per_press_mean_ms": mean_full,
-               "budget_ms": PER_PRESS_BUDGET_MS, "passed": mean_full <= PER_PRESS_BUDGET_MS,
-               "note": "observe_only is plugin.observe() alone (perception, no press/gateway dispatch, "
-                       "no _track_frame); full_per_press is press_button (via the gateway) + observe + "
-                       "_track_frame -- the ACTUAL World._kirby_press_and_observe path a run_skill "
-                       "loop pays per inner step. Reported separately per the doc's residual #3."}
+            obs = w.plugin.observe("mcp-brain")
+            obs_cost = (time.perf_counter() - t0) * 1000.0
+            w._drop_frame(obs)
+            t1 = time.perf_counter()
+            w._track_frame()
+            if len(w._frame_hist) == 2:
+                (_, prev), (_, curr) = w._frame_hist[-2], w._frame_hist[-1]
+                import numpy as np
+                a = prev[0:96, 0:96].astype(np.float32)
+                b = curr[0:96, 0:96].astype(np.float32)
+                float(np.mean(np.abs(a - b)))
+            track_cost = (time.perf_counter() - t1) * 1000.0
+            observe_ms.append(obs_cost)
+            overhead_ms.append(obs_cost + track_cost)
+            end_to_end_ms.append((time.perf_counter() - t_press0) * 1000.0)
+        return _overhead_report(observe_ms, overhead_ms, mode="full_from_rom",
+                                extra={"end_to_end_press_mean_ms":
+                                       sum(end_to_end_ms) / len(end_to_end_ms)})
     finally:
         w.plugin.close()
 
@@ -367,12 +458,39 @@ def _measure_full_from_rom(rom: str, init_state: str | None, n_presses: int) -> 
 # has none committed).
 # ---------------------------------------------------------------------------
 
+def _admission_verdict(counts: list[int], stationary: list[bool]) -> dict:
+    """Pure gate-3 verdict (unit-testable without frames): `counts[i]` is the detector count on frame
+    i; `stationary[i]` is True iff the (i-1, i) frame pair is stationary (whole-frame MAD <
+    STATIONARY_MAD_MAX -- the same dead-zone whats_changed uses); stationary[0] is ignored (no prior
+    frame to pair with).
+
+    Doc §6 gate 3's pinning, exactly: PASS = the detector (a) fires at all, and (b) shows no
+    frame-to-frame count flapping "across consecutive frames of a STATIONARY scene". Flapping is
+    therefore ANY count change across a stationary pair -- including 0<->N alternation, which catches
+    the period-2 fully-on/fully-off sprite flicker (1,0,1,0,...) that is the most common real GB
+    flicker signature (PR #93 review finding: the previous adjacent-nonzero check could never see it,
+    since a 1,0,1,0 run has no two adjacent nonzero counts). The stationarity scoping is what keeps a
+    GENUINE approach's count changes from misfiring: an enemy entering/leaving frame comes with scene
+    motion (MAD >= 2.0 over the whole frame), so those pairs are non-stationary and never counted as
+    flapping -- while a small sprite's on/off flip moves far too few pixels to lift whole-frame MAD
+    over the dead-zone, so its pair stays stationary and the flap IS flagged."""
+    fired = any(c > 0 for c in counts)
+    flapping_pairs = [i for i in range(1, len(counts))
+                      if counts[i] != counts[i - 1] and stationary[i]]
+    flapping = bool(flapping_pairs)
+    return {"fired": fired, "flapping_detected": flapping, "flapping_pair_indices": flapping_pairs,
+            "passed": fired and not flapping, "admitted": fired and not flapping}
+
+
 def check_entities_admission(frames_dir: str | None) -> dict:
     if not frames_dir:
         return {"error": "gate 3 needs --frames-dir (a REAL recorded enemy-approach PNG sequence). "
-                         "NEEDS_ASSETS_NOT_PRESENT -- no such sequence is committed to this checkout "
-                         "(doc §6 gate 3's own honest-scoping note: 'recorded fresh through the seam "
-                         "if the archived run frames lack an approach segment')."}
+                         "NEEDS_ASSETS_NOT_PRESENT in THIS invocation. NOTE: the main tree's archived "
+                         "corpus (runs/brain_kirby_entity/run*/world/, 181 PNGs) contains ZERO "
+                         "verified approach segments (0 'Entities on screen' lines across all four "
+                         "transcripts -- the very finding that demoted entity_count_changed, doc §3), "
+                         "so a meaningful admission check needs a FRESH approach-segment recording "
+                         "through the seam, per the doc's own gate-3 note."}
     import numpy as np
     from PIL import Image
 
@@ -382,18 +500,20 @@ def check_entities_admission(frames_dir: str | None) -> dict:
     if not pngs:
         return {"error": f"--frames-dir {frames_dir!r} has no PNGs."}
     detector = EntityDetector()
-    counts = []
+    counts: list[int] = []
+    stationary: list[bool] = [False]   # index 0 has no prior pair; padded so indices align with counts
+    prev = None
     for p in pngs:
         frame = np.array(Image.open(p).convert("RGB"))
         counts.append(len(detector.detect(frame)))
-    fired = any(c > 0 for c in counts)
-    # Flicker check: among consecutive STATIONARY-scene frames (approximated here as any run of
-    # identical counts persisting >= 2 frames), the count must not flap frame-to-frame once nonzero.
-    flapping = any(abs(counts[i] - counts[i - 1]) > 0 and min(counts[i], counts[i - 1]) > 0
-                  and counts[i] != counts[i - 1] for i in range(1, len(counts)))
-    return {"n_frames": len(pngs), "counts": counts, "fired": fired, "flapping_detected": flapping,
-           "passed": fired and not flapping,
-           "admitted": fired and not flapping}
+        if prev is not None:
+            mad = float(np.mean(np.abs(frame.astype(np.float32) - prev.astype(np.float32))))
+            stationary.append(mad < STATIONARY_MAD_MAX)
+        prev = frame
+    verdict = _admission_verdict(counts, stationary)
+    verdict.update({"n_frames": len(pngs), "counts": counts,
+                    "n_stationary_pairs": sum(1 for s in stationary[1:] if s)})
+    return verdict
 
 
 # ---------------------------------------------------------------------------
@@ -476,11 +596,24 @@ def check_tools_fresh(rom: str | None) -> dict:
 # ---------------------------------------------------------------------------
 
 def check_seam_physics(rom: str | None, init_state: str | None) -> dict:
+    """Gate 6, with an explicit machine-checkable verdict (PR #93 review finding: a report the
+    operator must eyeball is not a gate). `passed` requires ALL of:
+      - cadence_46_ok: one walk press (hold_frames=30) advances EXACTLY 46 emulator frames, and
+        macro_cadence_ok: a 4-press run_skill macro advances exactly 4*46 (per-press observes add no
+        emulator ticks, so any drift here means the press physics changed under the executor);
+      - cadence_36_ok: one jump/mount press (hold_frames=20) advances EXACTLY 36 frames -- the doc's
+        §5.5/§6 corrected 46/36 constants, BOTH recipes exercised;
+      - fires_on_third_blocked_press: a walk-into-wall run_skill's move_blocked stop_reason reports
+        firing on the 3rd press (wall_confirm=3 through the real perceiver, on-seam). This last check
+        assumes the seed state faces a wall within the loop's reach (the doc's gate-6 setup); if the
+        macro caps out on max_iters instead, this is False and the gate fails -- rerun from a seed
+        state actually adjacent to a wall."""
     if not rom or not init_state:
-        return {"error": "gate 6 needs --rom AND --init-state (a seed state for the v2 start "
-                         "position). NEEDS_ASSETS_NOT_PRESENT -- per the doc's own §6 gate 6 prep "
-                         "note, no such seed state exists in runs/brain_kirby_entity/ today; none is "
-                         "committed to this checkout either."}
+        return {"error": "gate 6 needs --rom AND --init-state. NEEDS_ASSETS_NOT_PRESENT in THIS "
+                         "invocation. The main tree has candidate assets: roms/Kirby's Dream Land "
+                         "(USA, Europe).gb and runs/kirby_entity.state / runs/kirby_entity2.state "
+                         "(plausible PyBoy save states; whether either IS the v2 start position is "
+                         "unconfirmed -- verify before trusting the wall_confirm half's result)."}
     import argparse as _argparse
 
     from world_mcp import World
@@ -492,19 +625,57 @@ def check_seam_physics(rom: str | None, init_state: str | None) -> dict:
     w = World(args)
     try:
         w.call("observe", {})
-        w.call("define_skill", {"name": "walk_probe", "steps": [
+        # (c-FIRST) wall_confirm latency on-seam. This probe MUST run before any other same-direction
+        # press: the wall_confirm counter is per (cell, direction) and cumulative across the session
+        # (core/grid_perceiver.py blocked_attempts), so cadence presses in the same direction would
+        # pre-consume the 3-press latency and make move_blocked fire on the probe's 1st press (observed
+        # live against runs/kirby_entity.state when this gate originally ran the cadence probes first).
+        # The seed state must face a wall in the probe direction; a fire at exactly press 3 is the
+        # doc's pinned latency.
+        w.call("define_skill", {"name": "wall_probe", "steps": [
             {"repeat_until": {"steps": [{"button": "right", "hold_frames": 30}],
                               "stop_when": "move_blocked", "max_iters": 8}}]})
         t0 = time.perf_counter()
-        result = w.call("run_skill", {"name": "walk_probe"})
+        result = w.call("run_skill", {"name": "wall_probe"})
         elapsed_s = time.perf_counter() - t0
         text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        # (a) single-press cadence, BOTH pinned recipes (walk hold=30 -> 46; jump/mount hold=20 -> 36).
+        # Direction deliberately differs from the wall probe's so these presses can never contaminate
+        # a re-run of it; frame cadence is fixed per press regardless of whether the move lands.
+        f0 = w.plugin.emu.frame
+        w.call("press_button", {"button": "left", "hold_frames": 30})
+        walk_frames = w.plugin.emu.frame - f0
+        f0 = w.plugin.emu.frame
+        w.call("press_button", {"button": "a", "hold_frames": 20})
+        jump_frames = w.plugin.emu.frame - f0
+        cadence_46_ok = walk_frames == EXPECTED_WALK_FRAMES_PER_PRESS
+        cadence_36_ok = jump_frames == EXPECTED_JUMP_FRAMES_PER_PRESS
+        # (b) macro cadence: 4 walking presses inside run_skill must advance exactly 4*46 frames
+        # (the per-press re-observations are read-only -- no emulator ticks).
+        w.call("define_skill", {"name": "cadence_probe", "steps": [
+            {"repeat_until": {"steps": [{"button": "left", "hold_frames": 30}],
+                              "stop_when": "steps_elapsed(4)", "max_iters": 4}}]})
+        f0 = w.plugin.emu.frame
+        w.call("run_skill", {"name": "cadence_probe"})
+        macro_frames = w.plugin.emu.frame - f0
+        macro_cadence_ok = macro_frames == 4 * EXPECTED_WALK_FRAMES_PER_PRESS
         rows = load_jsonl(os.path.join(args.out, "skills.jsonl"))
-        run_rec = [r for r in rows if r.get("event") == "run_skill"][-1]
-        return {"elapsed_s": elapsed_s, "stop_reason": run_rec.get("stop_reason"),
-               "executed_step_count": run_rec.get("executed_step_count"),
-               "fires_on_third_blocked_press": "3 press(es)" in run_rec.get("stop_reason", ""),
-               "text": text}
+        run_rec = [r for r in rows
+                   if r.get("event") == "run_skill" and r.get("name") == "wall_probe"][-1]
+        fires_on_third = "3 press(es)" in run_rec.get("stop_reason", "")
+        return {"walk_frames_per_press": walk_frames,
+                "expected_walk_frames_per_press": EXPECTED_WALK_FRAMES_PER_PRESS,
+                "cadence_46_ok": cadence_46_ok,
+                "jump_frames_per_press": jump_frames,
+                "expected_jump_frames_per_press": EXPECTED_JUMP_FRAMES_PER_PRESS,
+                "cadence_36_ok": cadence_36_ok,
+                "macro_frames": macro_frames, "macro_cadence_ok": macro_cadence_ok,
+                "wall_probe_elapsed_s": elapsed_s,
+                "wall_probe_stop_reason": run_rec.get("stop_reason"),
+                "wall_probe_executed_step_count": run_rec.get("executed_step_count"),
+                "fires_on_third_blocked_press": fires_on_third,
+                "passed": cadence_46_ok and cadence_36_ok and macro_cadence_ok and fires_on_third,
+                "text": text}
     finally:
         w.plugin.close()
 
@@ -544,11 +715,27 @@ def format_report(dry_report, seam_report, fresh_report, audit_report) -> str:
     return "\n".join(lines)
 
 
+def _gate_status(report: dict | None, *, skipped_ok: bool = False) -> tuple[str, bool]:
+    """(human-readable status line, counts-as-passed). NEEDS_ASSETS and errors are never passed;
+    a SKIPPED gate 5 counts as passed only where the caller says so (standalone --dry convention —
+    NEVER under --all, per the PR #93 SEV-1 finding: --all can't be green with partial coverage)."""
+    if report is None:
+        return "NOT RUN", False
+    if "error" in report:
+        return ("NEEDS_ASSETS" if "NEEDS_ASSETS_NOT_PRESENT" in report["error"] else "ERROR"), False
+    if report.get("skipped"):
+        return "SKIPPED (no ROM)", skipped_ok
+    return ("PASS" if report.get("passed") else "FAIL"), bool(report.get("passed"))
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry", action="store_true", help="run gate 1 (scripted-perceiver executor fixture)")
     ap.add_argument("--all", action="store_true",
-                    help="run gates 1, 4, 5, 7 unconditionally; 2/3/6 only if their asset flags are given")
+                    help="run ALL SEVEN gates. Gates 2/3/6 run for real when --rom/--init-state/"
+                         "--frames-dir are supplied and report NEEDS_ASSETS otherwise -- either way "
+                         "they count toward the exit code, so --all without assets exits NONZERO "
+                         "(never green with partial coverage).")
     ap.add_argument("--measure-overhead", action="store_true", help="run gate 2")
     ap.add_argument("--check-entities", action="store_true", help="run gate 3")
     ap.add_argument("--seam-physics", action="store_true", help="run gate 6")
@@ -561,54 +748,86 @@ def main(argv: list[str]) -> int:
     if not any([args.dry, args.all, args.measure_overhead, args.check_entities, args.seam_physics]):
         args.dry = True   # default action, mirrors score_skill_rung1.py's --dry default
 
-    exit_ok = True
+    # Which gates run: --all means ALL SEVEN (PR #93 SEV-1 fix); dedicated flags select individually.
+    want_g1 = args.dry or args.all
+    want_g2 = args.measure_overhead or args.all
+    want_g3 = args.check_entities or args.all
+    want_g6 = args.seam_physics or args.all
 
-    if args.measure_overhead:
-        report = measure_overhead(rom=args.rom, init_state=args.init_state, frames_dir=args.frames_dir)
+    g2_report = g3_report = g6_report = None
+    if want_g2:
+        g2_report = measure_overhead(rom=args.rom, init_state=args.init_state,
+                                     frames_dir=args.frames_dir)
         print("=== Gate 2: per-press executor overhead ===")
-        print(json.dumps(report, indent=2))
-        if "error" in report:
-            print(report["error"], file=sys.stderr)
-        exit_ok = exit_ok and report.get("passed", False)
-        if not (args.dry or args.all):
-            return 0 if exit_ok else 1
-
-    if args.check_entities:
-        report = check_entities_admission(args.frames_dir)
+        print(json.dumps(g2_report, indent=2))
+        if "error" in g2_report:
+            print(g2_report["error"], file=sys.stderr)
+    if want_g3:
+        g3_report = check_entities_admission(args.frames_dir)
         print("=== Gate 3: entity_count_changed admission check ===")
-        print(json.dumps({k: v for k, v in report.items() if k != "counts"}, indent=2))
-        if "error" in report:
-            print(report["error"], file=sys.stderr)
-        exit_ok = exit_ok and report.get("passed", False)
-        if not (args.dry or args.all):
-            return 0 if exit_ok else 1
-
-    if args.seam_physics:
-        report = check_seam_physics(args.rom, args.init_state)
+        print(json.dumps({k: v for k, v in g3_report.items() if k != "counts"}, indent=2))
+        if "error" in g3_report:
+            print(g3_report["error"], file=sys.stderr)
+    if want_g6:
+        g6_report = check_seam_physics(args.rom, args.init_state)
         print("=== Gate 6: seam-press physics re-validation ===")
-        print(json.dumps(report, indent=2))
-        if "error" in report:
-            print(report["error"], file=sys.stderr)
-        if not (args.dry or args.all):
-            return 0 if "error" not in report else 1
+        print(json.dumps(g6_report, indent=2))
+        if "error" in g6_report:
+            print(g6_report["error"], file=sys.stderr)
 
     dry_report = None
     audit_report = None
-    if args.dry or args.all:
+    if want_g1:
         dry_report = run_dry(args.out)
         audit_report = check_auditability(args.out)
 
-    seam_report = check_seam_isolation()
-    fresh_report = check_tools_fresh(args.rom)
+    seam_report = fresh_report = None
+    if want_g1 or args.all:
+        seam_report = check_seam_isolation()
+        fresh_report = check_tools_fresh(args.rom)
+        print(format_report(dry_report, seam_report, fresh_report, audit_report))
 
-    print(format_report(dry_report, seam_report, fresh_report, audit_report))
+    # Per-gate summary + aggregate. A gate that was REQUESTED counts toward the exit code:
+    # standalone --dry tolerates gate 5 skipping (no ROM, the unit-test convention); --all does NOT.
+    checks: list[tuple[str, str, bool]] = []
+    if want_g1:
+        g1_ok = bool(dry_report and dry_report["auditable"] and dry_report["all_scenarios_pass"])
+        checks.append(("gate 1 (dry executor fixture)", "PASS" if g1_ok else "FAIL", g1_ok))
+    if want_g2:
+        status, ok = _gate_status(g2_report)
+        checks.append(("gate 2 (per-press overhead)", status, ok))
+    if want_g3:
+        # Gate 3 is an ADMISSION DECISION, not a run blocker (doc §6 gate 3: "FAIL costs nothing:
+        # the macro's approach half already uses region_changed" -- only a PASS promotes
+        # entity_count_changed into the enum, and the decision must be made BEFORE the paid run,
+        # never mid-run). The gate therefore counts as satisfied when the check RAN and produced a
+        # decision either way; only NEEDS_ASSETS/error (no decision made) fails it.
+        if g3_report is not None and "error" not in g3_report:
+            status = ("DECIDED: ADMITTED" if g3_report.get("admitted")
+                      else "DECIDED: NOT_ADMITTED (entity_count_changed stays demoted; "
+                           "macro uses region_changed)")
+            checks.append(("gate 3 (entity admission)", status, True))
+        else:
+            status, ok = _gate_status(g3_report)
+            checks.append(("gate 3 (entity admission)", status, ok))
+    if seam_report is not None:
+        checks.append(("gate 4 (seam isolation)", "PASS" if seam_report["passed"] else "FAIL",
+                       seam_report["passed"]))
+    if fresh_report is not None:
+        status, ok = _gate_status(fresh_report, skipped_ok=not args.all)
+        checks.append(("gate 5 (tools freshness)", status, ok))
+    if want_g6:
+        status, ok = _gate_status(g6_report)
+        checks.append(("gate 6 (seam physics)", status, ok))
+    if want_g1:
+        g7_ok = bool(audit_report and audit_report.get("auditable"))
+        checks.append(("gate 7 (auditability)", "PASS" if g7_ok else "FAIL", g7_ok))
 
-    gates_pass = (
-        (dry_report is None or (dry_report["auditable"] and dry_report["all_scenarios_pass"]))
-        and seam_report["passed"]
-        and (fresh_report.get("skipped") or fresh_report.get("passed"))
-        and (audit_report is None or audit_report["auditable"])
-    )
+    print("\n=== Gate summary ===")
+    for name, status, _ in checks:
+        print(f"  {name}: {status}")
+    gates_pass = all(ok for _, _, ok in checks)
+    print(f"ALL REQUESTED GATES PASS: {'YES' if gates_pass else 'NO'}")
     return 0 if gates_pass else 1
 
 
