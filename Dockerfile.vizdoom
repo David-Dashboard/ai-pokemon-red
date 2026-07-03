@@ -1,0 +1,36 @@
+# The ViZDoom GATE-3D world (defend_the_center, dtc_gate.cfg) as an MCP (stdio) server — SEPARATE
+# image from the main Dockerfile (GB/GBA/NDS worlds), same reason as Dockerfile.miniwob: vizdoom is an
+# opt-in track dependency, never added to the main project's pyproject.toml/uv.lock.
+#
+# Pinned per the free probe's proven recipe (runs/vizdoom_probe/PROBE_REPORT.md, 2026-07-02): a plain
+# `python:3.11-slim` + `pip install vizdoom==1.3.0` pulls a prebuilt manylinux wheel with ZERO system
+# deps needed (no Boost/SDL/apt build chain — that's the WSL py3.8 dead end this probe replaced).
+# Re-confirmed by the free pre-check (runs/vizdoom_precheck/PRECHECK_REPORT.md, 2026-07-03) using the
+# same recipe.
+#
+# Build:
+#   docker build -f Dockerfile.vizdoom -t vizdoom-mcp-world .
+# Run (mounts runs/ for oracle.jsonl/grounding.jsonl; no .wad is committed — defend_the_center.wad
+# ships inside the vizdoom package itself, resolved by core/vizdoom_world.py via vizdoom.scenarios_path):
+#   docker run -i --rm -v "$PWD/runs:/app/runs" vizdoom-mcp-world \
+#          --game doom_dtc_gate --seed 1 --seed 2 --seed 3 --out runs/mcp_doom
+#
+# world_mcp.py speaks JSON-RPC on stdout (fd1 is redirected to stderr internally to keep the channel
+# clean, same as the main Dockerfile's entrypoint).
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# vizdoom==1.3.0 pinned (design doc S0/S2.1; the probe's proven version). numpy/pillow for
+# core/stationary_movers.py + core/yaw_flow.py + world_mcp.py's read_region/whats_changed helpers
+# (unused by this world today but kept import-compatible with the rest of core/).
+RUN pip install --no-cache-dir "vizdoom==1.3.0" numpy pillow
+
+# All worlds' code (core/) + world_mcp.py so --game can serve any entry; scenarios/ for dtc_gate.cfg.
+# games/ is NOT needed here (doom_dtc_gate has no pkg/plugin entry in world_mcp.GAMES — mirrors the
+# miniwob family's "no games/ needed" comment in Dockerfile.miniwob).
+COPY core/ ./core/
+COPY scenarios/ ./scenarios/
+COPY world_mcp.py ./
+
+ENTRYPOINT ["python", "world_mcp.py"]

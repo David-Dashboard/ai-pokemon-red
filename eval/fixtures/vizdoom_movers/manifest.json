@@ -1,0 +1,193 @@
+[
+  {
+    "frame_a": "mover00_a.png",
+    "frame_b": "mover00_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0001.png->frame_0002.png",
+    "top_component_areas": [
+      1172,
+      612,
+      114,
+      70
+    ]
+  },
+  {
+    "frame_a": "mover01_a.png",
+    "frame_b": "mover01_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0016.png->frame_0017.png",
+    "top_component_areas": [
+      191,
+      117,
+      88,
+      79
+    ]
+  },
+  {
+    "frame_a": "mover02_a.png",
+    "frame_b": "mover02_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0017.png->frame_0018.png",
+    "top_component_areas": [
+      292,
+      53,
+      37,
+      34,
+      33
+    ]
+  },
+  {
+    "frame_a": "mover03_a.png",
+    "frame_b": "mover03_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0018.png->frame_0019.png",
+    "top_component_areas": [
+      362,
+      47
+    ]
+  },
+  {
+    "frame_a": "mover04_a.png",
+    "frame_b": "mover04_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0019.png->frame_0020.png",
+    "top_component_areas": [
+      271,
+      90,
+      41,
+      37
+    ]
+  },
+  {
+    "frame_a": "mover05_a.png",
+    "frame_b": "mover05_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0069.png->frame_0070.png",
+    "top_component_areas": [
+      302,
+      91,
+      33
+    ]
+  },
+  {
+    "frame_a": "mover06_a.png",
+    "frame_b": "mover06_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0070.png->frame_0071.png",
+    "top_component_areas": [
+      403,
+      33
+    ]
+  },
+  {
+    "frame_a": "mover07_a.png",
+    "frame_b": "mover07_b.png",
+    "category": "stationary_movers",
+    "action": "IDLE",
+    "src_pair": "frame_0104.png->frame_0105.png",
+    "top_component_areas": [
+      72,
+      69,
+      39,
+      36,
+      35
+    ]
+  },
+  {
+    "frame_a": "empty00_a.png",
+    "frame_b": "empty00_b.png",
+    "category": "stationary_empty",
+    "action": "IDLE",
+    "src_pair": "frame_0002.png->frame_0003.png",
+    "top_component_areas": []
+  },
+  {
+    "frame_a": "empty01_a.png",
+    "frame_b": "empty01_b.png",
+    "category": "stationary_empty",
+    "action": "IDLE",
+    "src_pair": "frame_0003.png->frame_0004.png",
+    "top_component_areas": []
+  },
+  {
+    "frame_a": "empty02_a.png",
+    "frame_b": "empty02_b.png",
+    "category": "stationary_empty",
+    "action": "IDLE",
+    "src_pair": "frame_0031.png->frame_0032.png",
+    "top_component_areas": []
+  },
+  {
+    "frame_a": "empty03_a.png",
+    "frame_b": "empty03_b.png",
+    "category": "stationary_empty",
+    "action": "IDLE",
+    "src_pair": "frame_0050.png->frame_0051.png",
+    "top_component_areas": []
+  },
+  {
+    "frame_a": "empty04_a.png",
+    "frame_b": "empty04_b.png",
+    "category": "stationary_empty",
+    "action": "IDLE",
+    "src_pair": "frame_0082.png->frame_0083.png",
+    "top_component_areas": []
+  },
+  {
+    "frame_a": "empty05_a.png",
+    "frame_b": "empty05_b.png",
+    "category": "stationary_empty",
+    "action": "IDLE",
+    "src_pair": "frame_0103.png->frame_0104.png",
+    "top_component_areas": []
+  },
+  {
+    "frame_a": "turn00_a.png",
+    "frame_b": "turn00_b.png",
+    "category": "turning",
+    "action": "TURN_LEFT",
+    "src_pair": "frame_0006.png->frame_0007.png"
+  },
+  {
+    "frame_a": "turn01_a.png",
+    "frame_b": "turn01_b.png",
+    "category": "turning",
+    "action": "TURN_LEFT",
+    "src_pair": "frame_0011.png->frame_0012.png"
+  },
+  {
+    "frame_a": "turn02_a.png",
+    "frame_b": "turn02_b.png",
+    "category": "turning",
+    "action": "TURN_RIGHT",
+    "src_pair": "frame_0020.png->frame_0021.png"
+  },
+  {
+    "frame_a": "turn03_a.png",
+    "frame_b": "turn03_b.png",
+    "category": "turning",
+    "action": "TURN_LEFT",
+    "src_pair": "frame_0034.png->frame_0035.png"
+  },
+  {
+    "frame_a": "turn04_a.png",
+    "frame_b": "turn04_b.png",
+    "category": "turning",
+    "action": "TURN_LEFT",
+    "src_pair": "frame_0062.png->frame_0063.png"
+  },
+  {
+    "frame_a": "turn05_a.png",
+    "frame_b": "turn05_b.png",
+    "category": "turning",
+    "action": "TURN_LEFT",
+    "src_pair": "frame_0090.png->frame_0091.png"
+  }
+]
