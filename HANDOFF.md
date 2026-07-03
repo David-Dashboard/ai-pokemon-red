@@ -5,7 +5,32 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-04 (three new rungs opened: MiniWoB computer-use world MERGED (#64), ViZDoom GATE-3D design pinned (#63), paid GBA probe sweep ran (6 games, $3.9); entity gate v2 pre-registered (#61) but Cave Noire retired as its instrument after 7 runs — porting to a contact-damage GB world; #60–#66 merged)._
+_Last updated: 2026-07-04 (ENTITY GATE v2: **FAIL** — verdict computed on run 11 (Kirby port); both arms finally scoreable; arm (b) PASS, arm (a) FAIL with q_k=0.800 vs b_k=0.812; PR #69 (oracle+docs drift) merged)._
+
+**⇒⇒ NEWEST (2026-07-04, latest) — ENTITY-GROUNDING GATE v2: **FAIL**, computed at last (11 runs total,
+~$80). The verdict run was CLEAN: 5 drops, 3+ NEARs both arms, 0 retroactive, $3.06. ⇒⇒**
+- **Score (eval/score_entity_gate_v2.py, pinned):** threat q_k=0.800 vs b_k=0.812 → arm (a) FAIL (needs
+  q >= b+0.30); benign q=0.400 vs b=0.562 → arm (b) PASS. GATE: FAIL, on the books, out-of-sample.
+- **The finding:** in an enemy-chasing world a short session cannot decorrelate "near" from "always
+  around" — the threat was near during 81% of ORDINARY steps. Backward attribution over brain-asserted
+  proximity requires the brain to actively DESIGN its exposure contrast (be measurably away from the
+  suspect during ordinary time). v1 failed on enemy-initiative timing; v2 fails on exposure design.
+  Together they pin what a v3 must solve: the grounding loop needs an EXPERIMENT-DESIGN skill (or a
+  System-1 exposure-control primitive), not just honest logging. ADR-002's HUD arm is untouched.
+- **Instrument journey (all archived under runs/brain_cn_entity/run*_* and runs/brain_kirby_entity/run*_*):**
+  Cave Noire (7 runs: slow attack schedule starves the 5-drop floor; seam-vs-direct press timing; heal
+  mechanics) -> Kirby port (4 runs: retroactive-taint caught by the watermark (worked as designed),
+  gap-fall misattribution (was actually i-frame re-contacts), enemy scarcity after contact-kills, then
+  the clean verdict run). Kirby world entry merged as PR #68 (oracle 0xD086 plain-int, seam-validated).
+- **Pivot (pre-committed before run 11):** entity grounding is SUSPENDED pending v3 design; paid budget
+  shifts to (1) MiniWoB first brain run (computer-use constancy, ~$1) and (2) GATE-3D pre-checks ->
+  primitives -> paid gate run. v3 sketch to develop AFTER those: give the brain an explicit
+  "exposure-contrast" instruction pattern or an S1 skill (approach/withdraw cycles with logged
+  distance), pre-register fresh, stricter-only.
+- PR #69 (David's other session: play_cave_noire 0xD389->0xC120 fix + README/MIGRATION/DECISIONS repair)
+  reviewed + merged under the new posted-review-before-merge rule (CLAUDE.md session rules, 2026-07-03).
+
+_Prior update: 2026-07-04 (three new rungs opened: MiniWoB computer-use world MERGED (#64), ViZDoom GATE-3D design pinned (#63), paid GBA probe sweep ran (6 games, $3.9); entity gate v2 pre-registered (#61) but Cave Noire retired as its instrument after 7 runs — porting to a contact-damage GB world; #60–#66 merged)._
 
 **⇒⇒ NEWEST (2026-07-04) — THREE FRONTS OPENED IN ONE PASS (Max-20x parallel build); entity gate v2
 STILL VERDICT-LESS after 7 runs — Cave Noire retired as the instrument, port in progress. ⇒⇒**
