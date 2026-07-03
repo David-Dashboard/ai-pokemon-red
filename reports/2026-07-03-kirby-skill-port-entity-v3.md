@@ -566,3 +566,28 @@ and rung-1's §4.0 free instrument gating its own paid A/B.
   SECOND attempt scoped ONLY to re-exercising `repeat_until` — left for the triage after this run's
   result, not decided in advance (the one-attempt rule in §5.5 governs unless and until a separate
   pre-registration amends it).
+
+---
+
+# AMENDMENT A1 (2026-07-03) — §5.4 multi-`repeat_until` combination rule (pre-scoring, stricter-only)
+
+Appended per the house stricter-only discipline: the original text above is LAW as written and is not
+edited; this amendment supersedes it only where explicitly stated. Trigger: the PR #94 scorer build
+found a genuine ambiguity in §5.4 — the section names the top-level `stop_reason` and "the
+`iterations` field in the executed record", but per `world_mcp.py:1147` `iterations` lives on the
+INNER `repeat_until` sub-record inside `executed` (not on the top-level `run_skill` record), and
+nothing in the doc forbids a skill's top-level `steps` list containing more than one sibling
+`repeat_until` block (§4's "no nesting, no cross-skill looping construct" rules out nesting and
+cross-skill loops only). The doc did not pin how to combine iteration counts across multiple sibling
+blocks in one call; the PR #94 adversarial review ruled the builder's stricter reading correct and
+required it written down here BEFORE the real run is scored.
+
+**Amendment (2026-07-03, pre-scoring, stricter-only): when a `run_skill` record contains multiple
+`repeat_until` sub-records, ONLY the final one (the one credited in the top-level `stop_reason` —
+`executed[-1]["repeat_until_summary"]` is what `world_mcp.py` copies up) is evaluated for the
+qualifying-conditional test (fired predicate + `iterations >= 2`). Iteration counts are never
+summed/OR'd across multiple sibling blocks. This is a strict subset of any-sub-record readings** — an
+early, unrelated loop's iteration count can never paper over a laundered single-iteration (or
+`steps_elapsed`-terminated) final loop, so no run that fails this reading could pass a looser one in
+a direction that rescues a verdict. §5.5's amendment rule is satisfied: stricter-only, pinned before
+`runs/brain_kirby_v3` is scored.
