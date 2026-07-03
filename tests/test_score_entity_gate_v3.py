@@ -173,23 +173,38 @@ FAR_DROPS = (20, 40, 60, 80, 100)
 FAR_NON_DROP = set(range(1, 121)) - set(FAR_DROPS)   # 115 non-drop steps, 1..120
 
 
-def test_grounded_worked_probe_from_doc():
-    """Doc §5.2 worked probe shape: q_k=0.80, b_k just under the ceiling, margin >= 0.15 ->
-    GROUNDED-eligible. NEAR right before 4/5 drops (q_k=0.80); those same NEARs' windows also cover
-    some non-drop steps, kept under the ceiling by NOT spamming NEAR elsewhere."""
-    drops = set(FAR_DROPS)
-    non_drop = FAR_NON_DROP
-    # NEAR at step n covers non-drop steps [n, n+15] minus the drop itself, i.e. 15 non-drop steps
-    # per NEAR (n..n+15 is 16 steps, one of which -- n+... -- is the drop only if n==drop; here NEAR
-    # is logged AT the drop step itself, so its window [n-15, n] covers 15 non-drop steps below it).
-    nears = {1: [{"step": s, "matched": True} for s in (20, 40, 60, 80)]}   # covers 4/5 drops -> q=0.80
+def test_grounded_worked_probe_q80_b65_from_doc():
+    """Doc §5.2's exact worked probe, reproduced numerically: `q_k = 0.80, b_k = 0.65` -> floor met
+    (0.80 >= 0.80), margin met (0.15 >= 0.15), ceiling met (0.65 <= 0.70) -> GROUNDED-eligible.
+    Construction: non-drop universe of 20 window-widths (320 steps); 13 isolated NEAR windows (16
+    steps each, spaced exactly one window-width apart) cover 208/320 = 0.65 exactly; drops live tens
+    of thousands of steps away so the two coverage pools never interact; NEAR at 4 of the 5 far
+    drops gives q_k = 0.80 exactly. (PR #94 review finding 2: the previous version of this test did
+    not land on the doc's b_k=0.65 point -- this one does, computed through _coverage, not
+    asserted-by-name.)"""
+    window_width = WINDOW + 1
+    non_drop = set(range(1, 20 * window_width + 1))    # 320 non-drop steps
+    drops = {10_000, 20_000, 30_000, 40_000, 50_000}   # far away: drop-NEARs touch no non-drop step
+    padding = _isolated_near_windows(13, spacing=window_width)   # 13*16 = 208 covered -> b_k = 0.65
+    threat = [10_000, 20_000, 30_000, 40_000]          # covers 4/5 drops -> q_k = 0.80
+    nears = {1: [{"step": s, "matched": True} for s in padding + threat]}
     result = _grounded(1, nears, drops, non_drop)
-    assert abs(result["q_k"] - 0.80) < 1e-9
-    assert result["b_k"] <= B_K_CEILING
+    assert result["q_k"] == 0.80
+    assert result["b_k"] == 0.65
     assert result["floor_met"] is True
-    assert result["margin_met"] is True
+    assert result["margin_met"] is True       # 0.80 - 0.65 >= 0.15: the doc's exact margin boundary
     assert result["ceiling_exceeded"] is False
     assert result["grounded"] is True
+
+
+def test_bar_arithmetic_directly_at_doc_probe_point():
+    """The §5.2 bar conditions evaluated directly at the doc's probe point (q=0.80, b=0.65), no
+    fixture -- pins the raw arithmetic and inclusivity: floor 0.80>=0.80, margin 0.15>=0.15,
+    ceiling 0.65<=0.70, all inclusive as the doc pins."""
+    q, b = 0.80, 0.65
+    assert q >= Q_K_FLOOR
+    assert (q - b) >= MARGIN
+    assert b <= B_K_CEILING
 
 
 def test_ceiling_exceeded_triggers_insufficient_before_other_conditions():
@@ -348,6 +363,48 @@ def test_macro_interior_fraction_at_or_above_cap_is_insufficient_data():
     assert result["skill_guard"]["guard_pass"] is True   # guard passes -- isolates the macro check
     assert result["verdict"] == "INSUFFICIENT_DATA"
     assert "MACRO-INTERIOR" in result["reason"]
+
+
+def test_interior_ent_claim_is_excluded_and_counted_separately():
+    """Doc §5.6 says "a NEAR/ENT claim naming step n is MACRO-INTERIOR" -- ENT claims are subject to
+    the same exclusion (PR #94 review finding 1), counted in `macro_interior_ent` (NOT in the NEAR
+    counter: the 0.20 taint cap's denominator is "of all NEAR lines" per the doc, so ENT exclusions
+    are reported but never feed that fraction)."""
+    skills = [{"event": "run_skill", "step": 50, "world_steps_used": 8}]  # span (42, 50)
+    transcript = _remember_pair("e1", "ENT id=1 region=(40,60,56,76) step=45 claim=threat")  # interior
+    parsed = parse_transcript(transcript, [_oracle_rec(45, _raw(5))], skills)
+    assert parsed["macro_interior_ent"] == 1
+    assert parsed["macro_interior"] == 0        # the NEAR counter (cap denominator) is untouched
+    assert 1 not in parsed["ent_claims"]
+
+
+def test_boundary_ent_claims_are_kept_not_excluded():
+    """ENT claims at the exact span start (42) and end (50) steps remain claimable, mirroring the
+    NEAR boundary rule (doc §5.6: only strictly-interior steps are excluded)."""
+    skills = [{"event": "run_skill", "step": 50, "world_steps_used": 8}]  # span (42, 50)
+    transcript = (_remember_pair("e1", "ENT id=1 region=(40,60,56,76) step=42 claim=threat")
+                  + _remember_pair("e2", "ENT id=1 region=(40,60,56,76) step=50 claim=threat"))
+    oracle = [_oracle_rec(42, _raw(5)), _oracle_rec(50, _raw(4))]
+    parsed = parse_transcript(transcript, oracle, skills)
+    assert parsed["macro_interior_ent"] == 0
+    assert {e["step"] for e in parsed["ent_claims"][1]} == {42, 50}
+
+
+def test_ent_exclusion_does_not_feed_the_near_taint_fraction():
+    """End-to-end: a run with several macro-interior ENT exclusions but zero macro-interior NEARs
+    must NOT trip the MACRO_INTERIOR_MAX_FRACTION cap -- the cap is over NEAR lines only (doc §5.6's
+    exact denominator wording). The verdict computes normally; the ENT exclusions are reported."""
+    span = {"event": "run_skill", "step": 50, "world_steps_used": 40}   # span (10, 50)
+    calls = []
+    for i, s in enumerate((20, 30, 40)):   # 3 interior ENT claims, 0 interior NEARs
+        calls += _remember_pair(f"e{i}", f"ENT id=1 region=(0,0,8,8) step={s} claim=threat")
+    calls += _near_calls(1, (60, 65, 70), "c1_")   # accepted NEARs, outside the span
+    calls += _near_calls(2, BENIGN_EARLY, "c2_")
+    calls += _declares()
+    result = _run_score(calls, _oracle_98(), [span] + _skills_with_qualifying_call())
+    assert result["macro_interior_ent_lines"] == 3
+    assert result["macro_interior_lines"] == 0
+    assert result["verdict"] in ("PASS", "FAIL")   # cap did NOT fire; grounding computed normally
 
 
 def test_macro_interior_fraction_below_cap_verdict_still_computed():

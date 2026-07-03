@@ -36,8 +36,13 @@ THREE CHANGES FROM v2 (doc §5.2-§5.6):
    scoring, counted, reported) iff some `run_skill` record `r` in skills.jsonl satisfies
    `r.step - r.world_steps_used < n < r.step` (strict on both sides -- the span's START step
    `r.step - r.world_steps_used` and END step `r.step` remain claimable; only steps strictly inside are
-   excluded). `MACRO_INTERIOR_MAX_FRACTION = 0.20` of all NEAR lines -> INSUFFICIENT_DATA (same shape as
-   RETROACTIVE_MAX_FRACTION).
+   excluded). Applies to BOTH claim types, per the doc's explicit "NEAR/ENT claim" wording (PR #94
+   review finding 1): a macro-interior ENT claim is excluded from `ent_claims` (counted + reported as
+   `macro_interior_ent`) even though ENT is descriptive-only today -- spec/code match, and the
+   exclusion is already live if a future pass reads ENT for anything. The taint cap is
+   `MACRO_INTERIOR_MAX_FRACTION = 0.20` OF ALL NEAR LINES (the doc's exact denominator wording, same
+   shape as RETROACTIVE_MAX_FRACTION) -> INSUFFICIENT_DATA; excluded ENT claims are reported but do
+   not feed that NEAR-line fraction, because the doc pins the cap over NEAR lines specifically.
 
 3. SKILL-MECHANISM GUARD (§5.4). Quoted verbatim from the doc (this is the exact pinned wording the
    guard implements):
@@ -314,11 +319,13 @@ def skill_guard(skills: list[dict]) -> dict:
 
 def parse_transcript(transcript: list[dict], oracle: list[dict], skills: list[dict] | None = None) -> dict:
     """Extract ENT/NEAR/DECLARE/REJECT lines, same as v2, with one new exclusion class layered on:
-    a NEAR whose step is MACRO-INTERIOR (doc §5.6) is counted + reported + excluded, checked AFTER the
-    v2 retroactive/dedupe/unmatched checks (order does not matter for which guard fires -- a step can be
-    both retroactive per the old watermark rule and macro-interior; both are simply exclusion reasons a
-    NEAR can carry, and macro-interior is recorded distinctly so its own fraction can be capped
-    independently per §5.6)."""
+    a NEAR **or ENT** claim whose step is MACRO-INTERIOR (doc §5.6: "a NEAR/ENT claim naming step n")
+    is counted + reported + excluded. For NEAR it is checked AFTER the v2 retroactive check (order does
+    not matter for which guard fires -- a step can be both retroactive per the old watermark rule and
+    macro-interior; both are simply exclusion reasons a NEAR can carry, and macro-interior is recorded
+    distinctly so its own fraction can be capped independently per §5.6). Excluded ENT claims are
+    counted in `macro_interior_ent`, separate from the NEAR counter, because the doc's 0.20 taint cap
+    is defined over NEAR lines only."""
     spans = macro_spans(skills or [])
     lessons = parse_remember_calls(transcript)
     hp_by_step = _oracle_hp_by_step(oracle)
@@ -332,6 +339,7 @@ def parse_transcript(transcript: list[dict], oracle: list[dict], skills: list[di
     duplicates = 0
     retroactive = 0
     macro_interior = 0
+    macro_interior_ent = 0
     seen_nears: set[tuple[int, int]] = set()
 
     n_lines = 0
@@ -340,6 +348,9 @@ def parse_transcript(transcript: list[dict], oracle: list[dict], skills: list[di
         if m:
             n_lines += 1
             eid, x0, y0, x1, y1, step, claim = m.groups()
+            if _is_macro_interior(int(step), spans):
+                macro_interior_ent += 1   # doc §5.6 "NEAR/ENT claim" -- excluded even though ENT is
+                continue                  # descriptive-only today (PR #94 review finding 1)
             ent_claims.setdefault(int(eid), []).append(
                 {"region": (int(x0), int(y0), int(x1), int(y1)), "step": int(step), "claim": claim})
             continue
@@ -384,7 +395,8 @@ def parse_transcript(transcript: list[dict], oracle: list[dict], skills: list[di
     return {"ent_claims": ent_claims, "nears": nears,
             "declared_threats": declared_threats, "declared_benign": declared_benign,
             "rejected": rejected, "malformed": malformed, "duplicates": duplicates,
-            "retroactive": retroactive, "macro_interior": macro_interior, "n_lines": n_lines}
+            "retroactive": retroactive, "macro_interior": macro_interior,
+            "macro_interior_ent": macro_interior_ent, "n_lines": n_lines}
 
 
 def _coverage(entries: list[dict], steps: set[int]) -> int:
@@ -460,6 +472,7 @@ def score(transcript_path: str, oracle_path: str, skills_path: str) -> dict:
         "rejected": rejected, "entities_seen": sorted(parsed["ent_claims"]),
         "malformed_lines": n_malformed, "duplicate_lines": n_duplicates,
         "retroactive_lines": n_retroactive, "macro_interior_lines": n_macro_interior,
+        "macro_interior_ent_lines": parsed["macro_interior_ent"],
         "skill_guard": guard,
     }
 
@@ -593,6 +606,9 @@ def format_report(r: dict) -> str:
     if r.get("macro_interior_lines"):
         lines.append(f"MACRO-INTERIOR NEAR lines (name a step hidden inside a run_skill span, "
                      f"excluded): {r['macro_interior_lines']}")
+    if r.get("macro_interior_ent_lines"):
+        lines.append(f"MACRO-INTERIOR ENT lines (excluded; reported only -- the 0.20 taint cap is "
+                     f"over NEAR lines per doc §5.6): {r['macro_interior_ent_lines']}")
     if r.get("conflicting_declarations"):
         lines.append(f"CONFLICTING declarations (id declared both threat AND benign/REJECTed, excluded "
                      f"from both arms): {r['conflicting_declarations']}")
