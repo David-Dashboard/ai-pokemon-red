@@ -5,7 +5,32 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-04 (ARC-AGI-3 FIRST OPEN-ENDED DISCOVERY RUN: **level 1/9 completed from zero instructions, $6.69** — the discovery loop's first out-of-sample datapoint; GATE-3D FAIL banked)._
+_Last updated: 2026-07-05 (BLANK-AGENT PROTOCOL HOLE found+closed: account-B auto-memory persisted across runs via the shared repo-root project dir; blast radius audited — all verdicts stand except ARC run 2 re-labeled; P1/A3 redesign doc merged (#81); glyph design merged (#80), build in flight)._
+
+**⇒⇒ NEWEST (2026-07-05, latest) — BLANK-AGENT HOLE: account-B brains shared cross-run auto-memory
+(learning-boundary law violation), found via the ARC run-2 brain citing "MEMORY.md". Audited, closed,
+verdicts re-checked. ⇒⇒**
+- **The hole:** claude -p on account B wrote/recalled auto-memories under the repo-root-derived project
+  dir (~/.claude-b/projects/...-ai-pokemon-red/memory/), shared across ALL launcher dirs. Four memories
+  existed (CN heal + entity mechanics, gate3d MCP-failure note, the ARC wa30 ontology).
+- **Blast radius (transcript-audited per run):** HUD-gate PASS CLEAN (memory dir empty at run time, no
+  recall blocks); MiniWoB 5/5, GATE-3D run3 FAIL, Kirby run11 FAIL — no recalls found, verdicts stand
+  (contamination also biases toward PASS, so FAILs are conservative). ARC run 1: recalled only
+  OTHER-world memories — wa30 discovery remains unaided (headline stands, footnoted). **ARC run 2:
+  recalled run 1's wa30 ontology — re-labeled from "replication" to an accidental ACROSS-RUN-MEMORY
+  datapoint. Its finding: memory skipped re-discovery but added NO depth (still 1/9, $8.89) — depth is
+  brief-framing/skill-bound, not knowledge-bound.**
+- **Fix (mechanical):** memories archived to runs/b_memory_archive_2026-07-05/ then wiped; ALL 9
+  launcher run.sh files now wipe both derived memory dirs before every launch (BLANK-AGENT enforcement
+  line). Future launcher templates must carry it.
+- **Also merged:** #81 (P1/A3 redesign: mechanism 1 = onset-tic ramp physics, correct perception vs
+  wrong expectation — pinned non-widenable run_pos<=1 scoring exclusion lifts run3 replay 0.774->0.856;
+  multi-band voting re-scoped to the residual clutter; A3 pre-check must hit >=0.90 on the replay before
+  any build merges). #80 (glyph-read design: R0 text-region detector + within-run glyph cache, two free
+  gates pinned; build agent running them now).
+- **⇒ NEXT:** glyph build gates report -> wire or kill; P1 rebuild vs A3 pre-check; ARC depth run with a
+  completion-framed brief (discovery is instrumental, levels are the goal); sweep stage-2 still queued.
+_Prior update: 2026-07-04 (ARC-AGI-3 FIRST OPEN-ENDED DISCOVERY RUN: **level 1/9 completed from zero instructions, $6.69** — the discovery loop's first out-of-sample datapoint; GATE-3D FAIL banked)._
 
 **⇒⇒ NEWEST (2026-07-04, latest) — OPEN-ENDED DISCOVERY WORKS OUT-OF-SAMPLE: on ARC-AGI-3 game wa30
 (external benchmark, never seen by us or the brain, ZERO instructions), the brain reverse-engineered the
