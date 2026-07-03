@@ -79,6 +79,13 @@ _MINIWOB_TASK_NAMES = {"miniwob_click_button": "click-button",
 # 3D FPS's action surface is turn/attack). One entry, one scenario (dtc_gate.cfg per AMENDMENT A1.3) —
 # mirrors the miniwob family's one-task-per-key registry shape rather than a generic --scenario flag.
 _VIZDOOM_WORLDS = frozenset({"doom_dtc_gate"})
+# ARC-AGI-3 world: a standalone session class (ArcAgi3Session below), same shape as MiniWobSession/
+# DoomDtcSession — NOT core.gateway.Gateway/GamePlugin (no ROM/emulator concept at all; the "screen"
+# is a native int[][] grid over a REST API). --game arcagi3 --arc-game <game_id> selects the actual
+# ARC game_id at launch (unlike the miniwob/doom families, which pin one task/scenario per registry
+# key) because ARC-AGI-3's game catalog is queried live from GET /api/games, not a fixed local list —
+# see runs/arcagi3_probe/PROBE_REPORT.md.
+_ARCAGI3_WORLDS = frozenset({"arcagi3"})
 # Worlds that get the foveated region tools (ADR-002 Phase D probe: read_region + whats_changed). Scoped
 # to cave_noire (the gate world) + its A/B control + the other lean GB world (gauntlet), plus
 # kirby_dreamland (the entity-gate v2 port target — needs foveation for ENT boxes + NEAR corroboration,
@@ -176,6 +183,14 @@ GAMES = {
     # (mirrors the miniwob/GBA no-oracle shape); the REAL oracle (HEALTH/AMMO2/KILLCOUNT) is
     # DoomDtcSession's own oracle.jsonl writer, never a `watch` RAM-address dict (no RAM here at all).
     "doom_dtc_gate": {"cfg": "scenarios/dtc_gate.cfg", "watch": {}},
+    # ARC-AGI-3 (docs.arcprize.org): a standalone session class (ArcAgi3Session below), no pkg/plugin/
+    # rom/perceiver — the "watch" dict stays {} structurally (mirrors miniwob/doom's no-RAM-oracle
+    # shape); the real oracle (levels_completed/win_levels/state) is ArcAgi3Session's own
+    # oracle.jsonl writer, never a `watch` RAM-address dict (there is no RAM here, only a REST API).
+    # The actual ARC game_id is a launch-time flag (--arc-game), not baked into this registry entry,
+    # since ARC-AGI-3's game catalog is queried live (GET /api/games), unlike the miniwob/doom
+    # families' one-task-per-key registry shape.
+    "arcagi3": {"watch": {}},
 }
 _GB_GENERIC_WORLDS = frozenset({"gb_generic", "kirby_dreamland"})   # game keys needing the generic-GB sandbox
 
@@ -428,6 +443,50 @@ def _vizdoom_static_tools() -> list[dict]:
     return [_DOOM_OBSERVE_TOOL, _REMEMBER_TOOL, *_DOOM_ACTION_TOOLS]
 
 
+# --- ARC-AGI-3 tool specs (runs/arcagi3_probe/PROBE_REPORT.md "Seam sketch"). observe returns the
+# CURRENT grid rendered as compact text (one char/cell) + a diff-summary vs the previous grid +
+# available_actions + step count — the grid IS the screen here (discrete cells), so full-grid observe
+# is seam-legitimate (unlike GB/GBA/NDS pixel screens, which stay withheld from the brain). A single
+# generic `act` tool (not 7 per-action tools) validates against the CURRENT frame's available_actions,
+# matching the docs' "available_actions changes per frame" behavior and MiniWobSession's "reject
+# loudly, never silently clamp" discipline for ACTION6's x,y.
+_ARCAGI3_OBSERVE_TOOL = {
+    "name": "observe",
+    "description": ("Look at the CURRENT grid right now without acting. Returns the grid as compact "
+                    "text (one character per cell, 0-9 then A-F for the 16 ARC colors), a diff-summary "
+                    "of cells changed since your last action (by color transition), the currently "
+                    "legal actions, and the step count. The grid IS the whole observable screen here — "
+                    "there is no hidden state to withhold. Call this first, and after any act."),
+    "inputSchema": {"type": "object", "properties": {}},
+}
+_ARCAGI3_ACT_TOOL = {
+    "name": "act",
+    "description": ("Perform one action. `action` must be one of the CURRENTLY legal actions from "
+                    "observe's available_actions (e.g. \"ACTION1\".. \"ACTION5\", \"ACTION7\" for "
+                    "simple actions, or \"ACTION6\" for a coordinate click). ACTION6 REQUIRES x and y "
+                    "(both 0-63); other actions take no coordinates. An action outside the currently "
+                    "legal set is REJECTED with an error — nothing is sent to the game."),
+    "inputSchema": {"type": "object",
+                    "properties": {"action": {"type": "string",
+                                              "enum": ["ACTION1", "ACTION2", "ACTION3", "ACTION4",
+                                                       "ACTION5", "ACTION6", "ACTION7"]},
+                                   "x": {"type": "integer", "minimum": 0, "maximum": 63},
+                                   "y": {"type": "integer", "minimum": 0, "maximum": 63}},
+                    "required": ["action"]},
+}
+_ARCAGI3_RESET_TOOL = {
+    "name": "reset_game",
+    "description": "Reset (restart) the current game instance to its initial state.",
+    "inputSchema": {"type": "object", "properties": {}},
+}
+_ARCAGI3_ACTION_TOOLS = [_ARCAGI3_ACT_TOOL, _ARCAGI3_RESET_TOOL]
+
+
+def _arcagi3_static_tools() -> list[dict]:
+    """tools/list response for arcagi3 — identical regardless of which --arc-game is chosen."""
+    return [_ARCAGI3_OBSERVE_TOOL, _REMEMBER_TOOL, *_ARCAGI3_ACTION_TOOLS]
+
+
 def _miniwob_static_tools() -> list[dict]:
     """tools/list response for any miniwob_* world — identical across tasks (same fixed action surface)."""
     return [_MINIWOB_OBSERVE_TOOL, _MINIWOB_READ_REGION_TOOL, _MINIWOB_WHATS_CHANGED_TOOL,
@@ -456,6 +515,8 @@ def _static_tools(game: str) -> list[dict]:
         return _miniwob_static_tools()
     if game in _VIZDOOM_WORLDS:
         return _vizdoom_static_tools()
+    if game in _ARCAGI3_WORLDS:
+        return _arcagi3_static_tools()
     nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
     if game in _REGION_TOOL_WORLDS:
         nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
@@ -1178,6 +1239,179 @@ class DoomDtcSession:
         self.world.close()
 
 
+class ArcAgi3Session:
+    """One live ARC-AGI-3 game session over the public REST API, served as an MCP tool surface.
+    Standalone (not core.gateway.Gateway/GamePlugin) — mirrors MiniWobSession/DoomDtcSession's shape:
+    a thin dispatch class owning the world adapter (core/arcagi3_world.ArcAgi3Client) directly.
+
+    Design: runs/arcagi3_probe/PROBE_REPORT.md "Seam sketch" section.
+
+    No-leak law: `levels_completed`/`win_levels`/`state` are the oracle here — logged to
+    <out>/oracle.jsonl by _log_oracle, NEVER placed in a tool result (same separation as
+    MiniWobSession's reward/dom_elements, DoomDtcSession's HEALTH/AMMO2/KILLCOUNT). This differs from
+    the probe report's open question 7 recommendation (brain-visible levels_completed) — the task
+    brief is explicit that levels_completed/win-state must stay oracle-only, so that's what's built;
+    revisit only with an explicit sign-off, per the probe report's own flag.
+
+    Grid vs oracle: the GRID itself is fully brain-visible (it's the whole observable screen, not a
+    hidden RAM value) — only the score/win-state bookkeeping is withheld.
+    """
+
+    def __init__(self, args) -> None:
+        from core.arcagi3_world import ArcAgi3Client, diff_grids, render_grid
+
+        self._diff_grids = diff_grids
+        self._render_grid = render_grid
+
+        game_id = getattr(args, "arc_game", None)
+        if not game_id:
+            raise SystemExit("arcagi3 needs --arc-game <game_id> (e.g. ls20)")
+        self._game_id = game_id
+
+        os.makedirs(args.out, exist_ok=True)
+        self._oracle_path = os.path.join(args.out, "oracle.jsonl")
+
+        self.client = ArcAgi3Client()
+        self.lessons: list[str] = []   # within-run self-improvement notes (learning-boundary law: discarded at exit)
+        self._step_count = 0
+        self._prev_grid: Optional[list] = None
+        self._last_grid: list = []
+        self._last_available_actions: list = []
+        self._last_state = "NOT_FINISHED"
+        self._last_diff: dict = {"changed": 0, "by_color": {}, "note": "first frame -- nothing to diff"}
+
+        self.client.open_scorecard(tags=["ai-pokemon-red", "arcagi3_world"],
+                                   source_url="ai-pokemon-red/world_mcp.py")
+        self._apply_frame(self.client.reset(game_id))
+
+    # -- oracle logging (scoring only; never in a tool result) -----------------------------------------
+
+    def _log_oracle(self, fr) -> None:
+        rec = {"step": self._step_count, "game_id": self._game_id, "action": fr.action, "args": fr.args,
+              "state": fr.state, "levels_completed": fr.levels_completed, "win_levels": fr.win_levels,
+              "frame_count": fr.frame_count}
+        try:
+            with open(self._oracle_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    # -- frame bookkeeping: track prev/current grid for the diff-summary, update legal actions/state ---
+
+    def _apply_frame(self, fr) -> None:
+        # Prior-grid gate (PR #77 review finding 2): a RESET frame starts a fresh instance, so it has
+        # no prior to diff against; EVERY other frame diffs against the grid we last held — never gate
+        # on _step_count (client.reset() hardcodes step=0, so a step-count gate wrongly reported
+        # "first frame" on the first post-action observe of every episode).
+        prior = None if fr.action == "RESET" else self._last_grid
+        self._prev_grid = prior
+        self._last_diff = self._diff_grids(prior, fr.grid)
+        self._last_grid = fr.grid
+        self._last_available_actions = list(fr.available_actions)
+        self._last_state = fr.state
+        self._step_count = fr.step
+        self._log_oracle(fr)
+
+    # -- observe: grid + diff-summary + available_actions + step — no levels_completed/win_levels ------
+
+    def _observe_content(self) -> list[dict]:
+        grid_text = self._render_grid(self._last_grid)
+        diff = self._last_diff
+        if diff.get("changed", 0) < 0:
+            diff_line = f"grid changed shape: {diff.get('note', '')}"
+        elif diff.get("changed", 0) == 0 and diff.get("note"):
+            diff_line = diff["note"]
+        else:
+            by_color = ", ".join(f"{k}x{v}" for k, v in sorted(diff.get("by_color", {}).items()))
+            diff_line = f"{diff.get('changed', 0)} cell(s) changed" + (f" ({by_color})" if by_color else "")
+        status = ("GAME OVER — call reset_game to try again." if self._last_state == "GAME_OVER" else
+                  "YOU WIN — call reset_game to play again." if self._last_state == "WIN" else
+                  "in progress")
+        lines = [
+            f"grid ({len(self._last_grid)}x{len(self._last_grid[0]) if self._last_grid else 0}):",
+            grid_text,
+            f"diff since last action: {diff_line}",
+            f"available_actions: {self._last_available_actions}",
+            f"step: {self._step_count}",
+            f"status: {status}",
+        ]
+        return [{"type": "text", "text": "\n".join(lines)}]
+
+    # -- act: validate against CURRENT available_actions; ACTION6 needs x,y — reject loudly, no clamp --
+
+    def _act(self, args: dict) -> list[dict]:
+        name = str(args.get("action", "")).strip().upper()
+        if not name:
+            return [{"type": "text", "text": "act needs a string `action` (e.g. \"ACTION1\")."}]
+        from core.arcagi3_world import ALL_ACTIONS, COORD_ACTION
+        if name not in ALL_ACTIONS:
+            return [{"type": "text", "text": f"act error: {name!r} is not a valid action; must be one "
+                                             f"of {list(ALL_ACTIONS)}."}]
+        # numeric id ARC uses in available_actions (e.g. [1,2,3,4]) vs our "ACTION{n}" name
+        try:
+            action_id = int(name.replace("ACTION", ""))
+        except ValueError:
+            return [{"type": "text", "text": f"act error: could not parse action id from {name!r}."}]
+        if self._last_state in ("WIN", "GAME_OVER"):
+            return [{"type": "text",
+                     "text": f"act error: the game is over (state={self._last_state}) — only "
+                             "reset_game is legal now. No action was sent."}]
+        if action_id not in self._last_available_actions:
+            return [{"type": "text",
+                     "text": f"act error: {name} is not currently legal — available_actions is "
+                             f"{self._last_available_actions}. No action was sent."}]
+        x = y = None
+        if name == COORD_ACTION:
+            if "x" not in args or "y" not in args:
+                return [{"type": "text", "text": "act error: ACTION6 requires integer x and y (0-63). "
+                                                 "No action was sent."}]
+            try:
+                x, y = int(args["x"]), int(args["y"])
+            except (TypeError, ValueError):
+                return [{"type": "text", "text": "act error: x and y must be integers. No action was sent."}]
+            if not (0 <= x <= 63 and 0 <= y <= 63):
+                return [{"type": "text",
+                         "text": f"act error: x,y must be in [0, 63]; got ({x}, {y}). No action was sent."}]
+        try:
+            fr = self.client.action(name, self._step_count + 1, x=x, y=y)
+        except Exception as e:
+            return [{"type": "text", "text": f"act error: {type(e).__name__}: {e}"}]
+        self._apply_frame(fr)
+        head = f"[act {name}" + (f" ({x},{y})" if x is not None else "") + " -> ok]"
+        return [{"type": "text", "text": head}, *self._observe_content()]
+
+    # -- dispatch ----------------------------------------------------------------------------------------
+
+    def call(self, name: str, args: dict) -> list[dict]:
+        args = args or {}
+        if name == "observe":
+            return self._observe_content()
+        if name == "remember":
+            lesson = str(args.get("lesson", "")).strip()
+            if lesson and lesson not in self.lessons:
+                self.lessons.append(lesson)
+                del self.lessons[:-_MAX_LESSONS]
+            return [{"type": "text", "text": f"Noted ({len(self.lessons)} lesson(s) this run)."},
+                    *self._observe_content()]
+        if name == "act":
+            return self._act(args)
+        if name == "reset_game":
+            try:
+                fr = self.client.reset(self._game_id)
+            except Exception as e:
+                return [{"type": "text", "text": f"reset_game error: {type(e).__name__}: {e}"}]
+            self._apply_frame(fr)
+            return [{"type": "text", "text": "[reset_game -> new instance started]"},
+                    *self._observe_content()]
+        return [{"type": "text", "text": f"unknown tool: {name}"}]
+
+    def close(self) -> None:
+        try:
+            self.client.close_scorecard()
+        except Exception:
+            pass
+
+
 def _to_gray(screen: np.ndarray) -> np.ndarray:
     return np.asarray(screen)[..., :3].mean(axis=2).astype(np.float32)
 
@@ -1230,6 +1464,9 @@ def main() -> int:
     ap.add_argument("--seed", action="append", type=int, default=None,
                     help="doom_dtc_gate only: a pinned seed (repeatable, e.g. --seed 1 --seed 2 ...); "
                          "ignored if --seeds-file is given.")
+    ap.add_argument("--arc-game", default=None,
+                    help="arcagi3 only: the ARC-AGI-3 game_id to play (e.g. ls20). Requires "
+                         "ARC_API_KEY in the environment (never passed as a CLI flag or logged).")
     args = ap.parse_args()
 
     # Argument validation that must fail AT LAUNCH, not on the lazily-deferred first tool call (a
@@ -1248,6 +1485,18 @@ def main() -> int:
     # of refusing to start (the PR #64 re-validation nit this mirrors).
     if args.game in _VIZDOOM_WORLDS and not _load_doom_seeds(args):
         raise SystemExit("doom_dtc_gate needs at least one pinned seed: --seeds-file or --seed")
+    if args.game in _ARCAGI3_WORLDS and not args.arc_game:
+        raise SystemExit("arcagi3 needs --arc-game <game_id> (e.g. ls20)")
+    # A missing/empty ARC_API_KEY must fail AT LAUNCH too (PR #77 review finding 1): ArcAgi3Session
+    # is built lazily on the first tool call, and an empty key there dies with a generic 401
+    # mid-protocol instead of a clear refusal to start — the exact failure mode the seed/--record
+    # guards around this exist to avoid. Only the key's ABSENCE is reported, never its value.
+    if args.game in _ARCAGI3_WORLDS and not os.environ.get("ARC_API_KEY"):
+        raise SystemExit("arcagi3 needs ARC_API_KEY in the environment (launchers must pass it "
+                         "through, e.g. docker -e ARC_API_KEY or the WSL env — never a CLI flag).")
+    if args.record and args.game in _ARCAGI3_WORLDS:
+        raise SystemExit("--record is not supported for arcagi3: there is no pixel frame pipeline for "
+                         "this world at all (the grid is text, not a rendered frame). Drop --record.")
 
     # LAZY: do NOT boot the emulator/browser here. `initialize`/`tools/list` must answer instantly or the
     # MCP client times out the startup handshake and marks the server "not connected". The World (PyBoy)
@@ -1255,11 +1504,13 @@ def main() -> int:
     # client waits on as a normal request (no startup timeout).
     _is_miniwob = args.game in _MINIWOB_WORLDS
     _is_vizdoom = args.game in _VIZDOOM_WORLDS
+    _is_arcagi3 = args.game in _ARCAGI3_WORLDS
     _world: list = [None]
     def _close_world(w) -> None:
-        # World's emulator lives at w.plugin; MiniWobSession/DoomDtcSession close themselves directly —
-        # same lazy-boot slot, different shapes, so shutdown/EOF-close needs to know which.
-        (w.close() if (_is_miniwob or _is_vizdoom) else w.plugin.close())
+        # World's emulator lives at w.plugin; MiniWobSession/DoomDtcSession/ArcAgi3Session close
+        # themselves directly — same lazy-boot slot, different shapes, so shutdown/EOF-close needs to
+        # know which.
+        (w.close() if (_is_miniwob or _is_vizdoom or _is_arcagi3) else w.plugin.close())
 
     def world():
         if _world[0] is None:
@@ -1267,6 +1518,8 @@ def main() -> int:
                 _world[0] = MiniWobSession(args)
             elif _is_vizdoom:
                 _world[0] = DoomDtcSession(args)
+            elif _is_arcagi3:
+                _world[0] = ArcAgi3Session(args)
             else:
                 w = World(args)
                 assert_action_tools_fresh(w.plugin, args.game)   # catch static-tool drift on first boot (exact equality)
