@@ -36,6 +36,7 @@ Verdict for the paid A/B pre-registered in `reports/2026-07-03-skill-compilation
 | `run_skill` calls | -- | 16 |
 | `define_skill` calls | -- | 15 |
 | Decisions (act + run_skill, per §4.1) | 50 | 34 |
+| Raw world steps (oracle action rows; step-0 RESET excluded) | 50 (1:1 with decisions) | 130 (18 via `act` + 112 summed `world_steps_used` over the 16 `run_skill` calls) |
 | Total tool calls (all types) | 57 | 62 |
 | `num_turns` (claude -p) | 58 | 63 |
 | `levels_completed` (oracle, max) | 1 / 9 | 2 / 9 |
@@ -53,7 +54,9 @@ auditable: YES
 ```
 
 15 of 16 `run_skill` calls qualify. The guard is satisfied -- the mechanism was genuinely exercised,
-not primitive-spam wearing a skill-shaped wrapper. `INSUFFICIENT_DATA` does not apply.
+not primitive-spam wearing a skill-shaped wrapper. `INSUFFICIENT_DATA` does not apply. (Scope note:
+what the guard certifies is multi-step execution, not conditional execution -- all 15 qualifying calls
+were flat fixed-length lists; see Honest bounds, first bullet.)
 
 ## The pinned metric
 
@@ -85,6 +88,36 @@ would have ended, at 1/9 without the skill tools. It is also the first paid-gate
 
 ## Honest bounds
 
+- **The conditional-loop half of the formalism was never exercised (disclosure, per PR #91 review
+  finding 1).** All 15 of Arm B's skill definitions are flat, fixed-length step lists (verified by
+  scanning every `define_skill` record in `skills.jsonl` for `repeat_until`/`stop_when`: 0 of 15
+  contain either), and all 16 `run_skill` calls ended with the trivial stop reason
+  `"all top-level steps executed"` -- no skill ever halted early on a world condition. The design
+  doc's §3 called `stop_when` "load-bearing" ("push until the target cells change" instead of
+  guessing N exactly); in this run the brain never used it -- it wrote skills like keyboard macros:
+  record N keystrokes, replay them. **This PASS therefore validates the BATCHING half of the
+  mechanism (multiple primitives per paid decision), NOT the conditional-loop half
+  (`repeat_until`/`stop_when`) -- that half remains untested in any paid run**, and exercising it
+  should be a stated objective of the next port's gate (the Kirby exposure macro and the doom hunt
+  macro both REQUIRE the loop construct, so those ports cannot pass without finally testing it).
+- **Guard gap identified (a candidate stricter amendment for the NEXT gate -- a future
+  pre-registration note, NOT a retroactive change to this verdict).** The pinned >=3-executed-steps
+  qualifying guard was built to catch *short* degenerate calls; it cannot distinguish a conditional,
+  condition-checked macro from a hardcoded fixed-length replay (a flat 18-step list qualifies as
+  easily as a real loop). This run's guard did exactly what it was pinned to do and the PASS stands
+  on it as written; but a future port's gate should consider pinning something like "at least 1
+  qualifying call whose `stop_when` fired before max steps" so the conditional half is verified,
+  not just permitted. Stricter-only, to be pinned fresh in that port's own pre-registration.
+- **The raw world-step asymmetry is the intended causal lever, stated plainly.** Within the same
+  80-turn cap, Arm B executed 130 world steps across 34 decisions (~3.8 steps/decision) vs Arm A's
+  50 world steps across 50 decisions (1:1) -- 2.6x the raw world steps. That is not a confound; it
+  is exactly the mechanism §3 was built to buy (one paid decision, N world steps) and the pinned
+  decisions-denominator metric is precisely the pre-registered way of scoring it. The raw counts are
+  in the table above so an auditor does not have to reconstruct them from `skills.jsonl`.
+- **Same-brief claim, evidenced.** `diff runs/brain_skill_ab_armA/run.sh runs/brain_skill_ab_armB/run.sh`
+  shows the two launchers differ only in the arm label (comment lines), the `ARC_SKILLS` export, the
+  `LAUNCH` path, and the arm-name entry in a sys.path list -- the brief content itself is identical
+  (independently verified by the PR #91 adversarial reviewer as well).
 - **One game, one world class, one attempt per arm.** This is a single A/B on a single ARC-AGI-3 game
   (wa30) under one brief framing. There is no variance estimate -- no repeated trials, no
   confidence interval, no test of whether a second Arm-B attempt would also clear 1.3x. The pinned
@@ -115,13 +148,15 @@ would have ended, at 1/9 without the skill tools. It is also the first paid-gate
 ## NEXT implications
 
 - **Ports to other worlds, per the design doc's later rungs.** Rung 1 shipped exactly one executor
-  (`ArcAgi3Session`); the mechanism's shape (a bounded `repeat_until` loop over existing primitives,
-  a small closed per-world `stop_when` predicate enum, verbatim logging) is validated well enough by
-  this PASS to justify the two ports the design doc names as illustrations, not deliverables: the
-  Kirby entity-v3 exposure-control macro (`approach k tiles, retreat k tiles` via `repeat_until`) and
-  the GATE-3D doom scan-and-center hunt macro (`repeat_until(turn_left, stop_when="mover_visible")`).
-  Each port pins its own `stop_when` enum from that world's own wire data in its own build PR --
-  nothing here pre-approves a specific enum for either world.
+  (`ArcAgi3Session`); what this PASS validates is the batching half of the mechanism (flat multi-step
+  skills, verbatim logging, one decision = N world steps) -- enough to justify the two ports the
+  design doc names as illustrations, not deliverables: the Kirby entity-v3 exposure-control macro
+  (`approach k tiles, retreat k tiles` via `repeat_until`) and the GATE-3D doom scan-and-center hunt
+  macro (`repeat_until(turn_left, stop_when="mover_visible")`). Both port macros REQUIRE the
+  conditional-loop construct this run never exercised (Honest bounds, first bullet), so each port's
+  gate should explicitly require the loop half to fire -- the ports are where that half finally gets
+  tested. Each port pins its own `stop_when` enum from that world's own wire data in its own build
+  PR -- nothing here pre-approves a specific enum for either world.
 - **Feeds the continuous-time lane.** The MKDS probe (same day, `runs/nds3d_probe/FINDINGS.md`)
   measured a world that changes every frame with zero player input (idle mean 12.22%, accelerating
   mean 33.23%) -- the opposite of ARC's and GB's turn-based idle assumption. A `stop_when` predicate

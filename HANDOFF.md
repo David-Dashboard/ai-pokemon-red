@@ -23,7 +23,11 @@ ADR-002 HUD gate. Full verdict: `reports/2026-07-03-skill-rung1-ab-verdict.md`. 
   pre-registered `>= 1.3x` bar. **PASS.** Zero-denominator rule not triggered (Arm A ≠ 0). Robustness
   check (non-pinned): an all-tool-calls denominator gives 1.75 vs 3.23 = 1.84x — still PASS, so the
   result isn't an artifact of exactly which calls count as "decisions." Arm B alone also clears the
-  pinned absolute floor (>= 2 levels).
+  pinned absolute floor (>= 2 levels). **Mechanism-scope caveat (PR #91 review):** all 15 Arm-B skills
+  were flat fixed-length step lists — `stop_when`/`repeat_until` never fired (0/15 definitions use it),
+  so this PASS validates the BATCHING half of the mechanism (N primitives per decision: 130 world steps
+  for 34 decisions vs Arm A's 50-for-50), NOT the conditional-loop half — that half is untested in any
+  paid run and should be a stated objective of the next port's gate.
 - **Honest bounds:** one game (wa30), one world class, one attempt per arm — no variance estimate. The
   M1-M7 milestone fallback was never needed (clean levels_completed signal, no tie). Launch discipline
   followed exactly as pinned: Arm A first, Arm A's $7.78 spend stayed under the $10 trigger so Arm B's
