@@ -5,7 +5,28 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-04 (GATE-3D: **FAIL** — pre-registered verdict computed (27/30 episodes); ARC-AGI-3 world merged (#77) + first open-ended discovery run launched; MiniWoB 5/5 banked)._
+_Last updated: 2026-07-04 (ARC-AGI-3 FIRST OPEN-ENDED DISCOVERY RUN: **level 1/9 completed from zero instructions, $6.69** — the discovery loop's first out-of-sample datapoint; GATE-3D FAIL banked)._
+
+**⇒⇒ NEWEST (2026-07-04, latest) — OPEN-ENDED DISCOVERY WORKS OUT-OF-SAMPLE: on ARC-AGI-3 game wa30
+(external benchmark, never seen by us or the brain, ZERO instructions), the brain reverse-engineered the
+world and completed a level (runs/brain_arcagi3/, $6.69, 67 turns, --max-turns hard cap in force). ⇒⇒**
+- **What it discovered unaided (verified against its transcript + oracle):** a sokoban-style
+  tile-delivery puzzle; 4x4 block quantization; its own avatar sprite INCLUDING the facing marker;
+  ACTION1-4 = movement, ACTION5 = grab/release-toggle (discovered by experiment, logged as HYP lines
+  per the discovery protocol); containers; a timer bar filling along row 63. Then it used the ontology:
+  **levels_completed 1/9** per the oracle it never saw.
+- **Why this matters for the north star:** this is the ADR-002 hypothesize->ground->exploit loop
+  running OPEN-ENDEDLY on a world with no hand-coded perceiver, no brief-provided world facts, no goal
+  statement — and an EXTERNAL yardstick (ARC Prize scorecard) nobody can accuse us of tuning. Combined
+  with the same day's MiniWoB 5/5: constancy now spans five world classes (GB/GBA/NDS/browser/ARC grid).
+- **Honest bounds:** one game, one level, discrete lossless grid (the friendliest possible perception
+  setting — the grid IS the screen); ACTION6/7 untested (not legal in wa30); no pre-registered gate
+  (exploratory probe by design). Follow-ups: more wa30 levels / more games as a cheap standing probe
+  set; a pre-registered ARC gate (e.g. levels or games completed vs a random-policy baseline) if we
+  want a claimable number.
+- **⇒ NEXT (unchanged from the GATE-3D block, plus):** ARC standing probes are now the cheapest
+  high-signal paid runs we have (~$7) — good queue fillers for account B alongside the sweep.
+_Prior update: 2026-07-04 (GATE-3D: **FAIL** — pre-registered verdict computed (27/30 episodes); ARC-AGI-3 world merged (#77) + first open-ended discovery run launched; MiniWoB 5/5 banked)._
 
 **⇒⇒ NEWEST (2026-07-04, latest) — GATE-3D VERDICT: **FAIL** (runs/brain_gate3d/run3_v_FAIL/), and the
 failure decomposes into one pass, one honest miss, and one real scientific finding. ARC-AGI-3 merged
