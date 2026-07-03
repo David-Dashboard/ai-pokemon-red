@@ -376,9 +376,12 @@ def test_client_post_retries_on_429_then_succeeds(monkeypatch, tmp_path):
 # 6. tools/list wiring
 # ---------------------------------------------------------------------------
 
-def test_arcagi3_advertises_expected_tools():
+def test_arcagi3_advertises_expected_tools(monkeypatch):
+    # define_skill/run_skill are gated behind ARC_SKILLS=1 (A/B arm isolation) -- off by default, so
+    # the base tool set excludes them; see tests/test_skill_rung1.py for the gate's own coverage.
+    monkeypatch.delenv("ARC_SKILLS", raising=False)
     names = {t["name"] for t in _static_tools("arcagi3")}
-    assert names == {"observe", "remember", "act", "reset_game", "define_skill", "run_skill"}
+    assert names == {"observe", "remember", "act", "reset_game"}
 
 
 def test_arcagi3_registered_in_games():
