@@ -43,6 +43,9 @@ import io
 import json
 import signal
 import uuid
+from typing import Optional
+
+import numpy as np
 
 # Run from the repo root so `import core` and relative rom/run paths resolve regardless of launch cwd.
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -71,6 +74,11 @@ _MINIWOB_WORLDS = frozenset({"miniwob_click_button", "miniwob_click_checkboxes",
 _MINIWOB_TASK_NAMES = {"miniwob_click_button": "click-button",
                        "miniwob_click_checkboxes": "click-checkboxes",
                        "miniwob_focus_text": "focus-text"}
+# ViZDoom GATE-3D world: a standalone session class (DoomDtcSession below), same shape as
+# MiniWobSession — NOT core.gateway.Gateway/GamePlugin (no tile grid, no press_button vocabulary; a
+# 3D FPS's action surface is turn/attack). One entry, one scenario (dtc_gate.cfg per AMENDMENT A1.3) —
+# mirrors the miniwob family's one-task-per-key registry shape rather than a generic --scenario flag.
+_VIZDOOM_WORLDS = frozenset({"doom_dtc_gate"})
 # Worlds that get the foveated region tools (ADR-002 Phase D probe: read_region + whats_changed). Scoped
 # to cave_noire (the gate world) + its A/B control + the other lean GB world (gauntlet), plus
 # kirby_dreamland (the entity-gate v2 port target — needs foveation for ENT boxes + NEAR corroboration,
@@ -161,6 +169,13 @@ GAMES = {
                         "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                         "rom": "roms/Kirby's Dream Land (USA, Europe).gb",
                         "watch": {"hp": 0xD086}},
+    # GATE-3D-A1 (reports/2026-07-04-vizdoom-3d-floor-design.md + AMENDMENT A1): ViZDoom
+    # defend_the_center, symbolic-only seam (P1 yaw + P2 movers + episode status; no screenshot, no
+    # game variables on the wire). No pkg/plugin/rom entry — DoomDtcSession below is a standalone
+    # dispatch path (mirrors MiniWobSession), not core.gateway.Gateway. "watch" stays {} structurally
+    # (mirrors the miniwob/GBA no-oracle shape); the REAL oracle (HEALTH/AMMO2/KILLCOUNT) is
+    # DoomDtcSession's own oracle.jsonl writer, never a `watch` RAM-address dict (no RAM here at all).
+    "doom_dtc_gate": {"cfg": "scenarios/dtc_gate.cfg", "watch": {}},
 }
 _GB_GENERIC_WORLDS = frozenset({"gb_generic", "kirby_dreamland"})   # game keys needing the generic-GB sandbox
 
@@ -365,6 +380,53 @@ _MINIWOB_WHATS_CHANGED_TOOL = {
 }
 _MINIWOB_ACTION_TOOLS = [_MINIWOB_CLICK_TOOL, _MINIWOB_TYPE_TOOL, _MINIWOB_KEY_TOOL, _MINIWOB_RESET_TOOL]
 
+# --- ViZDoom GATE-3D-A1 tool specs (design doc S3.2 + AMENDMENT A1.3). Symbolic-only observe (P1 yaw +
+# P2 movers + episode status; NO screenshot, NO game variables — the no-leak law). turn_left/turn_right/
+# attack take NO tics parameter (every action-step is tics=4 FIXED, the gate's action-grain equivalence
+# pin) but DO take `repeat: 1..10` (a System-1 grain so the brain's decision budget isn't consumed by
+# mechanical repetition, A1.3) — each of the up-to-10 sub-steps still individually computes+logs P1
+# world-side (the PR #73 review finding this doc cites: the brain cannot influence when P1 runs).
+_DOOM_OBSERVE_TOOL = {
+    "name": "observe",
+    "description": ("Look at the arena RIGHT NOW without acting. Returns your ego-rotation reading "
+                    "(turning left/right/none, or null if it can't tell), a list of moving-thing "
+                    "azimuths (null if you're not confidently stationary — turning closes this "
+                    "channel; [] means confidently nothing is moving), and episode status. No "
+                    "screenshot, no game stats — reason from this symbolic view only."),
+    "inputSchema": {"type": "object", "properties": {}},
+}
+
+
+def _doom_action_tool(name: str, verb: str) -> dict:
+    return {
+        "name": name,
+        "description": (f"{verb} — executes with a fixed action grain (no `tics` parameter here); "
+                        "optionally `repeat` the SAME action several times in one call (System-1 "
+                        "steps, does not cost you an extra decision) before returning your next "
+                        "observation."),
+        "inputSchema": {"type": "object",
+                        "properties": {"repeat": {"type": "integer", "minimum": 1, "maximum": 10}},
+                        "required": []},
+    }
+
+
+_DOOM_TURN_LEFT_TOOL = _doom_action_tool("turn_left", "Turn left")
+_DOOM_TURN_RIGHT_TOOL = _doom_action_tool("turn_right", "Turn right")
+_DOOM_ATTACK_TOOL = _doom_action_tool("attack", "Fire your weapon")
+_DOOM_NEW_EPISODE_TOOL = {
+    "name": "new_episode",
+    "description": ("Advance to the NEXT pinned seed's episode. Calling this before the current "
+                    "episode ends ABANDONS it — that seed's attempt is recorded as over right now "
+                    "(one attempt per seed; no re-rolling a bad start)."),
+    "inputSchema": {"type": "object", "properties": {}},
+}
+_DOOM_ACTION_TOOLS = [_DOOM_TURN_LEFT_TOOL, _DOOM_TURN_RIGHT_TOOL, _DOOM_ATTACK_TOOL, _DOOM_NEW_EPISODE_TOOL]
+
+
+def _vizdoom_static_tools() -> list[dict]:
+    """tools/list response for doom_dtc_gate — identical across (there's only one scenario)."""
+    return [_DOOM_OBSERVE_TOOL, _REMEMBER_TOOL, *_DOOM_ACTION_TOOLS]
+
 
 def _miniwob_static_tools() -> list[dict]:
     """tools/list response for any miniwob_* world — identical across tasks (same fixed action surface)."""
@@ -392,6 +454,8 @@ def _static_tools(game: str) -> list[dict]:
     """Return the correct tools/list response for `game` WITHOUT booting the emulator."""
     if game in _MINIWOB_WORLDS:
         return _miniwob_static_tools()
+    if game in _VIZDOOM_WORLDS:
+        return _vizdoom_static_tools()
     nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
     if game in _REGION_TOOL_WORLDS:
         nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
@@ -909,6 +973,236 @@ class MiniWobSession:
         self.mw.close()
 
 
+class DoomDtcSession:
+    """One live GATE-3D-A1 session over `scenarios/dtc_gate.cfg` (defend_the_center), served as an MCP
+    tool surface. Standalone (not core.gateway.Gateway/GamePlugin) — mirrors MiniWobSession's shape: a
+    thin dispatch class owning the world adapter directly.
+
+    Design: reports/2026-07-04-vizdoom-3d-floor-design.md S3 + AMENDMENT A1.3/A1.4.
+
+    Load-bearing invariant (PR #73 review finding, cited by the brief): P1 (core.yaw_flow.yaw_band_flow)
+    is computed and LOGGED on EVERY action sub-step, inside turn_left/turn_right/attack themselves —
+    NOT lazily inside observe(). The brain calls observe() whenever it wants a symbolic view, but it
+    cannot suppress or delay when P1 actually runs; ARM (b) (grounding-honesty) is scored from THESE
+    per-action-step log rows, not from however many times the brain happened to call observe. Each of
+    `repeat`'s up-to-10 sub-steps gets its own P1 computation and its own oracle.jsonl row (frame-diffed
+    against the frame immediately before it, never a frame several sub-steps back).
+
+    Oracle law (unchanged): HEALTH/AMMO2/KILLCOUNT never appear in a tool result — logged to
+    oracle.jsonl only, `{episode, step, tic, health, ammo2, killcount}` (design S3.3). P1/P2 readings
+    are NOT oracle — they're the brain's own perception and are also logged (a separate, non-oracle
+    grounding log) purely so ARM (b) can be scored after the fact from the run's own logs (design
+    S2.2: "commanded actions are the truth; no oracle involved").
+
+    One-attempt-per-seed enforcement (design A1.4 degenerate guard) lives HERE: `new_episode` called
+    before the current episode's `is_episode_finished()` is True counts the CURRENT seed's episode as
+    abandoned (KILLCOUNT logged at abandonment, no re-roll) and advances to the next pinned seed.
+    """
+
+    def __init__(self, args) -> None:
+        from core.stationary_movers import stationary_movers
+        from core.vizdoom_world import VizdoomWorld
+        from core.yaw_flow import yaw_band_flow
+
+        self._yaw_band_flow = yaw_band_flow
+        self._stationary_movers = stationary_movers
+
+        # --rom is not used for this world (there is one pinned scenario, GAMES["doom_dtc_gate"]["cfg"];
+        # no .wad/.cfg override knob — the gate is pre-registered, not a --rom-swappable free parameter).
+        self.world = VizdoomWorld(GAMES["doom_dtc_gate"]["cfg"])
+
+        self._seeds = _load_doom_seeds(args)
+        if not self._seeds:
+            raise SystemExit("doom_dtc_gate needs at least one pinned seed: --seeds-file or --seed")
+        self._seed_idx = 0
+
+        os.makedirs(args.out, exist_ok=True)
+        self._oracle_path = os.path.join(args.out, "oracle.jsonl")
+        self._grounding_path = os.path.join(args.out, "grounding.jsonl")
+
+        self._episode_step = 0        # step count WITHIN the current episode (oracle/grounding alignment)
+        self.lessons: list[str] = []  # within-run self-improvement notes (learning-boundary law: discarded at exit)
+
+        self._prev_gray: Optional[np.ndarray] = None   # frame immediately before the NEXT action sub-step
+        self._last_p1_reading = None
+        self._last_screen = None
+        # The (before, after) pair the LAST action sub-step actually ran on — distinct from
+        # _prev_gray/_last_screen (which roll forward to feed the *next* substep's P1 computation).
+        # observe()'s P2 call must diff THIS pair, or it would diff the current frame against itself
+        # (both rolled to the same post-action frame) and always report [] regardless of what moved.
+        self._last_pair_gray: Optional[tuple[np.ndarray, np.ndarray]] = None
+
+        self._start_episode(self._seeds[self._seed_idx])
+
+    # -- episode lifecycle ------------------------------------------------------------------------
+
+    def _start_episode(self, seed: int) -> None:
+        result = self.world.reset(seed=seed)
+        self._episode_step = 0
+        self._prev_gray = _to_gray(result.screen) if result.screen is not None else None
+        self._last_p1_reading = None
+        self._last_screen = result.screen
+        self._last_pair_gray = None   # no action has run yet this episode -- no pair to diff
+        self._log_oracle(finished=False)
+
+    def _advance_seed(self, *, abandoned: bool) -> bool:
+        """Move to the next pinned seed. If `abandoned`, log the CURRENT (unfinished) episode's oracle
+        row first (one-attempt-per-seed: an early new_episode counts this seed as over right now).
+        Returns False if there is no next seed (caller should report exhaustion, not crash)."""
+        if abandoned and not self.world.episode_finished:
+            self._log_oracle(finished=True, abandoned=True)
+        self._seed_idx += 1
+        if self._seed_idx >= len(self._seeds):
+            return False
+        self._start_episode(self._seeds[self._seed_idx])
+        return True
+
+    # -- oracle / grounding logging (scoring only; never in a tool result) ------------------------
+
+    def _log_oracle(self, *, finished: bool, abandoned: bool = False) -> None:
+        gv = self.world.game_variables() or {}
+        rec = {
+            "episode": self._seed_idx, "seed": self._seeds[self._seed_idx],
+            "step": self._episode_step, "tic": self.world.tic,
+            "health": gv.get("HEALTH"), "ammo2": gv.get("AMMO2"), "killcount": gv.get("KILLCOUNT"),
+            "finished": bool(finished), "abandoned": bool(abandoned),
+        }
+        try:
+            with open(self._oracle_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    def _log_grounding(self, commanded: Optional[str], reading) -> None:
+        """Per-action-step P1 log row (design S2.2 ARM (b) input) — commanded turn direction ("left"/
+        "right"/None for attack) vs P1's OWN reading, by episode+step (never wall-clock, PR #55 lesson).
+        `reading` may be None (attack sub-steps don't compute P1 at all — see turn/attack dispatch)."""
+        rec = {"episode": self._seed_idx, "seed": self._seeds[self._seed_idx],
+              "step": self._episode_step, "tic": self.world.tic, "commanded": commanded,
+              "direction": None if reading is None else reading.direction,
+              "dx_px": None if reading is None else reading.dx_px,
+              "confidence": None if reading is None else reading.confidence}
+        try:
+            with open(self._grounding_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    # -- observe: P1 + P2 + episode status only — no screenshot, no game variables -----------------
+
+    def _observe_content(self) -> list[dict]:
+        finished = self.world.episode_finished
+        if finished:
+            lines = [f"Episode {self._seed_idx} (seed {self._seeds[self._seed_idx]}) finished at tic "
+                    f"{self.world.tic}.",
+                    ("Call new_episode to advance to the next pinned seed."
+                     if self._seed_idx + 1 < len(self._seeds) else
+                     "This was the last pinned seed — no more episodes.")]
+            return [{"type": "text", "text": "\n".join(lines)}]
+
+        reading = self._last_p1_reading
+        if reading is None:
+            ego = {"turning": None, "dx_px": None, "confidence": None}
+        else:
+            ego = {"turning": reading.direction, "dx_px": reading.dx_px, "confidence": reading.confidence}
+
+        movers_out: Optional[list] = None
+        if reading is not None and self._last_pair_gray is not None:
+            before, after = self._last_pair_gray
+            movers_out = self._stationary_movers(before, after, reading)
+
+        lines = [
+            f"ego: turning={ego['turning']!r} dx_px={ego['dx_px']!r} confidence={ego['confidence']!r}",
+            f"movers: {_movers_repr(movers_out)}",
+            f"episode: finished=False tic={self.world.tic} episode_index={self._seed_idx}",
+        ]
+        return [{"type": "text", "text": "\n".join(lines)}]
+
+    # -- actions: turn_left / turn_right / attack — fixed tics=4, System-1 `repeat`, P1 EVERY sub-step
+
+    def _do_action(self, button_name: str, commanded_dir: Optional[str], repeat: int) -> list[dict]:
+        repeat = max(1, min(int(repeat), 10))
+        for _ in range(repeat):
+            if self.world.episode_finished:
+                break
+            prev_gray = self._prev_gray
+            result = self.world.step(button_name, repeat=1)
+            self._episode_step += 1
+            cur_gray = _to_gray(result.screen) if result.screen is not None else None
+            reading = None
+            if prev_gray is not None and cur_gray is not None:
+                # P1 computed HERE — every sub-step, unconditionally, before the brain ever asks for
+                # an observation (the PR #73 review finding this class exists to satisfy).
+                reading = self._yaw_band_flow(prev_gray, cur_gray)
+            self._log_grounding(commanded_dir, reading)
+            self._last_p1_reading = reading
+            if prev_gray is not None and cur_gray is not None:
+                self._last_pair_gray = (prev_gray, cur_gray)   # exactly what THIS sub-step ran on
+            self._prev_gray = cur_gray
+            self._last_screen = result.screen
+            if result.episode_finished:
+                self._log_oracle(finished=True)
+                break
+            else:
+                self._log_oracle(finished=False)
+        head = f"[{button_name.lower()} x{repeat} -> ok]"
+        return [{"type": "text", "text": head}, *self._observe_content()]
+
+    # -- dispatch --------------------------------------------------------------------------------
+
+    def call(self, name: str, args: dict) -> list[dict]:
+        args = args or {}
+        if name == "observe":
+            return self._observe_content()
+        if name == "remember":
+            lesson = str(args.get("lesson", "")).strip()
+            if lesson and lesson not in self.lessons:
+                self.lessons.append(lesson)
+                del self.lessons[:-_MAX_LESSONS]
+            return [{"type": "text", "text": f"Noted ({len(self.lessons)} lesson(s) this run)."},
+                    *self._observe_content()]
+        if name == "turn_left":
+            return self._do_action("TURN_LEFT", "left", args.get("repeat", 1))
+        if name == "turn_right":
+            return self._do_action("TURN_RIGHT", "right", args.get("repeat", 1))
+        if name == "attack":
+            return self._do_action("ATTACK", None, args.get("repeat", 1))
+        if name == "new_episode":
+            had_more = self._advance_seed(abandoned=True)
+            if not had_more:
+                return [{"type": "text", "text": "[new_episode -> no more pinned seeds]"}]
+            return [{"type": "text", "text": "[new_episode -> started]"}, *self._observe_content()]
+        return [{"type": "text", "text": f"unknown tool: {name}"}]
+
+    def close(self) -> None:
+        self.world.close()
+
+
+def _to_gray(screen: np.ndarray) -> np.ndarray:
+    return np.asarray(screen)[..., :3].mean(axis=2).astype(np.float32)
+
+
+def _movers_repr(movers) -> str:
+    if movers is None:
+        return "null (not ego-stationary)"
+    if not movers:
+        return "[] (confidently nothing moving)"
+    return "[" + ", ".join(
+        f"{{azimuth_px={m.azimuth_px:.0f}, azimuth_deg={m.azimuth_deg}, area={m.area}, "
+        f"bbox={m.bbox}, confidence={m.confidence:.2f}}}" for m in movers
+    ) + "]"
+
+
+def _load_doom_seeds(args) -> list[int]:
+    """Pinned-seed source: --seeds-file (one int per line) takes priority; else --seed (repeatable).
+    Never invents a seed — an empty result is a launch-time error (see DoomDtcSession.__init__)."""
+    seeds_file = getattr(args, "seeds_file", None)
+    if seeds_file:
+        with open(seeds_file, encoding="utf-8") as f:
+            return [int(line.strip()) for line in f if line.strip()]
+    return [int(s) for s in (getattr(args, "seed", None) or [])]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="MCP (stdio) server exposing a Game Boy (or MiniWoB++ "
                                               "computer-use) world as tools.")
@@ -925,6 +1219,12 @@ def main() -> int:
     ap.add_argument("--keep-frames", action="store_true",
                     help="KEEP every per-step frame PNG on disk (default drops them as debris). Max logging: each "
                          "PNG pairs with its oracle.jsonl step (RAM truth) + the symbolic view the brain saw.")
+    ap.add_argument("--seeds-file", default=None,
+                    help="doom_dtc_gate only: path to a file of pinned seeds, one int per line "
+                         "(GATE-3D-A1 §2.2/A1.4: distinct pinned seeds, one attempt each).")
+    ap.add_argument("--seed", action="append", type=int, default=None,
+                    help="doom_dtc_gate only: a pinned seed (repeatable, e.g. --seed 1 --seed 2 ...); "
+                         "ignored if --seeds-file is given.")
     args = ap.parse_args()
 
     # Argument validation that must fail AT LAUNCH, not on the lazily-deferred first tool call (a
@@ -935,22 +1235,33 @@ def main() -> int:
         raise SystemExit("--record is not supported for miniwob worlds: recording threads only "
                          "through the default PyBoy emulator path. There is no per-step frame log "
                          "for this family yet either — drop --record.")
+    if args.record and args.game in _VIZDOOM_WORLDS:
+        raise SystemExit("--record is not supported for doom_dtc_gate: recording threads only "
+                         "through the default PyBoy emulator path. Drop --record.")
+    # Same reasoning: a missing pinned seed must fail AT LAUNCH — DoomDtcSession is built lazily on the
+    # first tool call, and a SystemExit escaping from there would kill the server mid-protocol instead
+    # of refusing to start (the PR #64 re-validation nit this mirrors).
+    if args.game in _VIZDOOM_WORLDS and not _load_doom_seeds(args):
+        raise SystemExit("doom_dtc_gate needs at least one pinned seed: --seeds-file or --seed")
 
     # LAZY: do NOT boot the emulator/browser here. `initialize`/`tools/list` must answer instantly or the
     # MCP client times out the startup handshake and marks the server "not connected". The World (PyBoy)
-    # or MiniWobSession (Selenium) is built on the first tool CALL, which the client waits on as a normal
-    # request (no startup timeout).
+    # or MiniWobSession (Selenium) / DoomDtcSession (ViZDoom) is built on the first tool CALL, which the
+    # client waits on as a normal request (no startup timeout).
     _is_miniwob = args.game in _MINIWOB_WORLDS
+    _is_vizdoom = args.game in _VIZDOOM_WORLDS
     _world: list = [None]
     def _close_world(w) -> None:
-        # World's emulator lives at w.plugin; MiniWobSession closes itself directly — same lazy-boot
-        # slot, two shapes, so shutdown/EOF-close needs to know which.
-        (w.close() if _is_miniwob else w.plugin.close())
+        # World's emulator lives at w.plugin; MiniWobSession/DoomDtcSession close themselves directly —
+        # same lazy-boot slot, different shapes, so shutdown/EOF-close needs to know which.
+        (w.close() if (_is_miniwob or _is_vizdoom) else w.plugin.close())
 
     def world():
         if _world[0] is None:
             if _is_miniwob:
                 _world[0] = MiniWobSession(args)
+            elif _is_vizdoom:
+                _world[0] = DoomDtcSession(args)
             else:
                 w = World(args)
                 assert_action_tools_fresh(w.plugin, args.game)   # catch static-tool drift on first boot (exact equality)
