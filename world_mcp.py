@@ -1176,6 +1176,19 @@ class World:
         # advanced it, per-press, one oracle row per press) — logging here, before the trailing render
         # below calls `self.plugin.observe()` again (which would bump _obs_count one further), keeps
         # `step` in this record equal to the true macro-end boundary the scorer's exclusion formula needs.
+        #
+        # COUNTER-FAMILY NOTE (PR #93 executor review, finding 3 — documented so a refactor can't
+        # silently break it): this `step` is the plugin's OBSERVE-CALL counter (`_obs_count`, one
+        # increment + one oracle row per plugin.observe() call), NOT the ARC port's per-ACTION counter
+        # (`ArcAgi3Session._step_count`, advanced by `_apply_frame` once per world action). The two
+        # families coincide here ONLY because doc §2's pinned executor performs exactly one observe()
+        # per inner press (`_kirby_press_and_observe` is the sole observe site inside the loop) and
+        # ordinary manual play also observes once per decision. Anything that observes more or less
+        # than once per press inside this loop (a second predicate observe, a PATIENCE opt-in for this
+        # world that auto-presses inside observe(), a batched observe) breaks the step<->press
+        # alignment that §5.6's exclusion formula and the oracle-row-per-press pin both depend on —
+        # tests/test_kirby_skill_port.py pins the invariant through the real oracle.jsonl (one row per
+        # press + one trailing render row, and patience_advances == 0 on every row).
         log_step = int(getattr(self.plugin, "_obs_count", 0))
         log_rec = {"event": "run_skill", "step": log_step, "name": skill_name,
                    "executed": executed, "executed_step_count": executed_primitive_count,

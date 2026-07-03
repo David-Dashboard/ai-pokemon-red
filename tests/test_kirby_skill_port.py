@@ -675,6 +675,51 @@ def test_one_observe_call_per_press_not_per_predicate_check(tmp_path):
     assert w.plugin._obs_count == 4
 
 
+def test_one_oracle_row_per_press_plus_trailing_render_through_the_real_log(tmp_path):
+    """PR #93 executor review finding 3 (counter-family divergence): pin the step<->press alignment
+    STRUCTURALLY through the real oracle.jsonl, not just through _obs_count -- the number of oracle
+    rows a run_skill call appends must equal world_steps_used (one row per press, doc §2's pin) plus
+    exactly 1 for the trailing render observe. A future change that observes more or less than once
+    per press inside the loop (the drift the reviewer warned about) breaks this test."""
+    import os
+    out = str(tmp_path / "out")
+    states = [_moved_state() for _ in range(6)]
+    w = _make_world(out, states=states)
+    w.call("define_skill", {"name": "walk3", "steps": [{"button": "right"}, {"button": "right"},
+                                                        {"button": "right"}]})
+    oracle_path = os.path.join(out, "oracle.jsonl")
+    rows_before = len(_load_jsonl(oracle_path)) if os.path.exists(oracle_path) else 0
+    w.call("run_skill", {"name": "walk3"})
+    rows_after = len(_load_jsonl(oracle_path))
+    rec = [r for r in _load_jsonl(f"{out}/skills.jsonl") if r["event"] == "run_skill"][0]
+    assert rows_after - rows_before == rec["world_steps_used"] + 1   # 3 per-press + 1 trailing render
+    # And the oracle rows' own `step` values are contiguous (each observe wrote exactly one row).
+    steps = [r["step"] for r in _load_jsonl(oracle_path)]
+    assert steps == list(range(steps[0], steps[0] + len(steps)))
+
+
+def test_patience_never_fires_inside_the_per_press_loop(tmp_path):
+    """PR #93 executor review finding 1: PATIENCE's auto-advance loop inside PerceptionPlugin.observe()
+    is inert for kirby_dreamland today (FollowCameraPerceiver's motion-derived labels never classify
+    gated-static), but nothing pinned that. If a future Kirby-specific context label joins the
+    gated-static set, PATIENCE could silently multi-press inside a single per-press observe -- world
+    frames advancing while `step` advances by 1, quietly breaking §2's one-press-one-step alignment.
+    Pin: every oracle row logged during a run_skill has patience_advances == 0."""
+    import os
+    out = str(tmp_path / "out")
+    states = [_moved_state() for _ in range(6)]
+    w = _make_world(out, states=states)
+    w.call("define_skill", {"name": "walk3", "steps": [{"button": "right"}, {"button": "right"},
+                                                        {"button": "right"}]})
+    w.call("run_skill", {"name": "walk3"})
+    rows = _load_jsonl(os.path.join(out, "oracle.jsonl"))
+    assert rows, "run_skill must have logged oracle rows"
+    assert all(r.get("patience_advances") == 0 for r in rows), \
+        f"PATIENCE fired inside the per-press loop: {[r for r in rows if r.get('patience_advances')]}"
+    # No patience_trail either -- no hidden auto-presses attributed to any observe in the loop.
+    assert all("patience_trail" not in r for r in rows)
+
+
 def test_redefinition_is_a_distinct_logged_event(tmp_path):
     out = str(tmp_path / "out")
     w = _make_world(out)
