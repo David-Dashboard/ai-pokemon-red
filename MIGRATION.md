@@ -6,8 +6,7 @@ Claude auto-memory**. Cloning is *not* enough — the lists below are what isn't
 ## 1. Clone (everything tracked)
 ```
 git clone https://github.com/David-Dashboard/ai-pokemon-red.git
-cd ai-pokemon-red
-git checkout feat/cross-game-perception      # the active branch
+cd ai-pokemon-red                             # work happens on main + feature-branch PRs (see CLAUDE.md)
 uv sync                                       # recreates the main .venv from uv.lock
 ```
 
@@ -21,13 +20,14 @@ uv sync                                       # recreates the main .venv from uv
 
 Plus the **out-of-repo Claude auto-memory** (the cross-session brain) — copy the whole folder:
 ```
-C:\Users\Succe\.claude\projects\C--Users-Succe-Documents-Github-ai-pokemon-red\memory\
+C:\Users\Succe\.claude\projects\E--AI-Personas-10-pokemon-and-chess-and-office-ai-pokemon-red\memory\
 ```
-(`MEMORY.md` + 14 topic memories.) Optionally the `*.jsonl` transcripts in that same folder = chat history.
+(`MEMORY.md` + topic memories.) Optionally the `*.jsonl` transcripts in that same folder = chat history.
 
-> ⚠️ That `projects\…` folder name is **derived from the project's absolute path**. It auto-loads only if
-> the project lives at the **same path** on the new machine (`C:\Users\Succe\Documents\Github\ai-pokemon-red`).
-> Different user/location → Claude generates a *different* folder name → drop `memory\` under that new folder.
+> ⚠️ That `projects\…` folder name is **derived from the project's absolute path** (currently
+> `E:\AI_Personas\10_pokemon_and_chess_and_office\ai-pokemon-red`). It auto-loads only if the project
+> lives at the **same path** on the new machine. Different user/location → Claude generates a *different*
+> folder name → drop `memory\` under that new folder.
 
 ## 3. Recreate — do NOT copy (venvs ~2 GB, break across machines)
 - **Main env:** `uv sync` (step 1).
