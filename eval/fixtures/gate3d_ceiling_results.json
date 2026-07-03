@@ -66,7 +66,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 21.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 15
+          "bullets_fired": 5,
+          "attack_decisions": 15
         },
         {
           "seed": 1001,
@@ -76,7 +77,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 20
+          "bullets_fired": 6,
+          "attack_decisions": 20
         },
         {
           "seed": 1002,
@@ -86,7 +88,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 21.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 14
+          "bullets_fired": 5,
+          "attack_decisions": 14
         },
         {
           "seed": 1003,
@@ -96,7 +99,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 22.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 13
+          "bullets_fired": 4,
+          "attack_decisions": 13
         },
         {
           "seed": 1004,
@@ -106,7 +110,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 19
+          "bullets_fired": 6,
+          "attack_decisions": 19
         },
         {
           "seed": 1005,
@@ -116,7 +121,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 22.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 15
+          "bullets_fired": 4,
+          "attack_decisions": 15
         },
         {
           "seed": 1006,
@@ -126,7 +132,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 19
+          "bullets_fired": 7,
+          "attack_decisions": 19
         },
         {
           "seed": 1007,
@@ -136,7 +143,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 23.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 9
+          "bullets_fired": 3,
+          "attack_decisions": 9
         },
         {
           "seed": 1008,
@@ -146,7 +154,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 22.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 12
+          "bullets_fired": 4,
+          "attack_decisions": 12
         },
         {
           "seed": 1009,
@@ -156,7 +165,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 25
+          "bullets_fired": 11,
+          "attack_decisions": 25
         },
         {
           "seed": 1010,
@@ -166,7 +176,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 27
+          "bullets_fired": 9,
+          "attack_decisions": 27
         },
         {
           "seed": 1011,
@@ -176,7 +187,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 63
+          "bullets_fired": 23,
+          "attack_decisions": 63
         },
         {
           "seed": 1012,
@@ -186,7 +198,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 22.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 15
+          "bullets_fired": 4,
+          "attack_decisions": 15
         },
         {
           "seed": 1013,
@@ -196,7 +209,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 18
+          "bullets_fired": 7,
+          "attack_decisions": 18
         },
         {
           "seed": 1014,
@@ -206,7 +220,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 26
+          "bullets_fired": 9,
+          "attack_decisions": 26
         },
         {
           "seed": 1015,
@@ -216,7 +231,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 23.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 12
+          "bullets_fired": 3,
+          "attack_decisions": 12
         },
         {
           "seed": 1016,
@@ -226,7 +242,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 19
+          "bullets_fired": 6,
+          "attack_decisions": 19
         },
         {
           "seed": 1017,
@@ -236,7 +253,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 21.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 14
+          "bullets_fired": 5,
+          "attack_decisions": 14
         },
         {
           "seed": 1018,
@@ -246,7 +264,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 9,
+          "attack_decisions": 24
         },
         {
           "seed": 1019,
@@ -256,7 +275,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 22
+          "bullets_fired": 6,
+          "attack_decisions": 22
         },
         {
           "seed": 1020,
@@ -266,7 +286,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 29
+          "bullets_fired": 11,
+          "attack_decisions": 29
         },
         {
           "seed": 1021,
@@ -276,7 +297,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 26
+          "bullets_fired": 10,
+          "attack_decisions": 26
         },
         {
           "seed": 1022,
@@ -286,7 +308,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 18
+          "bullets_fired": 10,
+          "attack_decisions": 18
         },
         {
           "seed": 1023,
@@ -296,7 +319,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 11,
+          "attack_decisions": 30
         },
         {
           "seed": 1024,
@@ -306,7 +330,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 25
+          "bullets_fired": 10,
+          "attack_decisions": 25
         },
         {
           "seed": 1025,
@@ -316,7 +341,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 31
+          "bullets_fired": 12,
+          "attack_decisions": 31
         },
         {
           "seed": 1026,
@@ -326,7 +352,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 15
+          "bullets_fired": 6,
+          "attack_decisions": 15
         },
         {
           "seed": 1027,
@@ -336,7 +363,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 24.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 9
+          "bullets_fired": 2,
+          "attack_decisions": 9
         },
         {
           "seed": 1028,
@@ -346,7 +374,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 20
+          "bullets_fired": 7,
+          "attack_decisions": 20
         },
         {
           "seed": 1029,
@@ -356,7 +385,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 31
+          "bullets_fired": 12,
+          "attack_decisions": 31
         }
       ]
     },
@@ -411,7 +441,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 22.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 13
+          "bullets_fired": 4,
+          "attack_decisions": 13
         },
         {
           "seed": 1001,
@@ -421,7 +452,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 7,
+          "attack_decisions": 24
         },
         {
           "seed": 1002,
@@ -431,7 +463,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 16,
+          "attack_decisions": 36
         },
         {
           "seed": 1003,
@@ -441,7 +474,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 29
+          "bullets_fired": 10,
+          "attack_decisions": 29
         },
         {
           "seed": 1004,
@@ -451,7 +485,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 18
+          "bullets_fired": 6,
+          "attack_decisions": 18
         },
         {
           "seed": 1005,
@@ -461,7 +496,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 33
+          "bullets_fired": 12,
+          "attack_decisions": 33
         },
         {
           "seed": 1006,
@@ -471,7 +507,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 20
+          "bullets_fired": 6,
+          "attack_decisions": 20
         },
         {
           "seed": 1007,
@@ -481,7 +518,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 10,
+          "attack_decisions": 30
         },
         {
           "seed": 1008,
@@ -491,7 +529,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 38
+          "bullets_fired": 15,
+          "attack_decisions": 38
         },
         {
           "seed": 1009,
@@ -501,7 +540,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 8,
+          "attack_decisions": 24
         },
         {
           "seed": 1010,
@@ -511,7 +551,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 12,
+          "attack_decisions": 30
         },
         {
           "seed": 1011,
@@ -521,7 +562,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 10,
+          "attack_decisions": 30
         },
         {
           "seed": 1012,
@@ -531,7 +573,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 55
+          "bullets_fired": 19,
+          "attack_decisions": 55
         },
         {
           "seed": 1013,
@@ -541,7 +584,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 27
+          "bullets_fired": 9,
+          "attack_decisions": 27
         },
         {
           "seed": 1014,
@@ -551,7 +595,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 9,
+          "attack_decisions": 24
         },
         {
           "seed": 1015,
@@ -561,7 +606,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 31
+          "bullets_fired": 10,
+          "attack_decisions": 31
         },
         {
           "seed": 1016,
@@ -571,7 +617,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 22
+          "bullets_fired": 9,
+          "attack_decisions": 22
         },
         {
           "seed": 1017,
@@ -581,7 +628,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 21.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 16
+          "bullets_fired": 5,
+          "attack_decisions": 16
         },
         {
           "seed": 1018,
@@ -591,7 +639,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 35
+          "bullets_fired": 12,
+          "attack_decisions": 35
         },
         {
           "seed": 1019,
@@ -601,7 +650,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 20.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 22
+          "bullets_fired": 6,
+          "attack_decisions": 22
         },
         {
           "seed": 1020,
@@ -611,7 +661,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 28
+          "bullets_fired": 10,
+          "attack_decisions": 28
         },
         {
           "seed": 1021,
@@ -621,7 +672,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 37
+          "bullets_fired": 10,
+          "attack_decisions": 37
         },
         {
           "seed": 1022,
@@ -631,7 +683,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 25
+          "bullets_fired": 9,
+          "attack_decisions": 25
         },
         {
           "seed": 1023,
@@ -641,7 +694,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 27
+          "bullets_fired": 10,
+          "attack_decisions": 27
         },
         {
           "seed": 1024,
@@ -651,7 +705,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 19
+          "bullets_fired": 7,
+          "attack_decisions": 19
         },
         {
           "seed": 1025,
@@ -661,7 +716,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 29
+          "bullets_fired": 9,
+          "attack_decisions": 29
         },
         {
           "seed": 1026,
@@ -671,7 +727,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 26
+          "bullets_fired": 10,
+          "attack_decisions": 26
         },
         {
           "seed": 1027,
@@ -681,7 +738,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 44
+          "bullets_fired": 17,
+          "attack_decisions": 44
         },
         {
           "seed": 1028,
@@ -691,7 +749,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 33
+          "bullets_fired": 12,
+          "attack_decisions": 33
         },
         {
           "seed": 1029,
@@ -701,7 +760,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 11,
+          "attack_decisions": 30
         }
       ]
     },
@@ -756,7 +816,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 45
+          "bullets_fired": 13,
+          "attack_decisions": 45
         },
         {
           "seed": 1001,
@@ -766,7 +827,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 70
+          "bullets_fired": 26,
+          "attack_decisions": 70
         },
         {
           "seed": 1002,
@@ -776,7 +838,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 38
+          "bullets_fired": 15,
+          "attack_decisions": 38
         },
         {
           "seed": 1003,
@@ -786,7 +849,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 11,
+          "attack_decisions": 30
         },
         {
           "seed": 1004,
@@ -796,7 +860,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 37
+          "bullets_fired": 11,
+          "attack_decisions": 37
         },
         {
           "seed": 1005,
@@ -806,7 +871,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 42
+          "bullets_fired": 14,
+          "attack_decisions": 42
         },
         {
           "seed": 1006,
@@ -816,7 +882,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 8,
+          "attack_decisions": 30
         },
         {
           "seed": 1007,
@@ -826,7 +893,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 27
+          "bullets_fired": 9,
+          "attack_decisions": 27
         },
         {
           "seed": 1008,
@@ -836,7 +904,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 38
+          "bullets_fired": 13,
+          "attack_decisions": 38
         },
         {
           "seed": 1009,
@@ -846,7 +915,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 37
+          "bullets_fired": 11,
+          "attack_decisions": 37
         },
         {
           "seed": 1010,
@@ -856,7 +926,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 18,
+          "attack_decisions": 48
         },
         {
           "seed": 1011,
@@ -866,7 +937,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 22,
+          "attack_decisions": 67
         },
         {
           "seed": 1012,
@@ -876,7 +948,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 23
+          "bullets_fired": 7,
+          "attack_decisions": 23
         },
         {
           "seed": 1013,
@@ -886,7 +959,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 27
+          "bullets_fired": 9,
+          "attack_decisions": 27
         },
         {
           "seed": 1014,
@@ -896,7 +970,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 11,
+          "attack_decisions": 30
         },
         {
           "seed": 1015,
@@ -906,7 +981,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 39
+          "bullets_fired": 13,
+          "attack_decisions": 39
         },
         {
           "seed": 1016,
@@ -916,7 +992,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 12,
+          "attack_decisions": 36
         },
         {
           "seed": 1017,
@@ -926,7 +1003,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 23
+          "bullets_fired": 7,
+          "attack_decisions": 23
         },
         {
           "seed": 1018,
@@ -936,7 +1014,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 40
+          "bullets_fired": 13,
+          "attack_decisions": 40
         },
         {
           "seed": 1019,
@@ -946,7 +1025,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 25
+          "bullets_fired": 7,
+          "attack_decisions": 25
         },
         {
           "seed": 1020,
@@ -956,7 +1036,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 13,
+          "attack_decisions": 36
         },
         {
           "seed": 1021,
@@ -966,7 +1047,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 11,
+          "attack_decisions": 36
         },
         {
           "seed": 1022,
@@ -976,7 +1058,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 12,
+          "attack_decisions": 36
         },
         {
           "seed": 1023,
@@ -986,7 +1069,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 34
+          "bullets_fired": 12,
+          "attack_decisions": 34
         },
         {
           "seed": 1024,
@@ -996,7 +1080,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 8,
+          "attack_decisions": 24
         },
         {
           "seed": 1025,
@@ -1006,7 +1091,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 11,
+          "attack_decisions": 36
         },
         {
           "seed": 1026,
@@ -1016,7 +1102,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 8,
+          "attack_decisions": 24
         },
         {
           "seed": 1027,
@@ -1026,7 +1113,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 21.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 16
+          "bullets_fired": 5,
+          "attack_decisions": 16
         },
         {
           "seed": 1028,
@@ -1036,7 +1124,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 71
+          "bullets_fired": 24,
+          "attack_decisions": 71
         },
         {
           "seed": 1029,
@@ -1046,7 +1135,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 51
+          "bullets_fired": 19,
+          "attack_decisions": 51
         }
       ]
     },
@@ -1101,7 +1191,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 47
+          "bullets_fired": 14,
+          "attack_decisions": 47
         },
         {
           "seed": 1001,
@@ -1111,7 +1202,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 28
+          "bullets_fired": 9,
+          "attack_decisions": 28
         },
         {
           "seed": 1002,
@@ -1121,7 +1213,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 20
+          "bullets_fired": 8,
+          "attack_decisions": 20
         },
         {
           "seed": 1003,
@@ -1131,7 +1224,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 11,
+          "attack_decisions": 30
         },
         {
           "seed": 1004,
@@ -1141,7 +1235,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 38
+          "bullets_fired": 11,
+          "attack_decisions": 38
         },
         {
           "seed": 1005,
@@ -1151,7 +1246,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 35
+          "bullets_fired": 12,
+          "attack_decisions": 35
         },
         {
           "seed": 1006,
@@ -1161,7 +1257,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 8,
+          "attack_decisions": 30
         },
         {
           "seed": 1007,
@@ -1171,7 +1268,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 65
+          "bullets_fired": 23,
+          "attack_decisions": 65
         },
         {
           "seed": 1008,
@@ -1181,7 +1279,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 44
+          "bullets_fired": 14,
+          "attack_decisions": 44
         },
         {
           "seed": 1009,
@@ -1191,7 +1290,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 66
+          "bullets_fired": 24,
+          "attack_decisions": 66
         },
         {
           "seed": 1010,
@@ -1201,7 +1301,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1011,
@@ -1211,7 +1312,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 51
+          "bullets_fired": 17,
+          "attack_decisions": 51
         },
         {
           "seed": 1012,
@@ -1221,7 +1323,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 30
+          "bullets_fired": 11,
+          "attack_decisions": 30
         },
         {
           "seed": 1013,
@@ -1231,7 +1334,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 27
+          "bullets_fired": 9,
+          "attack_decisions": 27
         },
         {
           "seed": 1014,
@@ -1241,7 +1345,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 75
+          "bullets_fired": 26,
+          "attack_decisions": 75
         },
         {
           "seed": 1015,
@@ -1251,7 +1356,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1016,
@@ -1261,7 +1367,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 12,
+          "attack_decisions": 36
         },
         {
           "seed": 1017,
@@ -1271,7 +1378,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 23
+          "bullets_fired": 7,
+          "attack_decisions": 23
         },
         {
           "seed": 1018,
@@ -1281,7 +1389,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1019,
@@ -1291,7 +1400,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 17.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 34
+          "bullets_fired": 9,
+          "attack_decisions": 34
         },
         {
           "seed": 1020,
@@ -1301,7 +1411,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 22,
+          "attack_decisions": 67
         },
         {
           "seed": 1021,
@@ -1311,7 +1422,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 11,
+          "attack_decisions": 36
         },
         {
           "seed": 1022,
@@ -1321,7 +1433,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 71
+          "bullets_fired": 26,
+          "attack_decisions": 71
         },
         {
           "seed": 1023,
@@ -1331,7 +1444,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 36
+          "bullets_fired": 14,
+          "attack_decisions": 36
         },
         {
           "seed": 1024,
@@ -1341,7 +1455,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 24
+          "bullets_fired": 8,
+          "attack_decisions": 24
         },
         {
           "seed": 1025,
@@ -1351,7 +1466,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 42
+          "bullets_fired": 14,
+          "attack_decisions": 42
         },
         {
           "seed": 1026,
@@ -1361,7 +1477,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 71
+          "bullets_fired": 26,
+          "attack_decisions": 71
         },
         {
           "seed": 1027,
@@ -1371,7 +1488,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 16.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 31
+          "bullets_fired": 10,
+          "attack_decisions": 31
         },
         {
           "seed": 1028,
@@ -1381,7 +1499,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 68
+          "bullets_fired": 23,
+          "attack_decisions": 68
         },
         {
           "seed": 1029,
@@ -1391,7 +1510,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 71
+          "bullets_fired": 26,
+          "attack_decisions": 71
         }
       ]
     },
@@ -1446,7 +1566,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 47
+          "bullets_fired": 14,
+          "attack_decisions": 47
         },
         {
           "seed": 1001,
@@ -1456,7 +1577,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 65
+          "bullets_fired": 20,
+          "attack_decisions": 65
         },
         {
           "seed": 1002,
@@ -1466,7 +1588,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 77
+          "bullets_fired": 25,
+          "attack_decisions": 77
         },
         {
           "seed": 1003,
@@ -1476,7 +1599,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 76
+          "bullets_fired": 26,
+          "attack_decisions": 76
         },
         {
           "seed": 1004,
@@ -1486,7 +1610,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 5.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 21,
+          "attack_decisions": 67
         },
         {
           "seed": 1005,
@@ -1496,7 +1621,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 35
+          "bullets_fired": 12,
+          "attack_decisions": 35
         },
         {
           "seed": 1006,
@@ -1506,7 +1632,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 42
+          "bullets_fired": 11,
+          "attack_decisions": 42
         },
         {
           "seed": 1007,
@@ -1516,7 +1643,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 69
+          "bullets_fired": 24,
+          "attack_decisions": 69
         },
         {
           "seed": 1008,
@@ -1526,7 +1654,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 44
+          "bullets_fired": 14,
+          "attack_decisions": 44
         },
         {
           "seed": 1009,
@@ -1536,7 +1665,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 47
+          "bullets_fired": 16,
+          "attack_decisions": 47
         },
         {
           "seed": 1010,
@@ -1546,7 +1676,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 64
+          "bullets_fired": 20,
+          "attack_decisions": 64
         },
         {
           "seed": 1011,
@@ -1556,7 +1687,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 55
+          "bullets_fired": 19,
+          "attack_decisions": 55
         },
         {
           "seed": 1012,
@@ -1566,7 +1698,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 26,
+          "attack_decisions": 79
         },
         {
           "seed": 1013,
@@ -1576,7 +1709,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 24,
+          "attack_decisions": 67
         },
         {
           "seed": 1014,
@@ -1586,7 +1720,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 72
+          "bullets_fired": 26,
+          "attack_decisions": 72
         },
         {
           "seed": 1015,
@@ -1596,7 +1731,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 63
+          "bullets_fired": 20,
+          "attack_decisions": 63
         },
         {
           "seed": 1016,
@@ -1606,7 +1742,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 43
+          "bullets_fired": 13,
+          "attack_decisions": 43
         },
         {
           "seed": 1017,
@@ -1616,7 +1753,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 23
+          "bullets_fired": 7,
+          "attack_decisions": 23
         },
         {
           "seed": 1018,
@@ -1626,7 +1764,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 68
+          "bullets_fired": 22,
+          "attack_decisions": 68
         },
         {
           "seed": 1019,
@@ -1636,7 +1775,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 52
+          "bullets_fired": 16,
+          "attack_decisions": 52
         },
         {
           "seed": 1020,
@@ -1646,7 +1786,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 23
+          "bullets_fired": 8,
+          "attack_decisions": 23
         },
         {
           "seed": 1021,
@@ -1656,7 +1797,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 55
+          "bullets_fired": 18,
+          "attack_decisions": 55
         },
         {
           "seed": 1022,
@@ -1666,7 +1808,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1023,
@@ -1676,7 +1819,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 5.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 63
+          "bullets_fired": 21,
+          "attack_decisions": 63
         },
         {
           "seed": 1024,
@@ -1686,7 +1830,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 42
+          "bullets_fired": 14,
+          "attack_decisions": 42
         },
         {
           "seed": 1025,
@@ -1696,7 +1841,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 14,
+          "attack_decisions": 48
         },
         {
           "seed": 1026,
@@ -1706,7 +1852,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 62
+          "bullets_fired": 22,
+          "attack_decisions": 62
         },
         {
           "seed": 1027,
@@ -1716,7 +1863,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 56
+          "bullets_fired": 20,
+          "attack_decisions": 56
         },
         {
           "seed": 1028,
@@ -1726,7 +1874,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 15,
+          "attack_decisions": 48
         },
         {
           "seed": 1029,
@@ -1736,7 +1885,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 15,
+          "attack_decisions": 48
         }
       ]
     },
@@ -1791,7 +1941,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 19,
+          "attack_decisions": 67
         },
         {
           "seed": 1001,
@@ -1801,7 +1952,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 53
+          "bullets_fired": 15,
+          "attack_decisions": 53
         },
         {
           "seed": 1002,
@@ -1811,7 +1963,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 52
+          "bullets_fired": 19,
+          "attack_decisions": 52
         },
         {
           "seed": 1003,
@@ -1821,7 +1974,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 72
+          "bullets_fired": 25,
+          "attack_decisions": 72
         },
         {
           "seed": 1004,
@@ -1831,7 +1985,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 26,
+          "attack_decisions": 79
         },
         {
           "seed": 1005,
@@ -1841,7 +1996,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 69
+          "bullets_fired": 22,
+          "attack_decisions": 69
         },
         {
           "seed": 1006,
@@ -1851,7 +2007,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 43
+          "bullets_fired": 11,
+          "attack_decisions": 43
         },
         {
           "seed": 1007,
@@ -1861,7 +2018,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 69
+          "bullets_fired": 24,
+          "attack_decisions": 69
         },
         {
           "seed": 1008,
@@ -1871,7 +2029,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 44
+          "bullets_fired": 14,
+          "attack_decisions": 44
         },
         {
           "seed": 1009,
@@ -1881,7 +2040,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 47
+          "bullets_fired": 16,
+          "attack_decisions": 47
         },
         {
           "seed": 1010,
@@ -1891,7 +2051,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 62
+          "bullets_fired": 19,
+          "attack_decisions": 62
         },
         {
           "seed": 1011,
@@ -1901,7 +2062,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 26,
+          "attack_decisions": 79
         },
         {
           "seed": 1012,
@@ -1911,7 +2073,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 18.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 28
+          "bullets_fired": 8,
+          "attack_decisions": 28
         },
         {
           "seed": 1013,
@@ -1921,7 +2084,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 45
+          "bullets_fired": 12,
+          "attack_decisions": 45
         },
         {
           "seed": 1014,
@@ -1931,7 +2095,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 72
+          "bullets_fired": 26,
+          "attack_decisions": 72
         },
         {
           "seed": 1015,
@@ -1941,7 +2106,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 54
+          "bullets_fired": 17,
+          "attack_decisions": 54
         },
         {
           "seed": 1016,
@@ -1951,7 +2117,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 43
+          "bullets_fired": 13,
+          "attack_decisions": 43
         },
         {
           "seed": 1017,
@@ -1961,7 +2128,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 19.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 23
+          "bullets_fired": 7,
+          "attack_decisions": 23
         },
         {
           "seed": 1018,
@@ -1971,7 +2139,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 80
+          "bullets_fired": 26,
+          "attack_decisions": 80
         },
         {
           "seed": 1019,
@@ -1981,7 +2150,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 52
+          "bullets_fired": 16,
+          "attack_decisions": 52
         },
         {
           "seed": 1020,
@@ -1991,7 +2161,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 72
+          "bullets_fired": 24,
+          "attack_decisions": 72
         },
         {
           "seed": 1021,
@@ -2001,7 +2172,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 49
+          "bullets_fired": 15,
+          "attack_decisions": 49
         },
         {
           "seed": 1022,
@@ -2011,7 +2183,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1023,
@@ -2021,7 +2194,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 72
+          "bullets_fired": 23,
+          "attack_decisions": 72
         },
         {
           "seed": 1024,
@@ -2031,7 +2205,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 44
+          "bullets_fired": 15,
+          "attack_decisions": 44
         },
         {
           "seed": 1025,
@@ -2041,7 +2216,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 53
+          "bullets_fired": 16,
+          "attack_decisions": 53
         },
         {
           "seed": 1026,
@@ -2051,7 +2227,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 71
+          "bullets_fired": 26,
+          "attack_decisions": 71
         },
         {
           "seed": 1027,
@@ -2061,7 +2238,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 56
+          "bullets_fired": 20,
+          "attack_decisions": 56
         },
         {
           "seed": 1028,
@@ -2071,7 +2249,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 15,
+          "attack_decisions": 48
         },
         {
           "seed": 1029,
@@ -2081,7 +2260,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 17,
+          "attack_decisions": 57
         }
       ]
     },
@@ -2136,7 +2316,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 19,
+          "attack_decisions": 67
         },
         {
           "seed": 1001,
@@ -2146,7 +2327,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 53
+          "bullets_fired": 15,
+          "attack_decisions": 53
         },
         {
           "seed": 1002,
@@ -2156,7 +2338,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 76
+          "bullets_fired": 26,
+          "attack_decisions": 76
         },
         {
           "seed": 1003,
@@ -2166,7 +2349,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 22,
+          "attack_decisions": 67
         },
         {
           "seed": 1004,
@@ -2176,7 +2360,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 26,
+          "attack_decisions": 79
         },
         {
           "seed": 1005,
@@ -2186,7 +2371,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 19,
+          "attack_decisions": 57
         },
         {
           "seed": 1006,
@@ -2196,7 +2382,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 54
+          "bullets_fired": 15,
+          "attack_decisions": 54
         },
         {
           "seed": 1007,
@@ -2206,7 +2393,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 62
+          "bullets_fired": 22,
+          "attack_decisions": 62
         },
         {
           "seed": 1008,
@@ -2216,7 +2404,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 45
+          "bullets_fired": 14,
+          "attack_decisions": 45
         },
         {
           "seed": 1009,
@@ -2226,7 +2415,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 50
+          "bullets_fired": 17,
+          "attack_decisions": 50
         },
         {
           "seed": 1010,
@@ -2236,7 +2426,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1011,
@@ -2246,7 +2437,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 81
+          "bullets_fired": 26,
+          "attack_decisions": 81
         },
         {
           "seed": 1012,
@@ -2256,7 +2448,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 43
+          "bullets_fired": 15,
+          "attack_decisions": 43
         },
         {
           "seed": 1013,
@@ -2266,7 +2459,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 47
+          "bullets_fired": 13,
+          "attack_decisions": 47
         },
         {
           "seed": 1014,
@@ -2276,7 +2470,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 49
+          "bullets_fired": 17,
+          "attack_decisions": 49
         },
         {
           "seed": 1015,
@@ -2286,7 +2481,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 54
+          "bullets_fired": 17,
+          "attack_decisions": 54
         },
         {
           "seed": 1016,
@@ -2296,7 +2492,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 12.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 45
+          "bullets_fired": 14,
+          "attack_decisions": 45
         },
         {
           "seed": 1017,
@@ -2306,7 +2503,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 15.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 35
+          "bullets_fired": 11,
+          "attack_decisions": 35
         },
         {
           "seed": 1018,
@@ -2316,7 +2514,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 13.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 42
+          "bullets_fired": 13,
+          "attack_decisions": 42
         },
         {
           "seed": 1019,
@@ -2326,7 +2525,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 52
+          "bullets_fired": 16,
+          "attack_decisions": 52
         },
         {
           "seed": 1020,
@@ -2336,7 +2536,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 80
+          "bullets_fired": 26,
+          "attack_decisions": 80
         },
         {
           "seed": 1021,
@@ -2346,7 +2547,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 53
+          "bullets_fired": 15,
+          "attack_decisions": 53
         },
         {
           "seed": 1022,
@@ -2356,7 +2558,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 51
+          "bullets_fired": 17,
+          "attack_decisions": 51
         },
         {
           "seed": 1023,
@@ -2366,7 +2569,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 60
+          "bullets_fired": 20,
+          "attack_decisions": 60
         },
         {
           "seed": 1024,
@@ -2376,7 +2580,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 16,
+          "attack_decisions": 48
         },
         {
           "seed": 1025,
@@ -2386,7 +2591,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 62
+          "bullets_fired": 18,
+          "attack_decisions": 62
         },
         {
           "seed": 1026,
@@ -2396,7 +2602,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 25,
+          "attack_decisions": 79
         },
         {
           "seed": 1027,
@@ -2406,7 +2613,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 5.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 58
+          "bullets_fired": 21,
+          "attack_decisions": 58
         },
         {
           "seed": 1028,
@@ -2416,7 +2624,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 15,
+          "attack_decisions": 48
         },
         {
           "seed": 1029,
@@ -2426,7 +2635,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 17,
+          "attack_decisions": 57
         }
       ]
     },
@@ -2481,7 +2691,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 19,
+          "attack_decisions": 67
         },
         {
           "seed": 1001,
@@ -2491,7 +2702,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 53
+          "bullets_fired": 15,
+          "attack_decisions": 53
         },
         {
           "seed": 1002,
@@ -2501,7 +2713,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 68
+          "bullets_fired": 22,
+          "attack_decisions": 68
         },
         {
           "seed": 1003,
@@ -2511,7 +2724,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 63
+          "bullets_fired": 20,
+          "attack_decisions": 63
         },
         {
           "seed": 1004,
@@ -2521,7 +2735,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 80
+          "bullets_fired": 26,
+          "attack_decisions": 80
         },
         {
           "seed": 1005,
@@ -2531,7 +2746,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 90
+          "bullets_fired": 26,
+          "attack_decisions": 90
         },
         {
           "seed": 1006,
@@ -2541,7 +2757,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 15,
+          "attack_decisions": 57
         },
         {
           "seed": 1007,
@@ -2551,7 +2768,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 75
+          "bullets_fired": 26,
+          "attack_decisions": 75
         },
         {
           "seed": 1008,
@@ -2561,7 +2779,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 49
+          "bullets_fired": 16,
+          "attack_decisions": 49
         },
         {
           "seed": 1009,
@@ -2571,7 +2790,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 75
+          "bullets_fired": 22,
+          "attack_decisions": 75
         },
         {
           "seed": 1010,
@@ -2581,7 +2801,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 17,
+          "attack_decisions": 57
         },
         {
           "seed": 1011,
@@ -2591,7 +2812,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 84
+          "bullets_fired": 26,
+          "attack_decisions": 84
         },
         {
           "seed": 1012,
@@ -2601,7 +2823,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 54
+          "bullets_fired": 16,
+          "attack_decisions": 54
         },
         {
           "seed": 1013,
@@ -2611,7 +2834,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 60
+          "bullets_fired": 17,
+          "attack_decisions": 60
         },
         {
           "seed": 1014,
@@ -2621,7 +2845,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 19,
+          "attack_decisions": 57
         },
         {
           "seed": 1015,
@@ -2631,7 +2856,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 54
+          "bullets_fired": 17,
+          "attack_decisions": 54
         },
         {
           "seed": 1016,
@@ -2641,7 +2867,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 41
+          "bullets_fired": 12,
+          "attack_decisions": 41
         },
         {
           "seed": 1017,
@@ -2651,7 +2878,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 48
+          "bullets_fired": 17,
+          "attack_decisions": 48
         },
         {
           "seed": 1018,
@@ -2661,7 +2889,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 49
+          "bullets_fired": 16,
+          "attack_decisions": 49
         },
         {
           "seed": 1019,
@@ -2671,7 +2900,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 73
+          "bullets_fired": 22,
+          "attack_decisions": 73
         },
         {
           "seed": 1020,
@@ -2681,7 +2911,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 85
+          "bullets_fired": 25,
+          "attack_decisions": 85
         },
         {
           "seed": 1021,
@@ -2691,7 +2922,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 76
+          "bullets_fired": 23,
+          "attack_decisions": 76
         },
         {
           "seed": 1022,
@@ -2701,7 +2933,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 26,
+          "attack_decisions": 79
         },
         {
           "seed": 1023,
@@ -2711,7 +2944,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 20,
+          "attack_decisions": 67
         },
         {
           "seed": 1024,
@@ -2721,7 +2955,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 83
+          "bullets_fired": 26,
+          "attack_decisions": 83
         },
         {
           "seed": 1025,
@@ -2731,7 +2966,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 62
+          "bullets_fired": 18,
+          "attack_decisions": 62
         },
         {
           "seed": 1026,
@@ -2741,7 +2977,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 2.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 74
+          "bullets_fired": 24,
+          "attack_decisions": 74
         },
         {
           "seed": 1027,
@@ -2751,7 +2988,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 74
+          "bullets_fired": 26,
+          "attack_decisions": 74
         },
         {
           "seed": 1028,
@@ -2761,7 +2999,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 77
+          "bullets_fired": 26,
+          "attack_decisions": 77
         },
         {
           "seed": 1029,
@@ -2771,7 +3010,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 69
+          "bullets_fired": 22,
+          "attack_decisions": 69
         }
       ]
     },
@@ -2826,7 +3066,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 67
+          "bullets_fired": 19,
+          "attack_decisions": 67
         },
         {
           "seed": 1001,
@@ -2836,7 +3077,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 68
+          "bullets_fired": 19,
+          "attack_decisions": 68
         },
         {
           "seed": 1002,
@@ -2846,7 +3088,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 52
+          "bullets_fired": 16,
+          "attack_decisions": 52
         },
         {
           "seed": 1003,
@@ -2856,7 +3099,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 57
+          "bullets_fired": 17,
+          "attack_decisions": 57
         },
         {
           "seed": 1004,
@@ -2866,7 +3110,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 84
+          "bullets_fired": 26,
+          "attack_decisions": 84
         },
         {
           "seed": 1005,
@@ -2876,7 +3121,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 83
+          "bullets_fired": 26,
+          "attack_decisions": 83
         },
         {
           "seed": 1006,
@@ -2886,7 +3132,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 68
+          "bullets_fired": 18,
+          "attack_decisions": 68
         },
         {
           "seed": 1007,
@@ -2896,7 +3143,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 64
+          "bullets_fired": 20,
+          "attack_decisions": 64
         },
         {
           "seed": 1008,
@@ -2906,7 +3154,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 82
+          "bullets_fired": 25,
+          "attack_decisions": 82
         },
         {
           "seed": 1009,
@@ -2916,7 +3165,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 5.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 73
+          "bullets_fired": 21,
+          "attack_decisions": 73
         },
         {
           "seed": 1010,
@@ -2926,7 +3176,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 85
+          "bullets_fired": 26,
+          "attack_decisions": 85
         },
         {
           "seed": 1011,
@@ -2936,7 +3187,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 9.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 60
+          "bullets_fired": 17,
+          "attack_decisions": 60
         },
         {
           "seed": 1012,
@@ -2946,7 +3198,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 5.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 70
+          "bullets_fired": 21,
+          "attack_decisions": 70
         },
         {
           "seed": 1013,
@@ -2956,7 +3209,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 60
+          "bullets_fired": 16,
+          "attack_decisions": 60
         },
         {
           "seed": 1014,
@@ -2966,7 +3220,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 84
+          "bullets_fired": 26,
+          "attack_decisions": 84
         },
         {
           "seed": 1015,
@@ -2976,7 +3231,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 78
+          "bullets_fired": 23,
+          "attack_decisions": 78
         },
         {
           "seed": 1016,
@@ -2986,7 +3242,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 14.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 43
+          "bullets_fired": 12,
+          "attack_decisions": 43
         },
         {
           "seed": 1017,
@@ -2996,7 +3253,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 83
+          "bullets_fired": 26,
+          "attack_decisions": 83
         },
         {
           "seed": 1018,
@@ -3006,7 +3264,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 60
+          "bullets_fired": 18,
+          "attack_decisions": 60
         },
         {
           "seed": 1019,
@@ -3016,7 +3275,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 4.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 73
+          "bullets_fired": 22,
+          "attack_decisions": 73
         },
         {
           "seed": 1020,
@@ -3026,7 +3286,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 5.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 71
+          "bullets_fired": 21,
+          "attack_decisions": 71
         },
         {
           "seed": 1021,
@@ -3036,7 +3297,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 0.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 84
+          "bullets_fired": 26,
+          "attack_decisions": 84
         },
         {
           "seed": 1022,
@@ -3046,7 +3308,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 81
+          "bullets_fired": 25,
+          "attack_decisions": 81
         },
         {
           "seed": 1023,
@@ -3056,7 +3319,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 6.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 68
+          "bullets_fired": 20,
+          "attack_decisions": 68
         },
         {
           "seed": 1024,
@@ -3066,7 +3330,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 1.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 81
+          "bullets_fired": 25,
+          "attack_decisions": 81
         },
         {
           "seed": 1025,
@@ -3076,7 +3341,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 8.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 64
+          "bullets_fired": 18,
+          "attack_decisions": 64
         },
         {
           "seed": 1026,
@@ -3086,7 +3352,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 10.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 53
+          "bullets_fired": 16,
+          "attack_decisions": 53
         },
         {
           "seed": 1027,
@@ -3096,7 +3363,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 11.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 47
+          "bullets_fired": 15,
+          "attack_decisions": 47
         },
         {
           "seed": 1028,
@@ -3106,7 +3374,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 7.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 63
+          "bullets_fired": 19,
+          "attack_decisions": 63
         },
         {
           "seed": 1029,
@@ -3116,7 +3385,8 @@
           "ammo2_first": 26.0,
           "ammo2_last": 3.0,
           "ammo2_increased": false,
-          "shots_fired_counted": 79
+          "bullets_fired": 23,
+          "attack_decisions": 79
         }
       ]
     }

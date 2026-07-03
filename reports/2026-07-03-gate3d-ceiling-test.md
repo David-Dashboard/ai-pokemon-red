@@ -28,17 +28,16 @@ wire.
 
 Policy per step (a privileged azimuth-seeker):
 1. Read the labels buffer; drop the `DoomPlayer` label; keep whichever enemy labels remain (dtc's label
-   buffer simply omits a killed monster's label on the next frame -- confirmed live with a probe capture
-   before writing the policy).
+   buffer simply omits a killed monster's label on the next frame -- confirmed live with the probe
+   capture in Appendix Table 1).
 2. Among remaining enemies, pick the **nearest** by Euclidean world-XY distance to the player (the
    player is fixed at the arena center in `defend_the_center`, confirmed `(0,0)` throughout every probe
-   run).
+   run -- Appendix Table 1).
 3. Compute that enemy's azimuth as a **screen-space pixel offset**: `bbox_center_x - 160` (screen width
-   320, so center = 160) -- the same "px-equivalent" quantity the brief's tolerance describes, read
-   directly from the labels buffer rather than estimated.
+   320, so center = 160), read directly from the labels buffer rather than estimated.
 4. If `|offset| <= tolerance` and ammo remains: fire. Otherwise turn toward the target (`TURN_RIGHT` if
-   the target's offset is positive / right-of-center, else `TURN_LEFT` -- sign verified live against 70+
-   tics of continuous turning, zero wrong-sign steps).
+   the target's offset is positive / right-of-center, else `TURN_LEFT` -- sign convention verified live,
+   trace in Appendix Table 1: 77 tics of continuous `TURN_LEFT`, zero wrong-sign steps).
 5. If no enemy label is visible: turn right one step to scan (costs no ammo) -- the same "nothing to aim
    at, keep turning" fallback any perceiver needs.
 
@@ -66,67 +65,130 @@ image name and it wasn't present to read.
 
 ## Results
 
-Nine tolerances swept (25px -- the brief's exact value -- always included, plus a fine sweep from 3px
-up, informed by a small 3-seed pilot that showed a hitscan cliff somewhere between 13px and 15px):
+Nine tolerances swept (25px -- the number the paid run's brief used as its "centered enough" guidance --
+always included, plus a fine sweep from 3px up, informed by a small 3-seed pilot that showed a hitscan
+cliff somewhere between 13px and 15px). The (a-2) column checks each tolerance's KPS against the gate's
+other discriminator, `1.5 x KPS_spinner = 0.2375` (`eval/fixtures/gate3d_baselines.json`,
+`_derived_at_this_measurement.arm_a2_bar`) -- the gate of record requires BOTH arms:
 
-| tolerance (px) | mean K | mean KPS | min K | max K |
-|---:|---:|---:|---:|---:|
-| 3  | 5.267 | 0.6960 | 1  | 14 |
-| 5  | 6.233 | 0.6233 | 1  | 14 |
-| 7  | 6.300 | 0.5067 | 1  | 13 |
-| **8**  | **7.333** | 0.4857 | 2  | 15 |
-| 9  | 7.000 | 0.3896 | 3  | 16 |
-| 10 | 6.967 | 0.3814 | 1  | 16 |
-| 11 | 5.800 | 0.3204 | 1  | 14 |
-| 13 | 6.267 | 0.3023 | 1  | 13 |
-| **25** | **3.433** | 0.1656 | 1  | 11 |
+| tolerance (px) | mean K | clears (a-1) K>=5.61? | mean KPS | clears (a-2) KPS>=0.2375? | min K | max K |
+|---:|---:|:---:|---:|:---:|---:|---:|
+| 3  | 5.267 | no  | 0.6960 | yes | 1  | 14 |
+| 5  | 6.233 | yes | 0.6233 | yes | 1  | 14 |
+| 7  | 6.300 | yes | 0.5067 | yes | 1  | 13 |
+| **8**  | **7.333** | **yes** | 0.4857 | yes | 2  | 15 |
+| 9  | 7.000 | yes | 0.3896 | yes | 3  | 16 |
+| 10 | 6.967 | yes | 0.3814 | yes | 1  | 16 |
+| 11 | 5.800 | yes | 0.3204 | yes | 1  | 14 |
+| 13 | 6.267 | yes | 0.3023 | yes | 1  | 13 |
+| **25** | **3.433** | **no** | 0.1656 | **no** | 1  | 11 |
 
-- **Brief's exact 25px tolerance:** mean K = **3.433**, mean KPS = 0.1656 -- **does NOT clear** the 5.61
-  bar (and is even below the best paid brain run's 4.074).
-- **Best-tuned tolerance (8px):** mean K = **7.333**, mean KPS = 0.4857, min/max 2/15 -- clears the bar
-  by +1.72 kills (31%).
-- Every tolerance from 3px to 13px clears 5.61; only the wide 25px tolerance fails to. The tighter
-  tolerances also show a KPS/K trade-off in the expected direction (tighter aim -> higher KPS, fewer
-  wasted rounds at 3px, but fewer total shots taken per episode before ammo runs out at the widest
-  useful window; 8px balances the two best in this sweep).
+- **Best-tuned tolerance (8px):** mean K = **7.333**, mean KPS = 0.4857, min/max 2/15 -- clears the (a-1)
+  bar by +1.72 kills (31%) and the (a-2) KPS bar by 2x.
+- **At this script's 25px tolerance:** mean K = **3.433**, mean KPS = 0.1656 -- fails BOTH of the gate's
+  discriminators, (a-1) and (a-2). (See Limitations: this 25px is measured on a different instrument
+  than the brief's 25px and the two are not directly comparable.)
+- Every tolerance from 5px to 13px clears both arms; 3px clears (a-2) but narrowly misses (a-1)
+  (over-tight aim spends steps re-aiming that could have been shots).
 - Zero KPS-exclusion episodes at any tolerance (dtc's monotonic no-pickup ammo held throughout, as
   expected).
 
 Full per-seed killcounts, shots, and per-tolerance detail: `eval/fixtures/gate3d_ceiling_results.json`.
+(Field note: `bullets_fired` is actual rounds consumed, ammo-delta-derived and bounded by the 26-round
+budget; `attack_decisions` counts steps that *chose* ATTACK and can legitimately exceed 26 -- at the
+pinned tics=4 grain the pistol's ~14-tic refire cycle means most 4-tic ATTACK windows consume no
+bullet. KPS everywhere uses the ammo-delta shot count, identical to the scorer's formula.)
+
+## Limitations -- what this ceiling does and does not measure
+
+**(a) Same units, different instrument.** The paid run's brief (`runs/brain_gate3d/CLAUDE.md`) defined
+"centered enough" as ~25px on a **P2 `StationaryMovers` centroid** -- a frame-diff blob estimate that is
+noisy, is only available when the previous step was ego-stationary, and goes `null` for the entire
+duration of any turn. This script's 25px is applied to the **ground-truth labels-buffer bbox center** --
+noiseless and available every step. The two "25px" numbers share units but not an instrument; comparing
+them directly is qualitative at best, and nothing in this report should be read as "the brain at 25px
+equals the ceiling at 25px."
+
+**(b) The ceiling is optimistic by construction.** This policy gets a fresh, exact target position every
+single 4-tic step, with zero reaction latency and no blind window. The brain's tool contract forces an
+observe -> turn (blind, movers `null`) -> re-stabilize -> observe loop, with decisions gated on discrete
+tool calls. The ceiling removes an entire source of error (perception latency/blindness) that the
+brain's contract imposes, independent of any tolerance question. The 7.333 and 3.433 numbers are
+therefore an upper bound on what tolerance-tuning alone could achieve -- they are not evidence that
+closing the tolerance gap is sufficient, only that it is necessary-if-anything-is.
+
+**(c) The paid-run gap is not decomposed by this test.** The brain's shortfall (4.074 vs 5.61) may be
+firing-tolerance guidance, P2 centroid noise, blind-window reaction latency, or any mix of these. This
+ceiling test cannot separate those contributions; it only establishes that the bar itself is not the
+problem.
 
 ## Verdict
 
 **Is K >= 5.61 reachable by a perfect azimuth-seeker? YES** -- at the best-tuned tolerance (8px), the
-ceiling is K = 7.333, comfortably above the 5.61 bar. The bar is **not** physically unreachable under the
-pinned episode constraints (30 seeds, 250 steps, 26 rounds, `TURN_LEFT/TURN_RIGHT/ATTACK` only).
+ceiling is K = 7.333, comfortably above the 5.61 bar (and its KPS = 0.4857 clears arm (a-2)'s 0.2375 bar
+as well). The bar is **not** physically unreachable under the pinned episode constraints (30 seeds, 250
+steps, 26 rounds, `TURN_LEFT/TURN_RIGHT/ATTACK` only). **No re-pin is needed; the bar stands.**
 
-**But the brief's own reference tolerance (25px) does NOT clear it (3.433 < 5.61)** -- this separates the
-two possible failure stories cleanly:
-- "Bar unreachable" -- **ruled out**. A perfect policy with a well-tuned aiming tolerance clears 5.61 by
-  a wide margin (7.333, +31% over bar).
-- "Brain's aiming tolerance too loose" -- **plausible and consistent with the data**. The gap between
-  25px (3.433) and 8px (7.333) is over 2x in mean kills, and the brain's own primitive (`YawBandFlow`,
-  P1) reports pixel/degree readings whose *effective* aiming precision was never tuned against this
-  scenario's actual hit geometry -- it was tuned for sign-agreement (ARM b), not for how close to
-  dead-center a shot needs to be to land. A brain firing on a 25px-or-looser "close enough" heuristic is
-  ceiling-capped well under the bar for reasons that have nothing to do with its perception being wrong
-  (ARM (b) can PASS at any of these tolerances -- turning toward the target and getting sign right is a
-  separate question from firing only once truly centered).
+Within this script's own (ground-truth) instrument, tolerance choice alone swings mean K from 3.433
+(25px, fails both arms) to 7.333 (8px, clears both) -- so "fire only when tightly centered" is a real
+and large lever *for a policy with perfect perception*. Whether the paid brain's shortfall was mostly
+its loose firing tolerance is **one hypothesis, not this test's conclusion** -- per Limitations (a)-(c),
+the brain's 25px lived on a noisier, laggier instrument, and P2 noise or blind-window latency could
+account for much of the same gap.
 
 ## Recommendation
 
-**Re-pin the bar? No -- the ceiling comfortably clears 5.61, so the bar itself is not the problem.**
+- **Bar re-pin: NO.** The ceiling clears 5.61 with a 31% margin; the bar is reachable and stands as
+  pinned (stricter-only discipline never permitted loosening anyway -- this test confirms there is no
+  design-error case for a documented re-pin either).
+- **Paid A3 re-run as-is: not yet.** Before paying, the cheapest lever to try is **brief-side**: tighten
+  the firing-tolerance guidance (fire only when the azimuth reading is very close to zero, rather than
+  "roughly centered" / ~25px). This is the cheapest thing to try *but it is unproven* -- this test shows
+  tight tolerance is necessary for a perfect perceiver to clear the bar, not that it is sufficient for
+  the brain, whose P2 centroid noise and turn-blind windows are error sources the ceiling does not model
+  (Limitations b/c). If a brief-tightened run is attempted and still falls short, the remaining suspects
+  are P2 centroid precision and reaction latency -- primitive-level findings for the design doc, not
+  bar problems.
 
-**Paid A3 re-run as-is? Not recommended yet.** The brain achieved K=4.074 with (by construction) some
-aiming tolerance; this ceiling test shows that tolerance choice alone swings mean kills from 3.4 to 7.3
-on an otherwise-identical policy shape (turn-to-azimuth-then-fire). Spending another paid run without
-first tightening how the brain decides "centered enough to fire" risks repeating the same shortfall for
-a reason this test just isolated for free. Recommended next step, still free: check whether the gap is
-fixable by brief/prompt guidance alone (tell the brain to fire only when its own azimuth reading is very
-close to zero, not just "roughly centered") before spending on a fourth paid attempt -- if a brief-only
-change is plausible, try it; if the brain's own P1 signal's resolution genuinely cannot support an 8px-
-equivalent decision (e.g. its `deg_per_step` granularity floors out above what 8px represents), that is a
-primitive-precision finding for the design doc, not a bar problem.
+## Appendix -- Table 1: labels-buffer probe (field schema + sign-convention verification)
+
+Free probe run inside the `vizdoom-world` image before the policy was written (same DoomGame config as
+the ceiling script; seed 1000, `dtc_gate` physics). Two things verified:
+
+**Label field schema** (fields available per label in `vizdoom==1.3.0`):
+`height, object_angle, object_category, object_id, object_name, object_pitch, object_position_x,
+object_position_y, object_position_z, object_roll, object_velocity_x, object_velocity_y,
+object_velocity_z, value, width, x, y`. Enemy labels observed in dtc: `MarineChainsawVzd`, `Demon`;
+the player appears as `DoomPlayer` (excluded by name). A killed monster's label is absent from the
+next frame's list. Game variables order confirmed `HEALTH, AMMO2, KILLCOUNT` = `[100, 26, 0]` at
+episode start.
+
+**Sign-convention trace** -- continuous `TURN_LEFT` at tics=4 for 20 steps (tics 1-77), player fixed at
+`(0,0)` throughout; for the labeled enemy: `px_offset` = bbox-center-x - 160, `rel_angle` = analytic
+bearing minus player `ANGLE` (positive = target is to the LEFT of view center). `TURN_LEFT` increases
+`ANGLE`; a tracked target's `px_offset` grows rightward/positive as the view rotates left past it --
+sign agreement between `px_offset` and `-rel_angle` held on every row (zero wrong-sign steps):
+
+| tic | player ANGLE (deg) | target | bbox_cx | px_offset | rel_angle (deg) |
+|---:|---:|---|---:|---:|---:|
+| 1  | 0.00   | MarineChainsawVzd | 159.0 | -1.0   | 0.00   |
+| 9  | 3.52   | MarineChainsawVzd | 168.5 | +8.5   | -3.52  |
+| 13 | 17.58  | MarineChainsawVzd | 210.5 | +50.5  | -17.58 |
+| 17 | 31.64  | MarineChainsawVzd | 258.5 | +98.5  | -31.64 |
+| 21 | 45.70  | MarineChainsawVzd | 318.5 | +158.5 | -45.70 |
+| 25 | 59.77  | Demon             | 115.5 | -44.5  | +15.39 |
+| 29 | 73.83  | Demon             | 154.0 | -6.0   | +2.22  |
+| 33 | 87.89  | Demon             | 190.5 | +30.5  | -10.91 |
+| 41 | 116.02 | Demon             | 280.0 | +120.0 | -37.00 |
+| 49 | 144.14 | MarineChainsawVzd | 156.0 | -4.0   | +1.07  |
+| 57 | 172.27 | MarineChainsawVzd | 240.0 | +80.0  | -26.80 |
+| 65 | 200.39 | Demon             | 130.5 | -29.5  | +10.16 |
+| 69 | 214.45 | Demon             | 172.5 | +12.5  | -4.55  |
+| 77 | 242.58 | Demon             | 268.5 | +108.5 | -34.16 |
+
+Consequence for the policy: a target with **positive** `px_offset` (right of screen center) needs
+`TURN_RIGHT` to bring `bbox_cx` toward 160, and vice versa -- exactly the branch
+`eval/ceiling_gate3d.py` implements.
 
 ## Files
 

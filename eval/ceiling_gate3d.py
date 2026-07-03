@@ -34,7 +34,9 @@ Policy per step (privileged azimuth-seeker):
   1. Read the labels buffer; drop the DoomPlayer label; keep only labels still "alive" (dtc's
      defend_the_center wad only ever labels an enemy while it exists -- once killed, its label is
      simply absent from the next frame, confirmed live against the labels-buffer probe run for this
-     script (see report Table 1 for the exact field names used: `x`, `width`, `object_position_x/y`).
+     script; the probe's label field dump and sign-check trace are committed as Table 1 in the
+     report's appendix -- reports/2026-07-03-gate3d-ceiling-test.md -- covering the exact field
+     names used here: `x`, `width`, `object_position_x/y`).
   2. Among remaining enemies, pick the NEAREST by Euclidean distance in world XY (object_position_x/y)
      to the player (player position is fixed at the arena center in dtc, confirmed (0,0) throughout).
   3. Compute that enemy's azimuth as a SCREEN-SPACE pixel offset: bbox_center_x - 160 (screen is
@@ -143,7 +145,6 @@ def _run_episode(game, button_index: dict, n_buttons: int, seed: int, tolerance_
     game.set_seed(int(seed))
     game.new_episode()
     step = 0
-    turns_left_streak = 0  # unused; kept out, no hysteresis needed -- direct per-step recompute
 
     def read_gv():
         if game.is_episode_finished():
@@ -159,7 +160,21 @@ def _run_episode(game, button_index: dict, n_buttons: int, seed: int, tolerance_
     first_gv = read_gv()
     last_gv = first_gv or {}
     ammo2_first = None if first_gv is None else first_gv.get("AMMO2")
-    shots_fired = 0
+    # Shot accounting (review fix, PR #87). Two separate honest quantities, never conflated:
+    #   * attack_decisions -- how many steps CHOSE the ATTACK action. At the pinned tics=4 grain this
+    #     is 3-4x larger than bullets fired, because the pistol's refire cycle is ~14 tics: most
+    #     4-tic ATTACK windows land mid-cycle and consume NO bullet. (The original field, named
+    #     "shots_fired_counted", counted these decisions -- misleading, since it could exceed the
+    #     26-round budget.)
+    #   * bullets_fired -- actual rounds consumed, measured as the summed ammo2 decrease across ALL
+    #     steps (not just ATTACK steps: the weapon state machine can consume the round on the tic
+    #     AFTER a 4-tic ATTACK window ends, i.e. on the following turn step -- verified live during
+    #     this fix round, where per-ATTACK-step-only attribution undercounted vs the episode ammo
+    #     delta). Bounded by ammo2_first (26) by construction; equals ammo2_first - ammo2_last (the
+    #     KPS formula's shot count, which was always ammo-delta-derived and is unaffected).
+    attack_decisions = 0
+    bullets_fired = 0
+    prev_ammo = ammo2_first
 
     while step < MAX_STEPS and not game.is_episode_finished():
         state = game.get_state()
@@ -179,7 +194,6 @@ def _run_episode(game, button_index: dict, n_buttons: int, seed: int, tolerance_
             offset_px = bbox_cx - SCREEN_CENTER_X
             if abs(offset_px) <= tolerance_px and ammo_left > 0:
                 action = "ATTACK"
-                shots_fired += 1
             elif abs(offset_px) <= tolerance_px:
                 # centered but out of ammo: nothing useful to do: hold position (spend the fixed
                 # tics=4 grain on a turn is arbitrary either way once ammo is gone -- keep facing it).
@@ -187,15 +201,23 @@ def _run_episode(game, button_index: dict, n_buttons: int, seed: int, tolerance_
             else:
                 # TURN_LEFT increases ANGLE; a target with positive screen offset (right of center)
                 # needs TURN_RIGHT to bring bbox_cx toward 160 -- verified against the live probe
-                # capture backing this script (report Table 1: sign checked over 70 tics of continuous
-                # turning, zero wrong-sign steps).
+                # capture backing this script (the trace is committed as Table 1 in the report's
+                # appendix, reports/2026-07-03-gate3d-ceiling-test.md: sign checked over 77 tics of
+                # continuous TURN_LEFT, zero wrong-sign steps).
                 action = "TURN_RIGHT" if offset_px > 0 else "TURN_LEFT"
 
+        if action == "ATTACK":
+            attack_decisions += 1
         vec = _action_vector(button_index, action, n_buttons)
         game.make_action(vec, TICS_PER_STEP)
         step += 1
         gv = read_gv()
         if gv is not None:
+            ammo_now = gv.get("AMMO2")
+            if ammo_now is not None and prev_ammo is not None and ammo_now < prev_ammo:
+                bullets_fired += int(prev_ammo - ammo_now)
+            if ammo_now is not None:
+                prev_ammo = ammo_now
             last_gv = gv
 
     ammo2_last = last_gv.get("AMMO2")
@@ -208,7 +230,12 @@ def _run_episode(game, button_index: dict, n_buttons: int, seed: int, tolerance_
         "ammo2_first": ammo2_first,
         "ammo2_last": ammo2_last,
         "ammo2_increased": ammo2_increased,
-        "shots_fired_counted": shots_fired,   # this script's own action-log count of ATTACK calls
+        # Two separate honest counts (see the accounting comment above): bullets_fired is actual
+        # rounds consumed (ammo-delta-derived, bounded by the 26-round budget, cross-checks against
+        # ammo2_first - ammo2_last); attack_decisions is how many steps chose ATTACK and CAN exceed
+        # 26 -- it counts decisions, not effects (pistol refire cycle ~14 tics vs the 4-tic grain).
+        "bullets_fired": bullets_fired,
+        "attack_decisions": attack_decisions,
     }
 
 
