@@ -315,3 +315,142 @@ triage → David merges.
   it climb to R1).
 - **OPEN (the gate answers):** can a region-neutral brain over this floor beat random at basic.cfg —
   the tier's right to exist.
+
+---
+
+# AMENDMENT A1 (2026-07-04) — scenario re-pin after PC-1 FAIL: `basic_gate` → `dtc_gate`
+
+Appended per the house stricter-only discipline: the original text above is LAW as written and is not
+edited; this amendment supersedes it only where explicitly stated. Trigger: the §2.4 free pre-checks
+ran (`runs/vizdoom_precheck/PRECHECK_REPORT.md` + raw JSONs, 2026-07-03) — **PC-1 FAILED
+unambiguously, PC-2 PASSED**. The §2.4 fallback clause and the §2.2 re-pin clause both fire; this is
+the recorded re-pin, made BEFORE any primitive build, live wiring, baseline run, or paid run.
+
+## A1.1 PC-1 evidence (the justification)
+
+From `pc1_results.json` / `pc1_wake_results.json` (`basic.cfg` with the pinned button set, 213
+frames / 3 seeds, monster bbox from the server-side labels buffer — oracle-side only):
+
+- **33/36 ego-stationary monster-visible pairs are pixel-IDENTICAL (gmean exactly 0.0).** The
+  standing Cacodemon's idle state is a single sprite frame; monster-overlap component rate = **0.0%
+  vs the pre-registered ≥ 80% bar**. The only 3 nonzero pairs are first-pair weapon-settle artifacts
+  (no monster overlap).
+- **Missed shots do not wake it**: 49 post-fire stationary pairs, all zero diff (`basic_wake`,
+  seed 666). It animates only when hit — which ends or nearly ends the episode (1-2 shots kill).
+- Pipeline sanity holds (turn pairs: gmean 16.3, 25.1% pixels changed) — the scene is genuinely
+  static, not a detector bug.
+
+Consequence: in `basic_gate.cfg` the payload would carry `movers: []` on every ego-stationary
+observation — the symbolic seam cannot distinguish facing-the-monster from facing-a-wall, the brain's
+achievable policy collapses toward the blind-spinner decoy, and the §2.2 perception-free-decoy guard
+would (correctly) kill the run in PR-D. The §1.3 mover evidence came from monsters that **walk**
+(`defend_the_center`: 0.0109 frac / 4.5 comps median on stationary pairs); the gate scenario moves to
+where that evidence actually holds. P2's design is unchanged — the primitive was honest (it reported
+"nothing moving" because nothing moved); the SCENARIO was wrong for it.
+
+## A1.2 PC-2 record (the R0 decision — no climb)
+
+R0 `YawBandFlow` (§1.1 sketch implemented verbatim, throwaway) on fresh action-logged captures,
+floor sweep (`pc2_floor_sweep.json`, `pc2_dtc_fresh.json`): at fixture-derivable floors
+(ncc 0.2 / prom 0.02) **pooled sign-agreement 0.964, None-rate 0.201** over ≥ 95 scored turn pairs —
+clears ARM (b)'s 0.90 / 0.50 bars and §2.4's stricter 0.30 None bar. Sign convention verified
+empirically (TURN_LEFT → +dx, median +39..53px; zero wrong-sign readings on fresh dtc at any floor);
+idle false-motion rate **0.000** across 177 idle pairs (three-valued honesty holds); deg-per-px is
+**regime-dependent** (Doom slow vs fast turns: ~7.03° vs ~14.06° per 4-tic action), confirming §1.1's
+within-run self-calibration at the commanded action grain — a hand-set constant would be wrong.
+**Verdict: R0 sufficient; no R1 climb.** PR-B pins its floors near ncc 0.2–0.3 / prom 0.02 from its
+own committed fixtures and re-verifies the ARM (b) margin there.
+
+## A1.3 The re-pinned scenario: `scenarios/dtc_gate.cfg`
+
+`defend_the_center.wad` (player fixed at the center of a circular arena; melee monsters spawn at the
+perimeter and **walk toward you** — the regime where §1.3's mover numbers were actually measured),
+with cfg deltas pinned:
+
+- `available_buttons = { TURN_LEFT, TURN_RIGHT, ATTACK }` (dtc's native set — no strafes, no
+  translation, so "ego-stationary" for P2 = simply "not turning", the cleanest possible gate).
+- `available_game_variables = { HEALTH, AMMO2, KILLCOUNT }` — KILLCOUNT explicitly added (probe
+  fact: dtc's default exposes only AMMO2 + HEALTH). Oracle-side only, never on the wire.
+- `episode_timeout = 1000` tics (= 250 action-steps at the pinned grain); episode also ends on
+  player death (melee overwhelm / ammo exhaustion — dtc ships 26 pistol rounds). Screen pinned
+  `RGB24` / `RES_320X240`, headless.
+- **Action grain unchanged from the first pin:** every action executes with `tics = 4` fixed; the
+  gate world's tools take no `tics` parameter. Tools gain a System-1 `repeat: 1..10` parameter (the
+  same single action executed repeat times at tics=4 each) so the brain's decision budget is not
+  consumed by mechanical repetition — the per-step grain stays identical to the scripted baselines.
+
+## A1.4 The re-pinned gate statement (verbatim; supersedes §2.2's scenario + ARM (a); stricter-only thereafter)
+
+> **GATE-3D-A1 (re-pinned 2026-07-04, before any build).** A region-neutral brain over the MCP seam,
+> receiving only the symbolic 3D-floor payload (P1 yaw + P2 movers + episode status; no screenshot,
+> no game variables), plays `dtc_gate.cfg` for **N = 30 episodes** on **30 distinct pinned seeds**,
+> at most **40 brain decisions per episode** (a decision = one tool call; `repeat ≤ 10` System-1
+> steps per call). **Action grain is pinned equal across arms and baselines: every action-step
+> executes with `tics = 4` fixed**, and every baseline runs under the identical 1000-tic /
+> 250-step / death-terminated episode budget.
+>
+> **ARM (a) — task.** `K` = mean final oracle `KILLCOUNT` over the 30 episodes. PASS requires
+> `K ≥ max(R + 2.0, 1.5 × R)`, where **R** = mean final KILLCOUNT of the random policy (uniform
+> over the 3 single-button actions each step) over **200 free scripted episodes**, same cfg, same
+> grain, same budget, measured and written into the scorer BEFORE the paid run.
+>
+> **ARM (b) — grounding honesty (unchanged from §2.2).** From the run's own logs: P1 sign-agreement
+> with commanded turn direction ≥ **0.90** over ≥ **20** scored commanded-turn steps, P1 `None`-rate
+> on turn steps ≤ **0.50**. Fewer than 20 scored turn steps = ARM (b) not passed (no vacuous pass).
+>
+> **Degenerate guards (all carried over, re-measured on THIS scenario; any fires → no PASS):**
+> - **Perception-free-decoy guard:** **blind spinner** (TURN_LEFT + ATTACK multi-hot every step) and
+>   **ATTACK-only** (never turn — dtc's converging monsters make this a serious decoy: they walk into
+>   the line of fire), each 200 free episodes on `dtc_gate.cfg`, must each score
+>   `< max(R + 2.0, 1.5 × R)` on mean KILLCOUNT. If either clears, the scenario is re-pinned harder
+>   (stricter-only amendment A2) before any paid run.
+> - **Variation guard:** 30 distinct pinned seeds; the brain's 30 final KILLCOUNTs must span ≥ 3
+>   distinct values AND episode lengths (tics) must not all be identical, else DEGENERATE.
+> - **One attempt per seed:** `new_episode` before the current episode ends counts that seed's
+>   episode with its KILLCOUNT at abandonment (no re-rolling).
+> - **Alignment:** episode index + tic/step count only; wall-clock never used for alignment.
+> - **Episode-boundary guard:** post-finish observations return an explicit `episode_finished`
+>   marker; every frame read guards `get_state() is None`.
+> - **Completion floor:** < 25/30 episodes completed → `INSUFFICIENT_DATA`.
+> - **Oracle law:** HEALTH/AMMO2/KILLCOUNT go to `oracle.jsonl` only, never into any tool result.
+>
+> **Both arms required.** Verdicts: `PASS / FAIL / DEGENERATE / INSUFFICIENT_DATA`. Cost cap: one
+> session, ≤ 40 decisions × 30 episodes, target ≤ $10.
+
+**Payload-honesty note, restated for dtc:** multiple movers may now appear simultaneously, but all of
+them are hostile — aiming at *any* mover suffices, so GATE-3D-A1 tests turn-to-azimuth control +
+P1/P2 grounding honesty under real ego-motion and moving targets. It still does **NOT** test entity
+discrimination (threat-vs-benign among movers); that stays deferred to a later gate with mixed-role
+movers, tightening from this recorded baseline.
+
+## A1.5 Fixture note (binding on PR-B)
+
+The 2026-07-02 probe capture of `defend_the_center` has an intermittent **one-frame action↔frame
+misalignment** (PC-2 finding: naive scoring on it gives sign-agreement 0.02–0.19 — an artifact, not a
+primitive failure). It is NOT a valid fixture source. PR-B regenerates its committed fixtures from
+`runs/vizdoom_precheck/basic_mixed/` + `runs/vizdoom_precheck/dtc_mixed/`, which carry per-step
+`actions.jsonl` under the pinned convention **frame_i = state BEFORE action_i** (the capture scripts
+alongside in that directory are the template).
+
+## A1.6 Build-plan deltas (§4 updated for the re-pin)
+
+- **PR-B:** unchanged scope (P1 + P2 + offline fixture tests) with two bindings: fixtures from the
+  §A1.5 sources only; P1 floors pinned near ncc 0.2–0.3 / prom 0.02 and re-verified against ARM (b)'s
+  margin on the committed fixtures.
+- **PR-C:** ships `scenarios/dtc_gate.cfg` + `GAMES["doom_dtc"]` (the `basic_gate.cfg` /
+  `GAMES["doom_basic"]` deliverables are DROPPED — dead scenario); tools per §A1.3 (no `tics` param,
+  `repeat: 1..10`); oracle→jsonl wiring incl. KILLCOUNT.
+- **PR-D:** scorer implements GATE-3D-A1 verbatim (incl. one-attempt-per-seed enforcement and the
+  `< max(R + 2.0, 1.5 × R)` decoy comparison); **three** free baselines (random R, blind spinner,
+  ATTACK-only) run on `dtc_gate.cfg`, 200 episodes each, numbers written into the scorer + an A2
+  addendum here BEFORE the paid run.
+- **Paid run:** unchanged shape; scored under GATE-3D-A1.
+
+## A1.7 Decided vs open (supersedes §6 where in conflict)
+
+- **DECIDED by this amendment:** the scenario (`dtc_gate.cfg`, §A1.3); GATE-3D-A1 (§A1.4) as the
+  operative gate statement; R0 for P1 (no climb, §A1.2); fixture sources (§A1.5).
+- **OPEN (free, before the paid run):** R and both decoy means on `dtc_gate.cfg` — with the explicit
+  pre-registered risk that ATTACK-only clears the bar and forces amendment A2.
+- **OPEN (the gate answers):** unchanged — can a region-neutral brain over this floor beat
+  perception-free play, now in a scenario where the floor's evidence actually holds.
