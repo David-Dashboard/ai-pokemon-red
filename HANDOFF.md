@@ -5,7 +5,30 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-05 (BLANK-AGENT PROTOCOL HOLE found+closed: account-B auto-memory persisted across runs via the shared repo-root project dir; blast radius audited — all verdicts stand except ARC run 2 re-labeled; P1/A3 redesign doc merged (#81); glyph design merged (#80), build in flight)._
+_Last updated: 2026-07-05 (day close: #80-#84 merged; glyph cache VALIDATED / R0 text-detector killed; A3-PC PASS with the onset rule as the real fix; ARC wa30 = 1/9 across 3 framings — the L2 wall is the planning-depth frontier; paid GATE-3D-A3 re-run HELD pending free ceiling test)._
+
+**⇒⇒ NEWEST (2026-07-05, day close) — CONSOLIDATION: five merges, two validated primitives-of-record,
+two honest kills, one capability wall located. ⇒⇒**
+- **Glyph lane (#80 design, #83 build):** Gate 2 PASS — the within-run glyph cache free-serves 96.9%
+  after warmup, 0 mismatches (TileFunctionMap mechanism generalizes to glyphs; naming-layer prerequisite
+  secured). Gate 1 FAIL — R0 edge-density text-region detector killed cheap (0.27 recall vs 0.85;
+  textured backdrops). R1 candidate queued: cache-driven detection (scan for known-glyph hashes).
+- **3D lane (#81 design, #84 build):** A3-PC PASS. Decision of record: the pinned onset scoring rule is
+  the load-bearing fix (old-P1 + rule = 0.9402); multi-band voting merged OPT-IN only (0.9154 — the vote
+  can suppress correct low-confidence reads). Paid A3 re-run HELD: arm (a-1) needs K 5.61 vs the 4.07
+  achieved and nothing merged buys +38% kills — next free step is a scripted-optimum CEILING TEST (if a
+  perfect azimuth-seeker can't hit 5.61 in 250 steps, re-pin before ever paying).
+- **ARC wa30 wall:** 3 runs (discovery-framed $6.69 / memory-carrying $8.89 / completion-framed $20.82)
+  all end at 1/9. Ontology discovery succeeds EVERY time; level 2 does not fall — the boundary is
+  multi-step spatial planning depth, not perception or framing. This is the strongest argument yet for
+  the SKILL-COMPILATION lane (S1 navigation/manipulation macros multiply effective planning depth per
+  decision). Do not buy more wa30 runs without a new mechanism.
+- **Paid ledger 2026-07-05:** ARC $36.4 + (gate3d spend booked 07-04). Cross-session total ≈ $190.
+- **⇒ NEXT (priority order):** (1) skill-compilation design doc (the ARC wall + entity-v3 exposure
+  control + GATE-3D hunt efficiency ALL point at it — the cost claim's big lever is now also the
+  capability lever); (2) GATE-3D ceiling test (free); (3) glyph R1 cache-driven detection design;
+  (4) sweep stage-2; (5) ARC breadth (different game, cheaper signal) instead of wa30 depth.
+_Prior update: 2026-07-05 (BLANK-AGENT PROTOCOL HOLE found+closed: account-B auto-memory persisted across runs via the shared repo-root project dir; blast radius audited — all verdicts stand except ARC run 2 re-labeled; P1/A3 redesign doc merged (#81); glyph design merged (#80), build in flight)._
 
 **⇒⇒ NEWEST (2026-07-05, latest) — BLANK-AGENT HOLE: account-B brains shared cross-run auto-memory
 (learning-boundary law violation), found via the ARC run-2 brain citing "MEMORY.md". Audited, closed,
