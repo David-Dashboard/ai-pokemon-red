@@ -5,7 +5,23 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
-_Last updated: 2026-07-04 (ENTITY GATE v2: **FAIL** — verdict computed on run 11 (Kirby port); both arms finally scoreable; arm (b) PASS, arm (a) FAIL with q_k=0.800 vs b_k=0.812; PR #69 (oracle+docs drift) merged)._
+_Last updated: 2026-07-04 (MINIWOB FIRST BRAIN RUN: **5/5 episodes, reward 1.0 each, $1.36** — constancy now spans GB/GBA/NDS/browser; entity gate v2 FAIL banked; GATE-3D pre-checks in flight)._
+
+**⇒⇒ NEWEST (2026-07-04, latest) — COMPUTER-USE FIRST DATAPOINT: the same brain pattern completed 5/5
+MiniWoB click-button episodes PIXELS-ONLY, perfect rewards, $1.36 (runs/brain_miniwob/). ⇒⇒**
+- Oracle (world/oracle.jsonl, scoring only): rewards [1.0, 1.0, 1.0, 1.0, 1.0]. The brain read button
+  labels from read_region crops, rejected label distractors ("no" among "Okay"/"okay"), and
+  self-corrected a 15px missed click by re-zooming. No DOM, no reward on the wire, 33 turns.
+- **What it means for the north star:** constancy (claim #2) now holds across FOUR world classes — three
+  emulated consoles + a browser — with zero brain edits. The computer-use axis (claim #3b) is open.
+  Next rungs there: harder MiniWoB tasks (checkboxes, forms, typing), then the naming/anchoring layer
+  makes "click the X" resolvable in ANY UI, not just labeled buttons.
+- Next session accelerants agreed with David (2026-07-04): second parallel orchestrator session for the
+  GATE-3D build lane (design doc = its handoff); this session takes glyph-read (the sweep's #1 gap) +
+  keeps account B saturated; skill compilation (S1 locomotion) queued after — it is what the entity-gate
+  v3 needs anyway.
+
+_Prior update: 2026-07-04 (ENTITY GATE v2: **FAIL** — verdict computed on run 11 (Kirby port); both arms finally scoreable; arm (b) PASS, arm (a) FAIL with q_k=0.800 vs b_k=0.812; PR #69 (oracle+docs drift) merged)._
 
 **⇒⇒ NEWEST (2026-07-04, latest) — ENTITY-GROUNDING GATE v2: **FAIL**, computed at last (11 runs total,
 ~$80). The verdict run was CLEAN: 5 drops, 3+ NEARs both arms, 0 retroactive, $3.06. ⇒⇒**
