@@ -1,0 +1,191 @@
+{
+  "_comment": "Hand-labeled ground truth for the Gate 1 text-region-detector fixture (reports/2026-07-05-glyph-read-design.md section 5, Gate 1). Frames are 240x160 GBA screenshots drawn from runs/probe_*/world/ (6 recorded GBA sweep-probe games, HANDOFF 2026-07-04) plus a handful of pure no-text distractor frames from the same sweep. One entry per frame; 'targets' is a list of ground-truth text-bearing bboxes [x0,y0,x1,y1] in source-frame pixels (loose boxes around each visually distinct text block/row-group, drawn by inspecting the PNGs directly at 3x with a pixel ruler overlay -- not derived from any detector's own output). Distractor frames (pure scenery/logo-art/blank with no legible glyphs) have an empty 'targets' list and must score 0 phantom candidates for Gate 1 to pass.",
+  "frames": [
+    {
+      "file": "sma2_overworld_003.png",
+      "game": "Super Mario Advance 2",
+      "note": "DISTRACTOR: overworld map scenery (sky, clouds, snow-cap icons) -- no text",
+      "targets": []
+    },
+    {
+      "file": "sma2_menu_004.png",
+      "game": "Super Mario Advance 2",
+      "note": "mode-select overlay: 'Single Player'/'Multiplayer' UI text over the SMW logo splash, plus the logo's own stylized title text and copyright line",
+      "targets": [[8, 30, 220, 45], [8, 60, 130, 75], [30, 130, 230, 150]]
+    },
+    {
+      "file": "sma2_title_019.png",
+      "game": "Super Mario Advance 2",
+      "note": "title screen: stylized 'SUPER MARIO WORLD' logo block + copyright row",
+      "targets": [[15, 55, 225, 145]]
+    },
+    {
+      "file": "sma2_title2_023.png",
+      "game": "Super Mario Advance 2",
+      "note": "black-background title-card variant: 'SUPER MARIO WORLD' + copyright row",
+      "targets": [[45, 20, 195, 65], [30, 75, 210, 90]]
+    },
+    {
+      "file": "sma2_titlescreen_025.png",
+      "game": "Super Mario Advance 2",
+      "note": "in-world title overlay with gameplay behind it: logo text + copyright row",
+      "targets": [[20, 20, 220, 65], [30, 75, 210, 90]]
+    },
+    {
+      "file": "sma2_intro_gameplay_028.png",
+      "game": "Super Mario Advance 2",
+      "note": "intro dialog textbox (black box, white monospace font) over gameplay",
+      "targets": [[8, 20, 235, 90]]
+    },
+    {
+      "file": "sma2_dialog_030.png",
+      "game": "Super Mario Advance 2",
+      "note": "same intro dialog textbox, one frame later (Mario walks in)",
+      "targets": [[8, 20, 235, 90]]
+    },
+    {
+      "file": "sma2_dialog_036.png",
+      "game": "Super Mario Advance 2",
+      "note": "same intro dialog textbox, Luigi joins on screen",
+      "targets": [[8, 20, 235, 90]]
+    },
+    {
+      "file": "zelda_scenery_002.png",
+      "game": "Legend of Zelda: Minish Cap",
+      "note": "DISTRACTOR: pure rain/tree background art, pre-title fade-in -- no text",
+      "targets": []
+    },
+    {
+      "file": "zelda_title_008.png",
+      "game": "Legend of Zelda: Minish Cap",
+      "note": "title screen: 'THE LEGEND OF' + 'ZELDA' + 'The Minish Cap' stacked logo text",
+      "targets": [[75, 15, 220, 65], [15, 55, 235, 100], [110, 90, 230, 115]]
+    },
+    {
+      "file": "zelda_choosefile_019.png",
+      "game": "Legend of Zelda: Minish Cap",
+      "note": "'CHOOSE A FILE' header banner + numeral labels (0/2/3) on the save slots",
+      "targets": [[10, 5, 235, 25], [10, 30, 25, 45], [10, 60, 25, 75], [10, 90, 25, 105]]
+    },
+    {
+      "file": "zelda_choosefile2_024.png",
+      "game": "Legend of Zelda: Minish Cap",
+      "note": "same 'CHOOSE A FILE' screen, different slot highlighted",
+      "targets": [[10, 5, 235, 25], [10, 30, 25, 45], [10, 60, 25, 75], [10, 90, 25, 105]]
+    },
+    {
+      "file": "zelda_enterkeyboard_032.png",
+      "game": "Legend of Zelda: Minish Cap",
+      "note": "'ENTER A NAME' header + the on-screen A-Z/accented/digit keyboard grid + ABC/abc/back/END row",
+      "targets": [[10, 5, 235, 25], [65, 30, 175, 45], [15, 55, 235, 140]]
+    },
+    {
+      "file": "mk_blank_001.png",
+      "game": "Mortal Kombat Advance",
+      "note": "DISTRACTOR: pure black frame, no text (pre-legal-screen fade-in)",
+      "targets": []
+    },
+    {
+      "file": "mk_legal_003.png",
+      "game": "Mortal Kombat Advance",
+      "note": "legal-text paragraph screen (three stacked paragraphs, white text on dark background)",
+      "targets": [[15, 15, 225, 30], [10, 40, 230, 65], [15, 105, 225, 145]]
+    },
+    {
+      "file": "mk_midway_007.png",
+      "game": "Mortal Kombat Advance",
+      "note": "MIDWAY logo card: stylized 'MIDWAY' wordmark + small TM/(R) marks",
+      "targets": [[85, 50, 235, 80]]
+    },
+    {
+      "file": "mk_legal2_004.png",
+      "game": "Mortal Kombat Advance",
+      "note": "legal-text paragraph screen, one frame earlier in the fade-in than mk_legal_003 (same three paragraphs, slightly dimmer)",
+      "targets": [[15, 15, 225, 30], [10, 40, 230, 65], [15, 105, 225, 145]]
+    },
+    {
+      "file": "mk_virtucraft_011.png",
+      "game": "Mortal Kombat Advance",
+      "note": "Virtucraft publisher logo: curved 'VIRTUCRAFT' wordmark on the heart badge + clean 'www.virtucraft.com' text row below",
+      "targets": [[60, 30, 150, 135], [70, 125, 170, 140]]
+    },
+    {
+      "file": "mk_title_013.png",
+      "game": "Mortal Kombat Advance",
+      "note": "MKA title card: 'MK*A' + 'MORTAL KOMBAT ADVANCE' stacked wordmarks",
+      "targets": [[115, 10, 235, 65]]
+    },
+    {
+      "file": "mk_title_start_014.png",
+      "game": "Mortal Kombat Advance",
+      "note": "same title card, 'START'/'OPTIONS' menu text now showing",
+      "targets": [[115, 10, 235, 65], [45, 118, 200, 148]]
+    },
+    {
+      "file": "dbz_legal_001.png",
+      "game": "Dragon Ball Z: Legacy of Goku I & II",
+      "note": "legal-text paragraph screen (title line + 3 license paragraphs, white text on black)",
+      "targets": [[45, 20, 195, 32], [10, 38, 230, 65], [10, 78, 230, 108], [55, 118, 185, 130]]
+    },
+    {
+      "file": "dbz_portrait_005.png",
+      "game": "Dragon Ball Z: Legacy of Goku I & II",
+      "note": "'I'/'II' version-select portraits: two large stylized numeral glyphs + the 'DRAGON BALL Z' logo wordmark",
+      "targets": [[125, 10, 165, 45], [155, 35, 200, 45], [10, 90, 105, 115]]
+    },
+    {
+      "file": "dbz_webfoot_020.png",
+      "game": "Dragon Ball Z: Legacy of Goku I & II",
+      "note": "Webfoot Technologies developer logo: stylized 'ebfoot' wordmark + 'Technologies, Inc.' subtext",
+      "targets": [[100, 50, 230, 90], [110, 95, 235, 115]]
+    },
+    {
+      "file": "dbz_selectgame_024.png",
+      "game": "Dragon Ball Z: Legacy of Goku I & II",
+      "note": "'SELECT GAME' header + three clean 'NEW GAME' text rows on the save-slot list",
+      "targets": [[65, 3, 210, 22], [130, 35, 200, 48], [130, 78, 200, 90], [130, 118, 200, 130]]
+    },
+    {
+      "file": "ffvi_warning_001.png",
+      "game": "Final Fantasy VI Advance",
+      "note": "health-and-safety warning screen: header line + paragraph + URL line, black text on white",
+      "targets": [[10, 8, 225, 22], [25, 35, 220, 90], [10, 100, 230, 118], [40, 122, 195, 138]]
+    },
+    {
+      "file": "ffvi_publishedby_009.png",
+      "game": "Final Fantasy VI Advance",
+      "note": "'Published by' + Nintendo wordmark badge, red text on white",
+      "targets": [[75, 40, 205, 60], [65, 55, 210, 95]]
+    },
+    {
+      "file": "ffvi_nightsky_012.png",
+      "game": "Final Fantasy VI Advance",
+      "note": "DISTRACTOR: night-sky/cloud transition art, no text",
+      "targets": []
+    },
+    {
+      "file": "ffvi_logo_014.png",
+      "game": "Final Fantasy VI Advance",
+      "note": "'FINAL FANTASY VI ADVANCE' logo lockup + clean copyright text row at the bottom",
+      "targets": [[10, 35, 230, 90], [5, 145, 235, 158]]
+    },
+    {
+      "file": "naruto_blank_005.png",
+      "game": "Naruto: Ninja Council 2",
+      "note": "DISTRACTOR: pure white blank transition frame, no text",
+      "targets": []
+    },
+    {
+      "file": "naruto_legal_001.png",
+      "game": "Naruto: Ninja Council 2",
+      "note": "dense legal-text screen: title line + 8-line paragraph block + closing line, monospace white-on-black",
+      "targets": [[10, 8, 225, 22], [5, 25, 235, 115], [45, 122, 195, 135]]
+    },
+    {
+      "file": "naruto_tomy_004.png",
+      "game": "Naruto: Ninja Council 2",
+      "note": "TOMY publisher logo: 'TOMY' wordmark + 'Dream Energy' script subtext",
+      "targets": [[105, 45, 220, 80], [165, 82, 240, 100]]
+    }
+  ]
+}
