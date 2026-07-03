@@ -534,9 +534,21 @@ _ARCAGI3_RUN_SKILL_TOOL = {
 _ARCAGI3_SKILL_TOOLS = [_ARCAGI3_DEFINE_SKILL_TOOL, _ARCAGI3_RUN_SKILL_TOOL]
 
 
+def _arc_skills_enabled() -> bool:
+    """A/B arm isolation (reports/2026-07-03-skill-compilation-design.md §4.1): Arm A must have ONLY
+    the existing primitive tools, Arm B additionally gets define_skill/run_skill. Opt-in, default OFF —
+    unset or anything other than exactly "1" leaves the brain unable to even see the skill tools."""
+    return os.environ.get("ARC_SKILLS") == "1"
+
+
 def _arcagi3_static_tools() -> list[dict]:
-    """tools/list response for arcagi3 — identical regardless of which --arc-game is chosen."""
-    return [_ARCAGI3_OBSERVE_TOOL, _REMEMBER_TOOL, *_ARCAGI3_ACTION_TOOLS, *_ARCAGI3_SKILL_TOOLS]
+    """tools/list response for arcagi3 — identical regardless of which --arc-game is chosen. Skill
+    tools (define_skill/run_skill) are gated behind ARC_SKILLS=1 (A/B arm isolation, see
+    _arc_skills_enabled) — default arm (A) never sees them in the tool list at all."""
+    base = [_ARCAGI3_OBSERVE_TOOL, _REMEMBER_TOOL, *_ARCAGI3_ACTION_TOOLS]
+    if _arc_skills_enabled():
+        return [*base, *_ARCAGI3_SKILL_TOOLS]
+    return base
 
 
 def _miniwob_static_tools() -> list[dict]:
@@ -1338,6 +1350,11 @@ class ArcAgi3Session:
         # never read back across a session boundary (same lifetime/shape as `self.lessons`).
         self.skills: dict[str, dict] = {}
         self._skill_log_path = os.path.join(args.out, "skills.jsonl")
+        # A/B arm isolation (doc §4.1): read ARC_SKILLS ONCE at session init, not per call — the env
+        # can't flip mid-session and change which arm this session is. tools/list already hides
+        # define_skill/run_skill when off; this is defense-in-depth so a client that calls them anyway
+        # (stale tool list, hand-rolled request) still gets a clear refusal, not silent execution.
+        self._skills_enabled = _arc_skills_enabled()
 
         self.client.open_scorecard(tags=["ai-pokemon-red", "arcagi3_world"],
                                    source_url="ai-pokemon-red/world_mcp.py")
@@ -1710,8 +1727,20 @@ class ArcAgi3Session:
         if name == "act":
             return self._act(args)
         if name == "define_skill":
+            if not self._skills_enabled:
+                return [{"type": "text",
+                         "text": "define_skill error: skill tools are disabled for this session "
+                                 "(set ARC_SKILLS=1 in the environment to enable — see "
+                                 "reports/2026-07-03-skill-compilation-design.md §4.1, Arm A must not "
+                                 "have this tool at all)."}]
             return self._define_skill(args)
         if name == "run_skill":
+            if not self._skills_enabled:
+                return [{"type": "text",
+                         "text": "run_skill error: skill tools are disabled for this session (set "
+                                 "ARC_SKILLS=1 in the environment to enable — see "
+                                 "reports/2026-07-03-skill-compilation-design.md §4.1, Arm A must not "
+                                 "have this tool at all)."}]
             return self._run_skill(args)
         if name == "reset_game":
             try:

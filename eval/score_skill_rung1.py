@@ -197,6 +197,10 @@ def run_dry(fixture_path: str, out_dir: str) -> dict:
         mp = MonkeyPatch()
         try:
             _install_scenario_fake_api(mp, sc, game_id)
+            # This driver's whole purpose is to exercise define_skill/run_skill dispatch (the doc §4.0
+            # free instrument, a build-correctness check) -- independent of the A/B ARC_SKILLS gate
+            # (doc §4.1) that controls whether a live BRAIN session sees these tools.
+            mp.setenv("ARC_SKILLS", "1")
             args = _argparse.Namespace(game="arcagi3", rom=None, init_state=None, out=sc_out,
                                        record=False, with_screenshot=False, keep_frames=False,
                                        seeds_file=None, seed=None, arc_game=game_id)

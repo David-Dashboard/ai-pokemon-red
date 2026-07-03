@@ -44,6 +44,15 @@ def _frame(grid, *, available_actions=(1, 2, 3, 4, 5), state="NOT_FINISHED"):
             "levels_completed": 0, "win_levels": 254, "available_actions": list(available_actions)}
 
 
+@pytest.fixture(autouse=True)
+def _skills_on_by_default(monkeypatch):
+    """This whole file tests the skill MECHANISM (define_skill/run_skill's own behavior), which is
+    orthogonal to the ARC_SKILLS A/B gate (doc §4.1) that decides whether a live brain session sees
+    these tools at all -- default the flag ON here so the mechanism tests above don't all need to set
+    it. Section 10 below (the gate's own tests) overrides this per-test with monkeypatch.delenv/setenv."""
+    monkeypatch.setenv("ARC_SKILLS", "1")
+
+
 # ---------------------------------------------------------------------------
 # 1. define_skill: accept valid, reject malformed
 # ---------------------------------------------------------------------------
@@ -354,7 +363,9 @@ def test_define_and_run_skill_never_leak_score_fields(monkeypatch, tmp_path):
         assert "win_levels" not in blob
 
 
-def test_arcagi3_tool_schemas_present_for_define_and_run_skill():
+def test_arcagi3_tool_schemas_present_for_define_and_run_skill(monkeypatch):
+    # ARC_SKILLS gate (A/B arm isolation, doc §4.1): schemas only show up when the flag is on.
+    monkeypatch.setenv("ARC_SKILLS", "1")
     from world_mcp import _static_tools
     tools = {t["name"]: t for t in _static_tools("arcagi3")}
     assert "define_skill" in tools and "run_skill" in tools
@@ -363,6 +374,46 @@ def test_arcagi3_tool_schemas_present_for_define_and_run_skill():
     # PR #89 review finding 4 (second review): no dead top-level stop_when property in the schema --
     # it only exists inside repeat_until steps.
     assert "stop_when" not in tools["define_skill"]["inputSchema"]["properties"]
+
+
+# ---------------------------------------------------------------------------
+# 10. ARC_SKILLS env gate (A/B arm isolation, doc §4.1: Arm A must not even see the tools)
+# ---------------------------------------------------------------------------
+
+def test_skill_tools_absent_from_tool_list_by_default(monkeypatch):
+    monkeypatch.delenv("ARC_SKILLS", raising=False)
+    from world_mcp import _static_tools
+    names = {t["name"] for t in _static_tools("arcagi3")}
+    assert "define_skill" not in names and "run_skill" not in names
+
+
+def test_skill_tools_present_in_tool_list_when_flag_on(monkeypatch):
+    monkeypatch.setenv("ARC_SKILLS", "1")
+    from world_mcp import _static_tools
+    names = {t["name"] for t in _static_tools("arcagi3")}
+    assert "define_skill" in names and "run_skill" in names
+
+
+def test_dispatch_of_skill_tools_disabled_by_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("ARC_SKILLS", raising=False)
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    r1 = sess.call("define_skill", {"name": "push", "steps": [{"action": "ACTION1"}]})
+    assert "disabled for this session" in r1[0]["text"]
+    assert "push" not in sess.skills
+    r2 = sess.call("run_skill", {"name": "push"})
+    assert "disabled for this session" in r2[0]["text"]
+
+
+def test_dispatch_of_skill_tools_works_when_flag_on(monkeypatch, tmp_path):
+    monkeypatch.setenv("ARC_SKILLS", "1")
+    frames = [dict(_RESET_FRAME), _frame([[1, 0], [0, 0]], available_actions=(1, 2, 3, 4))]
+    _install_fake_api(monkeypatch, frames)
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    r1 = sess.call("define_skill", {"name": "push", "steps": [{"action": "ACTION1"}]})
+    assert "-> ok" in r1[0]["text"]
+    r2 = sess.call("run_skill", {"name": "push"})
+    assert "1 step(s) executed" in r2[0]["text"]
 
 
 # ---------------------------------------------------------------------------
