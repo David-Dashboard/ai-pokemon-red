@@ -551,6 +551,78 @@ def _arcagi3_static_tools() -> list[dict]:
     return base
 
 
+# --- Kirby GB port (reports/2026-07-03-kirby-skill-port-entity-v3.md §2/§3, "the second port named
+# by the rung-1 A/B verdict's NEXT-implications section"). `define_skill`/`run_skill` are added to
+# `World`'s tool surface and `World.call` dispatch — NOT a new session class — because kirby_dreamland
+# runs through the generic `World`/Gateway/GamePlugin path (world_mcp.py:626), unlike ArcAgi3Session's
+# standalone dispatch class. Build scope: kirby_dreamland ONLY (doc §2). Gated behind KIRBY_SKILLS=1,
+# a SEPARATE flag from ARC_SKILLS (doc §2's "one flag per world, not a shared SKILLS_WORLDS" decision
+# of record) so a --game kirby_dreamland session with ARC_SKILLS=1 (but no KIRBY_SKILLS) still sees no
+# skill tools, and vice versa for an arcagi3 session with KIRBY_SKILLS=1 set.
+#
+# Steps are press_button-shaped ({"button": "right", "hold_frames": 30}), matching this world's own
+# primitive action surface, not ARC's act-payloads. stop_when is Kirby's own closed enum (doc §3):
+# steps_elapsed(n<=50), move_blocked, move_succeeded, region_changed(x0,y0,x1,y1) — NOT
+# grid_changed_in_region/grid_unchanged_for (ARC's enum) and NOT entity_count_changed (doc §3: demoted
+# to candidate, zero firings in all four archived Kirby transcripts) or any oracle/RAM field (hp
+# included — doc §3 "hp_dropped is explicitly rejected").
+_KIRBY_SKILL_MAX_ITERS = 8            # repeat_until's max_iters cap — identical to rung 1 (doc §3)
+_KIRBY_STEPS_ELAPSED_MAX = 50         # steps_elapsed(n): n <= 50 (doc §3, pinned)
+_KIRBY_SKILL_MAX_WORLD_STEPS = 50     # absolute per-run_skill-call ceiling, world-side (doc §3, pinned)
+
+_KIRBY_DEFINE_SKILL_TOOL = {
+    "name": "define_skill",
+    "description": ("Compile a named macro out of EXISTING primitive actions you already have. "
+                    "`steps` is a list where each entry is either a plain press step "
+                    "{\"button\": \"right\", \"hold_frames\": 30} (hold_frames optional, matches "
+                    "press_button's own default), or a single bounded loop "
+                    "{\"repeat_until\": {\"steps\": [...], \"stop_when\": \"<predicate>\", "
+                    "\"max_iters\": <=8}} — re-run its inner steps until stop_when fires or max_iters "
+                    "iterations complete (no nesting: a repeat_until's inner steps may not contain "
+                    "another repeat_until). stop_when is checked after EVERY press and is one of: "
+                    "steps_elapsed(n) with n<=50 (n presses executed inside the loop), move_blocked "
+                    "(your last press's outcome was BLOCKED — fires on the 3rd consecutive blocked "
+                    "press against the same wall, not the first), move_succeeded (your last press "
+                    "actually moved you), or region_changed(x0,y0,x1,y1) with a box no bigger than "
+                    f"{_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} source pixels (the pixels in that box "
+                    "changed between your last two observations — same mean-abs-diff>=2.0 test as "
+                    "whats_changed). Re-using a name replaces your prior definition. The definition is "
+                    "logged verbatim and forgotten when this session ends — it does not persist across "
+                    "runs. Call run_skill(name) to execute it."),
+    "inputSchema": {"type": "object",
+                    "properties": {"name": {"type": "string"}, "steps": {"type": "array"}},
+                    "required": ["name", "steps"]},
+}
+_KIRBY_RUN_SKILL_TOOL = {
+    "name": "run_skill",
+    "description": ("Execute a skill you previously defined with define_skill. Advances world state "
+                    "exactly as if each of its steps had been pressed individually (same validation, "
+                    "same logging as a plain press_button), checking any repeat_until's stop_when "
+                    "after EACH press and stopping early (with the reason) if it fires. An absolute "
+                    f"ceiling of {_KIRBY_SKILL_MAX_WORLD_STEPS} presses applies per call regardless of "
+                    "the skill's own definition. Returns ONE result: the observation after the skill "
+                    "ran, plus a log of which steps actually executed and why it stopped — one "
+                    "decision, many presses."),
+    "inputSchema": {"type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"]},
+}
+_KIRBY_SKILL_TOOLS = [_KIRBY_DEFINE_SKILL_TOOL, _KIRBY_RUN_SKILL_TOOL]
+
+# kirby_dreamland ONLY (doc §2 build scope) — a future third port pins its own flag, never a shared one
+# (doc §2's stricter-only rule: "if a future third port wants skill tools, it gets its own flag too").
+_KIRBY_SKILLS_WORLDS = frozenset({"kirby_dreamland"})
+
+
+def _kirby_skills_enabled() -> bool:
+    """Arm isolation (doc §2): KIRBY_SKILLS, a SEPARATE env var from ARC_SKILLS — one flag per world,
+    not a shared SKILLS_WORLDS CSV var (doc §2's decision of record, justification 1-3). Opt-in,
+    default OFF — unset or anything other than exactly "1" leaves the brain unable to even see the
+    skill tools. Read once here; callers (tools/list wiring, World.__init__) call this at their own
+    fixed point, matching _arc_skills_enabled's shape exactly."""
+    return os.environ.get("KIRBY_SKILLS") == "1"
+
+
 def _miniwob_static_tools() -> list[dict]:
     """tools/list response for any miniwob_* world — identical across tasks (same fixed action surface)."""
     return [_MINIWOB_OBSERVE_TOOL, _MINIWOB_READ_REGION_TOOL, _MINIWOB_WHATS_CHANGED_TOOL,
@@ -584,6 +656,13 @@ def _static_tools(game: str) -> list[dict]:
     nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
     if game in _REGION_TOOL_WORLDS:
         nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
+    # kirby_dreamland ONLY (doc §2 build scope), gated behind KIRBY_SKILLS=1 — pre-boot tools/list must
+    # agree with the live World.tools() gating below so a stale client can't see skill tools that
+    # World.call would then refuse (§6 gate 4: "an MCP client's tools/list response is inspectable
+    # BEFORE any brain session starts"). Other GB games (incl. gb_generic, cave_noire, gauntlet) never
+    # see these tools even if KIRBY_SKILLS happens to be set — the flag is world-scoped, not global.
+    if game in _KIRBY_SKILLS_WORLDS and _kirby_skills_enabled():
+        nav = [*nav, *_KIRBY_SKILL_TOOLS]
     if game in _NDS_WORLDS:
         return [*nav, *_NDS_ACTION_TOOLS]
     if game in _GBA_WORLDS:
@@ -689,12 +768,25 @@ class World:
         self.region_tools = args.game in _REGION_TOOL_WORLDS   # ADR-002 Phase D: read_region/whats_changed
         self._frame_hist: list = []   # last <=2 observed frames (numpy HxWxC), for whats_changed's frame-diff
 
+        # Kirby GB skill port (reports/2026-07-03-kirby-skill-port-entity-v3.md §2, build scope
+        # kirby_dreamland ONLY). Read KIRBY_SKILLS ONCE at init, not per call — the env can't flip
+        # mid-session and change which arm this session is (same discipline as ArcAgi3Session's
+        # _skills_enabled). tools/list already hides define_skill/run_skill when off or off-world;
+        # this is defense-in-depth so a client that calls them anyway (stale tool list, hand-rolled
+        # request) still gets a clear refusal, not silent execution.
+        self.kirby_skills_world = args.game in _KIRBY_SKILLS_WORLDS
+        self._kirby_skills_enabled = self.kirby_skills_world and _kirby_skills_enabled()
+        self.skills: dict[str, dict] = {}   # within-run only, blank-agent law (same lifetime as lessons)
+        self._skill_log_path = os.path.join(args.out, "skills.jsonl")
+
     def tools(self) -> list[dict]:
         action = [{"name": s.name, "description": s.description, "inputSchema": s.schema}
                   for s in self.plugin.tools(_AGENT)]
         nav = [_OBSERVE_TOOL, _EXPLORE_TOOL, _GOTO_TOOL, _REMEMBER_TOOL]
         if self.region_tools:
             nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
+        if self._kirby_skills_enabled:
+            nav = [*nav, *_KIRBY_SKILL_TOOLS]
         return [*nav, *action]
 
     # -- self-improvement preamble (re-injected every turn) --------------------
@@ -829,6 +921,273 @@ class World:
                 "text": f"[whats_changed step={curr_step} (vs step={prev_step}) ({x0},{y0})-({x1},{y1}): "
                         f"{'changed' if changed else 'unchanged'} (mean-abs-diff={mad:.2f})]"}]
 
+    # -- Kirby GB skill compilation (doc §2/§3, kirby_dreamland ONLY, gated by KIRBY_SKILLS) -----------------
+    # `steps` is a list of press_button-shaped steps and/or ONE bounded loop construct `repeat_until`
+    # (no nesting, max_iters<=8 — identical caps to rung 1). Every stop_when predicate is computed
+    # WORLD-SIDE from data already on this world's wire (sym.last_action["outcome"], or a pixel-region
+    # MAD diff identical to whats_changed's own test, or a step counter) — never an oracle/RAM/score
+    # field (doc §3: hp stays out of stop_when, out of the wire, always).
+
+    def _log_skill(self, rec: dict) -> None:
+        """world/ sibling of oracle.jsonl, same append-only jsonl shape as ArcAgi3Session._log_skill —
+        every define_skill logs the full definition verbatim; every run_skill logs executed steps,
+        iteration counts, which stop_when fired, executed-step count, and world_steps_used (doc §5.4/
+        §5.6 need these fields byte-identical in shape to the ARC port's schema)."""
+        try:
+            with open(self._skill_log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    @staticmethod
+    def _parse_kirby_stop_when(expr: str):
+        """Parse one of Kirby's four pinned predicates (doc §3) into (kind, params). Raises ValueError
+        (caught by the caller, turned into a tool-result error, never a crash) on anything outside the
+        closed enum — stop_when predicates are a fixed closed set, never learned/invented (doc §6 of
+        the rung-1 design, carried unchanged)."""
+        import re
+        expr = (expr or "").strip()
+        if expr == "move_blocked":
+            return ("move_blocked", {})
+        if expr == "move_succeeded":
+            return ("move_succeeded", {})
+        m = re.fullmatch(r"steps_elapsed\(\s*(\d+)\s*\)", expr)
+        if m:
+            n = int(m.group(1))
+            if not (1 <= n <= _KIRBY_STEPS_ELAPSED_MAX):
+                raise ValueError(f"steps_elapsed(n): n must be in [1, {_KIRBY_STEPS_ELAPSED_MAX}]; got {n}")
+            return ("steps_elapsed", {"n": n})
+        m = re.fullmatch(r"region_changed\(\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\)", expr)
+        if m:
+            x0, y0, x1, y1 = (int(g) for g in m.groups())
+            # Reject loudly at define time (mirrors ARC's grid_changed_in_region PR #89 review finding
+            # 1): a negative/inverted/oversize box would silently produce a scan that can never fire.
+            if not (0 <= x0 < x1 and 0 <= y0 < y1):
+                raise ValueError("region_changed(x0,y0,x1,y1): need 0 <= x0 < x1 and 0 <= y0 < y1; "
+                                 f"got ({x0},{y0},{x1},{y1})")
+            if (x1 - x0) > _REGION_MAX_SIDE or (y1 - y0) > _REGION_MAX_SIDE:
+                raise ValueError(f"region_changed box {x1-x0}x{y1-y0} exceeds the "
+                                 f"{_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} source-pixel cap.")
+            return ("region_changed", {"x0": x0, "y0": y0, "x1": x1, "y1": y1})
+        raise ValueError(f"stop_when {expr!r} is not one of the pinned Kirby predicates: "
+                         "steps_elapsed(n<=50), move_blocked, move_succeeded, "
+                         "region_changed(x0,y0,x1,y1).")
+
+    def _validate_kirby_step_list(self, steps, *, inside_loop: bool) -> Optional[str]:
+        """Structural validation at define_skill time (fail loud before storing a broken skill, never
+        at run_skill time). Enforces no-nesting and max_iters<=8, identical caps to rung 1 (doc §3)."""
+        if not isinstance(steps, list) or not steps:
+            return "define_skill error: `steps` must be a non-empty list."
+        valid_buttons = set(self.plugin._buttons()) if hasattr(self.plugin, "_buttons") else set(_GB_BUTTONS)
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                return f"define_skill error: step {i} must be an object; got {type(step).__name__}."
+            if "repeat_until" in step:
+                if inside_loop:
+                    return (f"define_skill error: step {i} is a repeat_until nested inside another "
+                            "repeat_until — nesting is not allowed (doc §3, pinned).")
+                loop = step["repeat_until"]
+                if not isinstance(loop, dict):
+                    return f"define_skill error: step {i}'s repeat_until must be an object."
+                inner = loop.get("steps")
+                stop_when = loop.get("stop_when")
+                max_iters = loop.get("max_iters")
+                if not isinstance(max_iters, int) or not (1 <= max_iters <= _KIRBY_SKILL_MAX_ITERS):
+                    return (f"define_skill error: step {i}'s repeat_until.max_iters must be an int in "
+                            f"[1, {_KIRBY_SKILL_MAX_ITERS}]; got {max_iters!r}.")
+                try:
+                    self._parse_kirby_stop_when(stop_when)
+                except ValueError as e:
+                    return f"define_skill error: step {i}'s repeat_until.stop_when invalid: {e}"
+                err = self._validate_kirby_step_list(inner, inside_loop=True)
+                if err:
+                    return err
+            elif "button" in step:
+                b = str(step.get("button", "")).strip().lower()
+                if b not in valid_buttons:
+                    return (f"define_skill error: step {i}'s button {step.get('button')!r} is not "
+                            f"valid; must be one of {sorted(valid_buttons)}.")
+                hold = step.get("hold_frames", 8)
+                if not isinstance(hold, int) or not (1 <= hold <= 120):
+                    return (f"define_skill error: step {i}'s hold_frames must be an int in [1, 120]; "
+                            f"got {hold!r}.")
+            else:
+                return f"define_skill error: step {i} must have either \"button\" or \"repeat_until\"."
+        return None
+
+    def _define_skill(self, args: dict) -> list[dict]:
+        skill_name = str(args.get("name", "")).strip()
+        if not skill_name:
+            return [{"type": "text", "text": "define_skill error: `name` must be a non-empty string."}]
+        if "stop_when" in args:
+            # Mirrors ARC's PR #89 review finding: a top-level stop_when has NO effect (it belongs
+            # inside a repeat_until step) — silently ignoring it would let the brain believe a
+            # condition was armed when it wasn't. Reject loudly; nothing is defined.
+            return [{"type": "text",
+                     "text": "define_skill error: `stop_when` belongs INSIDE a repeat_until step "
+                             "({\"repeat_until\": {\"steps\": [...], \"stop_when\": \"...\", "
+                             "\"max_iters\": N}}), not at the top level — it would have no effect "
+                             "there. Skill NOT defined."}]
+        steps = args.get("steps")
+        err = self._validate_kirby_step_list(steps, inside_loop=False)
+        if err:
+            return [{"type": "text", "text": err}]
+        definition = {"name": skill_name, "steps": steps}
+        prior = self.skills.get(skill_name)
+        self.skills[skill_name] = definition
+        # Auditability (doc §3, carried from rung 1): the full definition is logged verbatim. A
+        # redefinition is a DISTINCT event carrying both the old and new definitions (same shape as
+        # ArcAgi3Session._define_skill's redefine_skill event).
+        step_count = int(getattr(self.plugin, "_obs_count", 0))
+        if prior is not None:
+            self._log_skill({"event": "redefine_skill", "step": step_count,
+                             "prior_definition": prior, "definition": definition})
+            return [{"type": "text",
+                     "text": f"[define_skill {skill_name!r} -> ok, REPLACED your prior definition of "
+                             f"the same name; {len(steps)} top-level step(s)] "
+                             f"Call run_skill({{\"name\": {skill_name!r}}}) to execute it."}]
+        self._log_skill({"event": "define_skill", "step": step_count, "definition": definition})
+        return [{"type": "text",
+                 "text": f"[define_skill {skill_name!r} -> ok, {len(steps)} top-level step(s)] "
+                         f"Call run_skill({{\"name\": {skill_name!r}}}) to execute it."}]
+
+    def _kirby_press_and_observe(self, button: str, hold_frames: int) -> tuple[bool, Optional[str], Optional[str]]:
+        """Execute ONE primitive press via the gateway (same validation/logging/oracle-write path as a
+        plain press_button call — doc §2 'honest accounting': no step can do anything a primitive
+        call couldn't), THEN re-observe so stop_when predicates evaluate against FRESH state
+        (doc §2's pinned executor mechanism — the `World._run_autopilot` per-step pattern:
+        `plugin.observe(_AGENT)` after each step, world_mcp.py:834-851 — mirrored here per press).
+        Returns (ok, error, outcome). Exactly ONE `plugin.observe()` call per press (doc §2's "one
+        oracle row per press, the same step granularity as manual play" pin) — the outcome is
+        returned so `_check_kirby_stop_when` never has to observe a second time for the same press.
+        On success also updates `_frame_hist` via `_track_frame()` so region_changed can diff the two
+        most recent presses' frames, identical to whats_changed."""
+        res = self.gw.execute(ToolCall(tool="press_button", args={"button": button, "hold_frames": hold_frames},
+                                       agent_id=_AGENT, call_id=str(uuid.uuid4())))
+        if not res.ok:
+            return False, res.error or "press_button rejected", None
+        obs = self.plugin.observe(_AGENT)   # per-press re-observation: one oracle row per press (doc §2)
+        self._drop_frame(obs)
+        self._track_frame()                 # frame-pair update so region_changed's MAD diff is fresh
+        outcome = ((obs.data or {}).get("last_action") or {}).get("outcome")
+        return True, None, outcome
+
+    def _check_kirby_stop_when(self, kind: str, params: dict, *, loop_steps: int,
+                               last_outcome: Optional[str]) -> bool:
+        """Evaluate one pinned predicate against the FRESH per-press state already captured by
+        `_kirby_press_and_observe` (doc §3) — never a second observe() for the same press. move_blocked/
+        move_succeeded read sym.last_action["outcome"] (passed in as `last_outcome`), the same field
+        core/perception_plugin.py's renderer reads (the BLOCKED/moved text lines) — no new channel.
+        region_changed reuses whats_changed's own MAD>=2.0 dead-zone over the two most recently tracked
+        frames. Never an oracle/RAM field (hp stays out of stop_when — doc §3)."""
+        if kind == "steps_elapsed":
+            return loop_steps >= params["n"]
+        if kind == "move_blocked":
+            return last_outcome == "blocked"
+        if kind == "move_succeeded":
+            return last_outcome == "moved"
+        if kind == "region_changed":
+            if len(self._frame_hist) < 2:
+                return False
+            (_, prev), (_, curr) = self._frame_hist[-2], self._frame_hist[-1]
+            x0, y0, x1, y1 = params["x0"], params["y0"], params["x1"], params["y1"]
+            h, w = curr.shape[0], curr.shape[1]
+            if not (0 <= x0 < x1 <= w and 0 <= y0 < y1 <= h):
+                return False   # region no longer valid against the current frame size — never fire
+            a = prev[y0:y1, x0:x1].astype(np.float32)
+            b = curr[y0:y1, x0:x1].astype(np.float32)
+            return float(np.mean(np.abs(a - b))) >= 2.0
+        return False   # unreachable: _parse_kirby_stop_when already rejected anything else
+
+    def _exec_kirby_primitive(self, step: dict, executed: list,
+                              world_step_budget: list) -> tuple[Optional[str], Optional[str]]:
+        """Execute ONE primitive press step. The budget is decremented ONLY on success (mirrors ARC's
+        _exec_primitive: a rejected step sent nothing to the world, so world_steps_used must mean
+        actual world activity, never attempts). Returns (error, outcome) — outcome is None on error."""
+        if world_step_budget[0] <= 0:
+            return f"stopped: absolute {_KIRBY_SKILL_MAX_WORLD_STEPS}-press ceiling hit", None
+        button = str(step.get("button", "")).strip().lower()
+        hold_frames = int(step.get("hold_frames", 8))
+        ok, err, outcome = self._kirby_press_and_observe(button, hold_frames)
+        if not ok:
+            executed.append({"button": button, "hold_frames": hold_frames, "ok": False, "error": err})
+            return err, None
+        world_step_budget[0] -= 1
+        executed.append({"button": button, "hold_frames": hold_frames, "ok": True})
+        return None, outcome
+
+    def _run_kirby_steps_once(self, steps, executed: list, world_step_budget: list) -> Optional[str]:
+        """Execute the top-level step list: plain press steps and/or repeat_until blocks (whose inner
+        lists are guaranteed flat — no nesting, enforced at define time). stop_when is checked after
+        EVERY press (doc §2's per-press executor decision), so it can fire mid-iteration of a
+        multi-press inner list."""
+        for step in steps:
+            if "repeat_until" in step:
+                loop = step["repeat_until"]
+                inner = loop["steps"]
+                kind, params = self._parse_kirby_stop_when(loop["stop_when"])
+                max_iters = loop["max_iters"]
+                iters_done = 0
+                loop_steps = 0   # presses executed inside THIS loop (steps_elapsed's unit)
+                stop_reason = None
+                while iters_done < max_iters and stop_reason is None:
+                    for inner_step in inner:
+                        err, outcome = self._exec_kirby_primitive(inner_step, executed, world_step_budget)
+                        if err:
+                            return err
+                        loop_steps += 1
+                        if self._check_kirby_stop_when(kind, params, loop_steps=loop_steps,
+                                                       last_outcome=outcome):
+                            stop_reason = (f"stop_when {loop['stop_when']!r} fired after "
+                                           f"{loop_steps} press(es) ({iters_done + 1} iteration(s))")
+                            break
+                    iters_done += 1
+                if stop_reason is None:
+                    stop_reason = f"repeat_until reached max_iters={max_iters} without stop_when firing"
+                executed.append({"repeat_until_summary": stop_reason, "iterations": iters_done,
+                                 "world_steps": loop_steps})
+            else:
+                err, _outcome = self._exec_kirby_primitive(step, executed, world_step_budget)
+                if err:
+                    return err
+        return None
+
+    def _run_skill(self, args: dict) -> list[dict]:
+        skill_name = str(args.get("name", "")).strip()
+        definition = self.skills.get(skill_name)
+        if definition is None:
+            return [{"type": "text",
+                     "text": f"run_skill error: no skill named {skill_name!r} — call define_skill "
+                             "first (skills are within-run only, not persisted)."}]
+        executed: list = []
+        world_step_budget = [_KIRBY_SKILL_MAX_WORLD_STEPS]   # absolute ceiling, world-side (doc §3)
+        error = self._run_kirby_steps_once(definition["steps"], executed, world_step_budget)
+        executed_primitive_count = sum(1 for e in executed if e.get("ok") is True)
+        if error is not None:
+            stop_reason = error
+        elif executed and "repeat_until_summary" in executed[-1]:
+            stop_reason = executed[-1]["repeat_until_summary"]
+        else:
+            stop_reason = "all top-level steps executed"
+        world_steps_used = _KIRBY_SKILL_MAX_WORLD_STEPS - world_step_budget[0]
+        # RESIDUAL #1 (PR #92 verification comment, mandatory): log BEFORE any trailing observe, so the
+        # span boundary S0 (`r.step - r.world_steps_used`) stays claimable per doc §5.6. `plugin._obs_count`
+        # right now is EXACTLY the post-macro step (the last inner press's own re-observation already
+        # advanced it, per-press, one oracle row per press) — logging here, before the trailing render
+        # below calls `self.plugin.observe()` again (which would bump _obs_count one further), keeps
+        # `step` in this record equal to the true macro-end boundary the scorer's exclusion formula needs.
+        log_step = int(getattr(self.plugin, "_obs_count", 0))
+        log_rec = {"event": "run_skill", "step": log_step, "name": skill_name,
+                   "executed": executed, "executed_step_count": executed_primitive_count,
+                   "stop_reason": stop_reason, "world_steps_used": world_steps_used}
+        self._log_skill(log_rec)
+        head = (f"[run_skill {skill_name!r} -> {executed_primitive_count} step(s) executed; "
+                f"stopped because: {stop_reason}]")
+        # Trailing render: a fresh observe (this DOES advance plugin._obs_count by one more, same as
+        # every other World.call branch's trailing self._content(self.plugin.observe(_AGENT)) —
+        # logged already, above, so this extra step is never mistaken for part of the macro's span.
+        return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
+
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 
     def _run_autopilot(self, target, max_steps: int) -> tuple[int, str]:
@@ -903,6 +1262,23 @@ class World:
             body = self._read_region(args)
         elif name == "whats_changed" and self.region_tools:
             body = self._whats_changed(args)
+        elif name == "define_skill":
+            if not self._kirby_skills_enabled:
+                body = [{"type": "text",
+                         "text": "define_skill error: skill tools are disabled for this session "
+                                 "(set KIRBY_SKILLS=1 in the environment to enable, on kirby_dreamland "
+                                 "only — see reports/2026-07-03-kirby-skill-port-entity-v3.md §2)."}]
+            else:
+                body = self._define_skill(args)
+        elif name == "run_skill":
+            if not self._kirby_skills_enabled:
+                body = [{"type": "text",
+                         "text": "run_skill error: skill tools are disabled for this session (set "
+                                 "KIRBY_SKILLS=1 in the environment to enable, on kirby_dreamland only "
+                                 "— see reports/2026-07-03-kirby-skill-port-entity-v3.md §2)."}]
+            else:
+                self.decisions += 1   # one LLM decision buys up to _KIRBY_SKILL_MAX_WORLD_STEPS presses
+                body = self._run_skill(args)
         else:
             # a direct action (press_button / press_sequence / wait / touch / touch_target): route through the gateway.
             if name in ("press_button", "press_sequence", "wait", "touch", "touch_target"):
