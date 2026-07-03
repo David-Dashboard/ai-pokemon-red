@@ -37,7 +37,7 @@ def main() -> int:
     agent_id = f"agent-{uuid.uuid4()}"
     plugin = CaveNoirePlugin(rom_path=args.rom, out_dir=args.out, headless=not args.window,
                              init_state=args.init_state, perceiver=CaveNoirePerceiver(),
-                             watch={"x": 0xC504, "y": 0xC503, "hp": 0xD389})  # RAM -> oracle ONLY (hp = ADR-002 gate oracle)
+                             watch={"x": 0xC504, "y": 0xC503, "hp": 0xC120})  # RAM -> oracle ONLY (hp = ADR-002 gate life oracle, BCD; 0xD389 disproved 2026-07-03 — reports/2026-07-03-adr002-gate-plan.md)
     brain = (ScriptedBrain(agent_id, seed=args.seed) if args.brain == "scripted"
              else ExploreBrain(agent_id, single_step=True))   # the SAME core brains; turn-based = one press/move
     gateway = Gateway(plugin, CAVE_NOIRE_SANDBOX)
