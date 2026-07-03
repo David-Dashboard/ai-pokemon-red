@@ -1299,8 +1299,13 @@ class ArcAgi3Session:
     # -- frame bookkeeping: track prev/current grid for the diff-summary, update legal actions/state ---
 
     def _apply_frame(self, fr) -> None:
-        self._prev_grid = self._last_grid if self._step_count else None
-        self._last_diff = self._diff_grids(self._prev_grid if self._step_count else None, fr.grid)
+        # Prior-grid gate (PR #77 review finding 2): a RESET frame starts a fresh instance, so it has
+        # no prior to diff against; EVERY other frame diffs against the grid we last held — never gate
+        # on _step_count (client.reset() hardcodes step=0, so a step-count gate wrongly reported
+        # "first frame" on the first post-action observe of every episode).
+        prior = None if fr.action == "RESET" else self._last_grid
+        self._prev_grid = prior
+        self._last_diff = self._diff_grids(prior, fr.grid)
         self._last_grid = fr.grid
         self._last_available_actions = list(fr.available_actions)
         self._last_state = fr.state
@@ -1482,6 +1487,13 @@ def main() -> int:
         raise SystemExit("doom_dtc_gate needs at least one pinned seed: --seeds-file or --seed")
     if args.game in _ARCAGI3_WORLDS and not args.arc_game:
         raise SystemExit("arcagi3 needs --arc-game <game_id> (e.g. ls20)")
+    # A missing/empty ARC_API_KEY must fail AT LAUNCH too (PR #77 review finding 1): ArcAgi3Session
+    # is built lazily on the first tool call, and an empty key there dies with a generic 401
+    # mid-protocol instead of a clear refusal to start — the exact failure mode the seed/--record
+    # guards around this exist to avoid. Only the key's ABSENCE is reported, never its value.
+    if args.game in _ARCAGI3_WORLDS and not os.environ.get("ARC_API_KEY"):
+        raise SystemExit("arcagi3 needs ARC_API_KEY in the environment (launchers must pass it "
+                         "through, e.g. docker -e ARC_API_KEY or the WSL env — never a CLI flag).")
     if args.record and args.game in _ARCAGI3_WORLDS:
         raise SystemExit("--record is not supported for arcagi3: there is no pixel frame pipeline for "
                          "this world at all (the grid is text, not a rendered frame). Drop --record.")

@@ -53,6 +53,19 @@ def test_render_grid_empty():
     assert render_grid([]) == "(empty grid)"
 
 
+def test_render_grid_rejects_out_of_range_color_loudly():
+    # PR #77 review finding 3: an out-of-spec color index must raise, never silently wrap (idx % 16).
+    with pytest.raises(ValueError, match="outside the documented"):
+        render_grid([[0, 16]])
+    with pytest.raises(ValueError, match="outside the documented"):
+        render_grid([[-1]])
+
+
+def test_render_grid_rejects_non_numeric_cell_loudly():
+    with pytest.raises(ValueError, match="non-numeric"):
+        render_grid([[0, "x"]])
+
+
 # ---------------------------------------------------------------------------
 # 2. diff_grids
 # ---------------------------------------------------------------------------
@@ -197,6 +210,32 @@ def test_act_accepts_legal_simple_action(monkeypatch, tmp_path):
     result = sess.call("act", {"action": "ACTION1"})
     text = result[0]["text"]
     assert "act ACTION1 -> ok" in text
+
+
+def test_first_post_action_observe_diffs_against_the_reset_grid(monkeypatch, tmp_path):
+    """Regression (PR #77 review finding 2): the prior-grid gate must not key on _step_count —
+    client.reset() hardcodes step=0, so a step-count gate reported "first frame — nothing to diff"
+    on the FIRST post-action observe of every episode even though the RESET grid exists to diff
+    against. RESET grid is [[0,0],[0,0]], ACTION1 grid is [[0,0],[1,1]] -> exactly 2 cells 0->1."""
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME), dict(_ACTION1_FRAME)])
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    result = sess.call("act", {"action": "ACTION1"})
+    obs_text = result[-1]["text"]
+    assert "first frame" not in obs_text
+    assert "2 cell(s) changed (0->1x2)" in obs_text
+    # and a plain observe right after reports the same diff (it reads the same cached state)
+    obs2 = sess.call("observe", {})[0]["text"]
+    assert "2 cell(s) changed (0->1x2)" in obs2
+
+
+def test_reset_frame_has_no_prior_to_diff_even_mid_session(monkeypatch, tmp_path):
+    """A reset_game mid-session starts a NEW instance — its first frame must not diff against the
+    previous instance's grid (the gate keys on the frame being a RESET, not on step count)."""
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME), dict(_ACTION1_FRAME), dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    sess.call("act", {"action": "ACTION1"})
+    result = sess.call("reset_game", {})
+    assert "first frame" in result[-1]["text"]
 
 
 def test_act_action6_requires_x_and_y(monkeypatch, tmp_path):
@@ -356,7 +395,25 @@ def test_missing_arc_game_fails_loud_at_launch(monkeypatch):
         world_mcp.main()
 
 
+def test_missing_arc_api_key_fails_loud_at_launch(monkeypatch):
+    """PR #77 review finding 1: an absent/empty ARC_API_KEY must be rejected in main()'s launch
+    validation — never deferred to the lazily-built session, where it would die with a generic 401
+    mid-protocol. The error names the missing variable but never echoes any value."""
+    monkeypatch.delenv("ARC_API_KEY", raising=False)
+    monkeypatch.setattr("sys.argv", ["world_mcp.py", "--game", "arcagi3", "--arc-game", "ls20"])
+    with pytest.raises(SystemExit, match="ARC_API_KEY"):
+        world_mcp.main()
+
+
+def test_empty_arc_api_key_fails_loud_at_launch(monkeypatch):
+    monkeypatch.setenv("ARC_API_KEY", "")
+    monkeypatch.setattr("sys.argv", ["world_mcp.py", "--game", "arcagi3", "--arc-game", "ls20"])
+    with pytest.raises(SystemExit, match="ARC_API_KEY"):
+        world_mcp.main()
+
+
 def test_record_fails_loud_at_launch_for_arcagi3(monkeypatch):
+    monkeypatch.setenv("ARC_API_KEY", "test-key")   # get past the key guard to reach the record guard
     monkeypatch.setattr("sys.argv", ["world_mcp.py", "--game", "arcagi3", "--arc-game", "ls20", "--record"])
     with pytest.raises(SystemExit, match="--record is not supported"):
         world_mcp.main()

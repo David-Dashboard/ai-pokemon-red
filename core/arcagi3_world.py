@@ -219,15 +219,26 @@ _CELL_CHARS = "0123456789ABCDEF"  # index -> char; grid values are ints 0-15
 
 def render_grid(grid: list) -> str:
     """Render an int[][] grid as compact text rows, one char per cell (hex-nibble style: 0-9, A-F),
-    max 64 chars/row (the grid is capped at 64x64 by the API, so no row ever needs truncation)."""
+    max 64 chars/row (the grid is capped at 64x64 by the API, so no row ever needs truncation).
+
+    A cell value outside the documented 0-15 color range raises ValueError LOUDLY (PR #77 review
+    finding 3) -- a silent modulo wrap would mask a spec violation / palette expansion from the live
+    API, inconsistent with this repo's reject-loudly-never-clamp discipline."""
     if not grid:
         return "(empty grid)"
     lines = []
-    for row in grid:
+    for y, row in enumerate(grid):
         chars = []
-        for v in row:
-            idx = int(v) if isinstance(v, (int, float)) else 0
-            chars.append(_CELL_CHARS[idx % 16])
+        for x, v in enumerate(row):
+            try:
+                idx = int(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"grid cell ({x},{y}) has non-numeric value {v!r} -- "
+                                 "expected an int color index 0-15")
+            if not (0 <= idx <= 15):
+                raise ValueError(f"grid cell ({x},{y}) has color value {idx} outside the documented "
+                                 "0-15 range -- the API spec may have changed; refusing to render")
+            chars.append(_CELL_CHARS[idx])
         lines.append("".join(chars))
     return "\n".join(lines)
 
