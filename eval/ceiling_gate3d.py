@@ -40,9 +40,11 @@ Policy per step (privileged azimuth-seeker):
   2. Among remaining enemies, pick the NEAREST by Euclidean distance in world XY (object_position_x/y)
      to the player (player position is fixed at the arena center in dtc, confirmed (0,0) throughout).
   3. Compute that enemy's azimuth as a SCREEN-SPACE pixel offset: bbox_center_x - 160 (screen is
-     RES_320X240, so screen-center-x = 160) -- this is the same "px-equivalent" quantity the brief's
-     ~25px tolerance describes, and it is measured directly from the labels buffer (ground truth),
-     not estimated the way the brain's YawBandFlow primitive has to.
+     RES_320X240, so screen-center-x = 160) -- the ANALOGOUS screen-x offset to the brief's ~25px
+     tolerance, but measured on ViZDoom's ground-truth label centroid: same units, a DIFFERENT and
+     noiseless instrument than the brief's P2 frame-diff centroid (noisy, null during turns), so the
+     two "25px" values are not directly comparable -- see the report's Limitations section
+     (reports/2026-07-03-gate3d-ceiling-test.md).
   4. If |offset| <= TOLERANCE_PX: fire (if ammo remains), else hold fire and turn toward the target
      (TURN_LEFT if the target is to the left of center i.e. offset < 0, else TURN_RIGHT -- verified
      against the live sign convention: TURN_LEFT increases ANGLE, which decreases a target's
