@@ -12,7 +12,10 @@ Covers:
   4. Oracle-only score fields: a leak test that greps every tool result's JSON blob for
      levels_completed/win_levels/state substrings — must never appear on the wire.
   5. Throttle logic: ArcAgi3Client._throttle enforces >= _MIN_INTERVAL between calls.
-  6. tools/list wiring: arcagi3 advertises exactly observe/remember/act/reset_game.
+  6. tools/list wiring: arcagi3 advertises exactly observe/remember/act/reset_game/define_skill/run_skill.
+
+Skill compilation rung 1 (define_skill/run_skill, reports/2026-07-03-skill-compilation-design.md) has
+its own dedicated test module: tests/test_skill_rung1.py.
 """
 from __future__ import annotations
 
@@ -375,7 +378,7 @@ def test_client_post_retries_on_429_then_succeeds(monkeypatch, tmp_path):
 
 def test_arcagi3_advertises_expected_tools():
     names = {t["name"] for t in _static_tools("arcagi3")}
-    assert names == {"observe", "remember", "act", "reset_game"}
+    assert names == {"observe", "remember", "act", "reset_game", "define_skill", "run_skill"}
 
 
 def test_arcagi3_registered_in_games():
