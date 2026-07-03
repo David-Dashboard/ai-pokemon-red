@@ -31,67 +31,27 @@ With [uv](https://docs.astral.sh/uv/) (recommended — `uv sync` reads
 
 ```bash
 uv sync                        # create .venv + install deps (incl. pytest)
-# put your ROM at roms/PokemonRed.gb, then:
-uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain scripted --steps 50
+# put your ROM at roms/PokemonRed.gb, then (free, no LLM):
+uv run python play_generic.py --rom roms/PokemonRed.gb --steps 150
 ```
 
-Or with pip:
+`play_generic.py` is the zero-model smoke test: the shared perceiver on any
+GB/GBC/GBA ROM, scripted warmup + free exploration autopilot, headless by
+default (`--window` for the SDL2 window, `--camera fixed|follow` to override
+auto-detection). Per-game examples are in its docstring.
 
-```bash
-pip install -r requirements-pokemon.txt
-python play_pokemon.py --rom roms/PokemonRed.gb --brain scripted --steps 50
-```
+### LLM agent (a Claude plays over MCP)
 
-`--brain scripted` is a zero-model smoke test. For an LLM agent, point it at a
-local model server:
+The live LLM path is `world_mcp.py`: it exposes a world as an MCP (stdio)
+server so a Claude Code instance is the System-2 brain — the free System-1
+autopilot drives, and the LLM wakes only at decision points. It's an attended
+test harness, not an unattended service. The full launch recipe (worlds,
+start states, budgets) is in
+[`reports/2026-06-26-mcp-claude-p-runbook.md`](reports/2026-06-26-mcp-claude-p-runbook.md).
 
-```bash
-# Ollama (default backend):
-uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm \
-    --model llama3.2-vision --steps 200 --window
-
-# llama.cpp (llama-server, OpenAI-compatible; start it with --mmproj for vision):
-uv run python play_pokemon.py --rom roms/PokemonRed.gb --brain llm --backend llamacpp \
-    --steps 200 --window
-```
-
-`--backend llamacpp` talks to `http://localhost:8080/v1/chat/completions` by
-default (override with `--llm-url`). Vision needs a multimodal model; otherwise
-add `--no-vision` for a text-only prompt.
-
-### Playing through a decoupled agent (`ai-aria`)
-
-The agent's "brain" is fully decoupled from this project: any server that speaks
-the OpenAI `/v1/chat/completions` shape can drive the game. [`ai-aria`](https://github.com/David-Dashboard/ai-aria)
-is one such agent — it runs as its **own** service (its own repo + Docker) and we
-only ever speak HTTP to it; none of its code is imported here.
-
-Start aria separately (see its README — `docker compose up -d`, listens on
-`:8001`, bearer-authed), then point the game at it:
-
-```bash
-# token comes from $ARIA_BEARER_TOKEN, or pass --llm-token
-ARIA_BEARER_TOKEN=your-token uv run python play_pokemon.py \
-    --rom roms/PokemonRed.gb --brain llm --backend aria \
-    --load-state start.state --steps 200 --window
-```
-
-`--backend aria` defaults to `http://localhost:8001` and model `aria` (override
-with `--llm-url` / `--model`). It's the same OpenAI wire format as `llamacpp`,
-just with an `Authorization: Bearer` header. aria is a vision-capable companion,
-so screenshots are sent by default; add `--no-vision` for a text-only prompt.
-(Note: aria is a memory-keeping *companion*, not a tuned game policy — every turn
-writes to her journal and runs her full agent loop, so expect higher per-step
-latency than a bare model server.)
-
-Example GPU server (Docker + CUDA) serving a vision model — `--jinja` enables the
-chat template, `-ngl 99` offloads all layers to the GPU:
-
-```bash
-docker run --gpus all -p 8080:8080 -v llama-cache:/root/.cache/llama.cpp \
-    ghcr.io/ggml-org/llama.cpp:server-cuda \
-    -hf unsloth/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M --jinja -ngl 99 -c 16384
-```
+> The earlier multi-backend driver (`play_pokemon.py` — Ollama / llama.cpp /
+> aria over `/v1/chat/completions`) is archived in
+> `games/pokemon_red/_archive/`, superseded by the MCP seam above.
 
 ### Starting past the intro
 
@@ -103,7 +63,7 @@ agent straight into the overworld:
 # auto-play past the intro, headless — no window, picks preset names RED/BLUE:
 uv run python new_game.py --rom "roms/Pokemon Red.gb" --out start.state
 # boot the agent from there:
-uv run python play_pokemon.py --rom "roms/Pokemon Red.gb" --load-state start.state --brain scripted --steps 200
+uv run python play_generic.py --rom "roms/Pokemon Red.gb" --init-state start.state --steps 200
 ```
 
 `new_game.py` is headless, so it needs no SDL2 window (and no `pysdl2-dll`).
@@ -117,7 +77,7 @@ Save states are gitignored (they embed copyrighted game memory) — keep them lo
 
 | Layer | What |
 | ----- | ---- |
-| `games/pokemon_red/` | The world plugin: emulator wrapper, RAM memory-map, reward shaping, `GamePlugin` (see its [README](games/pokemon_red/README.md)). |
+| `games/<game>/` | Per-world plugin + perceiver (cave_noire, gauntlet, pokemon_red). The heavy Red driver (reward shaping, `GamePlugin`) is archived in `games/pokemon_red/_archive/` — see its [README](games/pokemon_red/README.md). |
 | `core/` | The shared machinery: gateway (single door), permission policies, runner loop, brains (scripted + LLM). |
 | `core/contracts.py` | Frozen wire types every world and agent share. |
 | `tests/` | Logic tests that run with no ROM and no PyBoy (the emulator is dependency-injected). |
