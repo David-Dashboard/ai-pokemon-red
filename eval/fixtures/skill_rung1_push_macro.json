@@ -1,16 +1,88 @@
 {
-  "_comment": "Canned grid sequence for eval/score_skill_rung1.py --dry: a push-block macro on a tiny grid. Each entry is one post-action frame (RESET first, then 4 ACTION1 presses). The block (color 2) is at (2,3) on RESET; it moves one cell left each push until it lands in the container cell (0,3), which flips from color 3 to color 4 on delivery -- the moment a human reading this would call the macro 'done'. The macro under test is repeat_until(steps=[ACTION1], stop_when=grid_changed_in_region(0,3,0,3), max_iters=8).",
+  "_comment": "Canned grid-sequence scenarios for eval/score_skill_rung1.py --dry (PR #89 review: cover cap-hit, mid-loop firing, and failure paths, not just the happy path). Each scenario is one fresh session: its `frames` list scripts the fake ARC API (RESET first; a frame entry may carry \"repeat\": N to stand for N identical consecutive post-action frames), `define` lists define_skill payloads, `run` names the skill to execute, and the expect_* fields pin what a human reading the transcript would call the right outcome -- the driver CHECKS them, so a drifting executor fails the pre-check loudly.",
   "game_id": "fixture-push",
-  "frames": [
-    {"action": "RESET", "available_actions": [1, 2, 3, 4],
-     "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[3,0,0,2,0],[0,0,0,0,0]]},
-    {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
-     "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[3,0,2,0,0],[0,0,0,0,0]]},
-    {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
-     "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[3,2,0,0,0],[0,0,0,0,0]]},
-    {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
-     "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[4,0,0,0,0],[0,0,0,0,0]]},
-    {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
-     "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[4,0,0,0,0],[0,0,0,0,0]]}
+  "scenarios": [
+    {
+      "name": "push_delivery",
+      "_comment": "Doc §5 worked example, happy path: block (color 2) pushed left one cell per ACTION1; on push 3 it lands in the container cell (0,3), flipping it 3->4 -- grid_changed_in_region(0,3,0,3) fires exactly there.",
+      "frames": [
+        {"action": "RESET", "available_actions": [1, 2, 3, 4],
+         "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[3,0,0,2,0],[0,0,0,0,0]]},
+        {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
+         "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[3,0,2,0,0],[0,0,0,0,0]]},
+        {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
+         "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[3,2,0,0,0],[0,0,0,0,0]]},
+        {"action": "ACTION1", "available_actions": [1, 2, 3, 4],
+         "grid": [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[4,0,0,0,0],[0,0,0,0,0]]}
+      ],
+      "define": [{"name": "push_to_container", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}],
+                          "stop_when": "grid_changed_in_region(0,3,0,3)", "max_iters": 8}}]}],
+      "run": "push_to_container",
+      "expect_stop_reason_contains": "stop_when 'grid_changed_in_region(0,3,0,3)' fired after 3 world step(s)",
+      "expect_executed_steps": 3
+    },
+    {
+      "name": "mid_loop_fire",
+      "_comment": "stop_when firing MID-iteration: a 2-action inner list with steps_elapsed(3) must stop after 3 WORLD steps (iteration 2, partial), never 3 iterations = 6 steps.",
+      "frames": [
+        {"action": "RESET", "available_actions": [1, 2], "grid": [[0,0],[0,0]]},
+        {"action": "ACTION1", "available_actions": [1, 2], "grid": [[1,0],[0,0]]},
+        {"action": "ACTION2", "available_actions": [1, 2], "grid": [[0,1],[0,0]]},
+        {"action": "ACTION1", "available_actions": [1, 2], "grid": [[1,1],[0,0]]}
+      ],
+      "define": [{"name": "pair_walk", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}, {"action": "ACTION2"}],
+                          "stop_when": "steps_elapsed(3)", "max_iters": 8}}]}],
+      "run": "pair_walk",
+      "expect_stop_reason_contains": "stop_when 'steps_elapsed(3)' fired after 3 world step(s) (2 iteration(s))",
+      "expect_executed_steps": 3
+    },
+    {
+      "name": "max_iters_capout",
+      "_comment": "cap-hit path: the grid keeps changing so grid_unchanged_for(8) can never fire; max_iters=2 caps the loop and the summary must say so.",
+      "frames": [
+        {"action": "RESET", "available_actions": [1], "grid": [[0,0],[0,0]]},
+        {"action": "ACTION1", "available_actions": [1], "grid": [[1,0],[0,0]]},
+        {"action": "ACTION1", "available_actions": [1], "grid": [[0,1],[0,0]]}
+      ],
+      "define": [{"name": "capped_probe", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}],
+                          "stop_when": "grid_unchanged_for(8)", "max_iters": 2}}]}],
+      "run": "capped_probe",
+      "expect_stop_reason_contains": "repeat_until reached max_iters=2 without stop_when firing",
+      "expect_executed_steps": 2
+    },
+    {
+      "name": "ceiling_hit",
+      "_comment": "absolute 50-world-step ceiling: 7 top-level repeat_until blocks x steps_elapsed(8) request 56 steps; the run must stop at exactly 50 with the ceiling message. Frames are identical (steps_elapsed ignores the grid); \"repeat\" expands the template.",
+      "frames": [
+        {"action": "RESET", "available_actions": [1], "grid": [[0,0],[0,0]]},
+        {"action": "ACTION1", "available_actions": [1], "grid": [[0,0],[0,0]], "repeat": 55}
+      ],
+      "define": [{"name": "overbudget", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}},
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}},
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}},
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}},
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}},
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}},
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": "steps_elapsed(8)", "max_iters": 8}}]}],
+      "run": "overbudget",
+      "expect_stop_reason_contains": "50-world-step ceiling hit",
+      "expect_executed_steps": 50
+    },
+    {
+      "name": "illegal_action_failure",
+      "_comment": "failure path: ACTION5 is never in available_actions here, so the skill executes 1 legal step then aborts with act's own loud rejection -- the rejected step must not count as executed or as a world step.",
+      "frames": [
+        {"action": "RESET", "available_actions": [1, 2, 3, 4], "grid": [[0,0],[0,0]]},
+        {"action": "ACTION1", "available_actions": [1, 2, 3, 4], "grid": [[1,0],[0,0]]}
+      ],
+      "define": [{"name": "one_then_bad", "steps": [{"action": "ACTION1"}, {"action": "ACTION5"}]}],
+      "run": "one_then_bad",
+      "expect_stop_reason_contains": "ACTION5 is not currently legal",
+      "expect_executed_steps": 1
+    }
   ]
 }

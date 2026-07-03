@@ -15,6 +15,11 @@ Covers:
   7. Skill lifetime: skills live only in the session object, gone when a fresh session starts (no
      persistence anywhere -- blank-agent law).
   8. No-leak: define_skill/run_skill results never carry levels_completed/win_levels.
+  9. PR #89 review-round fixes: steps_elapsed counts WORLD steps (not iterations) for multi-action
+     inner lists; world_steps_used counts only steps that actually reached the world; redefinition is
+     a distinct logged event; grid_changed_in_region boxes validated (bounds + ordering) at define
+     time; top-level stop_when rejected loudly; skill reuse across run_skill calls; WIN mid-skill;
+     client exception mid-skill.
 """
 from __future__ import annotations
 
@@ -144,7 +149,7 @@ def test_grid_changed_in_region_fires_when_box_differs(monkeypatch, tmp_path):
     result = sess.call("run_skill", {"name": "poke"})
     text = result[0]["text"]
     assert "2 step(s) executed" in text
-    assert "stop_when 'grid_changed_in_region(1,1,1,1)' fired after 2 iteration(s)" in text
+    assert "stop_when 'grid_changed_in_region(1,1,1,1)' fired after 2 world step(s) (2 iteration(s))" in text
 
 
 def test_grid_unchanged_for_fires_after_k_identical_steps(monkeypatch, tmp_path):
@@ -158,7 +163,7 @@ def test_grid_unchanged_for_fires_after_k_identical_steps(monkeypatch, tmp_path)
                           "stop_when": "grid_unchanged_for(2)", "max_iters": 8}}]})
     result = sess.call("run_skill", {"name": "stuck"})
     text = result[0]["text"]
-    assert "stop_when 'grid_unchanged_for(2)' fired after 2 iteration(s)" in text
+    assert "stop_when 'grid_unchanged_for(2)' fired after 2 world step(s) (2 iteration(s))" in text
 
 
 def test_steps_elapsed_fires_after_n_iterations(monkeypatch, tmp_path):
@@ -171,7 +176,7 @@ def test_steps_elapsed_fires_after_n_iterations(monkeypatch, tmp_path):
     result = sess.call("run_skill", {"name": "three"})
     text = result[0]["text"]
     assert "3 step(s) executed" in text
-    assert "stop_when 'steps_elapsed(3)' fired after 3 iteration(s)" in text
+    assert "stop_when 'steps_elapsed(3)' fired after 3 world step(s) (3 iteration(s))" in text
 
 
 def test_stop_when_rejects_predicate_outside_pinned_enum(monkeypatch, tmp_path):
@@ -288,7 +293,7 @@ def test_run_skill_log_has_executed_steps_iterations_stop_reason_and_count(monke
     rec = run_rows[0]
     assert rec["name"] == "three"
     assert rec["executed_step_count"] == 3
-    assert "stop_when 'steps_elapsed(3)' fired after 3 iteration(s)" in rec["stop_reason"]
+    assert "stop_when 'steps_elapsed(3)' fired after 3 world step(s) (3 iteration(s))" in rec["stop_reason"]
     assert isinstance(rec["executed"], list) and len(rec["executed"]) >= 1
     assert rec["world_steps_used"] == 3
 
@@ -355,3 +360,202 @@ def test_arcagi3_tool_schemas_present_for_define_and_run_skill():
     assert "define_skill" in tools and "run_skill" in tools
     assert tools["define_skill"]["inputSchema"]["required"] == ["name", "steps"]
     assert tools["run_skill"]["inputSchema"]["required"] == ["name"]
+    # PR #89 review finding 4 (second review): no dead top-level stop_when property in the schema --
+    # it only exists inside repeat_until steps.
+    assert "stop_when" not in tools["define_skill"]["inputSchema"]["properties"]
+
+
+# ---------------------------------------------------------------------------
+# 9. PR #89 review-round fixes
+# ---------------------------------------------------------------------------
+
+def test_steps_elapsed_counts_world_steps_not_iterations(monkeypatch, tmp_path):
+    """Review finding 2 (second review): with a 2-action inner list, steps_elapsed(3) must fire after
+    3 WORLD steps (mid-iteration 2), not after 3 iterations (6 world steps)."""
+    frames = [dict(_RESET_FRAME),
+             *[_frame([[i % 2, 0], [0, 0]], available_actions=(1, 2)) for i in range(3)]]
+    _install_fake_api(monkeypatch, frames)
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    sess.call("define_skill", {"name": "pair", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}, {"action": "ACTION2"}],
+                          "stop_when": "steps_elapsed(3)", "max_iters": 8}}]})
+    result = sess.call("run_skill", {"name": "pair"})
+    text = result[0]["text"]
+    assert "3 step(s) executed" in text
+    assert "stop_when 'steps_elapsed(3)' fired after 3 world step(s) (2 iteration(s))" in text
+
+
+def test_steps_elapsed_world_step_semantics_in_log(monkeypatch, tmp_path):
+    out = str(tmp_path / "out")
+    frames = [dict(_RESET_FRAME),
+             *[_frame([[i % 2, 0], [0, 0]], available_actions=(1, 2)) for i in range(3)]]
+    _install_fake_api(monkeypatch, frames)
+    sess = ArcAgi3Session(_args(out))
+    sess.call("define_skill", {"name": "pair", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}, {"action": "ACTION2"}],
+                          "stop_when": "steps_elapsed(3)", "max_iters": 8}}]})
+    sess.call("run_skill", {"name": "pair"})
+    with open(f"{out}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rec = [r for r in rows if r["event"] == "run_skill"][0]
+    assert rec["executed_step_count"] == 3
+    assert rec["world_steps_used"] == 3
+    summary = [e for e in rec["executed"] if "repeat_until_summary" in e][0]
+    assert summary["world_steps"] == 3
+    assert summary["iterations"] == 2   # fired mid-iteration 2 -- the partial iteration counts
+
+
+def test_world_steps_used_excludes_rejected_steps(monkeypatch, tmp_path):
+    """Review finding 1 (second review): a rejected step sent nothing to the world, so it must not
+    consume budget or count in world_steps_used."""
+    out = str(tmp_path / "out")
+    # RESET allows [1,2,3,4]; the post-ACTION1 frame also allows only [1,2,3,4] -- ACTION5 is illegal.
+    frames = [dict(_RESET_FRAME), _frame([[1, 0], [0, 0]], available_actions=(1, 2, 3, 4))]
+    _install_fake_api(monkeypatch, frames)
+    sess = ArcAgi3Session(_args(out))
+    sess.call("define_skill", {"name": "one_then_bad", "steps": [{"action": "ACTION1"},
+                                                                 {"action": "ACTION5"}]})
+    result = sess.call("run_skill", {"name": "one_then_bad"})
+    assert "1 step(s) executed" in result[0]["text"]
+    with open(f"{out}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rec = [r for r in rows if r["event"] == "run_skill"][0]
+    assert rec["world_steps_used"] == 1        # ONLY the step that actually reached the world
+    assert rec["executed_step_count"] == 1
+    rejected = [e for e in rec["executed"] if e.get("ok") is False]
+    assert len(rejected) == 1 and "not currently legal" in rejected[0]["error"]
+
+
+def test_redefinition_is_a_distinct_logged_event(monkeypatch, tmp_path):
+    """Review finding 3 (second review): re-using a name must log a distinct redefine event carrying
+    BOTH definitions, and say so in the tool result."""
+    out = str(tmp_path / "out")
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(out))
+    v1_steps = [{"action": "ACTION1"}]
+    v2_steps = [{"action": "ACTION2"}]
+    sess.call("define_skill", {"name": "push", "steps": v1_steps})
+    result = sess.call("define_skill", {"name": "push", "steps": v2_steps})
+    assert "REPLACED" in result[0]["text"]
+    with open(f"{out}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    redefines = [r for r in rows if r["event"] == "redefine_skill"]
+    assert len(redefines) == 1
+    assert redefines[0]["prior_definition"] == {"name": "push", "steps": v1_steps}
+    assert redefines[0]["definition"] == {"name": "push", "steps": v2_steps}
+    # and the live skill is the NEW definition
+    assert sess.skills["push"]["steps"] == v2_steps
+
+
+def test_run_skill_after_redefinition_executes_new_definition(monkeypatch, tmp_path):
+    frames = [dict(_RESET_FRAME), _frame([[1, 0], [0, 0]], available_actions=(1, 2, 3, 4))]
+    _install_fake_api(monkeypatch, frames)
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    sess.call("define_skill", {"name": "push", "steps": [{"action": "ACTION1"}]})
+    sess.call("define_skill", {"name": "push", "steps": [{"action": "ACTION2"}]})
+    result = sess.call("run_skill", {"name": "push"})
+    with open(f"{tmp_path / 'out'}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rec = [r for r in rows if r["event"] == "run_skill"][0]
+    assert rec["executed"][0]["action"] == "ACTION2"
+    assert "1 step(s) executed" in result[0]["text"]
+
+
+@pytest.mark.parametrize("bad_region", [
+    "grid_changed_in_region(-1,0,5,5)",    # negative x0
+    "grid_changed_in_region(0,-3,5,5)",    # negative y0
+    "grid_changed_in_region(0,0,64,5)",    # x1 out of range
+    "grid_changed_in_region(0,0,5,64)",    # y1 out of range
+    "grid_changed_in_region(5,0,1,5)",     # inverted x (x0 > x1)
+    "grid_changed_in_region(0,5,5,1)",     # inverted y (y0 > y1)
+])
+def test_region_bounds_and_ordering_rejected_at_define_time(monkeypatch, tmp_path, bad_region):
+    """Review finding 1 (first review): a negative/out-of-range/inverted box must be rejected LOUDLY
+    at define time, never stored as a predicate that silently can never fire."""
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    result = sess.call("define_skill", {"name": "bad_box", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}], "stop_when": bad_region, "max_iters": 4}}]})
+    assert "need 0 <= x0 <= x1 <= 63" in result[0]["text"]
+    assert "bad_box" not in sess.skills
+
+
+def test_region_at_grid_corner_still_accepted(monkeypatch, tmp_path):
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    result = sess.call("define_skill", {"name": "corner", "steps": [
+        {"repeat_until": {"steps": [{"action": "ACTION1"}],
+                          "stop_when": "grid_changed_in_region(63,63,63,63)", "max_iters": 4}}]})
+    assert "-> ok" in result[0]["text"]
+
+
+def test_top_level_stop_when_rejected_loudly(monkeypatch, tmp_path):
+    """Review finding 4 (second review): a top-level stop_when has no effect -- reject it loudly
+    instead of silently ignoring it."""
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(str(tmp_path / "out")))
+    result = sess.call("define_skill", {"name": "misplaced", "steps": [{"action": "ACTION1"}],
+                                        "stop_when": "steps_elapsed(5)"})
+    assert "belongs INSIDE a repeat_until" in result[0]["text"]
+    assert "misplaced" not in sess.skills
+
+
+def test_skill_is_reusable_across_run_skill_calls(monkeypatch, tmp_path):
+    """Review test-gap note: a defined skill must be runnable more than once in a session."""
+    out = str(tmp_path / "out")
+    frames = [dict(_RESET_FRAME),
+             _frame([[1, 0], [0, 0]], available_actions=(1, 2, 3, 4)),
+             _frame([[0, 1], [0, 0]], available_actions=(1, 2, 3, 4))]
+    _install_fake_api(monkeypatch, frames)
+    sess = ArcAgi3Session(_args(out))
+    sess.call("define_skill", {"name": "one", "steps": [{"action": "ACTION1"}]})
+    r1 = sess.call("run_skill", {"name": "one"})
+    r2 = sess.call("run_skill", {"name": "one"})
+    assert "1 step(s) executed" in r1[0]["text"]
+    assert "1 step(s) executed" in r2[0]["text"]
+    with open(f"{out}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    assert len([r for r in rows if r["event"] == "run_skill"]) == 2
+
+
+def test_game_over_mid_skill_aborts_cleanly_with_accurate_count(monkeypatch, tmp_path):
+    """Review test-gap note: a WIN/GAME_OVER transition partway through a multi-step skill must abort
+    with _act_raw's own "game is over" rejection and an accurate executed count."""
+    out = str(tmp_path / "out")
+    win_frame = _frame([[1, 1], [1, 1]], available_actions=(1, 2, 3, 4), state="WIN")
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME), win_frame])
+    sess = ArcAgi3Session(_args(out))
+    sess.call("define_skill", {"name": "two_moves", "steps": [{"action": "ACTION1"},
+                                                              {"action": "ACTION2"}]})
+    result = sess.call("run_skill", {"name": "two_moves"})
+    text = result[0]["text"]
+    assert "1 step(s) executed" in text
+    assert "game is over" in text
+    with open(f"{out}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rec = [r for r in rows if r["event"] == "run_skill"][0]
+    assert rec["executed_step_count"] == 1
+    assert rec["world_steps_used"] == 1
+
+
+def test_client_exception_mid_skill_aborts_cleanly(monkeypatch, tmp_path):
+    """Review test-gap note: a hard API failure (post-retry exception from the client) mid-skill is a
+    distinct path from the validation-rejection path -- it must abort the skill as an observation, not
+    a crash, with the step logged ok:False and not counted."""
+    out = str(tmp_path / "out")
+    _install_fake_api(monkeypatch, [dict(_RESET_FRAME)])
+    sess = ArcAgi3Session(_args(out))
+    sess.call("define_skill", {"name": "boom", "steps": [{"action": "ACTION1"}]})
+
+    def _raise(*a, **k):
+        raise RuntimeError("HTTP 500 after retries")
+    monkeypatch.setattr(sess.client, "action", _raise)
+    result = sess.call("run_skill", {"name": "boom"})
+    text = result[0]["text"]
+    assert "0 step(s) executed" in text
+    assert "act error: RuntimeError" in text
+    with open(f"{out}/skills.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rec = [r for r in rows if r["event"] == "run_skill"][0]
+    assert rec["executed_step_count"] == 0
+    assert rec["world_steps_used"] == 0

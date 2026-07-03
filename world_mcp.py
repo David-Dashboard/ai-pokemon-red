@@ -503,15 +503,18 @@ _ARCAGI3_DEFINE_SKILL_TOOL = {
                     "{\"repeat_until\": {\"steps\": [...], \"stop_when\": \"<predicate>\", "
                     "\"max_iters\": <=8}} — re-run its inner steps until stop_when fires or max_iters "
                     "iterations complete (no nesting: a repeat_until's inner steps may not contain "
-                    "another repeat_until). stop_when is one of: grid_changed_in_region(x0,y0,x1,y1) "
-                    "(any cell in that box differs from the grid before this iteration), "
+                    "another repeat_until). stop_when is checked after EVERY world step and is one "
+                    "of: grid_changed_in_region(x0,y0,x1,y1) with 0<=x0<=x1<=63, 0<=y0<=y1<=63 (any "
+                    "cell in that box differs between the two most recent grids), "
                     "grid_unchanged_for(k) with k<=8 (the whole grid identical for k consecutive "
-                    "world steps — a stuck/blocked detector), or steps_elapsed(n) with n<=50. "
-                    "The definition is logged verbatim and forgotten when this session ends — it does "
-                    "not persist across runs. Call run_skill(name, args) to execute it."),
+                    "world steps — a stuck/blocked detector), or steps_elapsed(n) with n<=50 (n WORLD "
+                    "steps executed inside the loop — every primitive action counts, so a 2-action "
+                    "step list reaches steps_elapsed(4) after 2 passes). Re-using a name replaces "
+                    "your prior definition. The definition is logged verbatim and forgotten when this "
+                    "session ends — it does not persist across runs. Call run_skill(name) to execute "
+                    "it."),
     "inputSchema": {"type": "object",
-                    "properties": {"name": {"type": "string"}, "steps": {"type": "array"},
-                                   "stop_when": {"type": "string"}},
+                    "properties": {"name": {"type": "string"}, "steps": {"type": "array"}},
                     "required": ["name", "steps"]},
 }
 _ARCAGI3_RUN_SKILL_TOOL = {
@@ -519,7 +522,7 @@ _ARCAGI3_RUN_SKILL_TOOL = {
     "description": ("Execute a skill you previously defined with define_skill. Advances world state "
                     "exactly as if each of its steps had been called individually (same validation, "
                     "same logging, same oracle write as a plain act), checking any repeat_until's "
-                    "stop_when after each inner iteration and stopping early (with the reason) if it "
+                    "stop_when after each world step and stopping early (with the reason) if it "
                     "fires. An absolute ceiling of 50 world steps applies per call regardless of the "
                     "skill's own definition. Returns ONE result: the observation after the skill ran, "
                     "plus a log of which steps actually executed and why it stopped — one decision, "
@@ -1482,6 +1485,13 @@ class ArcAgi3Session:
         m = re.fullmatch(r"grid_changed_in_region\(\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\)", expr)
         if m:
             x0, y0, x1, y1 = (int(g) for g in m.groups())
+            # Reject loudly at define time (PR #89 review finding 1: a negative/out-of-range/inverted
+            # box would silently produce an empty scan range — the predicate could never fire and the
+            # brain would read "region never changed" instead of "your region was malformed"). Same
+            # 64x64 bound as ACTION6's x,y validation, same reject-loudly-never-clamp discipline.
+            if not (0 <= x0 <= x1 <= 63 and 0 <= y0 <= y1 <= 63):
+                raise ValueError("grid_changed_in_region(x0,y0,x1,y1): need 0 <= x0 <= x1 <= 63 and "
+                                 f"0 <= y0 <= y1 <= 63; got ({x0},{y0},{x1},{y1})")
             return ("grid_changed_in_region", {"x0": x0, "y0": y0, "x1": x1, "y1": y1})
         m = re.fullmatch(r"grid_unchanged_for\(\s*(\d+)\s*\)", expr)
         if m:
@@ -1540,44 +1550,88 @@ class ArcAgi3Session:
         skill_name = str(args.get("name", "")).strip()
         if not skill_name:
             return [{"type": "text", "text": "define_skill error: `name` must be a non-empty string."}]
+        if "stop_when" in args:
+            # PR #89 review finding: a top-level stop_when has NO effect (it belongs inside a
+            # repeat_until step) — silently ignoring it would let the brain believe a condition was
+            # armed when it wasn't. Reject loudly; nothing is defined.
+            return [{"type": "text",
+                     "text": "define_skill error: `stop_when` belongs INSIDE a repeat_until step "
+                             "({\"repeat_until\": {\"steps\": [...], \"stop_when\": \"...\", "
+                             "\"max_iters\": N}}), not at the top level — it would have no effect "
+                             "there. Skill NOT defined."}]
         steps = args.get("steps")
         err = self._validate_step_list(steps, inside_loop=False)
         if err:
             return [{"type": "text", "text": err}]
         definition = {"name": skill_name, "steps": steps}
+        prior = self.skills.get(skill_name)
         self.skills[skill_name] = definition
         # Auditability (doc §3): the full definition is logged verbatim, so a reviewer can see exactly
-        # what macro was compiled and when.
+        # what macro was compiled and when. A redefinition is a DISTINCT event carrying both the old
+        # and new definitions (PR #89 review finding 3: a silent overwrite would leave two same-name
+        # define rows with no signal which one was live at a given transcript position).
+        if prior is not None:
+            self._log_skill({"event": "redefine_skill", "step": self._step_count,
+                             "prior_definition": prior, "definition": definition})
+            return [{"type": "text",
+                     "text": f"[define_skill {skill_name!r} -> ok, REPLACED your prior definition of "
+                             f"the same name; {len(steps)} top-level step(s)] "
+                             f"Call run_skill({{\"name\": {skill_name!r}}}) to execute it."}]
         self._log_skill({"event": "define_skill", "step": self._step_count, "definition": definition})
         return [{"type": "text",
                  "text": f"[define_skill {skill_name!r} -> ok, {len(steps)} top-level step(s)] "
                          f"Call run_skill({{\"name\": {skill_name!r}}}) to execute it."}]
 
-    def _check_stop_when(self, kind: str, params: dict, *, grid_before_iter, iters_done: int) -> bool:
+    def _check_stop_when(self, kind: str, params: dict, *, loop_world_steps: int) -> bool:
+        """Evaluate one pinned predicate after a world step. `grid_changed_in_region` diffs the two
+        CONSECUTIVE post-action grids (doc §3's exact definition — the same prev/last pair the
+        diff-summary already reports); `grid_unchanged_for` reads the running identical-grid counter;
+        `steps_elapsed` compares WORLD steps executed inside the current repeat_until (PR #89 review:
+        world steps, never loop iterations — a 2-action inner list reaches steps_elapsed(4) after 2
+        passes)."""
         if kind == "grid_changed_in_region":
             x0, y0, x1, y1 = params["x0"], params["y0"], params["x1"], params["y1"]
-            curr = self._last_grid
-            if not curr or grid_before_iter is None:
+            prev, curr = self._prev_grid, self._last_grid
+            if prev is None or not curr:
                 return False
-            for y in range(max(0, y0), min(len(curr), y1 + 1)):
-                row_before = grid_before_iter[y] if y < len(grid_before_iter) else []
+            for y in range(y0, min(len(curr), y1 + 1)):
+                row_prev = prev[y] if y < len(prev) else []
                 row_curr = curr[y]
-                for x in range(max(0, x0), min(len(row_curr), x1 + 1)):
-                    before_v = row_before[x] if x < len(row_before) else None
-                    if before_v != row_curr[x]:
+                for x in range(x0, min(len(row_curr), x1 + 1)):
+                    prev_v = row_prev[x] if x < len(row_prev) else None
+                    if prev_v != row_curr[x]:
                         return True
             return False
         if kind == "grid_unchanged_for":
             return self._unchanged_run >= params["k"]
         if kind == "steps_elapsed":
-            return iters_done >= params["n"]
+            return loop_world_steps >= params["n"]
         return False   # unreachable: _parse_stop_when already rejected anything else
 
+    def _exec_primitive(self, step: dict, executed: list, world_step_budget: list) -> Optional[str]:
+        """Execute ONE primitive action step via _act_raw. The budget is decremented ONLY on success
+        (PR #89 review finding: a rejected step sent nothing to the world — _act_raw's own contract —
+        so world_steps_used must mean actual world activity, never attempts). Returns an error string
+        (ceiling hit / step rejected / API failure) or None."""
+        if world_step_budget[0] <= 0:
+            return f"stopped: absolute {_SKILL_MAX_WORLD_STEPS}-world-step ceiling hit"
+        name = str(step.get("action", "")).strip().upper()
+        err = self._act_raw(name, step)
+        step_args = {k: v for k, v in step.items() if k != "action"}
+        if err is not None:
+            executed.append({"action": name, "args": step_args, "ok": False, "error": err})
+            return err
+        world_step_budget[0] -= 1
+        executed.append({"action": name, "args": step_args, "ok": True})
+        return None
+
     def _run_steps_once(self, steps, executed: list, world_step_budget: list) -> Optional[str]:
-        """Execute one flat pass of `steps` (a top-level list OR a repeat_until's inner list — never
-        both at once, no nesting). Appends each executed primitive step to `executed` and decrements
-        `world_step_budget[0]`. Returns an error string and stops immediately if a step fails or the
-        absolute world-step ceiling is hit; None on a clean pass."""
+        """Execute the top-level step list: plain action steps and/or repeat_until blocks (whose inner
+        lists are guaranteed flat — no nesting, enforced at define time). Inside a repeat_until,
+        stop_when is checked after EVERY world step (doc §3: "checking stop_when after each step"), so
+        it can fire mid-iteration of a multi-action inner list — the iteration count in the summary
+        then includes the partial iteration. Returns an error string and stops immediately if a step
+        fails or the absolute world-step ceiling is hit; None on a clean pass."""
         for step in steps:
             if "repeat_until" in step:
                 loop = step["repeat_until"]
@@ -1585,34 +1639,28 @@ class ArcAgi3Session:
                 kind, params = self._parse_stop_when(loop["stop_when"])
                 max_iters = loop["max_iters"]
                 iters_done = 0
+                loop_world_steps = 0   # WORLD steps executed inside THIS loop (steps_elapsed's unit)
                 stop_reason = None
-                while iters_done < max_iters:
-                    if world_step_budget[0] <= 0:
-                        return (f"stopped: absolute {_SKILL_MAX_WORLD_STEPS}-world-step ceiling hit "
-                                "mid-repeat_until")
-                    grid_before = [list(row) for row in self._last_grid] if self._last_grid else []
-                    err = self._run_steps_once(inner, executed, world_step_budget)
-                    if err:
-                        return err
+                while iters_done < max_iters and stop_reason is None:
+                    for inner_step in inner:
+                        err = self._exec_primitive(inner_step, executed, world_step_budget)
+                        if err:
+                            return err
+                        loop_world_steps += 1
+                        if self._check_stop_when(kind, params, loop_world_steps=loop_world_steps):
+                            stop_reason = (f"stop_when {loop['stop_when']!r} fired after "
+                                           f"{loop_world_steps} world step(s) "
+                                           f"({iters_done + 1} iteration(s))")
+                            break
                     iters_done += 1
-                    if self._check_stop_when(kind, params, grid_before_iter=grid_before, iters_done=iters_done):
-                        stop_reason = f"stop_when {loop['stop_when']!r} fired after {iters_done} iteration(s)"
-                        break
                 if stop_reason is None:
                     stop_reason = f"repeat_until reached max_iters={max_iters} without stop_when firing"
-                executed.append({"repeat_until_summary": stop_reason, "iterations": iters_done})
+                executed.append({"repeat_until_summary": stop_reason, "iterations": iters_done,
+                                 "world_steps": loop_world_steps})
             else:
-                if world_step_budget[0] <= 0:
-                    return f"stopped: absolute {_SKILL_MAX_WORLD_STEPS}-world-step ceiling hit"
-                name = str(step.get("action", "")).strip().upper()
-                err = self._act_raw(name, step)
-                world_step_budget[0] -= 1
-                if err is not None:
-                    executed.append({"action": name, "args": {k: v for k, v in step.items() if k != "action"},
-                                     "ok": False, "error": err})
+                err = self._exec_primitive(step, executed, world_step_budget)
+                if err:
                     return err
-                executed.append({"action": name, "args": {k: v for k, v in step.items() if k != "action"},
-                                 "ok": True})
         return None
 
     def _run_skill(self, args: dict) -> list[dict]:
