@@ -1,4 +1,4 @@
-# 2026-07-03 -- Entity-grounding gate v3 verdict: INSUFFICIENT_DATA (b_k repair VALIDATED; adjacency-invocation diagnosis)
+# 2026-07-03 -- Entity-grounding gate v3 verdict: INSUFFICIENT_DATA (b_k repair VALIDATED; NEAR-discipline + adjacency-invocation diagnoses)
 
 Verdict for the paid run pre-registered in `reports/2026-07-03-kirby-skill-port-entity-v3.md` (incl.
 Amendment A1, 2026-07-03), scored by `eval/score_entity_gate_v3.py`. Built: Kirby GB port of
@@ -38,11 +38,16 @@ fired its `stop_when` before `max_iters` AND `iterations >= 2`) -- guard FAIL, g
 **Run facts** (`transcript.jsonl`, `world/oracle.jsonl`): 87 turns, **$4.3176** (~$4.32), `subtype:
 success`, `is_error: False` -- clean completion, no infra death. 5 HP-drop events banked
 (`watch.hp` steps 6, 35, 40, 61, 69: 6->5->4->3->2->1), brain survived the run at **1 life**. Skills:
-5 define/redefine calls (3 `define_skill` + 2 `redefine_skill`), 15 `run_skill` calls. Of the 15
-`approach_suspect`/`retreat_to_benign` calls, every `region_changed`-terminated `approach_suspect`
-fired at **iterations=1** except two that reached iterations=2 (still under the `executed_step_count>=3`
-qualifying threshold, hence only 2 of 15 calls qualify at all) -- both `retreat_to_benign` calls
-correctly ran the full `steps_elapsed(8)` (8 iterations each).
+5 define/redefine calls (3 `define_skill` + 2 `redefine_skill`), 15 `run_skill` calls
+(12 `approach_suspect`, 2 `retreat_to_benign`, 1 flat `mount_step` with no `repeat_until`). Two
+DIFFERENT pairs of calls matter for the guard -- do not conflate them (clarified per the PR #95
+review): (i) the two `approach_suspect` calls that reached `iterations=2` (record steps 28 and 55)
+still FAIL the qualifying floor, `executed_step_count=2 < 3`; the other ten approaches all fired
+`region_changed` at `iterations=1`. (ii) The only two calls that DO meet `executed_step_count>=3`
+are the two `retreat_to_benign` calls (record steps 20 and 51, esc=8) -- but their stop reason is
+`steps_elapsed(8)`, which §5.4's own text excludes from qualifying-conditional (a pure step-count
+loop never branches on world state). No call satisfies both clauses simultaneously: 0
+qualifying-conditional.
 
 **Pre-registration + infrastructure cited:**
 - `reports/2026-07-03-kirby-skill-port-entity-v3.md` (incl. **Amendment A1**, 2026-07-03 -- the
@@ -70,59 +75,80 @@ correctly ran the full `steps_elapsed(8)` (8 iterations each).
    (`n_near=4 >= MIN_NEAR`, `b_k=0.508 <= 0.70`) and NOT grounded (`q_k=0.600 < 0.80`). The scorer
    correctly distinguished a benign, stationary structure from the mobile threat that actually produced
    drops -- exactly the discrimination arm (b) exists to test.
-3. **The skill guard worked exactly as designed.** It caught that all 15 `run_skill` calls'
-   conditional-firing evidence collapsed to `iterations=1` (bar two calls at `iterations=2`, still
-   short of the `executed_step_count>=3` qualifying floor) -- i.e., every fire was functionally a
-   one-shot, not a genuine repeated check-and-loop. This is precisely the failure mode rung 1's own
+3. **The skill guard worked exactly as designed.** It caught that no call satisfied both guard
+   clauses at once: every `region_changed` fire came at `iterations=1` or `2` (the latter still
+   under the `executed_step_count>=3` floor), and the only `esc>=3` calls were `steps_elapsed`
+   retreats, excluded from qualifying-conditional by §5.4's own text -- i.e., every conditional fire
+   was functionally a one-shot, not a genuine repeated check-and-loop. This is precisely the failure mode rung 1's own
    verdict flagged as untested and asked this port's gate to surface ("a future port's gate should
    consider pinning ... so the conditional half is verified, not just permitted"). The guard did that
    job: conditional-half evidence for the skill-compilation mechanism is **still absent**, and the gate
    said so instead of quietly reporting a clean PASS/FAIL on grounding numbers that would have obscured
    the gap.
 
-## The mechanical diagnosis
+## The mechanical diagnosis (corrected per the PR #95 adversarial review)
 
-(a) **Drops landed INSIDE approach-macro spans, where claims are correctly forbidden, while
-pre-approach NEARs mostly fell outside `W=15` reach of the drop steps.** The claim protocol (§4/§5.6)
-requires a `NEAR` to be logged only between skill calls, naming the current revealed step -- a drop
-occurring mid-`approach_suspect` cannot be claimed against directly, only covered by a NEAR at the
-approach's *start* step if the drop step is within `W=15` of it. Because most approaches in this run
-fired in 1-2 presses (adjacency at invocation time -- see (b)), the pre-approach NEAR's coverage window
-did not reliably reach the drop steps that occurred a full walk-and-contact cycle later. Net effect:
-**`q_k` starved at 0.400** -- the macro-interior exclusion did its job correctly, but the macro's own
-short spans meant the pre-approach look often wasn't positioned to cover the eventual drop.
+(a) **NEAR-discipline non-compliance -- the mandatory pre-approach NEAR (brief cycle step (i)) was
+skipped or mistimed. Span geometry is NOT the cause.** An earlier draft of this report claimed drops
+landed inside macro spans beyond `W=15` reach; the PR #95 review's span computation refuted that, and
+it re-verifies: computing every `run_skill` span as `(r.step - r.world_steps_used, r.step]` per
+§5.6's own formula, **all 5 drops (steps 6, 35, 40, 61, 69) land exactly on the END boundary of their
+approach span** -- the moment `region_changed` fired -- which §5.6 explicitly keeps claimable; zero
+drops are macro-interior. The actual starvation mechanism: only **3** `NEAR id=1` claims exist in the
+entire run (steps 7, 38, 64), against 5 drops and 12 approach calls, and **each was logged AFTER its
+nearest drop** (7 after drop 6; 38 after drop 35; 64 after drop 61). Coverage requires `n <= s`
+(`_coverage`'s `s - 15 <= n <= s`), so a NEAR trailing its drop covers nothing -- the `q_k` numerator
+is exactly 2 (drops 40 and 69, each covered by the NEAR that happened to precede it at distance 2 and
+5). `W=15` was never the binding constraint: every approach span's start-to-drop distance is **1**
+(spans are 1-2 world-steps), so a pre-approach NEAR logged at ANY span start would trivially have
+covered its drop with 14 steps to spare. **`q_k` starved at 0.400 because the brain skipped the
+brief's mandatory step (i) ("manual look + NEAR before every approach"), not because of window
+geometry or span length** -- protocol adherence, not metric machinery.
 
-(b) **`approach_suspect` was invoked only when already adjacent to the target**, so `region_changed`
-fired on the first (or second) press almost every time -- `region_changed` after 1 press is not
-evidence of a genuine repeated condition-check, it is a one-shot masquerading as a loop. Because the
-macro was never invoked from a genuine distance, `region_changed` never got the chance to fire after
-several iterations of walking, so no call ever qualified as **qualifying-conditional** (needs
+(b) **`approach_suspect` was invoked only when already adjacent to the target** (independently
+verified -- this half of the original diagnosis stands), so `region_changed` fired on the first (or
+second) press almost every time -- `region_changed` after 1 press is not evidence of a genuine
+repeated condition-check, it is a one-shot masquerading as a loop. Because the macro was never
+invoked from a genuine distance, `region_changed` never got the chance to fire after several
+iterations of walking, so no call ever qualified as **qualifying-conditional** (needs
 `iterations >= 2` AND `executed_step_count >= 3` on the same call -- the two calls that hit
 `iterations=2` still had only 2 executed steps, one short of the qualifying floor).
 
-## The v3.1 design note (NOT a pre-registration -- the located question only)
+These are TWO INDEPENDENT failure modes, not one: (a) is claim timing (when NEARs were logged),
+(b) is invocation geometry (where the brain stood when it called the macro). Fixing either does not
+fix the other.
 
-The macro must be **invoked from distance**, not from adjacency. Inviting the brain (or constraining
-the macro protocol) to call `approach_suspect` while several tiles away from the target defines BOTH
-more iterations per call (satisfying `executed_step_count>=3` and `iterations>=2` together, finally
-producing qualifying-conditional evidence) AND pre-approach NEARs that are logged while genuinely
-distant, positioned to actually cover the contact window `W=15` steps later when the approach
-concludes in contact. This is a brief/protocol geometry fix -- **the machinery is unchanged**: the same
-`stop_when` enum, the same scorer, the same skill guard, the same `B_K_CEILING`. Nothing here proposes
-loosening any pinned constant; it proposes changing WHEN in the cycle the brain is instructed to invoke
-the macro relative to the target's distance.
+## The v3.1 design note (NOT a pre-registration -- the located questions only)
+
+Two independent fixes, one per failure mode:
+
+(i) **Pre-approach NEAR discipline (the coverage prong, fixes (a)).** The brief must make the
+NEAR-before-`run_skill` ordering as loud and mechanical as v2's watermark warning -- the same shape
+of miss (NEARs trailing their drops) also appears in v2 run 10
+(`runs/brain_kirby_entity/run3_walled`: drops at steps 3 and 11 with zero preceding NEARs; the first
+`NEAR id=1` lands at step 16), so this is a recurring brain-compliance failure, not a one-off. A
+NEAR at any approach-span start covers its drop trivially (start-to-drop distance 1 vs `W=15`); the
+protocol already demands it; the brief needs to enforce the ordering the way it enforces the
+watermark rule. Brief/protocol emphasis fix -- machinery unchanged.
+
+(ii) **Distance invocation (the conditional-guard prong, fixes (b)).** The macro must be invoked
+from genuine distance, not adjacency -- several tiles of separation defines more iterations per call
+(satisfying `executed_step_count>=3` and `iterations>=2` together, finally producing
+qualifying-conditional evidence). Brief/protocol geometry fix -- machinery unchanged.
+
+Neither fix touches the `stop_when` enum, the scorer, the skill guard, or `B_K_CEILING`; nothing
+here proposes loosening any pinned constant.
 
 ## Honest bounds
 
 - **One attempt, one game.** Per §5.5, this is the single paid attempt authorized under this
   pre-registration; no informal re-run. A second attempt, if pursued, needs its own pre-registration
   (open question flagged in the source doc's §8).
-- **The q_k starvation and the guard failure may share one root cause.** Both diagnoses above trace to
-  the same behavior -- invoking the macro only at adjacency -- rather than being two independent
-  findings. This report does not claim they are separable failures; fixing adjacency-invocation may
-  fix both at once, or may only fix one (e.g., `q_k` could still starve if a distant approach terminates
-  in fewer steps than `W` requires for some target geometries). That is an empirical question for
-  v3.1's own paid run, not asserted here.
+- **Both v3.1 fixes are untested, and (i) is a compliance problem, not a machinery problem.** The
+  pre-approach-NEAR instruction already existed in this run's brief (cycle step (i)) and was skipped
+  anyway -- a louder brief may or may not change that; only a run shows. (ii) is likewise untested:
+  nothing proves a distance-invoked approach reliably reaches `iterations>=2` on real Kirby enemy
+  movement (an enemy closing the gap fast could still fire `region_changed` on press 1).
 - **The benign PASS and the b_k repair are not proof the macro is robust in general.** Both are one
   session's worth of evidence under one brief, one world, one target configuration.
 
