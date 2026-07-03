@@ -10,6 +10,12 @@ it's self-contained from a clean checkout -- no live ViZDoom, no gitignored runs
 Also covers: idle honesty (zero false motion on ego-stationary pairs), None on genuinely ambiguous
 input (uniform frames -- the "can't tell" contract, never fabricated as 0.0-meaning-idle), and
 calibration determinism.
+
+The main fixture set is CURATED (its turn pairs were sampled from pool pairs that already agree --
+see eval/fixtures/vizdoom_yaw/select_fixtures.py, committed), so its numbers are a regression floor
+for the implementation, not an unbiased pool measurement (pool-honest numbers: PC-2). The pool's
+failing pairs are all committed too, under eval/fixtures/vizdoom_yaw/known_limits/, and pinned by
+their own test below: known R0 failure modes, documented rather than hidden.
 """
 from __future__ import annotations
 
@@ -26,13 +32,13 @@ FIXTURES = os.path.join(os.path.dirname(__file__), "..", "eval", "fixtures", "vi
 EXPECTED_DIRECTION = {"TURN_LEFT": "left", "TURN_RIGHT": "right"}
 
 
-def _load_manifest():
-    with open(os.path.join(FIXTURES, "actions.json")) as f:
+def _load_manifest(subdir=""):
+    with open(os.path.join(FIXTURES, subdir, "actions.json")) as f:
         return json.load(f)
 
 
-def _gray(name):
-    return np.asarray(Image.open(os.path.join(FIXTURES, name)).convert("L"), dtype=np.float32)
+def _gray(name, subdir=""):
+    return np.asarray(Image.open(os.path.join(FIXTURES, subdir, name)).convert("L"), dtype=np.float32)
 
 
 # ── fixture-backed regression floor (ARM (b) bar) ────────────────────────────
@@ -71,6 +77,43 @@ def test_idle_pairs_never_report_false_motion():
         # "confidently stationary" (dx=0, direction="none") is allowed; a real shift is not.
         assert reading.dx_px in (None, 0)
         assert reading.direction in (None, "none")
+
+
+# ── known R0 limits (every failing pair from the source pool, committed) ─────
+
+def test_known_limits_document_the_r0_failure_modes():
+    """eval/fixtures/vizdoom_yaw/known_limits/ holds EVERY pool pair the curated main set excludes:
+    4 wrong-sign turn pairs and 2 false-motion idle pairs (out of ~139 turn / 177 idle pool pairs --
+    the pool-honest rates are PC-2's 0.964 / 0.201). This test asserts the CURRENT failing behavior
+    so the limits stay visible: if R0 ever stops failing here, this test fails and the pair should
+    be promoted to the main set, not silently forgotten.
+
+    Failure modes observed:
+    - wrong-sign turns: all at near-floor confidence (<= 0.028 vs prom_floor 0.02) -- three are the
+      same burst-turn artifact (dx=-46 at confidence 0.0222), a barely-above-floor correlation peak
+      on a fast turn. A slightly higher prom_floor would convert these to honest Nones at the cost
+      of a higher None-rate; the pinned floors trade 4/139 wrong signs for None-rate 0.201 (PC-2).
+    - false-motion idles: dx=+1 single-pixel jitter at moderate confidence on dtc_mixed idle pairs
+      (defend_the_center's monsters keep walking while the camera idles, nudging the band profile).
+    """
+    manifest = _load_manifest("known_limits")
+    turn = [m for m in manifest if m["action"] in EXPECTED_DIRECTION]
+    idle = [m for m in manifest if m["action"] == "IDLE"]
+    assert len(turn) == 4 and len(idle) == 2
+
+    for m in turn:
+        reading = yaw_band_flow(_gray(m["frame_a"], "known_limits"), _gray(m["frame_b"], "known_limits"))
+        # known limit: a confidently-reported direction that CONTRADICTS the commanded turn...
+        assert reading.direction is not None
+        assert reading.direction != EXPECTED_DIRECTION[m["action"]]
+        # ...but only at near-floor confidence -- the failure lives just above the pinned floors.
+        assert reading.confidence <= 0.03
+
+    for m in idle:
+        reading = yaw_band_flow(_gray(m["frame_a"], "known_limits"), _gray(m["frame_b"], "known_limits"))
+        # known limit: 1px false motion on an idle pair (scene motion, not ego motion).
+        assert reading.direction not in (None, "none")
+        assert abs(reading.dx_px) == 1
 
 
 # ── three-valued honesty on synthetic input ──────────────────────────────────
