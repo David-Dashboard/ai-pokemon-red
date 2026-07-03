@@ -1194,12 +1194,17 @@ def _movers_repr(movers) -> str:
 
 
 def _load_doom_seeds(args) -> list[int]:
-    """Pinned-seed source: --seeds-file (one int per line) takes priority; else --seed (repeatable).
-    Never invents a seed — an empty result is a launch-time error (see DoomDtcSession.__init__)."""
+    """Pinned-seed source: --seeds-file (one int per line, OR a JSON array — e.g. the committed
+    eval/fixtures/gate3d_seeds.json) takes priority; else --seed (repeatable). Never invents a seed —
+    an empty result is a launch-time error (see DoomDtcSession.__init__)."""
     seeds_file = getattr(args, "seeds_file", None)
     if seeds_file:
         with open(seeds_file, encoding="utf-8") as f:
-            return [int(line.strip()) for line in f if line.strip()]
+            text = f.read()
+        stripped = text.strip()
+        if stripped.startswith("["):
+            return [int(s) for s in json.loads(stripped)]
+        return [int(line.strip()) for line in text.splitlines() if line.strip()]
     return [int(s) for s in (getattr(args, "seed", None) or [])]
 
 

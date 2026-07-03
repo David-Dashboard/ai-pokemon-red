@@ -27,7 +27,7 @@ import numpy as np
 import pytest
 
 import world_mcp
-from world_mcp import GAMES, DoomDtcSession, _VIZDOOM_WORLDS, _static_tools
+from world_mcp import GAMES, DoomDtcSession, _VIZDOOM_WORLDS, _load_doom_seeds, _static_tools
 
 
 # ---------------------------------------------------------------------------
@@ -434,3 +434,42 @@ def test_missing_seed_fails_loud_at_launch_not_mid_protocol(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["world_mcp.py", "--game", "doom_dtc_gate"])
     with pytest.raises(SystemExit, match="at least one pinned seed"):
         world_mcp.main()
+
+
+# ---------------------------------------------------------------------------
+# _load_doom_seeds: --seeds-file accepts EITHER one-int-per-line OR a JSON array (GATE-3D PR-D adds
+# the JSON form so DoomDtcSession's --seeds-file can point straight at the committed
+# eval/fixtures/gate3d_seeds.json, a JSON array, without a separate conversion step).
+# ---------------------------------------------------------------------------
+
+def _ns(**over):
+    import argparse
+    base = dict(seeds_file=None, seed=None)
+    base.update(over)
+    return argparse.Namespace(**base)
+
+
+def test_load_doom_seeds_from_json_array_file(tmp_path):
+    p = tmp_path / "seeds.json"
+    p.write_text("[1000, 1001, 1002]", encoding="utf-8")
+    assert _load_doom_seeds(_ns(seeds_file=str(p))) == [1000, 1001, 1002]
+
+
+def test_load_doom_seeds_from_one_int_per_line_file(tmp_path):
+    p = tmp_path / "seeds.txt"
+    p.write_text("1000\n1001\n1002\n", encoding="utf-8")
+    assert _load_doom_seeds(_ns(seeds_file=str(p))) == [1000, 1001, 1002]
+
+
+def test_load_doom_seeds_json_array_takes_priority_over_seed_flag(tmp_path):
+    p = tmp_path / "seeds.json"
+    p.write_text("[5, 6, 7]", encoding="utf-8")
+    assert _load_doom_seeds(_ns(seeds_file=str(p), seed=[1, 2, 3])) == [5, 6, 7]
+
+
+def test_load_doom_seeds_falls_back_to_seed_flag_when_no_seeds_file():
+    assert _load_doom_seeds(_ns(seed=[3, 1, 4])) == [3, 1, 4]
+
+
+def test_load_doom_seeds_empty_when_neither_given():
+    assert _load_doom_seeds(_ns()) == []

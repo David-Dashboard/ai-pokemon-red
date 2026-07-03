@@ -1,0 +1,63 @@
+{
+  "_comment": "GATE-3D free baselines per AMENDMENT A2 (reports/2026-07-04-vizdoom-3d-floor-design.md SS A2.1-A2.3): the four pre-registered perception-free policies, 200 episodes each, dtc_gate.cfg, tics=4 fixed, 1000-tic/250-step budget, fresh seed blocks (30000/31000/32000/33000 + 200 each) distinct from the 30 pinned gate seeds (1000-1029), from each other, and from the superseded A2-trigger run's blocks (20000-22199). Measured by tools/gate3d_baselines.py in the vizdoom-world Docker image, 2026-07-03 (the A2.3 re-run). This file is the scorer's ONLY source for D and KPS_spinner (eval/score_gate3d.py: D = max mean_killcount over all policy entries; KPS_spinner = the strongest-K spinner* entry's kps). Pre-registered law -- edited only by a reviewed, explicit commit; the D set is ADD-ONLY per SS A2.2.",
+  "_arm_a1_bar_formula": "K >= max(D + 1.5, 1.15 * D)",
+  "_arm_a2_bar_formula": "KPS_brain >= 1.5 * KPS_spinner (strongest-K spinner variant); >= 10 total brain shots else INSUFFICIENT_DATA",
+  "random": {
+    "n_episodes": 200,
+    "mean_killcount": 1.455,
+    "std_killcount": 1.130475563645671,
+    "killcount_distribution": {"0": 39, "1": 80, "2": 45, "3": 25, "4": 9, "5": 2},
+    "total_kills": 291.0,
+    "total_shots": 3129.0,
+    "kps": 0.09300095877277086,
+    "kps_excluded_episodes": 0
+  },
+  "attack_only": {
+    "n_episodes": 200,
+    "mean_killcount": 1.46,
+    "std_killcount": 0.5902541825349481,
+    "killcount_distribution": {"1": 118, "2": 72, "3": 10},
+    "total_kills": 292.0,
+    "total_shots": 4229.0,
+    "kps": 0.0690470560416174,
+    "kps_excluded_episodes": 0
+  },
+  "spinner_multihot": {
+    "n_episodes": 200,
+    "mean_killcount": 4.11,
+    "std_killcount": 0.94757585448343,
+    "killcount_distribution": {"1": 1, "2": 3, "3": 50, "4": 79, "5": 54, "6": 12, "7": 1},
+    "total_kills": 822.0,
+    "total_shots": 5191.0,
+    "kps": 0.1583509921017145,
+    "kps_excluded_episodes": 0
+  },
+  "spinner_alternating": {
+    "n_episodes": 200,
+    "mean_killcount": 3.6,
+    "std_killcount": 1.5556349186104046,
+    "killcount_distribution": {"0": 6, "1": 12, "2": 42, "3": 22, "4": 49, "5": 53, "6": 15, "7": 1},
+    "total_kills": 720.0,
+    "total_shots": 4567.0,
+    "kps": 0.15765272607838843,
+    "kps_excluded_episodes": 0
+  },
+  "_derived_at_this_measurement": {
+    "D": 4.11,
+    "D_policy": "spinner_multihot",
+    "arm_a1_bar": 5.61,
+    "kps_spinner": 0.1583509921017145,
+    "kps_spinner_policy": "spinner_multihot",
+    "arm_a2_bar": 0.23752648815257175,
+    "note": "informational only -- the scorer re-derives D/KPS_spinner from the policy entries above, so an add-only D-set extension needs no edit here"
+  },
+  "_decoy_clears_arm_a1_bar": {
+    "random": false,
+    "attack_only": false,
+    "spinner_multihot": false,
+    "spinner_alternating": false,
+    "note": "by construction NONE can clear it: every measured decoy is <= D = 4.11 < max(D+1.5, 1.15*D) = 5.61 (SS A2.2's structural replacement of the A1.4 decoy guard). Stated explicitly per the A2 fix-round brief."
+  },
+  "_a2_trigger_record": "the superseded 2026-07-03 pre-A2 measurement (R=1.375, alternating spinner 3.66 >= A1.4 bar 3.375, ATTACK-only 1.47 under) stays on the books as the A2 trigger record in reports/2026-07-04-vizdoom-3d-floor-design.md SS A2 and PR #75's history; per SS A2.3 it is superseded as a scorer input by this re-run.",
+  "_multihot_note": "spinner_multihot is A1.4's literal decoy (TURN_LEFT + ATTACK on the same tic, every step), measured via the SS A2.1-sanctioned raw-vizdoom path in tools/gate3d_baselines.py. spinner_alternating is PR #75's original weakened stand-in, retained per SS A2.1 as a second data point."
+}
