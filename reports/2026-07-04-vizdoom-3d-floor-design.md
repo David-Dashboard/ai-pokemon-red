@@ -454,3 +454,122 @@ alongside in that directory are the template).
   pre-registered risk that ATTACK-only clears the bar and forces amendment A2.
 - **OPEN (the gate answers):** unchanged — can a region-neutral brain over this floor beat
   perception-free play, now in a scenario where the floor's evidence actually holds.
+
+---
+
+# AMENDMENT A2 (2026-07-04) — ARM (a) re-pin after the decoy guard FIRED (spinner 3.66 ≥ bar 3.375)
+
+Appended, never edited: the original doc and AMENDMENT A1 stand as written; this amendment supersedes
+only where stated, and only in the stricter direction. Trigger: A1.4's **perception-free-decoy guard
+fired during PR-D's free baselines** (PR #75, `eval/fixtures/gate3d_baselines.json`,
+`tools/gate3d_baselines.py`, 200 episodes/policy on `dtc_gate.cfg`, tics=4, 1000-tic budget, measured
+2026-07-03):
+
+| policy | mean final KILLCOUNT | std | vs A1.4 bar `max(R+2.0, 1.5R)` = 3.375 |
+|---|---|---|---|
+| random (R) | 1.375 | 1.056 | — |
+| ATTACK-only | 1.47 | 0.640 | under (guard holds) |
+| blind spinner | **3.66** | 1.604 | **CLEARS — guard fires** |
+
+Exactly the failure mode the guard exists for: in dtc the monsters converge on the player, so blind
+spinning converts ammo to kills far above random — a bar referenced to *random* does not certify
+perception. Worse, the measured spinner was the **WEAKENED alternating variant** (TURN_LEFT /
+ATTACK on alternating steps — `core.vizdoom_world.VizdoomWorld.step()` takes a single button, no
+multi-hot entry point; the deviation was flagged in PR #75, not silently absorbed): A1.4's literal
+multi-hot spinner is plausibly stronger still. Per the pre-registration, this A2 re-pin happens
+BEFORE any paid run. The scenario stays (`dtc_gate.cfg` is where the mover evidence holds); what was
+wrong is the *reference policy* the bar was anchored to.
+
+## A2.1 Decoy measurement correction (binding)
+
+The blind-spinner decoy MUST be measured as A1.4 wrote it: **true multi-hot, TURN_LEFT + ATTACK
+pressed on the same tic, every step**. For decoy measurement the baselines tool MAY drive raw
+vizdoom directly (`make_action` with a multi-hot vector) — decoys are scripted, no-LLM, and do not
+need the seam; the seam's single-button tool surface is a constraint on the *brain*, not on
+adversarial baselines. The alternating variant is RETAINED in the measured set as a second spinner
+data point (it is real evidence), but it no longer stands in for the pinned decoy.
+
+## A2.2 ARM (a) re-pinned: bar anchored to the STRONGEST perception-free decoy (supersedes A1.4 ARM (a); stricter-only)
+
+> **ARM (a) — task (as re-pinned by A2).** Let **D** = max over the pre-registered perception-free
+> policy set { random, ATTACK-only, true multi-hot blind spinner, alternating blind spinner } of
+> mean final oracle `KILLCOUNT`, each measured over **200 free scripted episodes** of
+> `dtc_gate.cfg` at the identical pinned grain and budget (tics=4 fixed, 1000-tic / 250-step /
+> death-terminated), on fresh seed blocks distinct from the 30 pinned gate seeds and from each
+> other. `K` = the brain's mean final oracle `KILLCOUNT` over the N=30 pinned-seed episodes.
+>
+> **ARM (a) requires BOTH discriminators:**
+>
+> **(a-1) Kill margin over the strongest decoy:** `K ≥ max(D + 1.5, 1.15 × D)`.
+>
+> **(a-2) Ammo efficiency:** `KPS_brain ≥ 1.5 × KPS_spinner`, where for any policy
+> `KPS = (Σ final KILLCOUNT) / (Σ shots)` over its episodes; per episode
+> `shots = ammo2_first − ammo2_last` from `oracle.jsonl` rows (dtc has no ammo pickups, so `ammo2`
+> is monotonically non-increasing; any increase is reported loudly and the episode excluded from
+> the shots sum). `KPS_spinner` = the KPS of the **strongest-K spinner variant** (multi-hot vs
+> alternating) from the committed baselines file. **Guard:** the brain must fire ≥ **10** shots
+> total across the run, else ARM (a-2) is `INSUFFICIENT_DATA` (not a pass).
+>
+> Any scripted perception-free policy proposed by a reviewer BEFORE the paid run may be ADDED to
+> the D set (raising D — stricter). Nothing may be removed from it.
+
+**Margin justification (a-1).** D is the spinner's ~3.7 (alternating) and plausibly 4+ (multi-hot).
+`max(D + 1.5, 1.15 × D)` demands the brain beat the *best* blind policy by ≥1.5 kills absolute
+(≈ 40% of the measured D) — a perception-grounded aimer that turns TO movers instead of spinning
+past them should convert the same 26 rounds into kills at a visibly better rate, and +1.5 is far
+outside sampling noise (baseline means over 200 episodes carry SEM ≈ 0.11; the brain's 30-episode
+mean carries SEM ≈ 0.3 at spinner-like variance — the margin is ≈ 5 SEM, not luck-clearable). The
+`1.15 × D` branch takes over only if D grows past 10, keeping the bar proportionate if a stronger
+decoy is found. **Falsifiability, stated plainly:** this margin may prove unreachable — the tier
+then FAILS its gate, which is the point. NOTHING justifies loosening before the paid run: no
+evidence class (bigger baselines, brain warm-ups, "it looks close") is admissible for a downward
+revision; loosening is forbidden, period. If the gate fails, the honest outcomes are a FAIL on the
+books (the floor's right to exist dies cheap) or a *stricter* A3 with a different scenario — never
+a softer bar.
+
+**Rationale (a-2).** Blind spinning converts ammo to kills at chance rate — whatever wanders into
+the fire cone. Aiming is precisely what perception buys, and kills-per-shot is its direct signature:
+a brain that waits ego-stationary, reads a mover azimuth, turns to it, and fires should spend
+strictly fewer rounds per kill than a policy that fires on schedule. (a-2) also closes the residual
+hole in (a-1) alone: a lucky high-K run with spinner-like spray fails the efficiency test, and a
+frugal three-perfect-shots run that fails (a-1) cannot pass on efficiency alone — both discriminators
+are required, and the ≥10-shots guard keeps (a-2) from being vacuously satisfied by near-silence.
+
+Everything else in A1.4 — ARM (b) verbatim, all degenerate guards (one-attempt-per-seed, variation,
+tic-only alignment, episode-boundary, completion floor, oracle law), verdict vocabulary, cost cap —
+**carries over unchanged**. The A1.4 decoy guard ("each decoy must score under the bar") becomes
+structural under (a-1): every measured decoy is ≤ D < `max(D + 1.5, 1.15 × D)` by construction; its
+living descendant is the add-only D-set clause above.
+
+## A2.3 Baseline re-run required BEFORE the paid run (binding on PR-D's fix round)
+
+ALL FOUR baselines (random, ATTACK-only, multi-hot spinner, alternating spinner) are re-run after
+this amendment — 200 episodes each, same grain/budget/seed-block discipline — now also recording
+per-episode `ammo2_first` / `ammo2_last` (for KPS). The updated
+`eval/fixtures/gate3d_baselines.json` is COMMITTED before the paid run and remains the scorer's only
+source: `eval/score_gate3d.py` reads **D** (the max mean-K and which policy set it) and
+**KPS_spinner** (strongest-K spinner variant) from that file, never from constants in code. The
+2026-07-03 measurement above stays on the books as the A2 trigger record; it is superseded as a
+scorer input by the re-run.
+
+## A2.4 Build-plan delta (PR-D: fix round, not redesign)
+
+PR #75 gets a **fix round** on its open branch: (1) `tools/gate3d_baselines.py` adds the multi-hot
+spinner policy via a direct-vizdoom decoy path (per §A2.1) and per-episode ammo logging, keeps the
+alternating variant; (2) `eval/score_gate3d.py` re-implements ARM (a) per §A2.2 verbatim — D-anchored
+(a-1) + KPS (a-2) with the ≥10-shots guard — reading both anchors from the baselines file; (3) unit
+tests pin the new boundaries (K at bar−ε/bar, KPS at 1.49×/1.5×, shots at 9/10, the
+ammo2-increase exclusion) alongside the existing verdict tests. Scorer thresholds still change ONLY
+via this document, by amendment, stricter-only. PR-C's merged adapter (`core/vizdoom_world.py`)
+stays untouched — the multi-hot path lives in the baselines tool, not the seam.
+
+## A2.5 Decided vs open (supersedes A1.7 where in conflict)
+
+- **DECIDED by this amendment:** ARM (a) = (a-1)+(a-2) per §A2.2 verbatim; the D-set and its
+  add-only rule; the true-multi-hot decoy measurement requirement (§A2.1); the baseline re-run +
+  committed-fixture requirement (§A2.3); loosening forbidden pre-paid-run.
+- **OPEN (free, before the paid run):** the re-measured D (multi-hot spinner expected ≥ 3.66) and
+  KPS_spinner; whether a reviewer proposes a stronger scripted decoy for the D set.
+- **OPEN (the gate answers):** unchanged — but the question is now sharpened to "does perception
+  beat the best blind policy, on kills AND on ammo," which is the honest version of the tier's
+  right to exist.
