@@ -1,0 +1,282 @@
+[
+  {
+    "pair": 0,
+    "frame_a": "pair00_a.png",
+    "frame_b": "pair00_b.png",
+    "action": "TURN_LEFT",
+    "source": "basic_mixed/ep2",
+    "r0_dx_px": 21,
+    "r0_direction": "left",
+    "r0_confidence": 0.2337
+  },
+  {
+    "pair": 1,
+    "frame_a": "pair01_a.png",
+    "frame_b": "pair01_b.png",
+    "action": "TURN_LEFT",
+    "source": "dtc_mixed/ep0",
+    "r0_dx_px": 39,
+    "r0_direction": "left",
+    "r0_confidence": 0.394
+  },
+  {
+    "pair": 2,
+    "frame_a": "pair02_a.png",
+    "frame_b": "pair02_b.png",
+    "action": "TURN_LEFT",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": 21,
+    "r0_direction": "left",
+    "r0_confidence": 0.2337
+  },
+  {
+    "pair": 3,
+    "frame_a": "pair03_a.png",
+    "frame_b": "pair03_b.png",
+    "action": "TURN_LEFT",
+    "source": "dtc_mixed/ep0",
+    "r0_dx_px": 45,
+    "r0_direction": "left",
+    "r0_confidence": 0.1065
+  },
+  {
+    "pair": 4,
+    "frame_a": "pair04_a.png",
+    "frame_b": "pair04_b.png",
+    "action": "TURN_LEFT",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": 25,
+    "r0_direction": "left",
+    "r0_confidence": 0.0453
+  },
+  {
+    "pair": 5,
+    "frame_a": "pair05_a.png",
+    "frame_b": "pair05_b.png",
+    "action": "TURN_LEFT",
+    "source": "dtc_mixed/ep0",
+    "r0_dx_px": 49,
+    "r0_direction": "left",
+    "r0_confidence": 0.242
+  },
+  {
+    "pair": 6,
+    "frame_a": "pair06_a.png",
+    "frame_b": "pair06_b.png",
+    "action": "TURN_LEFT",
+    "source": "basic_mixed/ep1",
+    "r0_dx_px": 51,
+    "r0_direction": "left",
+    "r0_confidence": 0.0239
+  },
+  {
+    "pair": 7,
+    "frame_a": "pair07_a.png",
+    "frame_b": "pair07_b.png",
+    "action": "TURN_LEFT",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": 59,
+    "r0_direction": "left",
+    "r0_confidence": 0.3235
+  },
+  {
+    "pair": 8,
+    "frame_a": "pair08_a.png",
+    "frame_b": "pair08_b.png",
+    "action": "TURN_RIGHT",
+    "source": "basic_mixed/ep2",
+    "r0_dx_px": -48,
+    "r0_direction": "right",
+    "r0_confidence": 0.067
+  },
+  {
+    "pair": 9,
+    "frame_a": "pair09_a.png",
+    "frame_b": "pair09_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": -40,
+    "r0_direction": "right",
+    "r0_confidence": 0.1557
+  },
+  {
+    "pair": 10,
+    "frame_a": "pair10_a.png",
+    "frame_b": "pair10_b.png",
+    "action": "TURN_RIGHT",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": -32,
+    "r0_direction": "right",
+    "r0_confidence": 0.0657
+  },
+  {
+    "pair": 11,
+    "frame_a": "pair11_a.png",
+    "frame_b": "pair11_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": -35,
+    "r0_direction": "right",
+    "r0_confidence": 0.3327
+  },
+  {
+    "pair": 12,
+    "frame_a": "pair12_a.png",
+    "frame_b": "pair12_b.png",
+    "action": "TURN_RIGHT",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": -41,
+    "r0_direction": "right",
+    "r0_confidence": 0.1543
+  },
+  {
+    "pair": 13,
+    "frame_a": "pair13_a.png",
+    "frame_b": "pair13_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": -38,
+    "r0_direction": "right",
+    "r0_confidence": 0.3337
+  },
+  {
+    "pair": 14,
+    "frame_a": "pair14_a.png",
+    "frame_b": "pair14_b.png",
+    "action": "TURN_RIGHT",
+    "source": "basic_mixed/ep1",
+    "r0_dx_px": -41,
+    "r0_direction": "right",
+    "r0_confidence": 0.1543
+  },
+  {
+    "pair": 15,
+    "frame_a": "pair15_a.png",
+    "frame_b": "pair15_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": -40,
+    "r0_direction": "right",
+    "r0_confidence": 0.3859
+  },
+  {
+    "pair": 16,
+    "frame_a": "pair16_a.png",
+    "frame_b": "pair16_b.png",
+    "action": "IDLE",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": 0,
+    "r0_direction": "none",
+    "r0_confidence": 0.6691
+  },
+  {
+    "pair": 17,
+    "frame_a": "pair17_a.png",
+    "frame_b": "pair17_b.png",
+    "action": "IDLE",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": 0,
+    "r0_direction": "none",
+    "r0_confidence": 0.4649
+  },
+  {
+    "pair": 18,
+    "frame_a": "pair18_a.png",
+    "frame_b": "pair18_b.png",
+    "action": "IDLE",
+    "source": "basic_mixed/ep1",
+    "r0_dx_px": 0,
+    "r0_direction": "none",
+    "r0_confidence": 0.6691
+  },
+  {
+    "pair": 19,
+    "frame_a": "pair19_a.png",
+    "frame_b": "pair19_b.png",
+    "action": "IDLE",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": 0,
+    "r0_direction": "none",
+    "r0_confidence": 0.7892
+  },
+  {
+    "pair": 20,
+    "frame_a": "pair20_a.png",
+    "frame_b": "pair20_b.png",
+    "action": "IDLE",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": 0,
+    "r0_direction": "none",
+    "r0_confidence": 0.8041
+  },
+  {
+    "pair": 21,
+    "frame_a": "pair21_a.png",
+    "frame_b": "pair21_b.png",
+    "action": "IDLE",
+    "source": "dtc_mixed/ep0",
+    "r0_dx_px": 0,
+    "r0_direction": "none",
+    "r0_confidence": 0.7961
+  },
+  {
+    "pair": 22,
+    "frame_a": "pair22_a.png",
+    "frame_b": "pair22_b.png",
+    "action": "TURN_RIGHT",
+    "source": "basic_mixed/ep1",
+    "r0_dx_px": null,
+    "r0_direction": null,
+    "r0_confidence": null
+  },
+  {
+    "pair": 23,
+    "frame_a": "pair23_a.png",
+    "frame_b": "pair23_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep0",
+    "r0_dx_px": null,
+    "r0_direction": null,
+    "r0_confidence": null
+  },
+  {
+    "pair": 24,
+    "frame_a": "pair24_a.png",
+    "frame_b": "pair24_b.png",
+    "action": "TURN_LEFT",
+    "source": "basic_mixed/ep2",
+    "r0_dx_px": null,
+    "r0_direction": null,
+    "r0_confidence": null
+  },
+  {
+    "pair": 25,
+    "frame_a": "pair25_a.png",
+    "frame_b": "pair25_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep0",
+    "r0_dx_px": null,
+    "r0_direction": null,
+    "r0_confidence": null
+  },
+  {
+    "pair": 26,
+    "frame_a": "pair26_a.png",
+    "frame_b": "pair26_b.png",
+    "action": "TURN_LEFT",
+    "source": "basic_mixed/ep0",
+    "r0_dx_px": null,
+    "r0_direction": null,
+    "r0_confidence": null
+  },
+  {
+    "pair": 27,
+    "frame_a": "pair27_a.png",
+    "frame_b": "pair27_b.png",
+    "action": "TURN_RIGHT",
+    "source": "dtc_mixed/ep1",
+    "r0_dx_px": null,
+    "r0_direction": null,
+    "r0_confidence": null
+  }
+]
