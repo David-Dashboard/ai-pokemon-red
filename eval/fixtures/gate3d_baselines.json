@@ -1,0 +1,30 @@
+{
+  "_comment": "GATE-3D-A1 FREE baselines (reports/2026-07-04-vizdoom-3d-floor-design.md AMENDMENT A1 SS A1.4). 200 episodes each, dtc_gate.cfg, tics=4 fixed, 1000-tic/250-step budget, fresh RNG seeds distinct from the 30 pinned gate seeds (eval/fixtures/gate3d_seeds.json). Measured by tools/gate3d_baselines.py in the vizdoom-world Docker image, 2026-07-03. This file is the scorer's committed R source (eval/score_gate3d.py reads baselines['random']['mean_killcount'] as R) -- pre-registered law, edited only by a reviewed, explicit commit.",
+  "_gate_bar_formula": "max(R + 2.0, 1.5 * R)",
+  "_decoy_deviation": "spinner is implemented as ALTERNATING TURN_LEFT/ATTACK per step, not A1.4's literal multi-hot 'TURN_LEFT + ATTACK every step' -- core.vizdoom_world.VizdoomWorld.step() takes a single button name only (see tools/gate3d_baselines.py's module docstring for the full deviation note).",
+  "random": {
+    "n_episodes": 200,
+    "mean_killcount": 1.375,
+    "std_killcount": 1.0556396165358706,
+    "killcount_distribution": {"0": 44, "1": 72, "2": 54, "3": 28, "5": 1, "6": 1}
+  },
+  "spinner": {
+    "n_episodes": 200,
+    "mean_killcount": 3.66,
+    "std_killcount": 1.6044936896105249,
+    "killcount_distribution": {"0": 8, "1": 15, "2": 28, "3": 27, "4": 51, "5": 51, "6": 19, "7": 1}
+  },
+  "attack_only": {
+    "n_episodes": 200,
+    "mean_killcount": 1.47,
+    "std_killcount": 0.6396092557178958,
+    "killcount_distribution": {"1": 121, "2": 65, "3": 13, "4": 1}
+  },
+  "_gate_bar_at_this_r": 3.375,
+  "_decoy_clears_bar": {
+    "random": null,
+    "spinner": true,
+    "attack_only": false
+  },
+  "_amendment_a2_trigger": "spinner clears max(R+2.0, 1.5*R) = 3.375 (mean 3.66) -- per A1.4 this triggers amendment A2 (scenario/threshold re-pin by the orchestrator) BEFORE any paid run. Flagged, not silently absorbed; thresholds in eval/score_gate3d.py are NOT touched by this PR."
+}
