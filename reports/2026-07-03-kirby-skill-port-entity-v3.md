@@ -63,7 +63,34 @@ too; this is not revisited to "simplify" into a shared var after the fact.
 `[*nav_and_action, define_skill, run_skill]` when `KIRBY_SKILLS=1` — an MCP client's `tools/list` response
 is inspectable BEFORE any brain session starts, same as the ARC arm's pre-registered check ("a
 seam-validation transcript confirming Arm A could not see the skill tools at all", rung-1 verdict). This
-is gate 5 below (§7, pre-check #5), not asserted here — it must be run and pass before any paid launch.
+is gate 4 below (§6), not asserted here — it must be run and pass before any paid launch.
+
+**Executor mechanism (pinned after PR #92 review, SEV-1: per-press re-observation).** The ARC executor
+can check `stop_when` after every primitive because `act` returns the grid inline and `_apply_frame`
+(`world_mcp.py:1389-1410`) updates the diff state per press. `World` has no such hook: raw presses
+dispatch through `self.gw.execute()` (`world_mcp.py:910`), which never touches `_frame_hist`/perceiver
+state — only `_content()` does (`world_mcp.py:733-751`), and only once per top-level tool call. As
+originally written, §3's pixel-diff and move-outcome predicates were unimplementable mid-loop.
+**Decision of record: the Kirby executor performs a lightweight re-observation after EACH inner press**
+— it calls `self.plugin.observe(_AGENT)` per press (the exact per-step pattern `World._run_autopilot`
+already uses for the free autopilot, `world_mcp.py:841`), then the `_track_frame()` frame-pair update
+(`world_mcp.py:757-769`), and evaluates `stop_when` from the fresh `sym.last_action["outcome"]` /
+tracked-frame MAD. Honest accounting (same correction shape rung 1's own §3 made for its dispatcher):
+this is NEW executor code — a per-press observe-and-check loop — not a reuse of `_content()`; what IS
+reused is the perceiver/diff machinery each predicate reads (§3's line citations trace FIELD sources,
+not an existing per-press loop). Two pinned consequences: (1) **step alignment** — `observe()`
+increments `_obs_count` and writes one oracle row per call (`core/perception_plugin.py:290-317`), so a
+per-press-observing macro produces exactly one oracle row per press, the same step granularity as manual
+play; drop steps INSIDE a macro span stay individually detectable by the scorer. (2) **cost is UNKNOWN
+until measured** — a perceiver pass per press is CPU-side, not API-side, so §5.5's $ model is
+unaffected, but the wall-clock overhead is unbudgeted today; free pre-check gate 2 (§6) measures it on
+recorded frames and pins the budget: **mean <= 150 ms/press over the recorded-frame corpus, else the
+port design is revisited before any build proceeds.** The revisit path is pinned now, not improvised
+later: narrow the enum to `steps_elapsed` + `move_blocked`/`move_succeeded` (which need only the
+per-press observe, no frame diff) and drop `region_changed` from skills. The alternative design (narrow
+the enum pre-emptively and skip the perf gate) was considered and rejected: `region_changed` is the
+exposure macro's primary approach predicate after §3's entity demotion — narrowing it away before
+measuring would gut the macro this port exists to serve. Measure first; narrow only if forced.
 
 ## 3. GB/Kirby `stop_when` enum (closed, wire-only, verified against world_mcp.py)
 
@@ -82,7 +109,17 @@ no GB predicate ships that isn't traceable to a specific line.
   351-352 is the same field). The brain already reads this string every observe; the predicate is a
   world-side check of the identical `sym.last_action["outcome"]` field the text was rendered from
   (`core/perception_plugin.py:307-310`'s oracle record, and the same `la.get("outcome")` the renderer
-  reads at line 350/374) — no new channel.
+  reads at line 350/374) — no new channel. **Fragility note (pinned after review):** `outcome ==
+  "blocked"` fires only after `wall_confirm = 3` consecutive no-move presses at the same dead-reckoned
+  (cell, direction) key (`core/grid_perceiver.py:294-297`, `WALL_CONFIRM` default 3 at
+  `core/grid_perceiver.py:30`) — a `move_blocked` stop fires on the THIRD blocked press, not the first,
+  and the underlying dead-reckoning is the same side-scroller-unreliable state machine that disqualifies
+  `screen_scrolled` below (same caveat family). Why it is still acceptable where `screen_scrolled` is
+  not: the predicate is only ever consulted INSIDE a `repeat_until` bounded by `max_iters <= 8` and the
+  50-step ceiling — a mis-tracking `move_blocked` cannot wedge the executor (the loop terminates via
+  `max_iters` and logs that stop reason honestly), whereas a scroll predicate would have been
+  load-bearing for claims about world state with no such bound. Pre-check gate 6 (§6) verifies the
+  3-press firing latency through the seam.
 - **`move_succeeded`.** The complementary case, `outcome == "moved"` (`core/perception_plugin.py:353-354,
   378-379`, `"Last move '<action>' -> moved."`). Needed so a `repeat_until` can be phrased either "walk
   until blocked" (hit a wall/enemy) or "walk until you actually moved" (recover from a stuck state) —
@@ -95,14 +132,25 @@ no GB predicate ships that isn't traceable to a specific line.
   reuses the identical dead-zone constant (`2.0`) so a skill's stop condition and a manual `whats_changed`
   call agree bit-for-bit. This is the Kirby analogue of ARC's `grid_changed_in_region` (design doc §3) —
   same shape (diff of two observations the brain already receives verbatim), different underlying
-  representation (pixel MAD vs. cell-grid diff).
-- **`entity_count_changed`.** Fires when the `sm.get("entities")` count differs from the count at loop
-  start (`core/perception_plugin.py:386-389`'s `"Entities on screen (sprites/enemies/items): {len(entities)}
-  at {ctrs}."` line — the ONLY field the v2 run brief itself called "the part you can trust" for this
-  side-scroller, `runs/brain_kirby_entity/CLAUDE.md:32`). A contact-kill in Kirby removes the enemy sprite,
-  so an entity-count drop is a wire-visible proxy for "contact happened" without reading hp (which stays
-  oracle-only, never on the wire, per the no-leak law) — useful for the exposure macro's approach half
-  ("push toward the entity until its count changes or you're blocked").
+  representation (pixel MAD vs. cell-grid diff). Per-press evaluation is §2's executor mechanism's NEW
+  code — the MAD formula and dead-zone are reused; the per-press frame-tracking loop is not.
+
+**DEMOTED to candidate predicate (review finding — NOT in the pinned enum):** `entity_count_changed`
+(fires when the `sm.get("entities")` count differs from the count at loop start,
+`core/perception_plugin.py:386-389`'s `"Entities on screen (sprites/enemies/items): ..."` line). The
+original rationale stands on paper — a contact-kill removes the enemy sprite, so a count drop is a
+wire-visible contact proxy without touching the hp oracle, and the v2 run brief called the entities line
+"the part you can trust" (`runs/brain_kirby_entity/CLAUDE.md:32`) — but the adversarial review checked
+all four `runs/brain_kirby_entity/` transcripts and found **ZERO "Entities on screen" lines in any of
+them**: the line renders only when the detector returns a non-empty list
+(`core/perception_plugin.py:387`, `if entities:`), so the entity channel has never once fired on real
+Kirby frames. The "trustworthy" claim was brief prose, not observed data. `core/entities.py::
+EntityDetector.detect()` also has no temporal smoothing/hysteresis, so per-frame GB sprite flicker is an
+untested count-flapping risk. **Admission rule, pinned:** `entity_count_changed` joins the enum ONLY if
+free pre-check gate 3 (§6) shows the ACTUAL detector firing non-spuriously — stable counts, no
+frame-to-frame flapping — on a REAL recorded enemy-approach frame sequence; decided before the paid run,
+never mid-run. Until and unless it passes, the exposure macro's approach half uses `region_changed`
+(§4).
 
 **Explicitly NOT pinned (rejected, with reasons):** `screen_scrolled` — an earlier draft (rung-1 design
 doc §5) listed this as illustrative, but no wire field reports scroll state for the generic-GB
@@ -123,24 +171,41 @@ EXPERIMENT-DESIGN skill... be measurably away from the suspect during ordinary t
 2026-07-04). Expressed with §3's enum:
 
 ```
-define_skill("approach_and_retreat", steps=[
+define_skill("approach_suspect", steps=[
   {"repeat_until": {"steps": [{"button": "right", "hold_frames": 30}],
-                    "stop_when": "entity_count_changed", "max_iters": 8}},
+                    "stop_when": "region_changed(x0,y0,x1,y1)", "max_iters": 8}}])
+define_skill("retreat_to_benign", steps=[
   {"repeat_until": {"steps": [{"button": "left", "hold_frames": 30}],
-                    "stop_when": "steps_elapsed(8)", "max_iters": 8}}
-])
+                    "stop_when": "steps_elapsed(8)", "max_iters": 8}}])
 ```
 
-Approach the tracked entity (walk right, stop the moment its count changes — a contact/kill event, or
-`move_blocked` if it turns out to be a wall) — this is one qualifying `run_skill` call. Retreat a FIXED
-step count (`steps_elapsed`, not a condition) toward the benign cluster, logging its NEARs there — a
-second qualifying call. Alternate by calling both skills back-to-back; the alternation ITSELF is not a
-single `repeat_until` (design doc §3: `repeat_until` is not nested, and rung 1 ships no cross-skill
-looping construct) — the brain re-invokes `run_skill("approach_and_retreat")` then
-`run_skill("retreat_to_benign")` each cycle, which is exactly the right granularity: each call is one
-paid decision, the brain still chooses HOW MANY cycles to run (informed by its own drop count so far),
-and the mandatory `NEAR`/`ENT` logging happens in the brain's own `remember` calls between skill calls,
-unchanged from v2's protocol.
+`(x0,y0,x1,y1)` is the box around the tracked suspect from the brain's immediately-prior `read_region`
+look — the same box as its `ENT` line. Approach walks right and stops the moment the watched box's
+pixels change (the suspect moving into/out of it, a contact, a kill) — a qualifying `run_skill` call.
+(`entity_count_changed` is the candidate UPGRADE for this half if its §6 gate-3 admission check passes;
+`region_changed` is the pinned default.) Retreat is a FIXED step count (`steps_elapsed`, deliberately
+unconditional) toward the benign cluster — a second qualifying call. The alternation ITSELF is not a
+single `repeat_until` (design doc §3: no nesting, no cross-skill looping construct) — the brain
+re-invokes each skill per cycle, which is exactly the right granularity: each call is one paid decision,
+and the brain still chooses HOW MANY cycles to run, informed by its own drop count so far.
+
+**The claim protocol (pinned after PR #92 review, SEV-1 — claims never ride inside macros).** One cycle
+is mechanically:
+
+1. manual `read_region`/`whats_changed` on the suspect's box — this reveals the CURRENT step `step=<N>`
+   and advances the watermark to it — then `remember "NEAR id=<threat> step=<N>"` if the suspect is
+   near (the PRE-approach claim; it is what covers any drop landing inside the coming approach span,
+   since `W = 15 >=` the approach's `<= 8` steps);
+2. `run_skill("approach_suspect")`;
+3. manual `read_region`/`whats_changed` again — reveals the post-macro CURRENT step — then the
+   post-approach `NEAR` claim at exactly that step, if warranted;
+4. `run_skill("retreat_to_benign")`;
+5. manual look + the benign entity's `NEAR` claim at ITS current step; dwell; repeat from 1.
+
+`NEAR`/`ENT` claims are only valid BETWEEN skill calls and may only name the CURRENT step — the step
+revealed by the most recent watermark-advancing look, which after a macro is the post-macro step at
+which the brain regained control. A claim naming any step INTERIOR to a `run_skill` span is excluded by
+the scorer mechanically (§5.6), not just discouraged by the brief.
 
 **The pinned expectation this macro must satisfy: it DRIVES `b_k` DOWN.** v2's arm (a) FAILed because
 `b_k = 0.812` — the threat was near during 81% of ordinary (non-drop) steps, because the brain "just
@@ -162,7 +227,9 @@ sanity precondition, and a new skill-mechanism guard.
   note — the v2 scorer's `_bcd()` needs no change).
 - `WINDOW = 15`, watermark rule (revealed-step watermark from `read_region`/`whats_changed`
   `step=<N>` tokens only — bare `observe()` does not advance it, per v2's documented residual leak,
-  self-mitigated the same way), dedupe (first-wins), `UNMATCHED_MAX_FRACTION = 0.05`,
+  self-mitigated the same way — and now EXTENDED, stricter-only, by §5.6's macro-interior exclusion:
+  the v2 watermark alone cannot police claims against steps hidden inside a multi-step `run_skill`
+  span), dedupe (first-wins), `UNMATCHED_MAX_FRACTION = 0.05`,
   `MALFORMED_MAX_FRACTION = 0.20`, `RETROACTIVE_MAX_FRACTION = 0.20`, `MIN_NEAR = 3`,
   `MIN_TOTAL_STEPS = 30`, `MIN_SESSION_DROPS = 5`, the CONFLICTING-declaration guard (`NO_DECLARE`).
 - Verdict vocabulary: `PASS / FAIL / INSUFFICIENT_DATA / INSUFFICIENT_DROPS / NO_DECLARE`, now extended
@@ -245,6 +312,24 @@ if it fails to (the brain still camps despite having the tool), that failure is 
   1.0. **This property (bar strictly `<= 1.0` for all admissible `b_k`) is the pinned correctness
   criterion for the repaired metric and must be checked into the scorer as an assertion, not just argued
   in prose.**
+- **Inclusivity, pinned explicitly (review finding — pinned the way v2 pinned `n==s-15` covers,
+  `n==s-16` does not):** every comparison in this gate is inclusive exactly as written, `>=`/`<=`
+  throughout, no exceptions. `q_k = 0.80` exactly passes the floor; `q_k - b_k = 0.15` exactly passes
+  the margin; `b_k = 0.70` exactly is scoreable (the ceiling excludes only strictly greater). Worked
+  probe: `q_k = 0.80, b_k = 0.65` → floor met (`0.80 >= 0.80`), margin met (`0.15 >= 0.15`), ceiling
+  met (`0.65 <= 0.70`) → GROUNDED-eligible (subject to `MIN_NEAR`).
+- **Overall verdict combination (restated in v3's own text, unchanged from v2 — review finding):**
+  `PASS` = `>= 1` declared threat GROUNDED **AND** `>= 1` declared-benign/REJECTed entity correctly
+  rejected. Both arms required. `NO_DECLARE` if either declaration side is missing entirely; an id
+  declared both ways is CONFLICTING — excluded from both arms, and if the exclusion starves an arm the
+  verdict is `NO_DECLARE` naming the conflict.
+- **Downward-gaming `b_k` via extreme retreat — closed by inherited machinery, walked explicitly
+  (review finding 4):** a brain that retreats so far/so often that it is never NEAR anything in
+  ordinary time starves the BENIGN entity of accepted NEARs too (`MIN_NEAR = 3` is per-entity,
+  inherited from v2 verbatim), routing the benign arm to `INSUFFICIENT` — no false PASS is reachable
+  through absence alone; and the threat arm still needs `q_k >= 0.80`, which demands real presence in
+  drop windows. Retreat only helps by creating CONTRAST (away in ordinary time, near at consequences),
+  which is grounding, not gaming.
 
 ### 5.3 The `b_k` ceiling as a stated exposure-macro target
 
@@ -265,12 +350,21 @@ pre-registration." This is that pinning.
   3` (`eval/score_skill_rung1.py`'s `QUALIFYING_MIN_EXECUTED_STEPS`, reused verbatim, not re-derived).
 - **NEW: qualifying-conditional call.** A qualifying call whose logged `stop_reason` shows the
   `repeat_until`'s `stop_when` fired BEFORE `max_iters` was reached — i.e. `stop_reason` matches one of
-  `move_blocked`, `move_succeeded`, `region_changed(...)`, `entity_count_changed` fired (world_mcp.py's
-  `_check_stop_when`/`repeat_until_summary` shape, `world_mcp.py:1653-1675`, ported to Kirby's enum), NOT
+  `move_blocked`, `move_succeeded`, `region_changed(...)` fired (plus `entity_count_changed` if
+  admitted per §3/§6 gate 3) — world_mcp.py's `_check_stop_when`/`repeat_until_summary` shape
+  (`world_mcp.py:1653-1675`, ported to Kirby's enum) — NOT
   `"reached max_iters=N without stop_when firing"` and NOT `steps_elapsed(n)` alone (a pure step-count
   loop is conditional in NAME only — it never actually branches on world state, so it does not count as
   conditional-half evidence; this mirrors why `steps_elapsed` is listed in §3 as a legitimate predicate
-  for the RETREAT half but does not itself satisfy this guard).
+  for the RETREAT half but does not itself satisfy this guard). **AND (review finding — the
+  single-iteration laundering hole): the firing `repeat_until`'s logged iteration count must be
+  `>= 2`** (the `"iterations"` field in the executed record, `world_mcp.py:1675`'s
+  `"iterations": iters_done`, carried unchanged into the Kirby log schema). A `max_iters=1` skill
+  whose `move_blocked` fires deterministically against a wall the brain already knows about is a
+  pre-known one-shot dressed as a loop — the same spirit-violation as bare `steps_elapsed`, laundered
+  through a predicate name. `iterations >= 2` means the loop genuinely re-checked its predicate at
+  least once on world state the brain had not yet seen — cheap, mechanical, checkable against the
+  already-logged field.
 - **PINNED GATE:** `>= 1` qualifying-conditional call, or the run is `INSUFFICIENT_DATA` (skill-mechanism
   half untested) — reported separately from, and prior to, the GROUNDED/FAIL computation. This gate must
   be checked FIRST: if it fails, the GROUNDED/rejection numbers are still computed and reported (for
@@ -298,42 +392,114 @@ pre-registration." This is that pinning.
 - **$ target:** linearly scaling run 11's $3.056/66-turns to a 90-turn cap gives **~$4.17**, called
   **$5 TARGET, not enforcement** — per the same protocol-breach lesson, the turn cap is what actually
   bounds spend; the dollar figure is informational.
-- **Amendment rule:** stricter-only. `B_K_CEILING`, the `0.80`/`0.15` bar, the skill-mechanism guard, the
-  turn cap, and the one-attempt rule may be tightened by a future pass but never loosened to rescue a
-  marginal result — identical clause to v2's and rung 1's.
+- **Press physics / wall-clock (corrected after review — the "24-frame" figure was the wrong constant
+  for this world):** a GB press costs `hold_frames + 16` settle frames (`core/gb_emulator.py:114`
+  defaults `hold=8, settle=16` = the 24-frame figure from the Cave Noire lesson). The seam-validated
+  KIRBY recipes use `hold_frames=30` (walk) and `hold_frames=20` (jump/mount) → **46 and 36 frames per
+  press**, not 24. Recomputed arithmetic: worst-case `run_skill` (50-step ceiling, all walking presses)
+  = 2,300 frames ≈ 38 s of GAME time; one full §4 approach+retreat cycle (`<= 16` presses) ≈ 736 frames
+  ≈ 12 s. Wall-clock is NOT a cost concern and is now stated instead of left open: headless sessions
+  run `_realtime=False` (`core/gb_emulator.py:78, 92-93`), so ticks are unpaced `pyboy.tick()` calls —
+  seconds of CPU per macro. The run's $ cost remains driven by API turns, which §2's per-press
+  re-observation mechanism does not touch (it is emulator/CPU-side only; its own overhead is bounded
+  separately by gate 2's 150 ms/press budget).
+- **Amendment rule:** stricter-only. `B_K_CEILING`, the `0.80`/`0.15` bar, the skill-mechanism guard
+  (incl. `iterations >= 2`), the macro-interior exclusion + its 0.20 cap, the turn cap, and the
+  one-attempt rule may be tightened by a future pass but never loosened to rescue a marginal result —
+  identical clause to v2's and rung 1's.
+
+### 5.6 Macro-time vs claim-time: the macro-interior exclusion (new in v3 — closes PR #92's SEV-1 claim hole)
+
+v2's watermark was designed against single-step `observe`/`read_region` calls; a `run_skill` can advance
+the world by up to 16+ steps between brain-visible frames, and on the `World` path its trailing content
+renders through `_content()`, which emits NO step token (`world_mcp.py:733-751`) — so a macro neither
+advances the watermark nor pins which interior step a post-macro NEAR may name. Left unaddressed, the
+brain could run a 16-step macro, feel the outcome, and retroactively pick whichever interior step best
+decorates its chosen threat — the watermark only rejects steps ABOVE what has been revealed, not
+favorable steps inside an un-observed span. Closed mechanically, three rules:
+
+1. **Claims only between skill calls, current step only.** A `NEAR`/`ENT` claim is valid only when
+   logged between top-level tool calls (mechanically guaranteed — the brain has no execution inside a
+   `run_skill`) and may only name the CURRENT step: the step revealed by the brain's most recent
+   `read_region`/`whats_changed` (the only watermark-advancing calls, unchanged from v2), which after a
+   macro is the post-macro step at which the brain regained control. §4's claim protocol is the
+   run-brief statement of this rule.
+2. **Scorer exclusion (new class, alongside retroactive/unmatched):** a claim naming step `n` is
+   **MACRO-INTERIOR** iff some `run_skill` record `r` in `skills.jsonl` satisfies
+   `r.step - r.world_steps_used < n < r.step` — the record's `step` field is the world step at result
+   logging time (macro end) and `world_steps_used` is the span length (both fields already in the log
+   schema, `world_mcp.py:1705-1708`, carried unchanged into the Kirby port), so span boundaries are
+   exact and mechanical, no transcript heuristics. Macro-interior claims are excluded from scoring,
+   counted, and reported; `MACRO_INTERIOR_MAX_FRACTION = 0.20` of all NEAR lines (same constant shape
+   and taint semantics as `RETROACTIVE_MAX_FRACTION`) → `INSUFFICIENT_DATA`. The span's START step
+   (`r.step - r.world_steps_used`, the pre-macro current step) and END step (`r.step`) remain claimable
+   — they are exactly the boundary steps rule 1 permits.
+3. **Coverage is preserved for the pinned macro, shown not assumed:** a drop landing mid-approach at
+   step `s` is covered by the PRE-approach NEAR at the approach's start step `n` whenever
+   `s - n <= W = 15`, and the approach span is `<= 8` steps — so boundary-only claiming costs zero
+   coverage for the §4 macro. A macro longer than `W` would open a real coverage hole; that is one more
+   reason the 50-step ceiling stays and the exposure macro stays short.
+
+Stricter-only relative to v2 (a new exclusion class + cap; nothing loosened). The scorer build PR must
+carry a unit test pinning both directions: an interior-step claim is excluded; the exact end-step claim,
+made after a watermark-advancing look, is accepted.
 
 ## 6. Free pre-checks first (numbered gates, before any paid run)
 
 1. **`eval/score_skill_rung1.py`-style `--dry` extended to the Kirby executor.** A canned-frame driver
-   exercising `World._define_skill`/`_run_skill` (once ported) against scripted `observe`/`whats_changed`
-   sequences standing in for: an approach that ends in `entity_count_changed` firing, a retreat that ends
-   in `steps_elapsed(8)`, a `move_blocked` case (walk into a wall), and a `max_iters` cap-out (stuck
-   loop). Each scenario pins its expected `stop_reason` substring + `executed_step_count`, checked
-   mechanically — same shape as `eval/score_skill_rung1.py::run_dry`'s fixture-driven scenarios, ported
-   to Kirby's predicate names and `press_button` step shape instead of ARC's `act` payloads. Must PASS
-   before gate 2.
-2. **`tools/list` seam-isolation check.** With `KIRBY_SKILLS` unset, confirm `define_skill`/`run_skill`
+   exercising `World._define_skill`/`_run_skill` (once ported) against scripted frame sequences standing
+   in for: an approach that ends in `region_changed` firing, a retreat that ends in `steps_elapsed(8)`,
+   a `move_blocked` case (walk into a wall — must fire on the THIRD blocked press per §3's
+   `wall_confirm=3` note, and the scenario pins that latency), and a `max_iters` cap-out (stuck loop).
+   Each scenario pins its expected `stop_reason` substring + `executed_step_count` + `iterations`,
+   checked mechanically — same shape as `eval/score_skill_rung1.py::run_dry`'s fixture-driven scenarios,
+   ported to Kirby's predicate names and `press_button` step shape instead of ARC's `act` payloads.
+   **Honest scoping note (review finding): no Kirby-shaped fixture exists today** —
+   `eval/fixtures/` holds only the ARC push-macro fixture and an unrelated title-menu PNG pair; building
+   this fixture is the build PR's work, correctly listed here as unbuilt.
+2. **Per-press executor overhead budget (NEW — pinned by §2's executor decision).** Measure the
+   wall-clock cost of one per-press re-observation (`plugin.observe()` + `_track_frame()` + predicate
+   check) over `>= 100` recorded Kirby frames (the `runs/brain_kirby_entity/run*/world/` PNG corpora
+   exist and are free). **Budget: mean `<= 150 ms/press`.** Over budget → the port design is revisited
+   before any build proceeds, taking §2's pinned fallback (narrow the enum to `steps_elapsed` +
+   `move_blocked`/`move_succeeded`, drop `region_changed` from skills) — never shipping an unmeasured
+   hot loop into a paid run.
+3. **`entity_count_changed` admission check (NEW — the §3 demotion's exit door).** Run the ACTUAL
+   `core/entities.py::EntityDetector.detect()` against a REAL recorded enemy-approach frame sequence
+   (recorded fresh through the seam if the archived run frames lack an approach segment — the archived
+   transcripts contain zero entity-line firings, which is the finding that forced this gate). PASS =
+   the detector (a) fires at all on approach frames, and (b) shows no frame-to-frame count flapping
+   (sprite-flicker check: count stable across consecutive frames of a stationary scene). Only on PASS
+   is `entity_count_changed` promoted from candidate (§3) into the enum — decided before the paid run,
+   never mid-run. FAIL costs nothing: the macro's approach half already uses `region_changed`.
+4. **`tools/list` seam-isolation check.** With `KIRBY_SKILLS` unset, confirm `define_skill`/`run_skill`
    are absent from `_static_tools("kirby_dreamland")`'s response; with `KIRBY_SKILLS=1`, confirm they are
    present with the pinned Kirby `stop_when` enum documented in their tool description (mirrors the ARC
-   arm's pre-registered seam-validation transcript check, rung-1 verdict). Must PASS before gate 3.
-3. **`assert_action_tools_fresh`-style drift check**, confirming the added `define_skill`/`run_skill`
+   arm's pre-registered seam-validation transcript check, rung-1 verdict).
+5. **`assert_action_tools_fresh`-style drift check**, confirming the added `define_skill`/`run_skill`
    specs match whatever the live `World.tools()` actually serves once the port lands — same discipline
    `world_mcp.py:594-618` already enforces for the press-button surface, extended to cover the two new
    tools so a schema edit can't silently drift.
-4. **Seam-press physics re-validation.** `runs/brain_kirby_entity`'s `CLAUDE.md`/`run.sh` and the v2 FAIL
-   synthesis both flag that Cave Noire's recipes "MUST be validated through the seam — a direct-PyBoy-
-   verified recipe failed live" (24-frame press timing meant the enemy AI's first strike landed at pass
-   #17, not where a direct-emulator test predicted). Before the paid run: replay the exposure macro's
-   `press_button right/left hold_frames=30` steps through the actual MCP seam (not a bare PyBoy script)
-   and confirm the `entity_count_changed`/`move_blocked` predicates fire at the frame counts the design
-   in §4 assumes — free, since this uses the same emulator session any dry-run already boots.
-5. **`audit_skill_log`-shape auditability check** on the gate-2/gate-4 dry-run's own `skills.jsonl`,
+6. **Seam-press physics re-validation.** The v2 FAIL synthesis flags that recipes "MUST be validated
+   through the seam — a direct-PyBoy-verified recipe failed live" (the Cave Noire lesson: 24-frame
+   default presses meant the enemy AI's first strike landed at pass #17, not where a direct-emulator
+   test predicted). Corrected constants for THIS world (review finding): the Kirby recipes use
+   `hold_frames=30`/`20`, i.e. **46/36 frames per press** (hold + 16 settle,
+   `core/gb_emulator.py:114`), not the 24-frame default. Before the paid run: replay the §4 macro's
+   presses through the actual MCP seam (not a bare PyBoy script) and confirm (a) `region_changed` fires
+   at the 46-frames-per-press cadence the design assumes, and (b) `move_blocked`'s 3-press
+   `wall_confirm` latency (§3) matches on-seam. **Prep note (review finding): no saved emulator state
+   for the v2 start position exists in `runs/brain_kirby_entity/`** — this gate needs a seed state
+   re-derived from ROM boot (or a recorded mid-run frame), listed here so it isn't discovered as a
+   surprise blocker.
+7. **`audit_skill_log`-shape auditability check** on the gate-1 dry-run's own `skills.jsonl`,
    confirming every `define_skill` row carries a verbatim definition and every `run_skill` row carries
-   `executed`/`executed_step_count`/`stop_reason`/`world_steps_used` — the same fields
-   `eval/score_skill_rung1.py::audit_skill_log` already checks, run here against the Kirby log before
-   trusting it as the source for §5.4's conditional-call guard on the REAL paid run.
+   `executed`/`executed_step_count`/`stop_reason`/`world_steps_used` (and the `iterations` field §5.4's
+   guard reads) — the same fields `eval/score_skill_rung1.py::audit_skill_log` already checks, run here
+   against the Kirby log before trusting it as the source for §5.4's conditional-call guard and §5.6's
+   span-boundary exclusion on the REAL paid run.
 
-**All five must pass before the paid run is scheduled** — same discipline as GATE-3D-A3-PC gating PR-H
+**All seven must pass before the paid run is scheduled** — same discipline as GATE-3D-A3-PC gating PR-H
 and rung-1's §4.0 free instrument gating its own paid A/B.
 
 ## 7. Honest bounds + non-goals
@@ -342,9 +508,13 @@ and rung-1's §4.0 free instrument gating its own paid A/B.
   instrument, retired per `HANDOFF.md` 2026-07-04: "wrong instrument, not wrong metric") is not touched
   or re-instrumented by this doc.
 - **No cross-run skills.** Skills defined this run die at run end, identical to rung 1's `remember()`-
-  lifetime law (design doc §6). A macro that seems to generalize (e.g. `approach_and_retreat` itself) is
+  lifetime law (design doc §6). A macro that seems to generalize (e.g. `approach_suspect` itself) is
   a hand-curation CANDIDATE for design-space (ii) in the rung-1 doc, never auto-carried forward by this
   pass.
+- **The per-press executor is NEW code with unmeasured cost until gate 2.** §2's re-observation loop has
+  no existing implementation to inherit performance numbers from; the 150 ms/press budget is a design
+  bound, not a measurement. If the budget fails, the pinned fallback (narrowed enum) ships instead — an
+  untested hot loop never reaches a paid run.
 - **v3 is one paid attempt.** Per §5.5 — a completed run banks its verdict; there is no "best of N" or
   informal re-launch.
 - **The `b_k` ceiling is a diagnostic, not a guarantee the macro works.** §5.3 already flags this: if the
@@ -364,26 +534,35 @@ and rung-1's §4.0 free instrument gating its own paid A/B.
 
 ## 8. Decided vs open
 
-- **DECIDED (this doc):** Kirby port = `define_skill`/`run_skill` added to `World`
-  (`world_mcp.py:626-915`), gated behind `KIRBY_SKILLS` (one-flag-per-world, not a shared var); Kirby's
-  `stop_when` enum = `steps_elapsed(n<=50)`, `move_blocked`, `move_succeeded`, `region_changed(x0,y0,x1,y1)`
-  (MAD>=2.0, same dead-zone as `whats_changed`), `entity_count_changed` — each traced to a specific
-  `world_mcp.py`/`core/perception_plugin.py`/`core/grid_perceiver.py` line above; `screen_scrolled` and
-  any oracle-keyed predicate (incl. `hp_dropped`) are explicitly rejected. Entity gate v3's bar =
-  `q_k >= 0.80` AND `q_k - b_k >= 0.15` AND `b_k <= 0.70` (all four incl. `MIN_NEAR>=3`), with the bounded-
-  by-construction property checked as an assertion in the scorer. New skill-mechanism guard: `>=1`
-  qualifying-conditional `run_skill` call (stop_when fired before max_iters) or `INSUFFICIENT_DATA`.
+- **DECIDED (this doc, as amended by the PR #92 review fix round):** Kirby port = `define_skill`/
+  `run_skill` added to `World` (`world_mcp.py:626-915`), gated behind `KIRBY_SKILLS` (one-flag-per-world,
+  not a shared var); executor = per-press re-observation (`plugin.observe()` + `_track_frame()` per inner
+  press, the `_run_autopilot` pattern), NEW code with a pinned 150 ms/press mean budget (gate 2) and a
+  pinned fallback (narrow the enum, drop `region_changed`) if the budget fails. Kirby's PINNED `stop_when`
+  enum = `steps_elapsed(n<=50)`, `move_blocked` (fires on the 3rd consecutive blocked press,
+  `wall_confirm=3`), `move_succeeded`, `region_changed(x0,y0,x1,y1)` (MAD>=2.0, same dead-zone as
+  `whats_changed`) — each traced to a specific `world_mcp.py`/`core/perception_plugin.py`/
+  `core/grid_perceiver.py` line above; `entity_count_changed` is DEMOTED to candidate (zero firings in
+  all four archived Kirby transcripts), admitted only if gate 3's recorded-frame flicker check passes;
+  `screen_scrolled` and any oracle-keyed predicate (incl. `hp_dropped`) are explicitly rejected. Claim
+  protocol: NEAR/ENT only BETWEEN skill calls, current (post-macro) step only; macro-interior claims
+  excluded mechanically via `skills.jsonl` span boundaries (`r.step - r.world_steps_used < n < r.step`),
+  `MACRO_INTERIOR_MAX_FRACTION = 0.20` taint. Entity gate v3's bar = `q_k >= 0.80` AND
+  `q_k - b_k >= 0.15` AND `b_k <= 0.70` (all four incl. `MIN_NEAR>=3`, inclusive `>=`/`<=` throughout),
+  bounded-by-construction property asserted in the scorer; PASS combination restated (>=1 GROUNDED threat
+  AND >=1 correctly-rejected benign, both arms). Skill-mechanism guard: `>=1` qualifying-conditional
+  `run_skill` call — stop_when fired before max_iters AND `iterations >= 2` — or `INSUFFICIENT_DATA`.
+  Press physics: 46/36 frames per press (hold 30/20 + 16 settle), not 24; wall-clock a non-issue
+  (headless `_realtime=False`, unpaced ticks). Seven free pre-check gates, all before any paid run.
   `--max-turns 90` (hard cap), `$5` target (informational), one-attempt rule with the 10-decision
-  infra-relaunch carve-out, stricter-only amendment rule — all carried/adapted from v2 and rung 1
-  unchanged in spirit.
-- **OPEN (flagged, not resolved here):** whether the five enum predicates in §3 are sufficient for the
-  brain to express a good exposure macro on its first attempt without a redesign mid-run (rung 1's own
-  ARC enum needed no additions in its one paid run, but Kirby's side-scroller physics are less explored);
-  whether `entity_count_changed` is reliable enough given the v2 brief's own warning that pose/walls data
-  is unreliable in this side-scroller (the entities line was the ONE channel v2 called trustworthy — this
-  doc leans on that same channel, but it has not been stress-tested as a `stop_when` predicate, only as
-  human-readable text); and whether a second Kirby port attempt (if this one lands `INSUFFICIENT_DATA` on
-  the skill-mechanism guard specifically, with grounding otherwise clean) should get a narrow, pre-
-  registered SECOND attempt scoped ONLY to re-exercising `repeat_until` — left for the triage after this
-  run's result, not decided in advance (the one-attempt rule in §5.5 governs unless and until a separate
+  infra-relaunch carve-out, stricter-only amendment rule.
+- **OPEN (flagged, not resolved here):** whether the four pinned predicates (plus `entity_count_changed`
+  if admitted at gate 3) are sufficient for the brain to express a good exposure macro on its first
+  attempt without a redesign mid-run (rung 1's own ARC enum needed no additions in its one paid run, but
+  Kirby's side-scroller physics are less explored); whether the gate-2 measurement will hold the 150
+  ms/press budget on the real perceiver stack (the fallback is pinned but shrinks the macro's conditional
+  vocabulary); and whether a second Kirby port attempt (if this one lands `INSUFFICIENT_DATA` on the
+  skill-mechanism guard specifically, with grounding otherwise clean) should get a narrow, pre-registered
+  SECOND attempt scoped ONLY to re-exercising `repeat_until` — left for the triage after this run's
+  result, not decided in advance (the one-attempt rule in §5.5 governs unless and until a separate
   pre-registration amends it).
