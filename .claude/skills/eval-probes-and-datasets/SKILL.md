@@ -14,8 +14,11 @@ about to spend on a live `claude -p` run, cross over to **gate-methodology**.
 
 ## 1. eval/ toolkit map
 
-Run any tool with `uv run python -m eval.<name>` (`eval/README.md:3`; Windows:
-`UV_PROJECT_ENVIRONMENT=.venv-win UV_NATIVE_TLS=true uv run --frozen python -m eval.<name>`).
+Run any tool with `uv run python -m eval.<name>` (`eval/README.md:3`). On the Windows host the env
+prefix is `UV_PROJECT_ENVIRONMENT=.venv-win UV_NATIVE_TLS=true uv run --frozen python -m eval.<name>`
+in a bash-style shell; in native PowerShell use `$env:UV_PROJECT_ENVIRONMENT=".venv-win";
+$env:UV_NATIVE_TLS="true"; uv run --frozen python -m eval.<name>` (the form gate-methodology §5
+shows). "Invocation" cells below give the entry point + arg shape, not a full paste-ready line.
 **`eval/README.md`'s own index (33 lines) covers only ~24 of the 45 files actually in `eval/`** — it
 never mentions any `score_entity_gate*`, `score_gate3d`/`ceiling_gate3d`/`score_a3_precheck`,
 `score_skill_rung1`/`score_kirby_skill_precheck`, `score_hud_grounding`/`score_gate_run`,
@@ -175,8 +178,10 @@ frozen layers instead of following the change process.
 
 A probe that says **no** is a successful probe — a banked FAIL stays on the books, it is not
 "fixed" by re-tuning until it passes:
-- `core/static_objects.py`'s general R0 detector: **KILL CHEAP**, recall 0.0 / precision 0.0 / 154
-  phantoms against `score_static_objects.py`'s fixture (`HANDOFF.md:453-456`) — GB tile-art is full of
+- `core/static_objects.py`'s general R0 detector: **KILL CHEAP**, recall 0.0 / precision 0.0 /
+  236-341 phantom candidates across 12 distractor frames depending on config (the module's own
+  docstring, `core/static_objects.py:19-22` — the current source of truth; `HANDOFF.md:456`'s "154
+  phantoms" is an earlier measurement round, superseded) — GB tile-art is full of
   naturally-repeating equal blobs, so "distinct blob" fires everywhere. A color-saturation-gated
   variant hit 0.86/0.76/0 but was explicitly rejected as non-generalizing (palette-specific).
 - `core/text_regions.py`'s R0 edge-density detector: **FAIL**, recall 0.27 vs the pinned 0.85 bar
@@ -199,6 +204,9 @@ metrics above.
   build a small standalone one (à la `static_objects_pokeball/`) if it's gate-specific.
   Cross-check any new fixture against the **held-out law** (§3) — never build/tune it from a
   held-out game's runs.
+- **Add a regression-pin test for the fixture** (§4: a fixture without a pinning test "can silently
+  drift with no red build to catch it") — a test that asserts the measured numbers on the committed
+  data, à la `tests/test_yaw_flow.py`.
 - Pin every threshold/constant in the scorer file itself (a docstring section naming each number),
   same style as `score_gate3d.py`'s "copied from those sections, not re-derived or re-tuned here."
 - Add its one-line entry to `eval/README.md` under the matching section — the gate scorers above

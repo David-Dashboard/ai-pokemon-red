@@ -64,8 +64,9 @@ Line counts (all read in full): `runs/brain_red_starter/CLAUDE.md` 68, `runs/bra
 - **v3: a mid-protocol instruction is not enforcement.** The mandatory pre-approach NEAR was stated
   once, inside cycle step (i) of `brain_kirby_v3/CLAUDE.md` — and the brain skipped it anyway. Per
   `reports/2026-07-03-entity-v3-verdict.md:97-106`, only 3 `NEAR id=1` claims existed against 5 drops,
-  and each was logged AFTER its nearest drop (steps 7/38/64 vs drops at 6/35/61), starving `q_k` to
-  0.400 — not a window-size (`W=15`) problem, a compliance problem. `:147-149` states it plainly: "The
+  and each was logged AFTER its nearest drop (steps 7/38/64 vs drops at 6/35/61), starving `q_k` (the
+  scorer's fraction of drops covered by a prior NEAR claim; bar 0.80 — see **gate-methodology** §1)
+  to 0.400 — not a window-size (`W=15`) problem, a compliance problem. `:147-149` states it plainly: "The
   pre-approach-NEAR instruction already existed in this run's brief (cycle step (i)) and was skipped
   anyway." **Lesson: an instruction stated once mid-protocol is not enforcement — it needs a gate
   (precondition wording) + an autopsy block + a fixed shape, together.**
@@ -137,6 +138,10 @@ dir per **paid-run-harness**).
 - **diagnose-a-run** — the source discipline for autopsy blocks: when a run needs a §4-style
   "what went wrong" writeup, that skill is how you produce it from raw artifacts before it goes in
   the next brief.
+- **world-lanes-frontier** + **new-world-port** — a brief for a NON-GB lane (ARC, 3D, NDS/MKDS,
+  MiniWoB) must fold in that lane's banked gotchas and flags (e.g. `NDS_SKILLS=1` arm isolation,
+  continuous-time perception breaks): read the lane's section in world-lanes-frontier BEFORE
+  drafting, and its cited reports for the world-facts section of the brief.
 
 ## Sources
 

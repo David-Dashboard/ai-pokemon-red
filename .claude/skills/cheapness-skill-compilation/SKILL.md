@@ -73,6 +73,10 @@ Pinned in `reports/INSIGHTS.md` §7 and the session-start skill:
 - **Within-run learning lives in the harness and is discarded at run end:** the `LESSON:` buffer,
   `OutcomeMemory`, the disconfirm detector — and rung-1 skills. Design-space (i) "slots exactly here"
   (INSIGHTS §7): a compiled skill is within-run, harness-owned, dead at run end → law-compliant.
+  OPEN QUESTION (not settled law): whether a segmented multi-session chain counts as ONE run for
+  this law — the **long-horizon-runs** ferry design argues yes, but that reading is untested and is
+  David's to ratify at the pilot's pre-registration. Until then, "run" here means one `claude -p`
+  invocation.
 - **Promotion is the ONLY across-run channel, and it is gated** (plan → branch → Sonnet → PR →
   adversarial review → held-out gate → **David merges**). A skill that *seems* to generalize is a
   *candidate* for hand-curation into (ii), never mechanically carried forward

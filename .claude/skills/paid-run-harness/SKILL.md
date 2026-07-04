@@ -38,7 +38,8 @@ MCP stdio server, wraps `world_mcp.py` + PyBoy). `claude` lives ONLY in WSL at
    Relaunch only on infra death before ~10 decisions (MCP never connected, container crash, 429).
    Infra death AT or AFTER ~10 decisions = the attempt is spent: score whatever artifacts exist with
    the frozen scorer and bank that verdict (INSUFFICIENT_DATA is a legitimate outcome). No relaunch
-   without David's explicit OK.
+   without David's explicit OK. For any run past ~100 turns, read **long-horizon-runs** first —
+   session caps, context growth, and the no-mid-run-checkpoint reality change the calculus.
 
 ## Launcher dir anatomy (`runs/brain_<tag>/`)
 

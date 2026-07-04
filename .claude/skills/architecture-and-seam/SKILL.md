@@ -115,6 +115,8 @@ Decision tree for "the brain did the wrong thing in world X":
 ## Related skills
 - **new-world-port** — the mechanical how-to for adding a world (registry entry, launcher, emulator
   Protocol, first constancy audit). This skill is the *why*; that one is the *how*.
+- **perception-primitives** — the inventory of the shared perceiver-side toolkit named in the table
+  above, and the rules for extending it (lift-on-2nd-use, the fabrication ban).
 - **safety-invariants** — law 7 "No brain edits (constancy)" and law 5 "oracle off the wire" are the
   enforcement side of this map.
 

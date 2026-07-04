@@ -66,8 +66,9 @@ Prevents: an unreviewed regression landing on `main` (a reviewer caught a shared
   repo-root project dir and contaminated verdicts. (Separate system: the Red *brain's* aria memory
   is reset via `reset_aria_memory.py` and only Pokémon-Red runs use it — don't conflate the two.)
 - **One-attempt rule.** Pre-registered runs are banked as-is — one attempt per arm/seed; never
-  relaunch to rescue a marginal result (only exception: infra death before the run produced data,
-  where the pre-registration explicitly allows one relaunch).
+  relaunch to rescue a marginal result. Only exception: infra death before ~10 decisions, where the
+  pre-registration explicitly allows one relaunch; at or after ~10 decisions the attempt is spent —
+  score what exists (the operative statement of this carve-out is paid-run-harness law 6).
 - **Oracle/RAM/score never on the agent wire.** `watch` values (x/y/map/party/badges, HP) go to
   `world/oracle.jsonl` for offline scoring ONLY. The brain sees the screen. Leaking RAM truth to
   the agent invalidates the entire screen-only claim.

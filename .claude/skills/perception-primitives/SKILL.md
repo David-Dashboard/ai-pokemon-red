@@ -90,7 +90,13 @@ menus/battle text, as Pokémon did).
 
 **Probe before you write code.** Every row below has a free offline probe; run it and read the number
 before touching a primitive (see **eval-probes-and-datasets** for the full toolkit and
-**diagnose-a-run** RULE 0 — replay before you blame the perceiver).
+**diagnose-a-run** RULE 0 — replay before you blame the perceiver). Invocation shape (Linux/WSL;
+Windows PowerShell prefix in **eval-probes-and-datasets** §1):
+
+```
+uv run python -m eval.probe_entities            # optional game-substring filter arg
+uv run python -m eval.probe_tilemap runs/fix2 runs/fix4
+```
 
 | Symptom | Primitive to check first | Probe to run |
 |---|---|---|

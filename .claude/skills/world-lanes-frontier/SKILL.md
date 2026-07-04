@@ -13,6 +13,14 @@ with zero brain edits, `HANDOFF.md`). This skill exists so a cheap session does 
 state from 200KB of HANDOFF, or re-run an experiment whose verdict is already banked. Verify the
 "pinned next" lines against HANDOFF's newest `⇒ NEXT` list — this map was frozen 2026-07-04.
 
+| Lane | Banked headline | Open | Pinned next |
+|---|---|---|---|
+| ARC-AGI-3 | skill rung-1 A/B PASS 2.94x | breadth (one game) | sweep stage-2 (NEXT 5) |
+| VizDoom/3D | GATE-3D FAIL K=4.074; ceiling says bar reachable (7.333) | close gap via tolerance | brief tightening, then scan-and-center port (NEXT 4) |
+| NDS/continuous | MKDS probe + stop_when bridge design + build plan merged | paid A/B; 3 perception breaks | execute MKDS build plan (NEXT 2) |
+| MiniWoB | 5/5 episodes, $1.36, pixels-only | harder tasks | unscheduled |
+| Glyph/text | R0 FAIL banked; Gate-2 cache PASS 96.9% | R1 build | glyph R1 build (NEXT 3) |
+
 ## ARC-AGI-3 (abstract grid; the skill-compilation proving ground)
 
 - **Adapter:** `core/arcagi3_world.py` — thin REST client for three.arcprize.org; the returned grid
@@ -52,7 +60,10 @@ state from 200KB of HANDOFF, or re-run an experiment whose verdict is already ba
   accelerating** (`:329-330`) — the world changes without input, breaking the discrete-step
   assumption; three perception breaks documented (free-form non-tile font/HUD, rotating minimap
   kills tile-grid, continuous chase-cam roll kills discrete-facing).
-- **Moved since the probe (merged to main 2026-07-04):** the `stop_when` bridge design
+- **Moved since the probe (merged to main 2026-07-04):** the `stop_when` bridge design (`stop_when`
+  = the closed enum of cheap world-side predicates that terminate a `run_skill` loop, pinned
+  per-world — **cheapness-skill-compilation** §6; the bridge redefines it for worlds that change
+  without input)
   (`reports/2026-07-04-continuous-time-stopwhen-design.md` — design only, "no code, no paid run",
   resolves HANDOFF NEXT #2's design half) and the MKDS build spec + A/B pre-registration
   (`reports/2026-07-04-mkds-continuous-time-build-plan.md` — the §4 idle-measurement prerequisite is

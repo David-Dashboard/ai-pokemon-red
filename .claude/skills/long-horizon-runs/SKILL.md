@@ -1,6 +1,6 @@
 ---
 name: long-horizon-runs
-description: Running the paid brain for task-scale durations (hundreds of decisions, hours of wall-clock) without burning quota, money, or an unrecoverable run. Invoke before planning, launching, or monitoring any paid run beyond ~100 turns.
+description: Running the paid brain for task-scale durations (hundreds of decisions, hours of wall-clock) without burning quota, money, or an unrecoverable run. Invoke before planning, launching, or monitoring any paid run beyond ~100 turns — including any ask phrased as "overnight", "beat the game", "clear the stage/dungeon", or "keep it running".
 ---
 
 # Long-horizon paid runs
@@ -33,7 +33,7 @@ Everything else here is verified fact.
 | run | turns | wall | cost | note |
 |---|---|---|---|---|
 | brain_kirby_v3_1 | 74 | 11.7 min | $5.19 | gate-class run |
-| brain_skill_ab_armA / armB | 58 / 63 | 28 / 31 min | $7.78 / $8.83 | ARC A/B |
+| brain_skill_ab_armA / armB | 58 / 63 | 28 / 31 min | $7.78 / $8.83 | ARC A/B (NB: "turns" here ≠ the 50/34 "decisions" in **cheapness-skill-compilation**'s table — turns count every LLM message, decisions only `act`/`run_skill` calls) |
 | brain_arcagi3/run3 | 121 | 48 min | $20.82 | discovery run |
 | brain_kirby_longhaul | 316 | 52 min | $42.98 | first long-horizon |
 | brain_gate3d/run3_v_FAIL | 1000 | 68 min | $82.86 | most expensive run ever — and a FAIL |
@@ -106,10 +106,14 @@ The designed alternative: a long run = a CHAIN of normal **paid-run-harness** la
   change.
 - **Brain continuity — the ferry:** the brief REQUIRES a closing handoff report (the longhaul brief
   already ends with one); the harness appends it VERBATIM into session k+1's `CLAUDE.md` under
-  `## Prior-session report (yours)`. Law analysis: the chain is ONE run, so carrying the brain's own
-  within-run output forward is learning-boundary-compliant — but the ferry must be MECHANICAL
-  (verbatim append; a human curating it mid-chain contaminates the run). Skills do NOT ferry
-  (constraint 3): the brain re-defines them, which is itself signal about re-distillation cost.
+  `## Prior-session report (yours)`. Law analysis — UNRESOLVED: this treats the chain as ONE run, so
+  carrying the brain's own within-run output forward would be learning-boundary-compliant. But
+  everywhere else in the library "a run" = one `claude -p` invocation, and the law's owner
+  (**cheapness-skill-compilation** §4) has not ratified the chain-as-one-run reading. The pilot's
+  pre-registration MUST put this definitional question to David explicitly. If approved, the ferry
+  must be MECHANICAL (verbatim append; a human curating it mid-chain contaminates the run). Skills
+  do NOT ferry (constraint 3): the brain re-defines them, which is itself signal about
+  re-distillation cost.
 - **Blank-agent wipe still runs before EVERY session** (paid-run-harness law 2) — it kills cross-RUN
   client auto-memory; the ferry is the only sanctioned continuity channel inside a chain.
 - **`SEGMENTS.md` ledger** in the run dir: one line per session — turns, cost, checkpoint file,
@@ -120,6 +124,10 @@ The designed alternative: a long run = a CHAIN of normal **paid-run-harness** la
 - **First execution:** a 2-session pilot on an instrumented world (Kirby or Red), trivial task, sole
   purpose to validate checkpoint→boot continuity, the ferry, and the ledger. Pre-registered,
   ~$10–15, David authorizes.
+
+When a human asks for more than the constraints support ("guarantee stage 1–3 overnight"), the
+correct response is to COUNTER-PROPOSE the pilot rung with the evidence above (the 316-turn/$43 run
+didn't clear stage 1) — not to launch a bigger monolith and hope.
 
 ## Monitoring a live long run (all free, from Windows)
 
