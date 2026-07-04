@@ -35,6 +35,6 @@ adversarial Sonnet review is triaged. NOT done here: the paid run (David authori
 
 ## Tasks
 - [x] Read v3 verdict + v3 pre-reg + v3 brief; locate the two failure modes  · evidence: reports/2026-07-03-entity-v3-verdict.md §diagnosis (a)+(b); runs/brain_kirby_v3/CLAUDE.md step 3(i)
-- [ ] Write `reports/2026-07-04-entity-v3.1-prereg.md` (brief deltas + inherited machinery + escalation ladder)  · evidence: <pending>
+- [x] Write `reports/2026-07-04-entity-v3.1-prereg.md` (brief deltas + inherited machinery + escalation ladder)  · evidence: file created; §1 frozen-machinery list, §3 fix(a)+escalation, §4 fix(b), appendix = full v3.1 brief
 - [ ] Open PR off `docs/entity-v3.1-prereg`; post 1 Sonnet adversarial review; triage findings  · evidence: <pending>
 - [ ] Update HANDOFF §NEWEST with the v3.1 pre-reg block; flag the fork for David  · evidence: <pending>
