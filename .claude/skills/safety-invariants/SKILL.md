@@ -60,9 +60,11 @@ Prevents: an unreviewed regression landing on `main` (a reviewer caught a shared
 
 - **Account B only.** `CLAUDE_CONFIG_DIR=/home/nvidia/.claude-b`. A 429 = account-level 5-hr cap:
   wait for reset, don't hammer, don't switch to account A or an API key.
-- **Blank-agent memory wipe FIRST.** Every launcher `run.sh` must wipe derived memory dirs before
-  launch (the 2026-07-05 hole: account-B auto-memory persisted cross-run via the shared repo-root
-  project dir and contaminated verdicts). Aria memory: `reset_aria_memory.py`.
+- **Blank-agent memory wipe FIRST.** Every launcher `run.sh` must wipe account-B **client
+  auto-memory** before launch — the `rm -rf .../.claude-b/projects/*/memory` line (see the
+  paid-run-harness skill, law 2); that auto-memory once persisted cross-run via the shared
+  repo-root project dir and contaminated verdicts. (Separate system: the Red *brain's* aria memory
+  is reset via `reset_aria_memory.py` and only Pokémon-Red runs use it — don't conflate the two.)
 - **One-attempt rule.** Pre-registered runs are banked as-is — one attempt per arm/seed; never
   relaunch to rescue a marginal result (only exception: infra death before the run produced data,
   where the pre-registration explicitly allows one relaunch).

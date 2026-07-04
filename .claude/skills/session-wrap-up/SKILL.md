@@ -103,11 +103,13 @@ git -C E:\AI_Personas\10_pokemon_and_chess_and_office\ai-pokemon-red rev-parse -
   or large changes wait for David regardless. Wrap-up = commit + push, stop there.
 - Remote: `https://github.com/David-Dashboard/ai-pokemon-red.git` (origin).
 
-## 6. Leave disarmed things alone
+## 6. Leave anything David disabled alone
 
-- `LEDGER.md.disarmed` exists at the repo root. David disabled the ledger hooks by renaming
-  it. Do NOT rename it back to `LEDGER.md`, delete it, or "helpfully" re-arm it — anything
-  David disabled stays disabled unless he says otherwise.
+- This state is transient and set OUTSIDE the session — check the live tree, never assume from
+  memory or a prior session (it flips): `ls LEDGER*`, `git status`. If `LEDGER.md` is present and
+  armed, update it per `.claude/PROTOCOL.md` §3. If instead you see a `LEDGER.md.disarmed` file (or a
+  commented-out hook / renamed config), David disabled it deliberately — do NOT rename it back,
+  delete it, or "helpfully" re-arm it. Anything David disabled stays disabled unless he says so.
 - Same principle for any other `.disarmed` / commented-out hook or config you notice.
 
 ## Final check before ending the turn
@@ -118,7 +120,7 @@ git -C E:\AI_Personas\10_pokemon_and_chess_and_office\ai-pokemon-red rev-parse -
 - [ ] Memory files + MEMORY.md index lines updated (edited in place, wrong ones removed)
 - [ ] LEARNINGS.md bullet appended if the session earned one
 - [ ] Committed and pushed to the feature branch; nothing merged
-- [ ] `LEDGER.md.disarmed` untouched
+- [ ] Live ledger state checked (`ls LEDGER*`): armed `LEDGER.md` updated, or anything David disabled left untouched
 
 ## Sources
 
