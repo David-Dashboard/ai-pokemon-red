@@ -7,15 +7,37 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-03 (day close: SKILL-COMPILATION RUNG-1 GATE PASS 2.94x (L2 wall fell, #91) still
+_Last updated: 2026-07-04 (v3.1 pre-reg written + adversarially reviewed, PR #96 open — awaiting David's
+paid-run + merge). Prior: 2026-07-03 day close — SKILL-COMPILATION RUNG-1 GATE PASS 2.94x (L2 wall fell, #91) still
 the day's headline; entity v3 banked INSUFFICIENT_DATA with the b_k repair VALIDATED (0.812→0.585) +
 skill guard working as designed + NEAR-discipline and adjacency-invocation diagnoses located;
 #92/#93/#94 merged; NDS 3D lane opened (MKDS race savestate + idle-change 12.2%/frame + 3 perception
 breaks documented)._
 
-**⇒⇒ NEWEST (2026-07-03, day close) — DAY CLOSE: skill gate PASS stands as the headline; entity-v3
+**⇒⇒ NEWEST (2026-07-04) — ENTITY-GATE v3.1 PRE-REGISTRATION written, adversarially reviewed, PR #96
+open; awaiting David (paid-run authorization + merge; a design fork flagged). ⇒⇒**
+1. **v3.1 pre-reg** (`reports/2026-07-04-entity-v3.1-prereg.md`, PR #96) fixes the two independent
+   compliance failures v3 banked INSUFFICIENT_DATA on — (a) NEARs logged AFTER their drops (q_k starved
+   0.400) and (b) `approach_suspect` invoked at adjacency (0 qualifying-conditional) — **brief/protocol
+   ONLY; all v3 machinery (scorer `eval/score_entity_gate_v3.py`, stop_when enum, `B_K_CEILING=0.70`,
+   skill guard, macro-interior exclusion) inherited UNCHANGED**, stricter-only, no code written, no new
+   remember-line shape.
+2. **Design crux (§3.5, surfaced by review):** (a) and (b) contradict naively — coverage needs a NEAR at
+   the approach START, but "invoke from distance" makes that claim *far*/uncovered. They co-exist ONLY in
+   the **near-but-not-touching** regime: suspect NEAR/in-box (pre-approach NEAR covers the contact-drop)
+   with a MODERATE gap-to-contact (macro loops ≥2 iters AND span stays ≤ W=15). First draft's `FAR` line
+   removed.
+3. **1 Sonnet adversarial review: BLOCK → both majors fixed** (the (a)/(b) contradiction/`FAR` loophole;
+   an unbounded retreat loop risking INSUFFICIENT_DROPS → "take the contact when touching"). Machinery-
+   frozen claim + all cited v3 numbers verified against the scorer/verdict; review record posted on #96.
+4. **AWAITING DAVID (nothing done autonomously past the PR):** (i) the §3 fork — test the rewritten brief
+   once more (chosen) vs escalate NOW to a mechanical `run_skill` guard (v3.2, pre-registered as the
+   recurrence path); (ii) paid-run authorization (account-B, ~$5, one attempt); (iii) merge #96. If the
+   paid run is authorized, recommend one focused re-review of the §3.5 restructure first.
+
+**⇒ (2026-07-03, day close) — skill gate PASS stands as the headline; entity-v3
 INSUFFICIENT_DATA banked with the b_k camping-repair VALIDATED and two located diagnoses for v3.1
-(NEAR discipline + adjacency invocation); three infra PRs merged; NDS 3D lane opened. ⇒⇒**
+(NEAR discipline + adjacency invocation); three infra PRs merged; NDS 3D lane opened.**
 1. **SKILL-COMPILATION RUNG-1 GATE: PASS (2.94x, pinned bar 1.3x, already banked in PR #91, unchanged by
    today's later work).** The ARC wa30 level-2 wall — standing since 2026-07-04, unbroken across 3 prior
    framings — FELL under the `define_skill`/`run_skill` mechanism. First paid-gate PASS for a capability
