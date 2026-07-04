@@ -1,7 +1,11 @@
 # --- Claude / local tooling (internal, not for publication) ---
+# Exclude .claude/ contents but publish the handover skill library (.claude/skills/).
+# Use /* (contents) not / (the dir) so the negation can re-include; keep the negation LAST
+# so it wins; .CLAUDE/* covers the case-sensitive-FS variant (Linux) harmlessly on Windows.
 CLAUDE.md
-.claude/
-.CLAUDE/
+.claude/*
+.CLAUDE/*
+!.claude/skills/
 
 # --- Project governance docs (excluded from the public repo per request) ---
 CONTRACT.md
