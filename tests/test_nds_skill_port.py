@@ -308,8 +308,8 @@ def test_elapsed_frames_does_not_fire_before_n(tmp_path):
 
 def test_idle_settled_fires_on_a_passive_quiet_streak(tmp_path):
     """The count-in scenario (design §6): a passive body ("none") ticking through a genuinely quiet
-    run of frames. threshold=0.5, k=3 -- three consecutive stride-sampled frames identical to each
-    other (pct_changed == 0.0 < 0.5) must satisfy the dwell."""
+    run of frames. threshold=0.01, k=3 -- three consecutive stride-sampled frames identical to each
+    other (pct_changed == 0.0 < 0.01) must satisfy the dwell."""
     out = str(tmp_path / "out")
     # hold_frames=40 with stride s=_NDS_SKILL_SAMPLE_STRIDE -> several samples inside one step; all
     # frames pixel-identical -> every sample reads pct_changed == 0.0, well under any valid threshold.
@@ -317,10 +317,10 @@ def test_idle_settled_fires_on_a_passive_quiet_streak(tmp_path):
     w = _make_world(out, screens=screens)
     w.call("define_skill", {"name": "wait_out", "steps": [
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": 40}],
-                          "stop_when": "idle_settled(0.5, 3)", "max_iters": 8}}]})
+                          "stop_when": "idle_settled(0.01, 3)", "max_iters": 8}}]})
     result = w.call("run_skill", {"name": "wait_out"})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
-    assert "idle_settled(0.5, 3)" in text
+    assert "idle_settled(0.01, 3)" in text
     assert "fired after" in text
 
 
@@ -338,7 +338,7 @@ def test_idle_settled_does_not_fire_during_active_play(tmp_path):
     w = _make_world(out, screens=screens)
     w.call("define_skill", {"name": "wait_out", "steps": [
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": _NDS_SKILL_SAMPLE_STRIDE * 4}],
-                          "stop_when": "idle_settled(0.1, 2)", "max_iters": 3}}]})
+                          "stop_when": "idle_settled(0.01, 2)", "max_iters": 3}}]})
     result = w.call("run_skill", {"name": "wait_out"})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
     assert "reached max_iters=3 without stop_when firing" in text
@@ -358,7 +358,7 @@ def test_idle_settled_streak_resets_on_a_loud_sample(tmp_path):
     w = _make_world(out, screens=screens)
     w.call("define_skill", {"name": "wait_out", "steps": [
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": _NDS_SKILL_SAMPLE_STRIDE * 4}],
-                          "stop_when": "idle_settled(0.1, 3)", "max_iters": 1}}]})
+                          "stop_when": "idle_settled(0.01, 3)", "max_iters": 1}}]})
     result = w.call("run_skill", {"name": "wait_out"})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
     assert "reached max_iters=1 without stop_when firing" in text
@@ -375,7 +375,7 @@ def test_idle_settled_with_acting_body_is_self_defeating(tmp_path):
     screens = [quiet, loud, quiet, loud, quiet, loud, quiet, loud]
     w = _make_world(out, screens=screens)
     w.call("define_skill", {"name": "act_and_wait", "steps": [
-        {"repeat_until": {"steps": [{"button": "a"}], "stop_when": "idle_settled(0.1, 2)", "max_iters": 3}}]})
+        {"repeat_until": {"steps": [{"button": "a"}], "stop_when": "idle_settled(0.01, 2)", "max_iters": 3}}]})
     result = w.call("run_skill", {"name": "act_and_wait"})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
     assert "reached max_iters=3 without stop_when firing" in text
@@ -416,7 +416,7 @@ def test_stop_when_rejects_idle_settled_threshold_at_or_above_one(tmp_path):
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": 10}],
                           "stop_when": "idle_settled(1.0, 3)", "max_iters": 8}}]})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
-    assert "threshold must satisfy 0 < threshold < 1" in text
+    assert "threshold must satisfy 0.005 < threshold < 0.06" in text
 
 
 def test_stop_when_rejects_idle_settled_threshold_at_or_below_zero(tmp_path):
@@ -425,7 +425,30 @@ def test_stop_when_rejects_idle_settled_threshold_at_or_below_zero(tmp_path):
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": 10}],
                           "stop_when": "idle_settled(0.0, 3)", "max_iters": 8}}]})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
-    assert "threshold must satisfy 0 < threshold < 1" in text
+    assert "threshold must satisfy 0.005 < threshold < 0.06" in text
+
+
+def test_stop_when_rejects_idle_settled_threshold_above_band_ceiling(tmp_path):
+    """design §7's threshold-gaming guard: a threshold above the ~6% active-play floor would let
+    idle_settled trivially fire during active play too, defeating the PASSIVE-vs-ACTIVE distinction --
+    must be rejected even though 0.1 is still inside the open (0, 1) interval."""
+    w = _make_world(str(tmp_path / "out"))
+    result = w.call("define_skill", {"name": "bad", "steps": [
+        {"repeat_until": {"steps": [{"button": "none", "hold_frames": 10}],
+                          "stop_when": "idle_settled(0.1, 3)", "max_iters": 8}}]})
+    text = " ".join(c["text"] for c in result if c.get("type") == "text")
+    assert "threshold must satisfy 0.005 < threshold < 0.06" in text
+
+
+def test_stop_when_rejects_idle_settled_threshold_below_band_floor(tmp_path):
+    """Symmetric case: a threshold below the count-in hold's own ~0.5% noise floor would never
+    reliably fire on real data -- rejected even though 0.001 is still inside the open (0, 1) interval."""
+    w = _make_world(str(tmp_path / "out"))
+    result = w.call("define_skill", {"name": "bad", "steps": [
+        {"repeat_until": {"steps": [{"button": "none", "hold_frames": 10}],
+                          "stop_when": "idle_settled(0.001, 3)", "max_iters": 8}}]})
+    text = " ".join(c["text"] for c in result if c.get("type") == "text")
+    assert "threshold must satisfy 0.005 < threshold < 0.06" in text
 
 
 def test_stop_when_rejects_idle_settled_unreachable_k_times_s_over_ceiling(tmp_path):
@@ -435,7 +458,7 @@ def test_stop_when_rejects_idle_settled_unreachable_k_times_s_over_ceiling(tmp_p
     unreachable_k = (_NDS_SKILL_MAX_WORLD_FRAMES // _NDS_SKILL_SAMPLE_STRIDE) + 5
     result = w.call("define_skill", {"name": "bad", "steps": [
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": 10}],
-                          "stop_when": f"idle_settled(0.1, {unreachable_k})", "max_iters": 8}}]})
+                          "stop_when": f"idle_settled(0.01, {unreachable_k})", "max_iters": 8}}]})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
     assert "k*s <= F required" in text
 
@@ -444,7 +467,7 @@ def test_stop_when_rejects_idle_settled_k_zero(tmp_path):
     w = _make_world(str(tmp_path / "out"))
     result = w.call("define_skill", {"name": "bad", "steps": [
         {"repeat_until": {"steps": [{"button": "none", "hold_frames": 10}],
-                          "stop_when": "idle_settled(0.1, 0)", "max_iters": 8}}]})
+                          "stop_when": "idle_settled(0.01, 0)", "max_iters": 8}}]})
     text = " ".join(c["text"] for c in result if c.get("type") == "text")
     assert "k must be >= 1" in text
 
@@ -561,6 +584,32 @@ def test_stop_when_fired_false_on_max_iters_exhaustion(tmp_path):
     rows = _load_jsonl(f"{out}/skills.jsonl")
     rec = [r for r in rows if r["event"] == "run_skill"][0]
     assert rec["stop_when_fired"] is False
+
+
+def test_stop_when_fired_true_when_an_early_loop_fires_but_a_later_one_times_out(tmp_path):
+    """Regression for the bug where stop_when_fired only checked executed[-1]: a skill with TWO
+    sequential repeat_until blocks (design §6's launch+wait_out_banner shape) where the FIRST block's
+    stop_when fires cleanly but the SECOND hits its own max_iters ceiling must still log True overall
+    -- the qualifying evidence design §7's conditional-half gate needs must not be discarded just
+    because the last top-level entry happened to be a timeout."""
+    out = str(tmp_path / "out")
+    w = _make_world(out)
+    w.call("define_skill", {"name": "launch_then_stall", "steps": [
+        # Block 1: fires after 3 presses (72 frames >= 50) -- mirrors
+        # test_elapsed_frames_fires_after_n_frames's construction.
+        {"repeat_until": {"steps": [{"button": "a"}], "stop_when": "elapsed_frames(50)", "max_iters": 8}},
+        # Block 2: never reaches 200 frames within 2 iterations (48 frames) -- mirrors
+        # test_elapsed_frames_does_not_fire_before_n's construction. This is the LAST executed entry.
+        {"repeat_until": {"steps": [{"button": "a"}], "stop_when": "elapsed_frames(200)", "max_iters": 2}},
+    ]})
+    w.call("run_skill", {"name": "launch_then_stall"})
+    rows = _load_jsonl(f"{out}/skills.jsonl")
+    rec = [r for r in rows if r["event"] == "run_skill"][0]
+    summaries = [e["repeat_until_summary"] for e in rec["executed"] if "repeat_until_summary" in e]
+    assert len(summaries) == 2
+    assert "fired after" in summaries[0]                                    # first (early) block
+    assert "reached max_iters=2 without stop_when firing" in summaries[-1]  # second (later) block, last executed entry
+    assert rec["stop_when_fired"] is True
 
 
 def test_repeat_until_summary_carries_iterations_field(tmp_path):

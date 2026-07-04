@@ -654,10 +654,18 @@ _NDS_SKILL_MAX_WORLD_FRAMES = 300     # F: absolute per-run_skill-call frame cei
 # fits inside BOTH holds with room to spare — the dwell requirement is satisfied well before either hold
 # ends, not at its edge. k is a per-skill arg the brain supplies, bounded only by the reachability rule
 # k*s <= F (not a separate hardcoded max) — at s=4 that allows k up to 75, but a skill author aiming at
-# the count-in transition should use something in the k~=3-6 range per this data.
+# the count-in transition should use something in the k~=3-5 range per this data (floor(22/4)=5 is the
+# shorter hold's own margin ceiling — k=6 would not fit inside it).
 _NDS_SKILL_SAMPLE_STRIDE = 4          # s: frames between idle_settled samples (see reasoning above)
-_NDS_IDLE_THRESHOLD_FLOOR = 0.0       # threshold must be in the OPEN interval (0, 1) — enforced at parse
-_NDS_IDLE_THRESHOLD_CEIL = 1.0
+# Design §7's "threshold gaming" guard: the probe's clean band is ~[0.5%, 6%] — above the count-in
+# hold's own noise floor (~0.3%) and below the ~6.77% active-play floor (both figures transcribed into
+# the tracked reports/2026-07-04-mkds-continuous-time-build-plan.md §4, since the raw probe file
+# runs/nds3d_probe/idle_measurement.md is gitignored and absent from a fresh checkout). A threshold
+# outside this band is either unreachable (below count-in noise -> never fires) or trivially satisfied
+# by active play (above 6% -> defeats the whole PASSIVE-vs-ACTIVE distinction design §6/§7 relies on).
+# Recommended/typical value per the plan is 0.01 (1.0%).
+_NDS_IDLE_THRESHOLD_FLOOR = 0.005     # 0.5% — above count-in hold noise
+_NDS_IDLE_THRESHOLD_CEIL = 0.06       # 6% — below the ~6.77% active-play floor
 
 _NDS_DEFINE_SKILL_TOOL = {
     "name": "define_skill",
@@ -672,7 +680,8 @@ _NDS_DEFINE_SKILL_TOOL = {
                     "frame whether or not you act, so stop_when is frame-counted, not press-counted. It "
                     "is one of: elapsed_frames(n) with 0<n<=300 (fires once n emulator frames have "
                     "elapsed since the loop started — the tool for an ACTIVE body, e.g. \"hold accelerate "
-                    "for about n frames\"), or idle_settled(threshold, k) with 0<threshold<1 and k>=1 "
+                    "for about n frames\"), or idle_settled(threshold, k) with "
+                    "0.005<threshold<0.06 (~0.01 typical) and k>=1 (and k*s<=F) "
                     "(fires when the whole-frame pixel-change fraction stays below threshold for k "
                     "consecutive sampled frames — a TRANSITION detector for a PASSIVE body, e.g. \"hold "
                     "through a count-in until the world resumes\"; it will not fire during active play, "
@@ -1337,8 +1346,11 @@ class World:
             threshold = float(m.group(1))
             k = int(m.group(2))
             if not (_NDS_IDLE_THRESHOLD_FLOOR < threshold < _NDS_IDLE_THRESHOLD_CEIL):
-                raise ValueError(f"idle_settled(threshold, k): threshold must satisfy 0 < threshold < 1; "
-                                 f"got {threshold}")
+                raise ValueError(
+                    f"idle_settled(threshold, k): threshold must satisfy "
+                    f"{_NDS_IDLE_THRESHOLD_FLOOR} < threshold < {_NDS_IDLE_THRESHOLD_CEIL} "
+                    "(the threshold-gaming guard — must sit strictly between the measured count-in "
+                    f"idle noise and the active-play floor); got {threshold}")
             if k < 1:
                 raise ValueError(f"idle_settled(threshold, k): k must be >= 1; got {k}")
             if k * _NDS_SKILL_SAMPLE_STRIDE > _NDS_SKILL_MAX_WORLD_FRAMES:
@@ -1584,8 +1596,12 @@ class World:
         # A run_skill call "qualifies" (design §7's conditional-half gate) only if stop_when actually
         # fired before the frame ceiling/max_iters — a real predicate branch, not a timeout. Log this
         # explicitly so the eventual A/B scorer can compute the gate without re-deriving it from prose.
-        stop_when_fired = bool(executed) and "repeat_until_summary" in executed[-1] and (
-            "fired after" in executed[-1]["repeat_until_summary"])
+        # Scan ALL executed top-level entries, not just the last one: a skill with multiple sequential
+        # repeat_until blocks (design §6's launch+wait_out_banner shape) where an EARLY loop's stop_when
+        # fires but a LATER one times out must still log True — checking only executed[-1] would
+        # wrongly discard qualifying evidence the gate needs.
+        stop_when_fired = any(isinstance(e, dict) and "fired after" in e.get("repeat_until_summary", "")
+                              for e in executed)
         log_step = int(getattr(self.plugin, "_obs_count", 0))
         log_rec = {"event": "run_skill", "step": log_step, "name": skill_name,
                    "executed": executed, "executed_step_count": executed_step_count,
