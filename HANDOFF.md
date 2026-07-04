@@ -7,13 +7,40 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-04 (v3.1 paid run RUN + BANKED: INSUFFICIENT_DATA again, but BOTH v3 behavioral
-failures fixed on-wire; two NEW seam failures diagnosed — quoted-NEAR taint + region_changed degenerate
-vs moving enemies. Verdict: `reports/2026-07-04-entity-v3.1-verdict.md`, on PR #96)._
+_Last updated: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
+`stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
+continuous-time BUILD PR.)_
 
-**⇒⇒ NEWEST (2026-07-04, run banked) — ENTITY-GATE v3.1 PAID RUN COMPLETE: INSUFFICIENT_DATA (banked,
+**⇒⇒ NEWEST (2026-07-04) — HANDOVER SKILL LIBRARY + CONTINUOUS-TIME BRIDGE: two PRs merged to main. ⇒⇒**
+1. **Skill library merged (#97):** `.claude/skills/` now holds **10 skills** so junior/Sonnet-class sessions
+   can run this project unaided — session-start, safety-invariants, dev-workflow, paid-run-harness,
+   gate-methodology, new-world-port, session-wrap-up, architecture-and-seam, diagnose-a-run,
+   cheapness-skill-compilation (+ README index). Covers all four North Star claims + the offline
+   failure-triage path. Authored + adversarially reviewed via workflows (accuracy + usability +
+   publication-safety + completeness); `.gitignore` un-ignores ONLY `.claude/skills/` (rest of `.claude/`
+   stays internal). **SECURITY:** a review subagent leaked a `settings.local.json` bearer token into a PR
+   comment — contained (comment deleted, verified no tracked copy), but the **token should be ROTATED**
+   (memory `review-agent-secret-hygiene`).
+2. **Continuous-time `stop_when` design merged (#98)** — resolves NEXT #2:
+   `reports/2026-07-04-continuous-time-stopwhen-design.md`. Splits the decision budget (`max_iters ≤ 8`,
+   unchanged) from a new world-time/frame budget (`F`, resolution `r`); first rung is the **perception-free**
+   pair `{elapsed_frames, idle_settled(whole-frame transition detector)}`; foveated `region_*` **deferred**
+   to the 3D-perception climb; thresholds pinned per world from an in-gameplay idle measurement (a build
+   prerequisite — the FINDINGS:166 gap); rung-1 degenerate guards carried (conditional-half gate at skill
+   granularity). 2 adversarial reviews (both "core sound → REVISE"); all findings fixed pre-merge. No code,
+   no paid run.
+3. **⇒ NEXT (priority order):** (1) **MKDS continuous-time BUILD PR** — implement the #98 design: measure
+   MKDS in-gameplay idle offline, pin `r`/`s`/`F`/thresholds + the enum, free seam-check, pre-register an
+   A/B (skills vs primitives) on hold/time-reachable tasks; (2) **glyph R1 build** (snap-to-grid mitigation
+   + warm-cache fixture); (3) **doom scan-and-center macro port** (validates the conditional-loop half rung-1
+   left untested); (4) **entity-gate v3.2 IF David wants it** — (c) forbid quoting NEAR shapes in notes
+   (brief-only) / (d) a moving-target-safe predicate or conditional benign-arch approach; (5) **sweep stage-2**.
+4. **Awaiting David:** rotate the leaked `settings.local.json` bearer token; v3.2 go/no-go; the LEDGER.md
+   re-arm (working-tree copy is byte-identical to main's tracked copy — noted, left untouched).
+
+**⇒ (2026-07-04, run banked) — ENTITY-GATE v3.1 PAID RUN COMPLETE: INSUFFICIENT_DATA (banked,
 one attempt). The pre-registered fixes WORKED (all 9 NEARs pre-drop, 5/5 drops covered in-window; 6/7
-run_skill calls ≥3 presses vs v3's 0) — the run died on two NEW seams instead. ⇒⇒**
+run_skill calls ≥3 presses vs v3's 0) — the run died on two NEW seams instead. ⇒**
 0. **v3.1 verdict** (`reports/2026-07-04-entity-v3.1-verdict.md`): account-B, 74 turns, **$5.19**, clean
    exit. Scorer (frozen): 4/13 NEAR lines RETROACTIVE ≥ 20% → unscorable; skill guard 6 qualifying but
    **0 qualifying-conditional** → independent FAIL. Diagnoses (both verified line-by-line):
