@@ -15,8 +15,9 @@ presses" — and every `stop_when` predicate evaluates against the observation t
 step, whose only cause of change is the player's action.
 
 NDS/3D worlds violate this. Measured on the banked Mario Kart DS race savestate
-(`runs/nds3d_probe/mkds_race_start.state`, HANDOFF 2026-07-03): the screen changes **12.2% mean per
-frame with ZERO player input** during the countdown, and 33% while accelerating. The world advances
+(`runs/nds3d_probe/mkds_race_start.state`, `FINDINGS.md:329`): the screen changes **~12% mean per frame
+during the count-in with zero player input** (count-in animation — a clean *in-gameplay* idle number is
+not yet measured, `FINDINGS.md:166`), and ~33% while accelerating. The world advances
 every frame regardless of whether the brain acts. "One press = one world step" is simply false; the
 world moves *during* an action, *between* actions, and *while the brain is thinking*. Every predicate
 premised on "nothing changed ⇒ my action caused nothing" and "something changed ⇒ my action caused it"
@@ -49,47 +50,59 @@ issued = world steps elapsed. Continuous time forces them apart:
   action count; here it must be counted separately, because frames advance without actions.
 
 **Decision of record:** a continuous-time port pins a **resolution `r`** = frames advanced per inner
-action-tick (the ViZDoom `tics` idea, `reports/2026-07-04-vizdoom-3d-floor-design.md` §2.1 — an action
-executes N frames, brain still sees one-decision-per-action). `run_skill` is then bounded by BOTH:
+action-tick (the ViZDoom frames-per-action precedent, `reports/2026-07-04-vizdoom-3d-floor-design.md`
+§2.1+§3.2 — an action executes N frames, brain still sees one-decision-per-action). `run_skill` is then bounded by BOTH:
 `max_iters` (decisions) AND a **frame ceiling `F`** (world-time). `_SKILL_MAX_WORLD_STEPS = 50`
 (`world_mcp.py:495`) is reinterpreted for these worlds as a **frame** ceiling, not a press count.
 Whichever bound trips first ends the call. This keeps reasoning-cost and wall-clock both bounded.
 
 ## §3 The continuous-time `stop_when` family (decision of record)
 
-Add these to a continuous-time world's enum (screen-only, closed set). Signatures pinned; thresholds
-pinned per world at build time from that world's wire:
+**First rung = the perception-free subset.** Two predicates, both computed from the whole frame with no
+notion of *what* is on screen (screen-only, added to a new world's closed enum):
 
 1. **`elapsed_frames(n)`** — fires after `n` emulator frames elapse (the world-time counterpart to
    `steps_elapsed(n)`, which now counts *actions* not frames). The honest "run this for ~n frames" bound.
 2. **`idle_settled(threshold, k)`** — fires when whole-frame pixel-change < `threshold` for `k`
-   consecutive sampled frames. This is the load-bearing new primitive: "wait until the world stops
-   moving" — countdown→GO, menu/scene transitions, load screens. It is the continuous-time dual of
-   ARC's `grid_unchanged_for(k)` (`world_mcp.py` ARC enum), generalized from grid-equality to a
-   pixel-change threshold because 3D frames are never bit-identical.
-3. **`region_settled(x0,y0,x1,y1, threshold, k)`** / **`region_active(x0,y0,x1,y1, threshold)`** —
-   foveated versions: settle/activity inside a box (e.g. the HUD lap counter), ignoring the moving
-   background. Reuses the `region_changed` box syntax already parsed for Kirby (`world_mcp.py:960`).
+   consecutive sampled frames. The continuous-time dual of ARC's `grid_unchanged_for(k)`, generalized
+   from bit-equality to a threshold (3D frames are never bit-identical). **It is a TRANSITION detector,
+   not a steady-play tool:** it earns its keep where the correct behavior is "hold until the world
+   resumes" — count-in→GO, a lap/results banner, a load or catch-up freeze. During active play the
+   whole-frame change never drops near zero, so `idle_settled` simply will not fire there (by design).
 
-`region_changed(box)` is NOT reused verbatim — under continuous time it fires on the first sampled
-frame (the background is always changing), the exact degeneracy entity-gate v3.1 hit in *discrete* GB
-against moving enemies (`reports/2026-07-04-entity-v3.1-verdict.md`: `region_changed` fired at press 1).
-`region_active`/`region_settled` replace it with a **threshold + dwell (`k`)**, which is what makes them
-robust to per-frame drift.
+**Deferred to the 3D-perception climb (NOT this rung):** foveated `region_settled(box,threshold,k)` /
+`region_active(box,threshold)` (pixel-activity in a sub-box, reusing the `region_changed` box syntax at
+`world_mcp.py:960`). The *predicate* is cheap pixel math, but its *usefulness* — "settle on the minimap
+heading," "wait for the lap counter" — presupposes knowing which box is meaningful and reading it, which
+the perceiver provably cannot do yet (rotating non-tile minimap + broken glyph cache,
+`runs/nds3d_probe/FINDINGS.md`). Bundling them here would smuggle a perception dependency into a rung
+meant to isolate the skill/budget question. They join the enum in the port that ships 3D perception.
 
-## §4 The idle threshold must be pinned per world, above its drift floor
+Why `region_changed(box)` is replaced, not reused: under continuous time it fires on the first sampled
+frame (the background always moves) — the same degeneracy entity-gate hit in *discrete* GB against a
+moving enemy (`reports/2026-07-03-entity-v3-verdict.md:109`: "`region_changed` fired on the first (or
+second) press almost every time"; the fuller v3.1 write-up is on `main` via PR #96,
+`reports/2026-07-04-entity-v3.1-verdict.md`). Threshold + dwell (`k`) is the fix — carried by
+`idle_settled` in this rung and by the deferred `region_*` later.
 
-`idle_settled`/`region_*` need a `threshold`. The world's idle-drift floor sets the minimum usable value
-— MKDS idles at 12.2%/frame, so an `idle_settled(threshold=0.05, …)` would **never** settle there.
+## §4 The idle threshold — pinned per world, but only after a real in-gameplay measurement
 
-**Decision of record:** pin the threshold **per world at define/build time from an offline
-screen-measured idle baseline** (pixel-change over idle frames on a banked savestate, measured once and
-frozen into a constant — this is a screen measurement, NOT the RAM oracle, and nothing about it reaches
-the agent wire), NOT via an online estimator on the wire. This matches the "closed per-world enum, pinned in the build PR" discipline and keeps no learned
-state on the agent wire. Rule: **`threshold` must sit above the world's measured idle floor** (MKDS:
-> 0.122). A window-relative "settle = change dropped below X% of the recent max" variant is noted as a
-fallback if a fixed threshold proves brittle across a game's screens, but is NOT adopted now (it adds an
-online baseline estimator — defer until a fixed threshold is shown to fail).
+`idle_settled` needs a `threshold`, and the world's idle-drift floor sets its minimum usable value.
+**We do not yet have that floor for any 3D world.** The only MKDS number in hand — ~12% mean/frame — is
+the count-in pass, contaminated by the count-in animation (`FINDINGS.md:329-331`); FINDINGS' own headline
+caveat is that no true *in-gameplay* idle was ever measured (`:166`). So this doc pins a PROCEDURE, not
+a number.
+
+**Decision of record:** (i) a build-PR prerequisite is an **offline in-gameplay idle measurement** —
+pixel-change over idle frames during actual play on the banked savestate (a screen measurement frozen to
+a constant; NOT the RAM oracle; nothing reaches the agent wire). (ii) the `threshold` is pinned from it,
+above the measured steady-idle ceiling and below the action-driven change rate. (iii) **if those two
+overlap** — a non-stationary idle floor, which the data already hints at (Spirit Tracks idles ~11.9% in
+one screen, `FINDINGS.md:74`) — a fixed threshold cannot separate settle from play, and the
+**window-relative** variant (settle = change dropped below X% of the recent rolling max) becomes
+REQUIRED, not optional. Its cost is small and does not touch the invariants: the rolling max is a
+world-side statistic behind the seam, not a new wire channel and not learned cross-run. So "defer
+self-calibration" is a *measurement* call, not an invariant one.
 
 ## §5 Observation sampling under a loop
 
@@ -102,32 +115,51 @@ type. `k` in `idle_settled` counts *sampled* frames (spacing `s`), so its wall-t
 frames; the build PR documents `s` so `k` is unambiguous (the same disambiguation `max_iters`-vs-frames
 needs).
 
-## §6 Worked sketch — a first MKDS skill, honestly decomposed
+**Budget invariant (assert at define time):** `s ≤ r` and `F ≤ max_iters · r`, and every predicate must
+be satisfiable within budget — `elapsed_frames(n)` needs `n ≤ F`, `idle_settled(…,k)` needs `k·s ≤ F`.
+Otherwise the loop can never fire its stop and always burns to the ceiling. This is the continuous-time
+analogue of the "box that can never fire" checks the code already runs at define time
+(`world_mcp.py:963-971`): reject an unsatisfiable skill at define, don't discover it at runtime.
 
-Goal off the start line: "wait for GO, then accelerate straight." The naive single skill is degenerate —
-a skill whose only body is "wait" does nothing (see §7). Honest decomposition:
-- The brain *observes* the countdown itself (one decision), then defines `launch = repeat_until(
-  steps=[{button:A}], stop_when=elapsed_frames(90), max_iters=…)` to hold accelerate for ~1.5 s across
-  the GO, and `steer_to_center = repeat_until(steps=[{button:left|right}],
-  stop_when=region_settled(<minimap-heading box>, threshold, k))`.
-- `idle_settled` earns its keep on *transitions the brain must not act through* — a lap-complete banner,
-  a rubber-band catch-up freeze, a results screen — where the correct behavior is "hold until the world
-  resumes," and the alternative (spamming actions blind) wastes budget or misfires.
+## §6 Worked sketch — a first MKDS skill, honestly decomposed (perception-free)
 
-## §7 Degenerate guards (carried from rung-1, extended)
+Off the start line: "hold accelerate through GO, don't act through the count-in." Decomposition using
+ONLY this rung's two predicates:
+- The brain *observes* the count-in itself (one decision), then `launch = repeat_until(
+  steps=[{button:A}], stop_when=elapsed_frames(~90), max_iters=…)` — hold accelerate for ~1.5 s across
+  GO. `elapsed_frames` (not `idle_settled`) is correct here: the body is *acting*, so the frame keeps
+  changing; a time bound is what "hold for a beat" means.
+- `wait_out_banner = repeat_until(steps=[{button:none}], stop_when=idle_settled(threshold, k))` — for a
+  lap/results/catch-up freeze the brain must not steer through, coast until the screen settles. Here the
+  body is *not* driving frame-change, so `idle_settled` can actually fire.
 
-- **The no-op wait.** `idle_settled` invites a skill that issues no real action and just waits out
-  frames — that is not compilation, it is a `wait()` tool call. Guard: inherit the rung-1 **qualifying
-  call** rule (`executed_step_count ≥ 3` real actions before the stop fires; `score_skill_rung1.py`
-  degenerate-strategy guard, and the entity-gate skill guard) and require, for a continuous-time skill
-  to *count as evidence*, that its inner `steps` issue buttons — a body of only waits is rejected at
-  define time.
-- **Threshold gaming.** A `threshold` set at/below the idle floor makes `idle_settled` fire never (hangs
-  to the frame ceiling) or always (fires frame 1). Guard: build-PR asserts `threshold >` measured idle
-  floor and `<` the world's action-driven change rate (MKDS: 0.122 < threshold < ~0.33).
+The split of labor matters: `idle_settled` governs **hold-through-a-transition** loops (passive body);
+`elapsed_frames` governs **do-something-for-a-beat** loops (active body). The two are NOT meant to be
+paired in one loop — a button-issuing body keeps resetting a whole-frame `idle_settled` streak, so
+`idle_settled` + an acting body is self-defeating (§7). Steering-by-minimap is deliberately absent: it
+needs the deferred `region_*` and 3D perception.
+
+## §7 Degenerate guards (requirements for the build PR — not yet in code)
+
+None of these exists today; the build PR implements and pre-registers them.
+
+- **The no-op "wait" skill.** `idle_settled` invites a skill whose body issues nothing and just burns
+  frames — a `wait()` call, not compiled behavior. The rung-1 `executed_step_count ≥ 3` guard
+  (`score_skill_rung1.py`) does NOT catch this cleanly here: a hold-through-transition loop's body is
+  legitimately passive, and rung-1's own verdict flags that count-based guard as blind to the
+  conditional half (`skill-rung1-ab-verdict.md:104-110`) — which is exactly `idle_settled`. So the port
+  pins the **stricter conditional gate** instead: a skill counts as evidence only if **≥1 `run_skill`
+  call has its `stop_when` fire before the frame ceiling / `max_iters`** (a real predicate branch, not a
+  timeout), evaluated at **skill granularity**. A passive-body `idle_settled` loop that genuinely detects
+  a transition qualifies; a body-and-stop pair that never depends on world state does not.
+- **Threshold gaming.** A `threshold` at/below the idle floor makes `idle_settled` fire never (burns to
+  the ceiling) or always (fires frame 1). Guard: the build PR asserts the pinned `threshold` sits
+  strictly between the measured steady-idle ceiling and the action-driven rate (§4), or uses the
+  window-relative form when they overlap. (No numeric window is pinned here — §4: it needs the
+  in-gameplay measurement first.)
 - **Frame-ceiling overflow = clean abort.** If no `stop_when` fires within `F`, the call ends and logs
-  the reason (exactly as discrete `max_iters` exhaustion does today, `world_mcp.py:1108`), never a silent
-  hang.
+  the reason (as discrete `max_iters` exhaustion does today — Kirby `world_mcp.py:1108`, ARC `:2023`),
+  never a silent hang.
 
 ## §8 Reuse vs rethink (honest bounds)
 
@@ -136,17 +168,20 @@ a skill whose only body is "wait" does nothing (see §7). Honest decomposition:
 | `define_skill`/`run_skill`, `repeat_until`, `max_iters ≤ 8` | **Reuse unchanged** (decision budget) |
 | closed per-world enum, no wire channels, blank-agent | **Reuse unchanged** |
 | `steps_elapsed(n)` as a *world-step* count | **Rethink** → `elapsed_frames(n)` (world-time) + `steps_elapsed` re-scoped to *actions* |
-| `region_changed(box)` | **Replace** → `region_active`/`region_settled` (threshold + dwell) |
-| `grid_unchanged_for(k)` (bit-equality) | **Generalize** → `idle_settled(threshold,k)` (pixel-change threshold) |
+| `region_changed(box)` | **Replace** → threshold+dwell; foveated `region_*` **deferred** to the 3D-perception rung |
+| `grid_unchanged_for(k)` (bit-equality) | **Generalize** → `idle_settled(threshold,k)` — **transition** detector only, not steady play |
 | one budget (`_SKILL_MAX_WORLD_STEPS = 50` presses) | **Split** → decision budget (iters) + frame ceiling `F` |
 | observe once per action | **Add** world-side sample stride `s` for predicate eval (no wire change) |
 
-**Riskiest claim (the thing a gate must test):** a *screen-only* `{idle_settled, elapsed_frames,
-region_settled}` trio plus the decision/frame budget split is enough to make a bounded skill genuinely
-useful in a continuous-time world — with NO new privileged channel and NO 3D perception layer. If a first
-MKDS build cannot clear a pinned batching-benefit bar (à la rung-1's 1.3×) using only these, the deficit
-localizes to *perception* (the 3D primitives), not to the skill/budget model — which is the whole point
-of resolving this bridge cheaply first.
+**Riskiest claim (what a gate must test):** the *perception-free* pair `{elapsed_frames,
+idle_settled(whole-frame)}` plus the decision/frame budget split is enough to make a bounded skill useful
+in a continuous-time world — no new privileged channel, no 3D perception. Because this rung deliberately
+excludes the foveated `region_*`, its reach is bounded: it can time-bound actions and hold through
+transitions, but NOT steer by an on-screen element. So the honest gate is a **batching-benefit** bar (à
+la rung-1's 1.3×) on tasks reachable with hold/time primitives alone; if even that fails, the deficit is
+in the budget/predicate model (cheap to fix). Tasks needing `region_*` are out of scope until 3D
+perception ships — the point of isolating the bridge here is to NOT let a perception gap masquerade as a
+skill-model failure.
 
 ## §9 What this unblocks / next step
 
@@ -157,11 +192,12 @@ is the shared shape that PR implements; it does not itself authorize any paid ru
 
 ## Sources
 - `world_mcp.py` — skill executor + budget constants (`:492`, `:495`, `:569`, `:571`), stop_when parsers
-  (`:943` Kirby, `:1885` ARC), discrete decision assumption (`:1293`), clean-abort (`:1108`).
+  (`:943` Kirby, `:1885` ARC), discrete decision assumption (`:1293`), define-time "can't fire" checks
+  (`:963-971`), clean-abort (Kirby `:1108`, ARC `:2023`). Reuse story is Kirby-derived.
 - `runs/nds3d_probe/FINDINGS.md` — MKDS race idle 12.2%/frame, perception breaks; `mkds_race_start.state`.
 - `reports/2026-07-03-skill-compilation-design.md` — rung-1 mechanism + `repeat_until` formalism.
 - `reports/2026-07-03-skill-rung1-ab-verdict.md` — the 2.94× batching result + qualifying-call guard.
-- `reports/2026-07-04-vizdoom-3d-floor-design.md` — `tics` (frames-per-action) precedent; 3D perception is a later climb.
-- `reports/2026-07-04-entity-v3.1-verdict.md` — `region_changed` degeneracy against a moving target (the discrete preview of this problem).
+- `reports/2026-07-04-vizdoom-3d-floor-design.md` §2.1+§3.2 — frames-per-action (tics / `repeat`) precedent; 3D perception is a later climb.
+- `reports/2026-07-03-entity-v3-verdict.md:109` — `region_changed` degeneracy against a moving target (the discrete preview of this problem; on this branch + `main`). Fuller v3.1 write-up on `main` via PR #96: `reports/2026-07-04-entity-v3.1-verdict.md`.
 - `reports/nds-emulation-plan.md` — dual-screen/touch deltas; 3D perception failure-triggered (Δ3).
 - `core/contracts.py` — Observation/ToolResult wire types (no new type introduced).
