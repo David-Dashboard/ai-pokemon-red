@@ -7,15 +7,73 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-03 (day close: SKILL-COMPILATION RUNG-1 GATE PASS 2.94x (L2 wall fell, #91) still
-the day's headline; entity v3 banked INSUFFICIENT_DATA with the b_k repair VALIDATED (0.812→0.585) +
-skill guard working as designed + NEAR-discipline and adjacency-invocation diagnoses located;
-#92/#93/#94 merged; NDS 3D lane opened (MKDS race savestate + idle-change 12.2%/frame + 3 perception
-breaks documented)._
+_Last updated: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
+`stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
+continuous-time BUILD PR.)_
 
-**⇒⇒ NEWEST (2026-07-03, day close) — DAY CLOSE: skill gate PASS stands as the headline; entity-v3
+**⇒⇒ NEWEST (2026-07-04) — HANDOVER SKILL LIBRARY + CONTINUOUS-TIME BRIDGE: two PRs merged to main. ⇒⇒**
+1. **Skill library merged (#97):** `.claude/skills/` now holds **10 skills** so junior/Sonnet-class sessions
+   can run this project unaided — session-start, safety-invariants, dev-workflow, paid-run-harness,
+   gate-methodology, new-world-port, session-wrap-up, architecture-and-seam, diagnose-a-run,
+   cheapness-skill-compilation (+ README index). Covers all four North Star claims + the offline
+   failure-triage path. Authored + adversarially reviewed via workflows (accuracy + usability +
+   publication-safety + completeness); `.gitignore` un-ignores ONLY `.claude/skills/` (rest of `.claude/`
+   stays internal). **SECURITY:** a review subagent leaked a `settings.local.json` bearer token into a PR
+   comment — contained (comment deleted, verified no tracked copy), but the **token should be ROTATED**
+   (memory `review-agent-secret-hygiene`).
+2. **Continuous-time `stop_when` design merged (#98)** — resolves NEXT #2:
+   `reports/2026-07-04-continuous-time-stopwhen-design.md`. Splits the decision budget (`max_iters ≤ 8`,
+   unchanged) from a new world-time/frame budget (`F`, resolution `r`); first rung is the **perception-free**
+   pair `{elapsed_frames, idle_settled(whole-frame transition detector)}`; foveated `region_*` **deferred**
+   to the 3D-perception climb; thresholds pinned per world from an in-gameplay idle measurement (a build
+   prerequisite — the FINDINGS:166 gap); rung-1 degenerate guards carried (conditional-half gate at skill
+   granularity). 2 adversarial reviews (both "core sound → REVISE"); all findings fixed pre-merge. No code,
+   no paid run.
+3. **⇒ NEXT (priority order):** (1) **MKDS continuous-time BUILD PR** — implement the #98 design: measure
+   MKDS in-gameplay idle offline, pin `r`/`s`/`F`/thresholds + the enum, free seam-check, pre-register an
+   A/B (skills vs primitives) on hold/time-reachable tasks; (2) **glyph R1 build** (snap-to-grid mitigation
+   + warm-cache fixture); (3) **doom scan-and-center macro port** (validates the conditional-loop half rung-1
+   left untested); (4) **entity-gate v3.2 IF David wants it** — (c) forbid quoting NEAR shapes in notes
+   (brief-only) / (d) a moving-target-safe predicate or conditional benign-arch approach; (5) **sweep stage-2**.
+4. **Awaiting David:** rotate the leaked `settings.local.json` bearer token; v3.2 go/no-go; the LEDGER.md
+   re-arm (working-tree copy is byte-identical to main's tracked copy — noted, left untouched).
+
+**⇒ (2026-07-04, run banked) — ENTITY-GATE v3.1 PAID RUN COMPLETE: INSUFFICIENT_DATA (banked,
+one attempt). The pre-registered fixes WORKED (all 9 NEARs pre-drop, 5/5 drops covered in-window; 6/7
+run_skill calls ≥3 presses vs v3's 0) — the run died on two NEW seams instead. ⇒**
+0. **v3.1 verdict** (`reports/2026-07-04-entity-v3.1-verdict.md`): account-B, 74 turns, **$5.19**, clean
+   exit. Scorer (frozen): 4/13 NEAR lines RETROACTIVE ≥ 20% → unscorable; skill guard 6 qualifying but
+   **0 qualifying-conditional** → independent FAIL. Diagnoses (both verified line-by-line):
+   **(1) quoted-NEAR taint** — the 4 "retroactive" lines are exactly the brain's `DROP#n ... Covered by
+   NEAR id=1 step=X` bookkeeping notes re-matched by `_NEAR_RE.search`; zero genuine NEARs were late.
+   **(2) region_changed is degenerate against converging enemies** — fired at press 1; brain adaptively
+   fell back to `steps_elapsed`, which the scorer discounts by design. v3.2 candidates in the verdict:
+   (c) brief-only "never quote NEAR inside other notes", (d) a moving-target-safe conditional predicate
+   (or conditionally approach the stationary benign arch). Nothing decided — David's call, ~$5/attempt.
+
+**⇒ (2026-07-04, earlier) — v3.1 pre-registration written, adversarially reviewed, PR #96 open. ⇒**
+1. **v3.1 pre-reg** (`reports/2026-07-04-entity-v3.1-prereg.md`, PR #96) fixes the two independent
+   compliance failures v3 banked INSUFFICIENT_DATA on — (a) NEARs logged AFTER their drops (q_k starved
+   0.400) and (b) `approach_suspect` invoked at adjacency (0 qualifying-conditional) — **brief/protocol
+   ONLY; all v3 machinery (scorer `eval/score_entity_gate_v3.py`, stop_when enum, `B_K_CEILING=0.70`,
+   skill guard, macro-interior exclusion) inherited UNCHANGED**, stricter-only, no code written, no new
+   remember-line shape.
+2. **Design crux (§3.5, surfaced by review):** (a) and (b) contradict naively — coverage needs a NEAR at
+   the approach START, but "invoke from distance" makes that claim *far*/uncovered. They co-exist ONLY in
+   the **near-but-not-touching** regime: suspect NEAR/in-box (pre-approach NEAR covers the contact-drop)
+   with a MODERATE gap-to-contact (macro loops ≥2 iters AND span stays ≤ W=15). First draft's `FAR` line
+   removed.
+3. **1 Sonnet adversarial review: BLOCK → both majors fixed** (the (a)/(b) contradiction/`FAR` loophole;
+   an unbounded retreat loop risking INSUFFICIENT_DROPS → "take the contact when touching"). Machinery-
+   frozen claim + all cited v3 numbers verified against the scorer/verdict; review record posted on #96.
+4. **AWAITING DAVID (nothing done autonomously past the PR):** (i) the §3 fork — test the rewritten brief
+   once more (chosen) vs escalate NOW to a mechanical `run_skill` guard (v3.2, pre-registered as the
+   recurrence path); (ii) paid-run authorization (account-B, ~$5, one attempt); (iii) merge #96. If the
+   paid run is authorized, recommend one focused re-review of the §3.5 restructure first.
+
+**⇒ (2026-07-03, day close) — skill gate PASS stands as the headline; entity-v3
 INSUFFICIENT_DATA banked with the b_k camping-repair VALIDATED and two located diagnoses for v3.1
-(NEAR discipline + adjacency invocation); three infra PRs merged; NDS 3D lane opened. ⇒⇒**
+(NEAR discipline + adjacency invocation); three infra PRs merged; NDS 3D lane opened.**
 1. **SKILL-COMPILATION RUNG-1 GATE: PASS (2.94x, pinned bar 1.3x, already banked in PR #91, unchanged by
    today's later work).** The ARC wa30 level-2 wall — standing since 2026-07-04, unbroken across 3 prior
    framings — FELL under the `define_skill`/`run_skill` mechanism. First paid-gate PASS for a capability

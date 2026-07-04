@@ -623,6 +623,103 @@ def _kirby_skills_enabled() -> bool:
     return os.environ.get("KIRBY_SKILLS") == "1"
 
 
+# --- NDS continuous-time skill port (reports/2026-07-04-mkds-continuous-time-build-plan.md, the build
+# PR for reports/2026-07-04-continuous-time-stopwhen-design.md, PR #98). `define_skill`/`run_skill` are
+# added to `World`'s tool surface + dispatch (nds runs through the SAME generic World/Gateway/GamePlugin
+# path as kirby_dreamland, world_mcp.py:705) — NOT a new session class. Gated behind NDS_SKILLS=1, a
+# SEPARATE flag from KIRBY_SKILLS/ARC_SKILLS (one flag per world, the same decision of record the Kirby
+# port made) so a --game nds session with KIRBY_SKILLS=1 (but no NDS_SKILLS) still sees no skill tools,
+# and vice versa for a kirby_dreamland session with NDS_SKILLS=1 set.
+#
+# The enum here is DIFFERENT from Kirby's (design §3): NDS is continuous-time (the world advances every
+# frame regardless of player input, design §0), so the discrete "one press = one world step" assumption
+# behind Kirby's steps_elapsed/move_blocked/move_succeeded/region_changed does not hold. This rung ships
+# ONLY the two perception-free, frame-counted predicates (design §3): elapsed_frames(n) and
+# idle_settled(threshold, k). Foveated region_* is explicitly deferred to the 3D-perception climb (design
+# §3) — it is NOT in this enum.
+_NDS_SKILL_MAX_ITERS = 8              # repeat_until's max_iters cap — same decision budget as Kirby (plan §3)
+_NDS_SKILL_MAX_WORLD_FRAMES = 300     # F: absolute per-run_skill-call frame ceiling (plan §3, ~5s @ 59.83fps)
+
+# Sample stride `s` and idle threshold, calibrated against the REAL probe trace
+# (runs/nds3d_probe/idle_measurement.md), not the build plan's own (broken) arithmetic. The plan's
+# tentative s=24 was wrong: it derives from k*s<=F alone, ignoring the ACTUAL count-in hold lengths the
+# probe measured — 37 consecutive quiet frames (global frames 6-42) and 22 consecutive quiet frames
+# (frames 50-71), both under threshold ~0.17-0.9%. At s=24, sampling every 24 frames inside the SHORTER
+# 22-frame hold yields at most floor(22/24)+1 = 1 sample below threshold — idle_settled could never
+# accumulate k>=2 consecutive sub-threshold samples, let alone the plan's suggested k=10. It would never
+# fire on the real data.
+#
+# Pin s=4 instead: inside the shorter 22-frame hold this gives floor(22/4)=5 samples of margin; inside
+# the longer 37-frame hold, floor(37/4)=9. A default/typical k=4 (4*4=16 quiet frames needed) comfortably
+# fits inside BOTH holds with room to spare — the dwell requirement is satisfied well before either hold
+# ends, not at its edge. k is a per-skill arg the brain supplies, bounded only by the reachability rule
+# k*s <= F (not a separate hardcoded max) — at s=4 that allows k up to 75, but a skill author aiming at
+# the count-in transition should use something in the k~=3-5 range per this data (floor(22/4)=5 is the
+# shorter hold's own margin ceiling — k=6 would not fit inside it).
+_NDS_SKILL_SAMPLE_STRIDE = 4          # s: frames between idle_settled samples (see reasoning above)
+# Design §7's "threshold gaming" guard: the probe's clean band is ~[0.5%, 6%] — above the count-in
+# hold's own noise floor (~0.3%) and below the ~6.77% active-play floor (both figures transcribed into
+# the tracked reports/2026-07-04-mkds-continuous-time-build-plan.md §4, since the raw probe file
+# runs/nds3d_probe/idle_measurement.md is gitignored and absent from a fresh checkout). A threshold
+# outside this band is either unreachable (below count-in noise -> never fires) or trivially satisfied
+# by active play (above 6% -> defeats the whole PASSIVE-vs-ACTIVE distinction design §6/§7 relies on).
+# Recommended/typical value per the plan is 0.01 (1.0%).
+_NDS_IDLE_THRESHOLD_FLOOR = 0.005     # 0.5% — above count-in hold noise
+_NDS_IDLE_THRESHOLD_CEIL = 0.06       # 6% — below the ~6.77% active-play floor
+
+_NDS_DEFINE_SKILL_TOOL = {
+    "name": "define_skill",
+    "description": ("Compile a named macro out of EXISTING primitive actions you already have. "
+                    "`steps` is a list where each entry is either a plain press step "
+                    "{\"button\": \"a\", \"hold_frames\": 8} (hold_frames optional, matches "
+                    "press_button's own default), or a single bounded loop "
+                    "{\"repeat_until\": {\"steps\": [...], \"stop_when\": \"<predicate>\", "
+                    "\"max_iters\": <=8}} — re-run its inner steps until stop_when fires or max_iters "
+                    "iterations complete (no nesting: a repeat_until's inner steps may not contain "
+                    "another repeat_until). This world runs in CONTINUOUS TIME: the game advances every "
+                    "frame whether or not you act, so stop_when is frame-counted, not press-counted. It "
+                    "is one of: elapsed_frames(n) with 0<n<=300 (fires once n emulator frames have "
+                    "elapsed since the loop started — the tool for an ACTIVE body, e.g. \"hold accelerate "
+                    "for about n frames\"), or idle_settled(threshold, k) with "
+                    "0.005<threshold<0.06 (~0.01 typical) and k>=1 (and k*s<=F) "
+                    "(fires when the whole-frame pixel-change fraction stays below threshold for k "
+                    "consecutive sampled frames — a TRANSITION detector for a PASSIVE body, e.g. \"hold "
+                    "through a count-in until the world resumes\"; it will not fire during active play, "
+                    "by design). Re-using a name replaces your prior definition. The definition is "
+                    "logged verbatim and forgotten when this session ends — it does not persist across "
+                    "runs. Call run_skill(name) to execute it."),
+    "inputSchema": {"type": "object",
+                    "properties": {"name": {"type": "string"}, "steps": {"type": "array"}},
+                    "required": ["name", "steps"]},
+}
+_NDS_RUN_SKILL_TOOL = {
+    "name": "run_skill",
+    "description": ("Execute a skill you previously defined with define_skill. Advances world state "
+                    "exactly as if each of its steps had been pressed individually (same validation, "
+                    "same logging as a plain press_button), checking any repeat_until's stop_when "
+                    "against sampled frames and stopping early (with the reason) if it fires. An "
+                    f"absolute ceiling of {_NDS_SKILL_MAX_WORLD_FRAMES} emulator frames applies per call "
+                    "regardless of the skill's own definition, on top of the max_iters decision cap. "
+                    "Returns ONE result: the observation after the skill ran, plus a log of which steps "
+                    "actually executed and why it stopped — one decision, many frames."),
+    "inputSchema": {"type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"]},
+}
+_NDS_SKILL_TOOLS = [_NDS_DEFINE_SKILL_TOOL, _NDS_RUN_SKILL_TOOL]
+
+# nds ONLY (mirrors Kirby's one-world-per-flag scoping) — a future third continuous-time world pins its
+# own flag too, never a shared SKILLS_WORLDS var.
+_NDS_SKILLS_WORLDS = frozenset({"nds"})
+
+
+def _nds_skills_enabled() -> bool:
+    """Arm isolation, identical shape to _kirby_skills_enabled/_arc_skills_enabled: NDS_SKILLS is its OWN
+    env var, checked independently of KIRBY_SKILLS/ARC_SKILLS. Opt-in, default OFF — unset or anything
+    other than exactly "1" leaves the brain unable to even see the skill tools."""
+    return os.environ.get("NDS_SKILLS") == "1"
+
+
 def _miniwob_static_tools() -> list[dict]:
     """tools/list response for any miniwob_* world — identical across tasks (same fixed action surface)."""
     return [_MINIWOB_OBSERVE_TOOL, _MINIWOB_READ_REGION_TOOL, _MINIWOB_WHATS_CHANGED_TOOL,
@@ -663,6 +760,12 @@ def _static_tools(game: str) -> list[dict]:
     # see these tools even if KIRBY_SKILLS happens to be set — the flag is world-scoped, not global.
     if game in _KIRBY_SKILLS_WORLDS and _kirby_skills_enabled():
         nav = [*nav, *_KIRBY_SKILL_TOOLS]
+    # nds ONLY, gated behind NDS_SKILLS=1 — same arm-isolation discipline as Kirby: a --game nds session
+    # with only KIRBY_SKILLS/ARC_SKILLS set (no NDS_SKILLS) must NOT see these tools, and vice versa (a
+    # kirby_dreamland session with NDS_SKILLS=1 must not see them either — the world in-check above is
+    # what enforces that direction).
+    if game in _NDS_SKILLS_WORLDS and _nds_skills_enabled():
+        nav = [*nav, *_NDS_SKILL_TOOLS]
     if game in _NDS_WORLDS:
         return [*nav, *_NDS_ACTION_TOOLS]
     if game in _GBA_WORLDS:
@@ -779,6 +882,16 @@ class World:
         self.skills: dict[str, dict] = {}   # within-run only, blank-agent law (same lifetime as lessons)
         self._skill_log_path = os.path.join(args.out, "skills.jsonl")
 
+        # NDS continuous-time skill port (plan §1, mirrors the Kirby block immediately above). Same
+        # per-flag/per-init discipline: NDS_SKILLS is read ONCE at construction, not per call, so the env
+        # can't flip mid-session and change which arm this session is. tools/list already hides
+        # define_skill/run_skill when off or off-world; this is defense-in-depth against a stale client
+        # or hand-rolled request calling them anyway. `self.skills`/`self._skill_log_path` above are
+        # reused unchanged — a World instance only ever serves ONE --game, so Kirby and NDS never
+        # simultaneously populate the same skills dict.
+        self.nds_skills_world = args.game in _NDS_SKILLS_WORLDS
+        self._nds_skills_enabled = self.nds_skills_world and _nds_skills_enabled()
+
     def tools(self) -> list[dict]:
         action = [{"name": s.name, "description": s.description, "inputSchema": s.schema}
                   for s in self.plugin.tools(_AGENT)]
@@ -787,6 +900,8 @@ class World:
             nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
         if self._kirby_skills_enabled:
             nav = [*nav, *_KIRBY_SKILL_TOOLS]
+        if self._nds_skills_enabled:
+            nav = [*nav, *_NDS_SKILL_TOOLS]
         return [*nav, *action]
 
     # -- self-improvement preamble (re-injected every turn) --------------------
@@ -1201,6 +1316,305 @@ class World:
         # logged already, above, so this extra step is never mistaken for part of the macro's span.
         return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
 
+    # -- NDS continuous-time skill compilation (plan §2-§5, nds ONLY, gated by NDS_SKILLS) ---------------------
+    # `steps` is a list of press-shaped steps ({"button": "a"|"none", "hold_frames": N}) and/or ONE
+    # bounded loop construct `repeat_until` (no nesting, max_iters<=8 — identical caps to Kirby/rung 1).
+    # Unlike Kirby, this world is CONTINUOUS TIME (design §0): the world advances every frame regardless
+    # of player input, so the budget is split (design §2) into a DECISION budget (max_iters, unchanged)
+    # and a FRAME budget (_NDS_SKILL_MAX_WORLD_FRAMES, an absolute per-run_skill-call ceiling counted via
+    # emu.frame deltas, never a press count). stop_when predicates are frame-counted
+    # (elapsed_frames/idle_settled), never an oracle/RAM/score field — same no-leak law as Kirby.
+
+    @staticmethod
+    def _parse_nds_stop_when(expr: str):
+        """Parse one of NDS's two pinned predicates (plan §2/design §3) into (kind, params). Raises
+        ValueError (caught by the caller, turned into a tool-result error, never a crash) on anything
+        outside the closed enum — mirrors _parse_kirby_stop_when exactly, different enum. Reachability
+        (design §5's "reject an unsatisfiable skill at define, don't discover it at runtime") is checked
+        HERE, at parse time, using the fixed frame ceiling F — not deferred to run_skill."""
+        import re
+        expr = (expr or "").strip()
+        m = re.fullmatch(r"elapsed_frames\(\s*(\d+)\s*\)", expr)
+        if m:
+            n = int(m.group(1))
+            if not (0 < n <= _NDS_SKILL_MAX_WORLD_FRAMES):
+                raise ValueError(f"elapsed_frames(n): n must satisfy 0 < n <= "
+                                 f"{_NDS_SKILL_MAX_WORLD_FRAMES}; got {n}")
+            return ("elapsed_frames", {"n": n})
+        m = re.fullmatch(r"idle_settled\(\s*([0-9]*\.?[0-9]+)\s*,\s*(\d+)\s*\)", expr)
+        if m:
+            threshold = float(m.group(1))
+            k = int(m.group(2))
+            if not (_NDS_IDLE_THRESHOLD_FLOOR < threshold < _NDS_IDLE_THRESHOLD_CEIL):
+                raise ValueError(
+                    f"idle_settled(threshold, k): threshold must satisfy "
+                    f"{_NDS_IDLE_THRESHOLD_FLOOR} < threshold < {_NDS_IDLE_THRESHOLD_CEIL} "
+                    "(the threshold-gaming guard — must sit strictly between the measured count-in "
+                    f"idle noise and the active-play floor); got {threshold}")
+            if k < 1:
+                raise ValueError(f"idle_settled(threshold, k): k must be >= 1; got {k}")
+            if k * _NDS_SKILL_SAMPLE_STRIDE > _NDS_SKILL_MAX_WORLD_FRAMES:
+                raise ValueError(
+                    f"idle_settled(threshold, k): k*s <= F required (s={_NDS_SKILL_SAMPLE_STRIDE}, "
+                    f"F={_NDS_SKILL_MAX_WORLD_FRAMES}) so the dwell can ever be reached within budget; "
+                    f"got k={k} (k*s={k * _NDS_SKILL_SAMPLE_STRIDE})")
+            return ("idle_settled", {"threshold": threshold, "k": k})
+        raise ValueError(f"stop_when {expr!r} is not one of the pinned NDS predicates: "
+                         f"elapsed_frames(n) with 0<n<={_NDS_SKILL_MAX_WORLD_FRAMES}, "
+                         f"idle_settled(threshold, k) with {_NDS_IDLE_THRESHOLD_FLOOR}<threshold"
+                         f"<{_NDS_IDLE_THRESHOLD_CEIL} and k>=1 (and k*s<=F).")
+
+    def _validate_nds_step_list(self, steps, *, inside_loop: bool) -> Optional[str]:
+        """Structural validation at define_skill time (fail loud before storing a broken skill, never at
+        run_skill time) — mirrors _validate_kirby_step_list. "none" is a valid pseudo-button meaning "no
+        input this step" (tick frames with nothing held) — the PASSIVE body idle_settled needs (design
+        §6: a button-issuing body keeps resetting idle_settled's streak, so a hold-through-transition
+        loop's body must be able to issue nothing)."""
+        if not isinstance(steps, list) or not steps:
+            return "define_skill error: `steps` must be a non-empty list."
+        valid_buttons = set(self.plugin._buttons()) if hasattr(self.plugin, "_buttons") else set(_nds_emu_mod.BUTTONS)
+        valid_buttons = valid_buttons | {"none"}
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                return f"define_skill error: step {i} must be an object; got {type(step).__name__}."
+            if "repeat_until" in step:
+                if inside_loop:
+                    return (f"define_skill error: step {i} is a repeat_until nested inside another "
+                            "repeat_until — nesting is not allowed (plan §5, pinned).")
+                loop = step["repeat_until"]
+                if not isinstance(loop, dict):
+                    return f"define_skill error: step {i}'s repeat_until must be an object."
+                inner = loop.get("steps")
+                stop_when = loop.get("stop_when")
+                max_iters = loop.get("max_iters")
+                if not isinstance(max_iters, int) or not (1 <= max_iters <= _NDS_SKILL_MAX_ITERS):
+                    return (f"define_skill error: step {i}'s repeat_until.max_iters must be an int in "
+                            f"[1, {_NDS_SKILL_MAX_ITERS}]; got {max_iters!r}.")
+                try:
+                    self._parse_nds_stop_when(stop_when)
+                except ValueError as e:
+                    return f"define_skill error: step {i}'s repeat_until.stop_when invalid: {e}"
+                err = self._validate_nds_step_list(inner, inside_loop=True)
+                if err:
+                    return err
+            elif "button" in step:
+                b = str(step.get("button", "")).strip().lower()
+                if b not in valid_buttons:
+                    return (f"define_skill error: step {i}'s button {step.get('button')!r} is not "
+                            f"valid; must be one of {sorted(valid_buttons)}.")
+                hold = step.get("hold_frames", 8)
+                if not isinstance(hold, int) or not (1 <= hold <= 120):
+                    return (f"define_skill error: step {i}'s hold_frames must be an int in [1, 120]; "
+                            f"got {hold!r}.")
+            else:
+                return f"define_skill error: step {i} must have either \"button\" or \"repeat_until\"."
+        return None
+
+    def _define_nds_skill(self, args: dict) -> list[dict]:
+        skill_name = str(args.get("name", "")).strip()
+        if not skill_name:
+            return [{"type": "text", "text": "define_skill error: `name` must be a non-empty string."}]
+        if "stop_when" in args:
+            # Mirrors Kirby/ARC's finding: a top-level stop_when has NO effect (it belongs inside a
+            # repeat_until step) — silently ignoring it would let the brain believe a condition was
+            # armed when it wasn't. Reject loudly; nothing is defined.
+            return [{"type": "text",
+                     "text": "define_skill error: `stop_when` belongs INSIDE a repeat_until step "
+                             "({\"repeat_until\": {\"steps\": [...], \"stop_when\": \"...\", "
+                             "\"max_iters\": N}}), not at the top level — it would have no effect "
+                             "there. Skill NOT defined."}]
+        steps = args.get("steps")
+        err = self._validate_nds_step_list(steps, inside_loop=False)
+        if err:
+            return [{"type": "text", "text": err}]
+        definition = {"name": skill_name, "steps": steps}
+        prior = self.skills.get(skill_name)
+        self.skills[skill_name] = definition
+        step_count = int(getattr(self.plugin, "_obs_count", 0))
+        if prior is not None:
+            self._log_skill({"event": "redefine_skill", "step": step_count,
+                             "prior_definition": prior, "definition": definition})
+            return [{"type": "text",
+                     "text": f"[define_skill {skill_name!r} -> ok, REPLACED your prior definition of "
+                             f"the same name; {len(steps)} top-level step(s)] "
+                             f"Call run_skill({{\"name\": {skill_name!r}}}) to execute it."}]
+        self._log_skill({"event": "define_skill", "step": step_count, "definition": definition})
+        return [{"type": "text",
+                 "text": f"[define_skill {skill_name!r} -> ok, {len(steps)} top-level step(s)] "
+                         f"Call run_skill({{\"name\": {skill_name!r}}}) to execute it."}]
+
+    @staticmethod
+    def _nds_pct_changed(prev: np.ndarray, curr: np.ndarray) -> float:
+        """Whole-frame mean-abs pixel-change fraction — the SAME metric
+        runs/nds3d_probe/idle_measurement.md and the design doc pin (mean |delta| / 255 across the
+        entire frame), so a threshold pinned from that probe transfers directly to this code."""
+        return float(np.mean(np.abs(curr.astype(np.int32) - prev.astype(np.int32)))) / 255.0
+
+    def _nds_step_and_sample(self, button: str, hold_frames: int,
+                             world_frame_budget: list) -> tuple[Optional[str], list]:
+        """Execute ONE inner step and return (error, samples) where `samples` is a list of pct_changed
+        readings taken during the step (design §5's "sample every s frames"). Two shapes, by body kind:
+
+        - PASSIVE step (button == "none"): advance in `_NDS_SKILL_SAMPLE_STRIDE`-frame ticks so
+          idle_settled gets real intra-step samples (plan's "use tick(s) in a loop" instruction) — this
+          is the only body kind idle_settled is meant to fire against (design §6/§7: an ACTING body
+          keeps resetting the whole-frame change, making idle_settled self-defeating there).
+        - ACTIVE step (a real button): executed as ONE emulator press() (hold+settle, ~24 frames) —
+          press() is atomic (no public sub-tick hook without duplicating its key-hold logic), so the
+          sample point is once per full press. This is fine because elapsed_frames, not idle_settled, is
+          the predicate design §6 pins for an acting body — no intra-press stride is needed for it. A
+          press is refused (ceiling hit) rather than issued if the REMAINING budget can't cover its full
+          hold+settle — F is an absolute cap (plan §5), so a step must never be allowed to overshoot it,
+          only to stop short of it (mirrors the "none" branch's own remaining=min(...) clamp below).
+
+        The frame budget is decremented by the ACTUAL frames advanced (mirrors Kirby's press-budget
+        decrement: only real world activity counts, never an attempted-but-rejected step)."""
+        emu = self.plugin.emu
+        if world_frame_budget[0] <= 0:
+            return f"stopped: absolute {_NDS_SKILL_MAX_WORLD_FRAMES}-frame ceiling hit", []
+        samples: list = []
+        start_frame = emu.frame
+        if button == "none":
+            prev = emu.screen_ndarray("both")
+            remaining = min(hold_frames, world_frame_budget[0])
+            advanced = 0
+            while advanced < remaining:
+                step_frames = min(_NDS_SKILL_SAMPLE_STRIDE, remaining - advanced)
+                emu.tick(step_frames)
+                advanced += step_frames
+                curr = emu.screen_ndarray("both")
+                samples.append(self._nds_pct_changed(prev, curr))
+                prev = curr
+        else:
+            if button not in set(self.plugin._buttons()):
+                return f"invalid button: {button!r}", []
+            # press()'s actual frame cost is hold_frames + its settle_frames default (16) — estimate
+            # conservatively so a press that WOULD overshoot F is refused up front, never issued and
+            # then overshot (DeSmuMEEmulator.press's own default settle; NDSPerceptionPlugin callers
+            # never override it here, so this estimate matches the real cost byte-for-byte).
+            estimated_cost = hold_frames + 16
+            if estimated_cost > world_frame_budget[0]:
+                return f"stopped: absolute {_NDS_SKILL_MAX_WORLD_FRAMES}-frame ceiling hit", []
+            prev = emu.screen_ndarray("both")
+            emu.press(button, hold_frames=hold_frames)
+            curr = emu.screen_ndarray("both")
+            samples.append(self._nds_pct_changed(prev, curr))
+        frames_used = emu.frame - start_frame
+        world_frame_budget[0] -= frames_used
+        self._track_frame()   # keep _frame_hist fresh (read_region/whats_changed parity, if ever mixed)
+        return None, samples
+
+    def _check_nds_stop_when(self, kind: str, params: dict, *, elapsed_in_loop: int,
+                             idle_streak: list) -> bool:
+        """Evaluate one pinned predicate. `elapsed_in_loop` is the emulator-frame count since the
+        CURRENT repeat_until loop started (elapsed_frames' unit — world time, not press count, per
+        design §2's rethink of steps_elapsed). `idle_streak` is a 1-element mutable counter of
+        CONSECUTIVE sub-threshold samples seen so far in this loop; the caller updates it per sample
+        (across possibly-multiple samples per step) BEFORE calling this, mirroring how Kirby's
+        move_blocked/move_succeeded read the freshly-captured outcome rather than re-observing."""
+        if kind == "elapsed_frames":
+            return elapsed_in_loop >= params["n"]
+        if kind == "idle_settled":
+            return idle_streak[0] >= params["k"]
+        return False   # unreachable: _parse_nds_stop_when already rejected anything else
+
+    def _run_nds_steps_once(self, steps, executed: list, world_frame_budget: list) -> Optional[str]:
+        """Execute the top-level step list: plain steps and/or repeat_until blocks (inner lists
+        guaranteed flat — no nesting, enforced at define time). stop_when is checked after EVERY
+        sampled frame (design §5's per-sample executor decision — finer-grained than Kirby's per-press
+        check, because a single step here can itself span several samples for a passive body)."""
+        for step in steps:
+            if "repeat_until" in step:
+                loop = step["repeat_until"]
+                inner = loop["steps"]
+                kind, params = self._parse_nds_stop_when(loop["stop_when"])
+                max_iters = loop["max_iters"]
+                iters_done = 0
+                loop_frame_start = self.plugin.emu.frame
+                idle_streak = [0]   # consecutive sub-threshold samples, RESET when a sample is >= threshold
+                stop_reason = None
+                while iters_done < max_iters and stop_reason is None:
+                    for inner_step in inner:
+                        button = str(inner_step.get("button", "")).strip().lower()
+                        hold_frames = int(inner_step.get("hold_frames", 8))
+                        err, samples = self._nds_step_and_sample(button, hold_frames, world_frame_budget)
+                        if err:
+                            executed.append({"button": button, "hold_frames": hold_frames, "ok": False,
+                                             "error": err})
+                            return err
+                        executed.append({"button": button, "hold_frames": hold_frames, "ok": True})
+                        for pct in samples:
+                            if kind == "idle_settled":
+                                if pct < params["threshold"]:
+                                    idle_streak[0] += 1
+                                else:
+                                    idle_streak[0] = 0
+                            elapsed = self.plugin.emu.frame - loop_frame_start
+                            if self._check_nds_stop_when(kind, params, elapsed_in_loop=elapsed,
+                                                         idle_streak=idle_streak):
+                                stop_reason = (f"stop_when {loop['stop_when']!r} fired after "
+                                               f"{elapsed} frame(s) ({iters_done + 1} iteration(s))")
+                                break
+                        if stop_reason or world_frame_budget[0] <= 0:
+                            break
+                    iters_done += 1
+                    if world_frame_budget[0] <= 0 and stop_reason is None:
+                        stop_reason = f"stopped: absolute {_NDS_SKILL_MAX_WORLD_FRAMES}-frame ceiling hit"
+                if stop_reason is None:
+                    stop_reason = f"repeat_until reached max_iters={max_iters} without stop_when firing"
+                loop_frames = self.plugin.emu.frame - loop_frame_start
+                executed.append({"repeat_until_summary": stop_reason, "iterations": iters_done,
+                                 "world_frames": loop_frames})
+            else:
+                button = str(step.get("button", "")).strip().lower()
+                hold_frames = int(step.get("hold_frames", 8))
+                err, _samples = self._nds_step_and_sample(button, hold_frames, world_frame_budget)
+                if err:
+                    executed.append({"button": button, "hold_frames": hold_frames, "ok": False, "error": err})
+                    return err
+                executed.append({"button": button, "hold_frames": hold_frames, "ok": True})
+        return None
+
+    def _run_nds_skill(self, args: dict) -> list[dict]:
+        skill_name = str(args.get("name", "")).strip()
+        definition = self.skills.get(skill_name)
+        if definition is None:
+            return [{"type": "text",
+                     "text": f"run_skill error: no skill named {skill_name!r} — call define_skill "
+                             "first (skills are within-run only, not persisted)."}]
+        executed: list = []
+        world_frame_budget = [_NDS_SKILL_MAX_WORLD_FRAMES]   # absolute ceiling, world-side (plan §3)
+        start_frame = self.plugin.emu.frame
+        error = self._run_nds_steps_once(definition["steps"], executed, world_frame_budget)
+        executed_step_count = sum(1 for e in executed if e.get("ok") is True)
+        if error is not None:
+            stop_reason = error
+        elif executed and "repeat_until_summary" in executed[-1]:
+            stop_reason = executed[-1]["repeat_until_summary"]
+        else:
+            stop_reason = "all top-level steps executed"
+        world_frames_used = self.plugin.emu.frame - start_frame
+        # A run_skill call "qualifies" (design §7's conditional-half gate) only if stop_when actually
+        # fired before the frame ceiling/max_iters — a real predicate branch, not a timeout. Log this
+        # explicitly so the eventual A/B scorer can compute the gate without re-deriving it from prose.
+        # Scan ALL executed top-level entries, not just the last one: a skill with multiple sequential
+        # repeat_until blocks (design §6's launch+wait_out_banner shape) where an EARLY loop's stop_when
+        # fires but a LATER one times out must still log True — checking only executed[-1] would
+        # wrongly discard qualifying evidence the gate needs.
+        stop_when_fired = any(isinstance(e, dict) and "fired after" in e.get("repeat_until_summary", "")
+                              for e in executed)
+        log_step = int(getattr(self.plugin, "_obs_count", 0))
+        log_rec = {"event": "run_skill", "step": log_step, "name": skill_name,
+                   "executed": executed, "executed_step_count": executed_step_count,
+                   "stop_reason": stop_reason, "world_frames_used": world_frames_used,
+                   "stop_when_fired": stop_when_fired}
+        self._log_skill(log_rec)
+        head = (f"[run_skill {skill_name!r} -> {executed_step_count} step(s) executed, "
+                f"{world_frames_used} frame(s); stopped because: {stop_reason}]")
+        # Trailing render: a fresh observe (advances plugin._obs_count by one more, logged already above
+        # — mirrors Kirby's own trailing-observe-after-log ordering, RESIDUAL #1's discipline).
+        return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
+
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 
     def _run_autopilot(self, target, max_steps: int) -> tuple[int, str]:
@@ -1275,6 +1689,23 @@ class World:
             body = self._read_region(args)
         elif name == "whats_changed" and self.region_tools:
             body = self._whats_changed(args)
+        elif name == "define_skill" and self.nds_skills_world:
+            if not self._nds_skills_enabled:
+                body = [{"type": "text",
+                         "text": "define_skill error: skill tools are disabled for this session "
+                                 "(set NDS_SKILLS=1 in the environment to enable, on nds only — see "
+                                 "reports/2026-07-04-mkds-continuous-time-build-plan.md §1)."}]
+            else:
+                body = self._define_nds_skill(args)
+        elif name == "run_skill" and self.nds_skills_world:
+            if not self._nds_skills_enabled:
+                body = [{"type": "text",
+                         "text": "run_skill error: skill tools are disabled for this session (set "
+                                 "NDS_SKILLS=1 in the environment to enable, on nds only — see "
+                                 "reports/2026-07-04-mkds-continuous-time-build-plan.md §1)."}]
+            else:
+                self.decisions += 1   # one LLM decision buys up to _NDS_SKILL_MAX_WORLD_FRAMES frames
+                body = self._run_nds_skill(args)
         elif name == "define_skill":
             if not self._kirby_skills_enabled:
                 body = [{"type": "text",

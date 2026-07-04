@@ -13,12 +13,14 @@ distance invocation), machinery frozen. Done when the pre-reg doc is on a branch
 adversarial Sonnet review is triaged. NOT done here: the paid run (David authorizes) or merge (David).
 
 ## Handoff (update before every stop)
-- State: v3 banked INSUFFICIENT_DATA (skill-guard: 0 qualifying-conditional; b_k repair VALIDATED
-  0.812→0.585). Two INDEPENDENT diagnosed failures: (a) NEARs trailed their drops → q_k starved 0.400;
-  (b) approach_suspect invoked at adjacency → region_changed fired in 1 press. v3.1 fixes both in the
-  brief only; scorer `eval/score_entity_gate_v3.py` + enum + ceiling + guard inherited unchanged.
-- Next: write `reports/2026-07-04-entity-v3.1-prereg.md`, PR, send 1 Sonnet adversarial reviewer, triage.
-- Blocked: nothing. (Paid run + merge are David's gates, not blockers on the doc.)
+- State: v3.1 pre-reg DONE — `reports/2026-07-04-entity-v3.1-prereg.md` written, 1 Sonnet adversarial
+  review (BLOCK) triaged (2 majors fixed: the (a)/(b) coverage-vs-loop contradiction via the
+  near-but-not-touching regime §3.5; INSUFFICIENT_DROPS risk via "take the contact when touching").
+  PR #96 open, review record posted. Brief-only; all v3 machinery inherited unchanged.
+- Next: DAVID's gates — (i) §3 fork (rewritten brief once more [chosen] vs mechanical v3.2 guard now);
+  (ii) paid-run authorization (account-B, ~$5, one attempt); (iii) merge #96. If paid run authorized,
+  recommend one focused re-review of §3.5 first. Nothing autonomous remains on this task.
+- Blocked: on David (paid run + merge). No self-actionable work left here.
 
 ## Constraints
 - Machinery FROZEN: no edit to `eval/score_entity_gate_v3.py`, the `stop_when` enum, `B_K_CEILING`,
@@ -35,6 +37,6 @@ adversarial Sonnet review is triaged. NOT done here: the paid run (David authori
 
 ## Tasks
 - [x] Read v3 verdict + v3 pre-reg + v3 brief; locate the two failure modes  · evidence: reports/2026-07-03-entity-v3-verdict.md §diagnosis (a)+(b); runs/brain_kirby_v3/CLAUDE.md step 3(i)
-- [ ] Write `reports/2026-07-04-entity-v3.1-prereg.md` (brief deltas + inherited machinery + escalation ladder)  · evidence: <pending>
-- [ ] Open PR off `docs/entity-v3.1-prereg`; post 1 Sonnet adversarial review; triage findings  · evidence: <pending>
-- [ ] Update HANDOFF §NEWEST with the v3.1 pre-reg block; flag the fork for David  · evidence: <pending>
+- [x] Write `reports/2026-07-04-entity-v3.1-prereg.md` (brief deltas + inherited machinery + escalation ladder)  · evidence: file created; §1 frozen-machinery list, §3 fix(a)+escalation, §4 fix(b), appendix = full v3.1 brief
+- [x] Open PR off `docs/entity-v3.1-prereg`; post 1 Sonnet adversarial review; triage findings  · evidence: PR #96; review BLOCK → 2 majors fixed (dbf5fe0); review record posted as PR comment
+- [x] Update HANDOFF §NEWEST with the v3.1 pre-reg block; flag the fork for David  · evidence: HANDOFF NEWEST (2026-07-04) block + §3 fork flagged in PR body
