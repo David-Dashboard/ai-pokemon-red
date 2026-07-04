@@ -246,6 +246,10 @@ def _build_dry_world(out_dir: str, scenario: dict):
     w._frame_hist = []
     w.kirby_skills_world = True
     w._kirby_skills_enabled = True
+    # World.call's dispatch also reads self.nds_skills_world unconditionally (mirrors the kirby check
+    # above) -- this precheck is Kirby-only, so it's always False here.
+    w.nds_skills_world = False
+    w._nds_skills_enabled = False
     w.skills = {}
     w._skill_log_path = os.path.join(out_dir, "skills.jsonl")
     return w

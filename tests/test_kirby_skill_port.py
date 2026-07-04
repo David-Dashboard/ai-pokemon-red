@@ -114,6 +114,12 @@ def _make_world(out, *, states=None, screens=None, game="kirby_dreamland") -> Wo
     w._frame_hist = []
     w.kirby_skills_world = game in world_mcp._KIRBY_SKILLS_WORLDS
     w._kirby_skills_enabled = w.kirby_skills_world and world_mcp._kirby_skills_enabled()
+    # NDS continuous-time skill port (world_mcp.py's World.call dispatch checks self.nds_skills_world
+    # unconditionally, mirroring the kirby_skills_world check above) -- this GB-only test harness never
+    # exercises the nds branch, but World.call's dispatch reads the attribute regardless of game, so it
+    # must exist here too (this world is never in _NDS_SKILLS_WORLDS, so it's always False).
+    w.nds_skills_world = game in world_mcp._NDS_SKILLS_WORLDS
+    w._nds_skills_enabled = w.nds_skills_world and world_mcp._nds_skills_enabled()
     w.skills = {}
     import os
     w._skill_log_path = os.path.join(out, "skills.jsonl")
