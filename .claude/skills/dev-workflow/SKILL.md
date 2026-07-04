@@ -37,7 +37,7 @@ This workflow is mandatory for every non-trivial change (repo `CLAUDE.md` "Imple
    ```
 8. **Adversarial review: FEWER THAN 5 reviewers per PR** (typically 2–3, sized to the change). Each reviewer takes a distinct angle — consumer-impact, cross-game / shared-`core` assumptions, edge cases, safety/irreversibility — and POSTS its findings as comments on the PR (e.g. `/code-review --comment`, or spawn reviewer subagents that run `gh pr comment`).
    - Reviewer model: Sonnet by default; Opus only for risky shared-`core` changes (David, 2026-07-03).
-   - A WSL2 cron/sweep also exists that auto-posts adversarial reviews on new PRs (`~/pr-review/sweep.sh` in WSL Ubuntu-20.04, headless `claude -p` on David's subscription). STATUS as of 2026-06-26: cron DISABLED, manual-only — do not re-enable without David's explicit say-so. Its comments start with `**Adversarial review — ...` / `**Review verification — ...`; don't double-review what it already covered.
+   - **Review is 100% MANUAL — nothing auto-reviews your PR.** A WSL2 cron/sweep (`~/pr-review/sweep.sh`) was built for this but is **DEAD** (verified 2026-07-04: disabled in crontab since 2026-06-25, last ran 2026-06-25, current PRs got no bot comment). Do NOT wait for it or tell David a PR "will be auto-reviewed" — YOU spawn the reviewers. Re-enable only with David's explicit say-so.
 9. **Posted review = merge gate.** No merge until the PR has a posted adversarial-review comment. Verify before requesting merge:
    ```
    gh pr view <num> --comments
