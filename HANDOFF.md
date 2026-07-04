@@ -5,6 +5,8 @@ Deeper detail lives in `reports/` — the consolidated report, `reports/LEARNING
 per-iteration log), and **`reports/INSIGHTS.md` (the thematic synthesis of the ideas: the perception
 seam, generalization from primitives, System-2→System-1 skill compilation, the learning-boundary law).**
 
+> **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
+
 _Last updated: 2026-07-03 (day close: SKILL-COMPILATION RUNG-1 GATE PASS 2.94x (L2 wall fell, #91) still
 the day's headline; entity v3 banked INSUFFICIENT_DATA with the b_k repair VALIDATED (0.812→0.585) +
 skill guard working as designed + NEAR-discipline and adjacency-invocation diagnoses located;
