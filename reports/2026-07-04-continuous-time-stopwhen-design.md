@@ -82,9 +82,10 @@ robust to per-frame drift.
 `idle_settled`/`region_*` need a `threshold`. The world's idle-drift floor sets the minimum usable value
 — MKDS idles at 12.2%/frame, so an `idle_settled(threshold=0.05, …)` would **never** settle there.
 
-**Decision of record:** pin the threshold **per world at define/build time from an oracle-measured idle
-baseline** (measure idle-drift on a banked savestate once, freeze it), NOT via an online estimator on the
-wire. This matches the "closed per-world enum, pinned in the build PR" discipline and keeps no learned
+**Decision of record:** pin the threshold **per world at define/build time from an offline
+screen-measured idle baseline** (pixel-change over idle frames on a banked savestate, measured once and
+frozen into a constant — this is a screen measurement, NOT the RAM oracle, and nothing about it reaches
+the agent wire), NOT via an online estimator on the wire. This matches the "closed per-world enum, pinned in the build PR" discipline and keeps no learned
 state on the agent wire. Rule: **`threshold` must sit above the world's measured idle floor** (MKDS:
 > 0.122). A window-relative "settle = change dropped below X% of the recent max" variant is noted as a
 fallback if a fixed threshold proves brittle across a game's screens, but is NOT adopted now (it adds an
