@@ -9,9 +9,8 @@ A "gate" is one pre-registered, paid (~$4-6) agent run scored by a frozen script
 pre-registration → adversarial review → ONE attempt → verbatim scoring → banked verdict → diagnosis.
 Reference examples (read these to see the shape): `reports/2026-07-03-kirby-skill-port-entity-v3.md`
 (pre-reg), `reports/2026-07-03-entity-v3-verdict.md` (verdict). The v3.1 pair
-(`reports/2026-07-04-entity-v3.1-prereg.md`, `reports/2026-07-04-entity-v3.1-verdict.md`) lives on
-branch `docs/entity-v3.1-prereg` (PR #96) until merged — both files are on that branch, NOT in the
-working tree.
+(`reports/2026-07-04-entity-v3.1-prereg.md`, `reports/2026-07-04-entity-v3.1-verdict.md`, PR #96,
+merged to `main`) is the most recent worked example.
 **v3.1 HAS ALREADY RUN** (2026-07-04, `runs/brain_kirby_v3_1/`, `run.exit`=EXIT=0, verdict
 INSUFFICIENT_DATA via claim-regex taint): it is a spent attempt — do NOT relaunch `run.sh` or
 re-register v3.1. HANDOFF's older `⇒ NEXT` "v3.1 pre-registration" line predates this run.
@@ -126,7 +125,7 @@ Then append the HANDOFF.md top block (the v3.1 verdict commit did both in one ch
 - `reports/2026-07-03-kirby-skill-port-entity-v3.md` (v3 pre-registration, incl. Amendment A1)
 - `reports/2026-07-03-entity-v3-verdict.md`
 - `reports/2026-07-04-entity-v3.1-prereg.md` and `reports/2026-07-04-entity-v3.1-verdict.md`
-  (branch `docs/entity-v3.1-prereg`, PR #96)
+  (PR #96, merged)
 - `eval/score_entity_gate_v3.py` (module docstring + pinned constants/regexes)
 - `eval/README.md`
 - `.claude/PROTOCOL.md` (anti-thrash, autonomy boundary)

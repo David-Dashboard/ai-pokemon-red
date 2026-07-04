@@ -130,9 +130,7 @@ tripped, line-by-line, before proposing anything.
 ## WORKED EXAMPLE — entity v3.1: INSUFFICIENT_DATA was a scorer artifact, NOT a perception failure
 
 Run `runs/brain_kirby_v3_1/` (2026-07-04, account-B, `EXIT=0`, `subtype: success`, 74 turns, $5.19).
-Verdict report: **`reports/2026-07-04-entity-v3.1-verdict.md` — on branch `docs/entity-v3.1-prereg`
-(PR #96), NOT in the working tree.** Read it with `git show origin/docs/entity-v3.1-prereg:reports/2026-07-04-entity-v3.1-verdict.md`
-(`origin/` survives a missing local branch; if PR #96 has merged it is at that path in the tree). The
+Verdict report: **`reports/2026-07-04-entity-v3.1-verdict.md`** (PR #96, merged to `main`). The
 scorer command above reproduces the verdict verbatim, so it is the primary reproduction; the report is secondary.
 
 Verbatim scorer output:
@@ -185,7 +183,7 @@ verify against the frames.) Full detail: memory `cave-noire-hp-oracle.md`.
   `RETROACTIVE_MAX_FRACTION = 0.20`, `MIN_NEAR = 3`, `B_K_CEILING = 0.70`, macro-interior exclusion,
   skill guard, run-dir arg (lines 671-674).
 - `eval/replay_tilemap.py`, `eval/index_runs.py`, `eval/report_run.py`, `eval/README.md` — offline tools + usage.
-- `reports/2026-07-04-entity-v3.1-verdict.md` (branch `docs/entity-v3.1-prereg`, PR #96) — the worked example, verbatim scorer output.
+- `reports/2026-07-04-entity-v3.1-verdict.md` (PR #96, merged) — the worked example, verbatim scorer output.
 - `reports/2026-07-03-entity-v3-verdict.md` — the v3 prior (two independent failure modes; what validated).
 - Memory: `entity-v3-verdict.md` (both failure modes), `cave-noire-hp-oracle.md` (BCD oracle gotcha),
   at `C:/Users/Succe/.claude/projects/E--AI-Personas-10-pokemon-and-chess-and-office/memory/`.
