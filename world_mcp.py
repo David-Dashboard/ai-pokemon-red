@@ -1361,7 +1361,8 @@ class World:
             return ("idle_settled", {"threshold": threshold, "k": k})
         raise ValueError(f"stop_when {expr!r} is not one of the pinned NDS predicates: "
                          f"elapsed_frames(n) with 0<n<={_NDS_SKILL_MAX_WORLD_FRAMES}, "
-                         "idle_settled(threshold, k) with 0<threshold<1 and k>=1 (and k*s<=F).")
+                         f"idle_settled(threshold, k) with {_NDS_IDLE_THRESHOLD_FLOOR}<threshold"
+                         f"<{_NDS_IDLE_THRESHOLD_CEIL} and k>=1 (and k*s<=F).")
 
     def _validate_nds_step_list(self, steps, *, inside_loop: bool) -> Optional[str]:
         """Structural validation at define_skill time (fail loud before storing a broken skill, never at
