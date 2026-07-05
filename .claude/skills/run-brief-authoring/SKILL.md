@@ -45,7 +45,7 @@ Line counts (all read in full): `runs/brain_red_starter/CLAUDE.md` 68, `runs/bra
 - **The watermark device.** `brain_kirby_entity/CLAUDE.md:61-68`: "`step=<n>` must be the step
   number of the result you JUST received — the CURRENT step. NEVER a past step," followed by an
   explicit DO example (an honest current-step NEAR) and a DON'T example (backfilling a step number
-  after seeing the outcome). `HANDOFF.md:250` records it worked: "retroactive-taint caught by the
+  after seeing the outcome). `HANDOFF.md:310` records it worked: "retroactive-taint caught by the
   watermark (worked as designed)."
 - **Failure-autopsy-on-top.** `brain_kirby_v3_1/CLAUDE.md:9-21`, titled "WHAT WENT WRONG LAST RUN —
   read this first, it wasted a whole paid run" — names the exact prior mistake (NEAR logged after
@@ -155,7 +155,8 @@ dir per **paid-run-harness**).
 - `reports/2026-07-03-entity-v3-verdict.md` (v3 NEAR-timing diagnosis, :97-106, :147-149)
 - `reports/2026-07-04-entity-v3.1-verdict.md` and `reports/2026-07-04-entity-v3.1-prereg.md`
   (quoted-NEAR taint, 4/13 retroactive, brief-as-appendix pattern; PR #96, on `main` in this worktree)
-- `HANDOFF.md:250` (watermark-worked-as-designed note)
+- `HANDOFF.md:310` (watermark-worked-as-designed note; HANDOFF is append-at-top so line numbers
+  drift — grep "worked as designed" if this has moved)
 - `.claude/skills/gate-methodology/SKILL.md` ("Known scorer/world gotchas" item 2)
 - `.claude/skills/paid-run-harness/SKILL.md` (launcher-dir anatomy, run.sh shape)
 - `.claude/skills/safety-invariants/SKILL.md` law 5 (oracle/RAM off the agent wire)
