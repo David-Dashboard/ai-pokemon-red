@@ -16,7 +16,7 @@ completed + triaged, 3rd (accuracy) redone inline after a rate-limit death. AWAI
 **⇒⇒ NEWEST (2026-07-05) — SKILL LIBRARY 10 → 15: the retirement library now covers perception,
 measurement, brief-craft, long-horizon runs, and the lane frontier. Branch `docs/skill-library`,
 3 commits, NOT yet pushed/PR'd (awaits David). ⇒⇒**
-1. **DONE — 5 new skills** under `.claude/skills/` (commits `9ce5e6e`-region on `docs/skill-library`;
+1. **DONE — 5 new skills** under `.claude/skills/` (commits `ad63d06`→`cbb40a6` on `docs/skill-library`;
    every path/line/number verified against the tree at authoring time):
    **perception-primitives** (the core/ toolbox map: 25-primitive inventory table, constitution
    digest L0-L3 + Realizer Ladder, three perceiver tiers, symptom→probe decision guide, escalation
