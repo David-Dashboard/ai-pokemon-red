@@ -214,6 +214,22 @@ paid track never waits for design, because the free track de-risks every gate be
 5. **F5 Touch-drag helper** (A6) — small world-side PR + offline test.
 6. **F6 Tripwire completion PRs** (B3) — constancy counter, provenance field, wall-recall alert.
 7. **F7 Minimap-agnostic heading probe** on banked MKDS frames (A3).
+8. **F8 Label the frontier data** (A3, A6; corpus-gap audit 2026-07-05) — the labels corpus is
+   GB-only (v2: 13 games, 250 frames, 160x144). Label the banked MKDS probe frames
+   (`runs/nds3d_probe`, continuous-time + free-form HUD ground truth) and one touch-driven NDS
+   game (Phoenix Wright or Professor Layton — both on the shelf, both nearly pure reading/touch)
+   via the standard `label_frames` → `snapshot_labels --version v3` pipeline
+   (**eval-probes-and-datasets** §2).
+9. **F9 Fill the OCR ground-truth hole** (A3, glyph lane) — v2's own manifest flags it: only
+   48/661 text/health boxes carry read strings, "not yet cross-world." Backfill read-values across
+   3-4 dev games so a cross-world reading claim has ground truth waiting when glyph R1 lands.
+10. **F10 Name the exam reserve** (B1) — quarantine 2-3 never-touched titles for the graduation
+    exam BEFORE the exam doc is pinned (same discipline as `HELDOUT`, separate list, separate
+    purpose), including one non-ViZDoom 3D world — Doom is burned for 3D-primitive claims (the 3D
+    lane calibrated on it). Also note two dev-corpus holes for acquisition when their axis matters:
+    NO dev pseudo-3D example exists (F-1 Race is held-out and nothing else covers the axis —
+    `dataset_split.py`'s "dev has an example of each axis" is false for pseudo-3D), and no
+    isometric-view game exists anywhere in the corpus.
 
 ### Track P (paid, strictly serial, each gate pre-registered + David-authorized)
 
