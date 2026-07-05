@@ -105,6 +105,10 @@ LENGTH experiment on the GB lane, not a new world class — **long-horizon-runs*
 ## Picking a lane / handling a NEW environment class
 
 - Default: HANDOFF's `⇒ NEXT` priority order — take (1) unless David redirects (**session-start**).
+- Strategic companion: `reports/2026-07-05-northstar-capability-map.md` — the six capabilities the
+  North Star still requires, each with its falsifier and cheapest probe; every gate pre-reg should
+  name which capability it buys evidence about. Lanes = where each WORLD stands (this skill);
+  the map = what each spend should be FOR.
 - A genuinely NEW environment class (new console, new input modality, new world shape) gets the
   **new-world-port** treatment: binding spike → registry → free probes → constancy audit. Then add
   a lane section HERE in the same PR (this map must not rot — a lane missing from this file will be
