@@ -1,11 +1,14 @@
-# --- Claude / local tooling (internal, not for publication) ---
-# Exclude .claude/ contents but publish the handover skill library (.claude/skills/).
-# Use /* (contents) not / (the dir) so the negation can re-include; keep the negation LAST
-# so it wins; .CLAUDE/* covers the case-sensitive-FS variant (Linux) harmlessly on Windows.
-CLAUDE.md
+# --- Claude / local tooling ---
+# Published (David's call, 2026-07-05): the skill library, CLAUDE.md (North Star guardrails),
+# PROTOCOL.md, and the hook scripts — so clones/worktrees carry the full anti-drift surface.
+# Still local-only: settings.local.json (machine-specific, permission history), agents/, worktrees/.
+# Use /* (contents) not / (the dir) so the negations can re-include; negations LAST so they win;
+# .CLAUDE/* covers the case-sensitive-FS variant (Linux) harmlessly on Windows.
 .claude/*
 .CLAUDE/*
 !.claude/skills/
+!.claude/PROTOCOL.md
+!.claude/hooks/
 
 # --- Project governance docs (excluded from the public repo per request) ---
 CONTRACT.md
