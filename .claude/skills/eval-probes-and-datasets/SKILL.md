@@ -19,7 +19,7 @@ prefix is `UV_PROJECT_ENVIRONMENT=.venv-win UV_NATIVE_TLS=true uv run --frozen p
 in a bash-style shell; in native PowerShell use `$env:UV_PROJECT_ENVIRONMENT=".venv-win";
 $env:UV_NATIVE_TLS="true"; uv run --frozen python -m eval.<name>` (the form gate-methodology §5
 shows). "Invocation" cells below give the entry point + arg shape, not a full paste-ready line.
-**`eval/README.md`'s own index (33 lines) covers only ~24 of the 45 files actually in `eval/`** — it
+**`eval/README.md`'s own index (32 lines) covers only ~24 of the 45 files actually in `eval/`** — it
 never mentions any `score_entity_gate*`, `score_gate3d`/`ceiling_gate3d`/`score_a3_precheck`,
 `score_skill_rung1`/`score_kirby_skill_precheck`, `score_hud_grounding`/`score_gate_run`,
 `score_static_objects`/`score_text_regions`/`score_glyph_cache`, `score_localize`/`validate_localizer`/
@@ -85,7 +85,7 @@ python -m eval.label_frames runs/kirby_auto --n 50        # resumable: runs/<gam
 uv run python -m eval.snapshot_labels --version v2
 ```
 
-`label_frames.py` (`:16-26`) uses farthest-point sampling on an 8x8 signature (`:52-67`) so the ~N
+`label_frames.py` uses farthest-point sampling on an 8x8 signature (`:52-67`) so the ~N
 picked frames are visually diverse, not N near-duplicates from a static run. Per-frame record keys:
 `frame, mode, avatar[], enemy[], item[], text[], health[], exit[], npc[]` (7 box categories +
 `mode` ∈ gameplay/menu/dialog/battle/transition/title/other). Boxes are `[x0,y0,x1,y1]` over the
@@ -179,11 +179,12 @@ frozen layers instead of following the change process.
 A probe that says **no** is a successful probe — a banked FAIL stays on the books, it is not
 "fixed" by re-tuning until it passes:
 - `core/static_objects.py`'s general R0 detector: **KILL CHEAP**, recall 0.0 / precision 0.0 /
-  236-341 phantom candidates across 12 distractor frames depending on config (the module's own
-  docstring, `core/static_objects.py:19-22` — the current source of truth; `HANDOFF.md:456`'s "154
-  phantoms" is an earlier measurement round, superseded) — GB tile-art is full of
-  naturally-repeating equal blobs, so "distinct blob" fires everywhere. A color-saturation-gated
-  variant hit 0.86/0.76/0 but was explicitly rejected as non-generalizing (palette-specific).
+  **154 phantoms** (`HANDOFF.md:456`; live-reproduced 2026-07-05 by running
+  `uv run python -m eval.score_static_objects` against the committed fixture — the module
+  docstring's own "236-341" figure (`static_objects.py:19-22`) does NOT reproduce under any swept
+  config and should not be trusted) — GB tile-art is full of naturally-repeating equal blobs, so
+  "distinct blob" fires everywhere. A color-saturation-gated variant hit 0.86/0.76/0 but was
+  explicitly rejected as non-generalizing (palette-specific).
 - `core/text_regions.py`'s R0 edge-density detector: **FAIL**, recall 0.27 vs the pinned 0.85 bar
   (`HANDOFF.md:187`) — textured backdrops defeat plain edge-density; an R1 cache-driven candidate is
   queued, not yet built.
@@ -217,7 +218,7 @@ metrics above.
 
 ## Sources
 - `reports/CONTEXT-BRIEFING.md:65-77` (probe-first slogan)
-- `eval/README.md` (full file, 33 lines — verified it omits the 16 gate-scorer/probe names listed above)
+- `eval/README.md` (full file, 32 lines — verified it omits the 16 gate-scorer/probe names listed above)
 - `eval/dataset_split.py` (full file, 66 lines — HARD RULE, `HELDOUT`, `is_heldout_rom/run`, `partition`)
 - `eval/cross_game.py:1-45`, `eval/verify_heldout.py:1-28`
 - `eval/label_frames.py:1-70`, `eval/snapshot_labels.py` (full file), `record.py:116-139`, `play_record.py:77-81`

@@ -34,7 +34,7 @@ Everything else here is verified fact.
 |---|---|---|---|---|
 | brain_kirby_v3_1 | 74 | 11.7 min | $5.19 | gate-class run |
 | brain_skill_ab_armA / armB | 58 / 63 | 28 / 31 min | $7.78 / $8.83 | ARC A/B (NB: "turns" here ≠ the 50/34 "decisions" in **cheapness-skill-compilation**'s table — turns count every LLM message, decisions only `act`/`run_skill` calls) |
-| brain_arcagi3/run3 | 121 | 48 min | $20.82 | discovery run |
+| brain_arcagi3/run3_L1_completion_framed | 121 | 48 min | $20.82 | discovery run |
 | brain_kirby_longhaul | 316 | 52 min | $42.98 | first long-horizon |
 | brain_gate3d/run3_v_FAIL | 1000 | 68 min | $82.86 | most expensive run ever — and a FAIL |
 
@@ -55,7 +55,8 @@ burned 1000 turns because nothing stopped it when progress stopped.
    transcript (a 1-turn probe run is enough). Above ~0.8, a multi-hour run risks dying mid-flight;
    surface to David instead of launching.
 2. **There is no mid-session checkpoint.** The MCP server exposes NO savestate tool on the agent
-   wire (`save_state` exists world-side at `world_mcp.py:449` but is not in any tool list);
+   wire (`world_mcp.py` contains no `save_state` at all; the world-side passthrough is
+   `core/perception_plugin.py:449`, never registered as a tool);
    `--init-state` (`world_mcp.py:2618`) is loaded ONCE at boot (`core/perception_plugin.py:94`);
    every `save_state` caller in the tree is an offline script (`make_state.py`, `human_play.py`,
    `play_*.py`). A monolithic run that dies at turn 500 loses ALL game progress — only logs survive.
@@ -141,11 +142,13 @@ what you pre-registered, nothing else.
 
 - `runs/brain_kirby_longhaul/{run.sh,run.exit,transcript.jsonl,world/}` — first long-horizon run,
   all facts verified on disk 2026-07-04.
-- `runs/brain_gate3d/run3_v_FAIL/`, `runs/brain_arcagi3/run3/`, `runs/brain_kirby_v3_1/`,
-  `runs/brain_skill_ab_arm{A,B}/` — cost-table rows (final transcript `result` lines).
+- `runs/brain_gate3d/run3_v_FAIL/`, `runs/brain_arcagi3/run3_L1_completion_framed/`,
+  `runs/brain_kirby_v3_1/`, `runs/brain_skill_ab_arm{A,B}/` — cost-table rows (final transcript
+  `result` lines).
 - `runs/brain_red_starter/transcript.jsonl:1` — five_hour overage-rejected event shape.
-- `world_mcp.py:449` (world-side save_state, not a tool), `:866`/`:882` (within-run state),
-  `:2618` (`--init-state`); `core/perception_plugin.py:94` (single boot-time load).
+- `world_mcp.py:866`/`:882` (within-run state), `:2618` (`--init-state`);
+  `core/perception_plugin.py:94` (single boot-time load), `:449` (world-side save_state
+  passthrough, never a tool).
 - `core/cost_guard.py:22,:42` — unwired predicates from the litellm era.
 - `E:/AI_Personas/10_pokemon_and_chess_and_office/ai-pokemon-red/HANDOFF.md` (account-level 5-hr cap).
 - Cross-refs: **paid-run-harness** (launch laws — this skill adds the length dimension),
