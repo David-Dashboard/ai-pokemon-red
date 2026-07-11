@@ -59,11 +59,19 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
 - [2026-07-05] Include the 5th note_reading audit tool (off-wire drop/HUD belief has a typed home → last
   freeform-taint surface closed). Predicate menu: stationary-target region_changed / ledge move_blocked —
   the $0 probe settles the order.
+- [2026-07-11] $0 (d) probe verdict: predicate = **move_blocked PRIMARY**; region_changed is dead in Kirby
+  (whole-screen change on walk/scroll → press-1 fire in all 6 boxes). Barrier (3) = GO. Pre-reg must use
+  move_blocked wording + avoid the right_third watch box.
 
 ## Tasks
 - [x] entity-v4-design workflow (17 agents; design + 10 red-team lenses + synth) → v4 design + 4-barrier map
 - [x] DAVID (2026-07-05): Q1 = BUILD v4 now (APPROVED); Q2 = conditional-half decided AFTER the $0 probe
 - [ ] build v4 infra (4 claim tools + note_reading + score_entity_gate_v4.py + 2 drift-guard tests), KIRBY_CLAIMS-gated
-- [ ] $0 (d) probe on kirby_entity2.state + $0 coverage paper-check (BOTH gate the spend)
+- [x] $0 (d) probe on kirby_entity2.state → **GO via move_blocked PRIMARY** (reports/2026-07-05-entity-v4-d-probe.md):
+      hp==6 asserted; move_blocked 4/4 directions fires at press 3-7 (never <3), all 4 pass the frozen
+      v3 is_qualifying_conditional_call guard_pass=True; region_changed DEAD in Kirby (fires press 1 in
+      6/6 box placements — walk anim/camera scroll, worse than design assumed); right_third box unsafe
+      (6/6 idle false fires). Open brief question: move_blocked-primary vs the drop-banking path.
+- [ ] $0 coverage paper-check (second spend gate)
 - [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage
 - [ ] (David) 1 gated paid attempt → verdict
