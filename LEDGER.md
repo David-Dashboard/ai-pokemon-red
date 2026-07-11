@@ -66,7 +66,12 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
 ## Tasks
 - [x] entity-v4-design workflow (17 agents; design + 10 red-team lenses + synth) → v4 design + 4-barrier map
 - [x] DAVID (2026-07-05): Q1 = BUILD v4 now (APPROVED); Q2 = conditional-half decided AFTER the $0 probe
-- [ ] build v4 infra (4 claim tools + note_reading + score_entity_gate_v4.py + 2 drift-guard tests), KIRBY_CLAIMS-gated
+- [x] build v4 infra → commit b28a735 (Sonnet-built, worktree-isolated): world_mcp.py +220 purely additive
+      (5 claim tools, KIRBY_CLAIMS gate mirroring KIRBY_SKILLS, acks only, decision-uncounted, no oracle
+      leak), eval/score_entity_gate_v4.py (v3 math imported unmodified, parser-only swap, fails loud w/o
+      claims.jsonl), tests/test_score_entity_gate_v4.py (2 drift guards). Full suite 1073 passed 13 skipped.
+      Frozen files diff-checked untouched. FLAG for review: spec line 36 omits `step` in claim_entity's
+      param list but the record schema requires it — builder added step:int (matches v3 ent_claims); confirm.
 - [x] $0 (d) probe on kirby_entity2.state → **GO via move_blocked PRIMARY** (reports/2026-07-05-entity-v4-d-probe.md):
       hp==6 asserted; move_blocked 4/4 directions fires at press 3-7 (never <3), all 4 pass the frozen
       v3 is_qualifying_conditional_call guard_pass=True; region_changed DEAD in Kirby (fires press 1 in
