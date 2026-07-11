@@ -1,42 +1,69 @@
-# Ledger — entity-gate v3.1 pre-registration (ai-pokemon-red)
+# Ledger — entity-gate v4 (structured claims) — build-signoff gate (ai-pokemon-red)
 
-<!-- SCOPE SPLIT (2026-07-04): This file is CURRENT-RUN task state ONLY — the single task in
-     flight, its checkboxes, and a one-line handoff. The cross-session narrative and multi-day
-     history live in HANDOFF.md; do not restate them here. The ledger hooks (rehydrate.py /
-     ledger_gate.py) re-inject THIS file after every compaction and gate the Stop on open tasks,
-     so keep it short, current, and truthful. HANDOFF = durable story; LEDGER = current run. -->
+<!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative → HANDOFF.md. Ledger hooks
+     re-inject this after compaction + gate the Stop; keep it short, current, truthful. -->
 
 ## Goal
-North-star NEXT #1: write the entity-gate **v3.1 pre-registration** — the two brief/protocol
-discipline fixes the v3 INSUFFICIENT_DATA verdict located (pre-approach NEAR discipline +
-distance invocation), machinery frozen. Done when the pre-reg doc is on a branch, PR'd, and one
-adversarial Sonnet review is triaged. NOT done here: the paid run (David authorizes) or merge (David).
+Fix the entity-grounding gate FULLY (David: "commit"), v4-scale. The `entity-v4-design` workflow
+(17 agents, ~2.15M tok) is DONE. Now: get David's sign-off on the v4 design → build the infra →
+gate the paid spend behind $0 checks → (if green) one paid run → verdict.
 
 ## Handoff (update before every stop)
-- State: v3.1 pre-reg DONE — `reports/2026-07-04-entity-v3.1-prereg.md` written, 1 Sonnet adversarial
-  review (BLOCK) triaged (2 majors fixed: the (a)/(b) coverage-vs-loop contradiction via the
-  near-but-not-touching regime §3.5; INSUFFICIENT_DROPS risk via "take the contact when touching").
-  PR #96 open, review record posted. Brief-only; all v3 machinery inherited unchanged.
-- Next: DAVID's gates — (i) §3 fork (rewritten brief once more [chosen] vs mechanical v3.2 guard now);
-  (ii) paid-run authorization (account-B, ~$5, one attempt); (iii) merge #96. If paid run authorized,
-  recommend one focused re-review of §3.5 first. Nothing autonomous remains on this task.
-- Blocked: on David (paid run + merge). No self-actionable work left here.
+- State: workflow COMPLETE → distilled into the durable build spec `reports/2026-07-05-entity-v4-design.md`
+  (READ THAT FIRST to build). (Raw workflow result was tasks/w0gk1gl7f.output, session-scoped, won't survive a clean.) Verdict:
+  v4 DESIGN SOUND; red-team caught 2 KILLERS (both the step-stamping trap → server-stamping `step` kills
+  the retroactive guard + breaks byte-identical bar; reproduced a PASS→INSUFFICIENT_DATA flip). FIX folded:
+  claim_near(id, step)=BRAIN-supplied step + SEPARATE server-stamped `revealed_at` (from _obs_count, seam-
+  clean). Design = 4 typed claim tools (claim_entity/claim_near/declare/reject) + note_reading audit tool →
+  world/claims.jsonl; new eval/score_entity_gate_v4.py imports v3 math BYTE-IDENTICAL, swaps only the parser;
+  KIRBY_CLAIMS-gated; ZERO frozen-code touch. BIG TRUTH: v4 fixes only 1 of FOUR barriers (green scorer ≠
+  green gate; we've never seen the bar's verdict on real behavior).
+- FOUR barriers: (1) instrumentation → v4 fixes it. (2) camping (b_k) → brief-only, tractable (ceiling easily
+  clearable). (3) (d) predicate → CONDITIONAL GO: stationary step-up ledge is a real wall (enemies die on
+  contact → can't be), but UNPROVEN in kirby_entity2.state + perceiver noisy → needs a $0 probe; NO-GO there
+  = no PASS. (4) NEW margin/coverage geometry: NEARs must COVER drops (v3.1 scored margin −0.043) — ANTAGONISTIC
+  with camping; co-tune in the brief.
+- Next: David's calls (below) → BUILD v4 infra (orchestrated, plan→branch→Sonnet→heavy review→David merges) →
+  $0 (d) probe on kirby_entity2.state (assert hp==6) + $0 paper coverage-reachability check → spend only if
+  both green (likely 1 gated attempt, not 2).
+- David ANSWERED (2026-07-05): Q1 = BUILD the v4 infra now (APPROVED). Q2 = decide the conditional-half
+  (Kirby-v4 vs doom) AFTER the $0 (d) probe. David will COMPACT before the build begins.
+  → NEXT ACTION (after a FULL context CLEAN): build the v4 infra per the DURABLE build spec
+  **`reports/2026-07-05-entity-v4-design.md`** (repo file — survives the clean; has the full tool interface,
+  scorer plan, step-semantics killer-fix, camping fix, the (d) $0-probe, and the sequence). The session file
+  tasks/w0gk1gl7f.output will NOT survive a clean — do NOT rely on it. Already on branch
+  feat/entity-gate-v4-structured-claims. Follow plan→branch→Sonnet→heavy adversarial review→David merges.
+- ⚠ GUARDRAIL CONFLICT (PR #101's new CLAUDE.md): "Never touch … Doom during development" (held-out,
+  eval-probes-and-datasets §3) contradicts HANDOFF's old NEXT #3 "doom port" + my Q2 "doom exit" option.
+  If doom is truly held-out, the (d) NO-GO fallback is NOT doom — it's the pre-registered v3.2-(b)
+  min_iters=3 executor floor or a non-held-out world. RESOLVE vs #101's HANDOFF before offering doom.
+- Also new (CLAUDE.md #101): every gate pre-reg must NAME the capability it buys (reports/2026-07-05-
+  northstar-capability-map.md); trust RUNS over docstrings/memories. Fold both into the v4 pre-reg.
+- SIDE-THREAD: PR #101 (docs/skill-library — skills 10→15 + guardrails + capability map + hooks) is OPEN,
+  MERGEABLE, CI green, but 0 posted adversarial reviews → NOT merge-ready per the gate. David asked me to
+  check it (done). Offered a heavy adversarial review; awaiting his go. David merges.
 
 ## Constraints
-- Machinery FROZEN: no edit to `eval/score_entity_gate_v3.py`, the `stop_when` enum, `B_K_CEILING`,
-  the skill-mechanism guard, or the macro-interior exclusion. v3.1 is brief/protocol deltas only.
-- Stricter-only: v3.1 may only tighten. The pre-registered v3.2 mechanical-guard escalation is the
-  ONLY code-touching path, and it fires only IF this brief-only attempt fails on prong (a) again.
-- One paid attempt under this pre-reg; no informal re-run. Paid run needs David's OK (account-B).
+- Frozen v3 scorer + v3/v3.1 data UNTOUCHED. v4 = new scorer + new tools + own pre-reg + re-run free
+  pre-checks (seam changed). v4 bar math imported BYTE-IDENTICAL; the brain-supplied-step decision is what
+  KEEPS it byte-identical (do NOT server-stamp step). Screen-only + oracle-off-wire hold (claims.jsonl never
+  returned to brain; no oracle auto-populate).
+- Spend GATED behind two $0 checks ((d) probe + coverage paper-check). (d) is a hard PASS gate. Account-B,
+  blank wipe, banked as-is. Only David merges + authorizes spend.
 
 ## Decisions
-- [2026-07-04] v3.1 stays brief-only (machinery frozen), faithful to the v3 verdict's own scoping —
-  NOT a mechanical guard yet. Anti-thrash is satisfied by (i) a materially-restructured brief that
-  names the exact v3 failure + consequence, (ii) fix (b) changing the cycle geometry, and (iii) a
-  pre-registered v3.2 mechanical escalation if prong (a) fails a second time. Flagged for David @ review.
+- [2026-07-05] Step semantics [recommended, pending David Q1]: claim_near carries BRAIN-supplied `step`
+  (= v3's scored quantity) + SEPARATE server-stamped `revealed_at`. Keeps retroactive guard live + bar
+  byte-identical + prose-taint dead. (Server-stamping step was a red-team-proven killer.)
+- [2026-07-05] Reframed as FOUR barriers (added margin/coverage geometry, antagonistic with camping).
+- [2026-07-05] Include the 5th note_reading audit tool (off-wire drop/HUD belief has a typed home → last
+  freeform-taint surface closed). Predicate menu: stationary-target region_changed / ledge move_blocked —
+  the $0 probe settles the order.
 
 ## Tasks
-- [x] Read v3 verdict + v3 pre-reg + v3 brief; locate the two failure modes  · evidence: reports/2026-07-03-entity-v3-verdict.md §diagnosis (a)+(b); runs/brain_kirby_v3/CLAUDE.md step 3(i)
-- [x] Write `reports/2026-07-04-entity-v3.1-prereg.md` (brief deltas + inherited machinery + escalation ladder)  · evidence: file created; §1 frozen-machinery list, §3 fix(a)+escalation, §4 fix(b), appendix = full v3.1 brief
-- [x] Open PR off `docs/entity-v3.1-prereg`; post 1 Sonnet adversarial review; triage findings  · evidence: PR #96; review BLOCK → 2 majors fixed (dbf5fe0); review record posted as PR comment
-- [x] Update HANDOFF §NEWEST with the v3.1 pre-reg block; flag the fork for David  · evidence: HANDOFF NEWEST (2026-07-04) block + §3 fork flagged in PR body
+- [x] entity-v4-design workflow (17 agents; design + 10 red-team lenses + synth) → v4 design + 4-barrier map
+- [x] DAVID (2026-07-05): Q1 = BUILD v4 now (APPROVED); Q2 = conditional-half decided AFTER the $0 probe
+- [ ] build v4 infra (4 claim tools + note_reading + score_entity_gate_v4.py + 2 drift-guard tests), KIRBY_CLAIMS-gated
+- [ ] $0 (d) probe on kirby_entity2.state + $0 coverage paper-check (BOTH gate the spend)
+- [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage
+- [ ] (David) 1 gated paid attempt → verdict
