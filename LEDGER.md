@@ -85,5 +85,13 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
       [n,n+15] bleed ~15 non-drop steps per cluster. UNVERIFIED ONLY-IF condition: early visibility of
       the threat in the gate room → $0 follow-up probe in flight. Pre-reg must teach the capped
       early-NEAR discipline explicitly; geometry finding is a David flag (bar is honest-hostile).
+- [x] $0 early-visibility follow-up → **PARTIAL** (reports/2026-07-11-entity-v4-visibility-probe.md):
+      cluster 1 = ~8 presses honest lead (early NEAR grounded); cluster 2 = ~1 press; cluster 3 = ~0;
+      threat leaves frame during retreat (early NEAR impossible until re-entry). The paper-check's PASS
+      schedule is honestly groundable for cluster 1 ONLY → the ≤4-early-NEARs discipline is at real risk
+      on kirby_entity2.state. SPEND PICTURE: instrumentation GO (pending #102 review fixes) + predicate
+      GO, but coverage geometry honest-hostile + thin visibility → PASS probability LOW on this savestate.
+      DAVID DECISION before any spend: (a) hunt a better room/savestate (slower/ranged enemies = wider
+      visibility windows, $0), (b) attempt anyway eyes-open, (c) bank the geometry finding as the verdict.
 - [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage
 - [ ] (David) 1 gated paid attempt → verdict
