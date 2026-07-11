@@ -109,8 +109,10 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
       flight (worktree). FIXED in f8d4c64 (suite 1076 passed); scorer-angle re-review CONFIRMED-FIXED both
       majors, no new findings (reproduced the round-1 attack post-fix: retroactive==0; malformed guard live).
       → #102 merge gate SATISFIED (3 reviews + fix response + confirming re-review posted). AWAITS DAVID.
-- [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage.
-      MUST fold in: R3's two inherited-math exploits (forbid reactive same-step NEARs + cap NEAR cadence in
-      the brief), capped early-NEAR discipline (papercheck), move_blocked-primary wording, thin-visibility
-      risk (clusters 2-3) — pre-reg is GATED on David's (a)/(b)/(c) savestate call above.
-- [ ] (David) 1 gated paid attempt → verdict
+- [x] DAVID (2026-07-11) delegated the (b)/(c)/door call → **(c) CHOSEN + EXECUTED**: lane closed without
+      paid attempt, verdict = reports/2026-07-11-entity-v4-verdict.md (bar+world pair honest-hostile; a
+      paid run could not verdict cleanly either way; v5 requires a bar REDESIGN = new gate, fresh pre-reg).
+      v4 pre-reg + paid attempt: CANCELLED. Entity lane SUSPENDED pending v5 design; budget → capability
+      lanes (MKDS continuous-time A/B next, glyph R1 after).
+- [ ] (David) merge #102 — still worth merging independent of (c): the typed-claims instrument is what any
+      v5 inherits, review-hardened, zero frozen-code touch, gated off by default.

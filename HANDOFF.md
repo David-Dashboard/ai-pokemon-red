@@ -46,10 +46,13 @@ all $0 spend gates run — every probe THINNED the honest PASS path. $0 spent, n
    checkout branch once mid-session (commit recovered onto the right branch; builder/fixer agents ran
    worktree-isolated after that) and left untracked spanish_teacher.* files (untouched). PR #101 (skill
    library 10→15) still OPEN awaiting David, unchanged this session.
-**⇒ NEXT (priority order):** (1) DAVID: merge #102 + the (b)/(c)/door-probe call — everything v4 is gated
-on it; (2) if (c): write the geometry-finding verdict report + close the v4 lane; if door-probe: $0 probe
-from a healthier-hp state; (3) DAVID: PR #101 go/no-go (unchanged); (4) MKDS continuous-time BUILD PR
-(2026-07-04 NEXT #1, untouched this session); (5) glyph R1 build.
+**⇒ RESOLVED same day (2026-07-11, David delegated the call):** **(c) executed** — v4 lane CLOSED without
+paid attempt, verdict banked at `reports/2026-07-11-entity-v4-verdict.md` (bar+world pair honest-hostile;
+neither FAIL nor PASS would verdict the capability cleanly; v5 = bar redesign = new gate, fresh pre-reg).
+Entity lane SUSPENDED. #102 still worth merging (the typed-claims instrument survives for v5; gated off).
+**⇒ NEXT (priority order):** (1) DAVID: merge #102; (2) MKDS continuous-time A/B (the #100 build is MERGED —
+lane state scan + free pre-checks, then the pre-registered A/B); (3) DAVID: PR #101 go/no-go (unchanged);
+(4) glyph R1 build; (5) v5 entity-bar redesign design doc (unpaid, whenever).
 **Paid ledger today (2026-07-11): $0** (all probes local/offline; per-block ledgers below remain the source of record).
 _Prior update: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
 `stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
