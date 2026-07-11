@@ -28,7 +28,12 @@ heads-up (pre-reg §7 — this overrides the general account-B pre-authorization
 ## Tasks
 - [x] scout lane state → gaps mapped (evidence above)
 - [ ] (agent A) MKDS lap/checkpoint oracle: FOUND+verified / NOT FOUND → report
-- [ ] (agent B) Docker rebuild + brain_mkds_armA|armB launchers/briefs + seamcheck 3/3 PASS → report
+- [x] (agent B) launch surface DONE (reports/2026-07-11-mkds-launch-surface.md): image rebuilt
+      (sha256:dfd12eac87bb, NDS_SKILLS x16 verified in-image; stale latest replaced); seamcheck 3/3 PASS
+      (NDS_SKILLS=1 → tools present / unset → absent / KIRBY_SKILLS=1 cross-flag → absent);
+      runs/brain_mkds_armA|armB/ created (blank-wipe, --max-turns 90, no --record on nds — SystemExit,
+      --keep-frames only). runs/ is GITIGNORED → launchers live on disk only, report is the tracked record.
+      Cost estimate for the A/B: 2 agents, one attempt each, ≲$5/arm (≲$10 total).
 - [ ] commit launch surface + reports on feat branch (or fresh branch if cleaner) + PR? (small, review-light:
       launchers are runs/ scripts — check whether runs/ launchers historically went through PRs)
 - [ ] update HANDOFF + hand David the go/no-go package (cost estimate, agent count, oracle status)
