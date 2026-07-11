@@ -93,6 +93,14 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
       GO, but coverage geometry honest-hostile + thin visibility → PASS probability LOW on this savestate.
       DAVID DECISION before any spend: (a) hunt a better room/savestate (slower/ranged enemies = wider
       visibility windows, $0), (b) attempt anyway eyes-open, (c) bank the geometry finding as the verdict.
+- [x] $0 instrument hunt → **NONE BETTER** (reports/2026-07-11-entity-v4-instrument-hunt.md): scout/stage1
+      states dead (non-interactive, receipts in report); final/to_death states worse (death spiral hp 3→0);
+      one UNVERIFIED lead = door+enemy sub-room past the pillar wall (reached only at hp 2-3, geometry
+      unmeasured). NEW DISCREPANCY: cluster-1 contact at press 2 under run_skill hold_frames=30 (46 f/press)
+      vs press 8 under the 24 f/press seam cadence — which cadence rules the paid run decides whether ANY
+      honest early-NEAR window exists. RECOMMENDATION (mine): (c)-lean — every $0 probe thinned the honest
+      PASS path (geometry honest-hostile + thin visibility + cadence risk); if not (c), probe the door
+      sub-room from a healthier state before any spend. (a)-as-run is DONE; the call is (b)/(c)/door-probe.
 - [ ] PR #102 review round 1 DONE (3 reviewers posted): seam-audit APPROVE (2 doc minors); scorer red-team
       BLOCK (2 real majors: claim-tool observe() advances _obs_count → false-retroactive on multi-claim-
       per-frame, reproduced verdict flip; MALFORMED_MAX_FRACTION unreachable in v4 parser); gaming red-team
