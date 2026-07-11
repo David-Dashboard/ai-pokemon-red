@@ -27,14 +27,21 @@ heads-up (pre-reg §7 — this overrides the general account-B pre-authorization
 
 ## Tasks
 - [x] scout lane state → gaps mapped (evidence above)
-- [ ] (agent A) MKDS lap/checkpoint oracle: FOUND+verified / NOT FOUND → report
+- [x] (agent A) oracle FOUND+verified (reports/2026-07-11-mkds-oracle-hunt.md): **0x022C8090 u8, absolute,
+      no pointer chase** — 0 through count-in, ticks 1→2 on confirmed forward progress, flat when stalled;
+      byte-identical across 2 independent re-runs. TAS pointer chain (0x021755FC) DEAD in GP mode (TT-only,
+      confirmed inert ~125s) — the verify-against-run law caught it, wiki alone would have shipped a dead
+      oracle. Caveats: semantics not disassembly-confirmed; 2 ticks observed (no full blind lap); verified
+      for this savestate/track only. Sufficient for the A/B (primary metric is frames-per-decision; oracle
+      scores the secondary task-progress event).
 - [x] (agent B) launch surface DONE (reports/2026-07-11-mkds-launch-surface.md): image rebuilt
       (sha256:dfd12eac87bb, NDS_SKILLS x16 verified in-image; stale latest replaced); seamcheck 3/3 PASS
       (NDS_SKILLS=1 → tools present / unset → absent / KIRBY_SKILLS=1 cross-flag → absent);
       runs/brain_mkds_armA|armB/ created (blank-wipe, --max-turns 90, no --record on nds — SystemExit,
       --keep-frames only). runs/ is GITIGNORED → launchers live on disk only, report is the tracked record.
       Cost estimate for the A/B: 2 agents, one attempt each, ≲$5/arm (≲$10 total).
-- [ ] commit launch surface + reports on feat branch (or fresh branch if cleaner) + PR? (small, review-light:
-      launchers are runs/ scripts — check whether runs/ launchers historically went through PRs)
-- [ ] update HANDOFF + hand David the go/no-go package (cost estimate, agent count, oracle status)
+- [x] reports committed on feat branch (runs/ launchers gitignored by convention — on-disk only, reports
+      are the tracked record; no separate PR needed for gitignored launchers)
+- [x] HANDOFF updated + go/no-go package handed to David (2026-07-11): READY — seam 3/3, oracle verified,
+      briefs on disk, 2 agents, one attempt each, --max-turns 90, ≲$10 total
 - [ ] (DAVID) explicit go → launch discipline: Arm A first, --max-turns 90, account-B, banked as-is

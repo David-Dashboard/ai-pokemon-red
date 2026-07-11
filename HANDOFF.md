@@ -50,9 +50,17 @@ all $0 spend gates run — every probe THINNED the honest PASS path. $0 spent, n
 paid attempt, verdict banked at `reports/2026-07-11-entity-v4-verdict.md` (bar+world pair honest-hostile;
 neither FAIL nor PASS would verdict the capability cleanly; v5 = bar redesign = new gate, fresh pre-reg).
 Entity lane SUSPENDED. #102 still worth merging (the typed-claims instrument survives for v5; gated off).
-**⇒ NEXT (priority order):** (1) DAVID: merge #102; (2) MKDS continuous-time A/B (the #100 build is MERGED —
-lane state scan + free pre-checks, then the pre-registered A/B); (3) DAVID: PR #101 go/no-go (unchanged);
-(4) glyph R1 build; (5) v5 entity-bar redesign design doc (unpaid, whenever).
+**⇒ ALSO 2026-07-11 (same session, after the v4 close): MKDS A/B taken to LAUNCH-READY, $0.** Scout mapped
+the lane (98 tests pass fresh; plan doc §4's s=24/k=10 is STALE — code pins s=4, world_mcp.py:749). Three
+gaps closed: (i) Docker image rebuilt (both tags predated the NDS build; NDS_SKILLS x16 verified in-image);
+(ii) launchers/briefs/seamcheck created under runs/brain_mkds_armA|armB/ (gitignored — on-disk only),
+seamcheck **3/3 PASS** vs the fresh image (flag on/off/cross-flag isolation); (iii) task-progress oracle
+FOUND+VERIFIED: **0x022C8090 u8** (ticks on forward progress, 0 through count-in, reproduced twice; the
+TASVideos pointer chain is DEAD in GP mode — verify-against-run caught it). Reports:
+`reports/2026-07-11-mkds-{launch-surface,oracle-hunt}.md`. **Spend still gated on David per pre-reg §7:**
+2 agents, one attempt each, Arm A first, --max-turns 90, ≲$10 total.
+**⇒ NEXT (priority order):** (1) DAVID: merge #102; (2) DAVID: MKDS A/B go/no-go (everything ready, ≲$10);
+(3) DAVID: PR #101 go/no-go (unchanged); (4) glyph R1 build; (5) v5 entity-bar redesign design doc (unpaid).
 **Paid ledger today (2026-07-11): $0** (all probes local/offline; per-block ledgers below remain the source of record).
 _Prior update: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
 `stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
