@@ -623,6 +623,87 @@ def _kirby_skills_enabled() -> bool:
     return os.environ.get("KIRBY_SKILLS") == "1"
 
 
+# --- Entity-gate v4 structured claims (reports/2026-07-05-entity-v4-design.md, kirby_dreamland ONLY).
+# Four typed claim tools + one audit-only tool, added to the same Kirby `kirby-gate` MCP surface,
+# gated behind a SEPARATE KIRBY_CLAIMS=1 flag (sibling of KIRBY_SKILLS, doc "Tool interface" — one
+# flag per arm, so a KIRBY_SKILLS=1 session doesn't silently also get claim tools and vice versa).
+# Each call appends ONE JSON record to world/claims.jsonl (never read back, never returned to the
+# brain — off-wire, oracle-clean, same no-leak law as oracle.jsonl/skills.jsonl) and acks with a bare
+# "Noted." + the normal trailing observe (doc: "clone the remember dispatch... NO hp/drop/correctness
+# echo"). `step` on claim_entity/claim_near is BRAIN-SUPPLIED (the scored quantity, identical to how
+# v3 works today); `revealed_at` is a SEPARATE server-stamped field taken from `_obs_count` at call
+# time. Do NOT conflate the two (doc "STEP SEMANTICS" — server-stamping `step` was a red-team-proven
+# killer: it makes the retroactive guard dead code and breaks the byte-identical bar).
+_KIRBY_CLAIM_ENTITY_TOOL = {
+    "name": "claim_entity",
+    "description": ("Assert an entity you can currently see: a pixel region and your provisional "
+                    "kind for it. `step` is the world step (from observe/read_region/whats_changed) "
+                    "you are claiming this at — copy it from the tool result you just read, don't "
+                    "guess it. Re-claiming the same id records another observation; it does not "
+                    "replace the prior one."),
+    "inputSchema": {"type": "object",
+                    "properties": {"id": {"type": "integer"},
+                                   "x0": {"type": "integer"}, "y0": {"type": "integer"},
+                                   "x1": {"type": "integer"}, "y1": {"type": "integer"},
+                                   "step": {"type": "integer"},
+                                   "kind": {"type": "string", "enum": ["threat", "benign"]}},
+                    "required": ["id", "x0", "y0", "x1", "y1", "step", "kind"]},
+}
+_KIRBY_CLAIM_NEAR_TOOL = {
+    "name": "claim_near",
+    "description": ("Assert you were NEAR entity `id` at world step `step` (the load-bearing claim "
+                    "this gate scores). `step` is the world step you are claiming — copy it from the "
+                    "observe/read_region/whats_changed result you just read, don't guess it or "
+                    "back-date it once you already know what happened afterward."),
+    "inputSchema": {"type": "object",
+                    "properties": {"id": {"type": "integer"}, "step": {"type": "integer"}},
+                    "required": ["id", "step"]},
+}
+_KIRBY_DECLARE_TOOL = {
+    "name": "declare",
+    "description": ("Declare your final verdict on entity `id`: exactly one of \"threat\" or "
+                    "\"benign\". One call = one verdict for that id."),
+    "inputSchema": {"type": "object",
+                    "properties": {"id": {"type": "integer"},
+                                   "kind": {"type": "string", "enum": ["threat", "benign"]}},
+                    "required": ["id", "kind"]},
+}
+_KIRBY_REJECT_TOOL = {
+    "name": "reject",
+    "description": ("Reject entity `id` — you've decided it's not worth declaring either way. "
+                    "`reason` is free text but is NEVER re-parsed as a claim — don't quote a claim's "
+                    "shape inside it, it will not be scored."),
+    "inputSchema": {"type": "object",
+                    "properties": {"id": {"type": "integer"}, "reason": {"type": "string"}},
+                    "required": ["id", "reason"]},
+}
+_KIRBY_NOTE_READING_TOOL = {
+    "name": "note_reading",
+    "description": ("AUDIT-ONLY: record your own off-wire belief about the HUD/life reading at "
+                    "`step` and whether you believe a drop just happened. Never scored or re-parsed "
+                    "as a claim_entity/claim_near/declare/reject — this is just a typed place for "
+                    "your bookkeeping so it doesn't leak into `reason`/other free text. `hud_life` "
+                    "is optional — omit it (or pass null) if you have no reading."),
+    "inputSchema": {"type": "object",
+                    "properties": {"step": {"type": "integer"},
+                                   "hud_life": {"type": "integer"},
+                                   "drop_believed": {"type": "boolean"},
+                                   "text": {"type": "string"}},
+                    "required": ["step", "drop_believed", "text"]},
+}
+_KIRBY_CLAIM_TOOLS = [_KIRBY_CLAIM_ENTITY_TOOL, _KIRBY_CLAIM_NEAR_TOOL, _KIRBY_DECLARE_TOOL,
+                      _KIRBY_REJECT_TOOL, _KIRBY_NOTE_READING_TOOL]
+
+# kirby_dreamland ONLY, mirrors _KIRBY_SKILLS_WORLDS's one-world-per-flag scoping.
+_KIRBY_CLAIMS_WORLDS = frozenset({"kirby_dreamland"})
+
+
+def _kirby_claims_enabled() -> bool:
+    """Arm isolation, identical shape to _kirby_skills_enabled: KIRBY_CLAIMS is its OWN env var,
+    checked independently of KIRBY_SKILLS/ARC_SKILLS/NDS_SKILLS. Opt-in, default OFF."""
+    return os.environ.get("KIRBY_CLAIMS") == "1"
+
+
 # --- NDS continuous-time skill port (reports/2026-07-04-mkds-continuous-time-build-plan.md, the build
 # PR for reports/2026-07-04-continuous-time-stopwhen-design.md, PR #98). `define_skill`/`run_skill` are
 # added to `World`'s tool surface + dispatch (nds runs through the SAME generic World/Gateway/GamePlugin
@@ -760,6 +841,10 @@ def _static_tools(game: str) -> list[dict]:
     # see these tools even if KIRBY_SKILLS happens to be set — the flag is world-scoped, not global.
     if game in _KIRBY_SKILLS_WORLDS and _kirby_skills_enabled():
         nav = [*nav, *_KIRBY_SKILL_TOOLS]
+    # kirby_dreamland ONLY, gated behind KIRBY_CLAIMS=1 — SEPARATE flag from KIRBY_SKILLS (arm
+    # isolation, doc "Tool interface"), same pre-boot/live-gating agreement discipline as above.
+    if game in _KIRBY_CLAIMS_WORLDS and _kirby_claims_enabled():
+        nav = [*nav, *_KIRBY_CLAIM_TOOLS]
     # nds ONLY, gated behind NDS_SKILLS=1 — same arm-isolation discipline as Kirby: a --game nds session
     # with only KIRBY_SKILLS/ARC_SKILLS set (no NDS_SKILLS) must NOT see these tools, and vice versa (a
     # kirby_dreamland session with NDS_SKILLS=1 must not see them either — the world in-check above is
@@ -882,6 +967,15 @@ class World:
         self.skills: dict[str, dict] = {}   # within-run only, blank-agent law (same lifetime as lessons)
         self._skill_log_path = os.path.join(args.out, "skills.jsonl")
 
+        # Entity-gate v4 structured claims (reports/2026-07-05-entity-v4-design.md, kirby_dreamland
+        # ONLY). Read KIRBY_CLAIMS ONCE at init, same per-flag/per-init discipline as
+        # kirby_skills_world/_kirby_skills_enabled above — the env can't flip mid-session. tools/list
+        # already hides the claim tools when off or off-world; this is defense-in-depth so a stale
+        # client / hand-rolled request still gets a clear refusal, not silent execution.
+        self.kirby_claims_world = args.game in _KIRBY_CLAIMS_WORLDS
+        self._kirby_claims_enabled = self.kirby_claims_world and _kirby_claims_enabled()
+        self._claims_log_path = os.path.join(args.out, "claims.jsonl")   # world/ sibling of oracle.jsonl/skills.jsonl
+
         # NDS continuous-time skill port (plan §1, mirrors the Kirby block immediately above). Same
         # per-flag/per-init discipline: NDS_SKILLS is read ONCE at construction, not per call, so the env
         # can't flip mid-session and change which arm this session is. tools/list already hides
@@ -900,6 +994,8 @@ class World:
             nav = [*nav, _READ_REGION_TOOL, _WHATS_CHANGED_TOOL]
         if self._kirby_skills_enabled:
             nav = [*nav, *_KIRBY_SKILL_TOOLS]
+        if self._kirby_claims_enabled:
+            nav = [*nav, *_KIRBY_CLAIM_TOOLS]
         if self._nds_skills_enabled:
             nav = [*nav, *_NDS_SKILL_TOOLS]
         return [*nav, *action]
@@ -1615,6 +1711,88 @@ class World:
         # — mirrors Kirby's own trailing-observe-after-log ordering, RESIDUAL #1's discipline).
         return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
 
+    # -- Entity-gate v4 structured claims (doc §"Barrier 1", kirby_dreamland ONLY, gated by KIRBY_CLAIMS) --
+    # Each handler validates at TOOL time (malformed/short args are rejected here and NEVER written —
+    # doc: "malformed is HARD-ZERO by construction") and, on success, appends exactly one record to
+    # world/claims.jsonl. `step` on claim_entity/claim_near is the BRAIN-SUPPLIED value from the args
+    # (never touched); `revealed_at` is a SEPARATE server-stamped `_obs_count` snapshot, computed here,
+    # never from the brain (doc "STEP SEMANTICS" — do NOT conflate the two).
+
+    def _log_claim(self, rec: dict) -> None:
+        """world/ sibling of oracle.jsonl/skills.jsonl, same append-only jsonl shape as `_log_skill`.
+        NEVER read back within a session and NEVER returned to the brain (doc: "world/claims.jsonl is
+        NEVER returned to the brain") — offline scoring only, exactly like oracle.jsonl."""
+        try:
+            with open(self._claims_log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    def _claim_entity(self, args: dict) -> list[dict]:
+        try:
+            eid = int(args["id"])
+            x0, y0, x1, y1 = int(args["x0"]), int(args["y0"]), int(args["x1"]), int(args["y1"])
+            step = int(args["step"])
+            kind = str(args["kind"])
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "claim_entity error: needs integer id, x0, y0, x1, y1, "
+                                             "step, and kind (\"threat\" or \"benign\")."}]
+        if kind not in ("threat", "benign"):
+            return [{"type": "text", "text": "claim_entity error: kind must be \"threat\" or \"benign\"."}]
+        revealed_at = int(getattr(self.plugin, "_obs_count", 0))   # server-stamped, NEVER the scored `step`
+        self._log_claim({"event": "claim_entity", "id": eid, "region": [x0, y0, x1, y1],
+                         "step": step, "revealed_at": revealed_at, "kind": kind})
+        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+
+    def _claim_near(self, args: dict) -> list[dict]:
+        try:
+            eid = int(args["id"])
+            step = int(args["step"])
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "claim_near error: needs integer id and step."}]
+        revealed_at = int(getattr(self.plugin, "_obs_count", 0))   # server-stamped, NEVER the scored `step`
+        self._log_claim({"event": "claim_near", "id": eid, "step": step, "revealed_at": revealed_at})
+        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+
+    def _declare(self, args: dict) -> list[dict]:
+        try:
+            eid = int(args["id"])
+            kind = str(args["kind"])
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text",
+                     "text": "declare error: needs integer id and kind (\"threat\" or \"benign\")."}]
+        if kind not in ("threat", "benign"):
+            return [{"type": "text", "text": "declare error: kind must be \"threat\" or \"benign\"."}]
+        self._log_claim({"event": "declare", "id": eid, "kind": kind})
+        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+
+    def _reject(self, args: dict) -> list[dict]:
+        try:
+            eid = int(args["id"])
+            reason = str(args["reason"])
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "reject error: needs integer id and a string reason."}]
+        self._log_claim({"event": "reject", "id": eid, "reason": reason})
+        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+
+    def _note_reading(self, args: dict) -> list[dict]:
+        try:
+            step = int(args["step"])
+            drop_believed = bool(args["drop_believed"])
+            text = str(args["text"])
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "note_reading error: needs integer step, boolean "
+                                             "drop_believed, and string text (hud_life is optional)."}]
+        hud_life = args.get("hud_life")
+        if hud_life is not None:
+            try:
+                hud_life = int(hud_life)
+            except (TypeError, ValueError):
+                return [{"type": "text", "text": "note_reading error: hud_life must be an integer or null."}]
+        self._log_claim({"event": "note_reading", "step": step, "hud_life": hud_life,
+                         "drop_believed": drop_believed, "text": text})
+        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 
     def _run_autopilot(self, target, max_steps: int) -> tuple[int, str]:
@@ -1723,6 +1901,48 @@ class World:
             else:
                 self.decisions += 1   # one LLM decision buys up to _KIRBY_SKILL_MAX_WORLD_STEPS presses
                 body = self._run_skill(args)
+        elif name == "claim_entity":
+            if not self._kirby_claims_enabled:
+                body = [{"type": "text",
+                         "text": "claim_entity error: claim tools are disabled for this session (set "
+                                 "KIRBY_CLAIMS=1 in the environment to enable, on kirby_dreamland only "
+                                 "— see reports/2026-07-05-entity-v4-design.md)."}]
+            else:
+                # a claim is not a wake (doc §"Barrier 1": "decision-UNCOUNTED path") — self.decisions
+                # is intentionally NOT incremented here.
+                body = self._claim_entity(args)
+        elif name == "claim_near":
+            if not self._kirby_claims_enabled:
+                body = [{"type": "text",
+                         "text": "claim_near error: claim tools are disabled for this session (set "
+                                 "KIRBY_CLAIMS=1 in the environment to enable, on kirby_dreamland only "
+                                 "— see reports/2026-07-05-entity-v4-design.md)."}]
+            else:
+                body = self._claim_near(args)
+        elif name == "declare":
+            if not self._kirby_claims_enabled:
+                body = [{"type": "text",
+                         "text": "declare error: claim tools are disabled for this session (set "
+                                 "KIRBY_CLAIMS=1 in the environment to enable, on kirby_dreamland only "
+                                 "— see reports/2026-07-05-entity-v4-design.md)."}]
+            else:
+                body = self._declare(args)
+        elif name == "reject":
+            if not self._kirby_claims_enabled:
+                body = [{"type": "text",
+                         "text": "reject error: claim tools are disabled for this session (set "
+                                 "KIRBY_CLAIMS=1 in the environment to enable, on kirby_dreamland only "
+                                 "— see reports/2026-07-05-entity-v4-design.md)."}]
+            else:
+                body = self._reject(args)
+        elif name == "note_reading":
+            if not self._kirby_claims_enabled:
+                body = [{"type": "text",
+                         "text": "note_reading error: claim tools are disabled for this session (set "
+                                 "KIRBY_CLAIMS=1 in the environment to enable, on kirby_dreamland only "
+                                 "— see reports/2026-07-05-entity-v4-design.md)."}]
+            else:
+                body = self._note_reading(args)
         else:
             # a direct action (press_button / press_sequence / wait / touch / touch_target): route through the gateway.
             if name in ("press_button", "press_sequence", "wait", "touch", "touch_target"):
