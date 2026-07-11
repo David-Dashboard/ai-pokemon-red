@@ -6,7 +6,21 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
-## 2026-07-11 (latest) — the $0 spend-gate cascade did its job: it argued AGAINST the spend it was gating
+## 2026-07-11 (later) — glyph R1 killed at its own gate: the cache's font-crispness assumption is load-bearing
+- **What:** R1 cache-driven text-region detection built per its merged design and killed at the pinned §4b
+  bar in one attempt (pooled precision 0.283 vs ≤0.49 kill floor; PR #103; detector unwired). Verdict-audit
+  review independently reproduced every number before the kill was banked.
+- **The finding:** the within-run glyph cache's Gate-2 success (96.9% free-serve, 46 glyphs) was measured on
+  Gen-1's crisp 8x8 font. GBA anti-aliased/stylized text explodes the confirmed vocabulary (191-989 keys
+  from 5 warmup frames), and under tolerant matching that reintroduces exactly the textured-backdrop
+  collision mode that killed R0. Mechanisms validated on clean instruments carry hidden preconditions;
+  "generalizes to glyphs" (GB) did not mean "generalizes to fonts" (GBA). Text detection remains open;
+  brain-driven read_region stands as the floor.
+- **Method note:** R0's merged kill-harness made this kill nearly free — the reusable-bar convention
+  (merge the harness even when the candidate dies) paid out one rung later, and the two-sided verdict
+  audit (is the KILL a harness bug? is it hiding a fixable bug?) is worth its cost before banking negatives.
+
+## 2026-07-11 (earlier) — the $0 spend-gate cascade did its job: it argued AGAINST the spend it was gating
 - **What:** entity-gate v4 infra was built + review-hardened in one session (PR #102: typed claim tools,
   parser-only scorer swap, v3 math untouched), and the pre-registered $0 spend gates all ran: (d)-predicate
   probe GO (move_blocked), coverage paper-check REACHABLE-ONLY-IF, visibility probe PARTIAL, instrument

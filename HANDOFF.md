@@ -59,8 +59,18 @@ FOUND+VERIFIED: **0x022C8090 u8** (ticks on forward progress, 0 through count-in
 TASVideos pointer chain is DEAD in GP mode — verify-against-run caught it). Reports:
 `reports/2026-07-11-mkds-{launch-surface,oracle-hunt}.md`. **Spend still gated on David per pre-reg §7:**
 2 agents, one attempt each, Arm A first, --max-turns 90, ≲$10 total.
-**⇒ NEXT (priority order):** (1) DAVID: merge #102; (2) DAVID: MKDS A/B go/no-go (everything ready, ≲$10);
-(3) DAVID: PR #101 go/no-go (unchanged); (4) glyph R1 build; (5) v5 entity-bar redesign design doc (unpaid).
+**⇒ ALSO 2026-07-11 (later same session): GLYPH R1 BUILT + KILLED AT ITS OWN GATE, $0 (PR #103, merge gate
+satisfied).** Precision 0.283 vs the ≤0.49 kill floor (pooled 0.283/0.283/1 phantom; all 4 qualifying GBA
+games individually KILL). The finding: GBA anti-aliased/stylized fonts blow the confirmed-glyph vocabulary
+to 191-989 keys from 5 warmup frames vs Gen-1's 46 → under Hamming≤4 matching, R0's collision mode returns.
+Cache-driven detection inherits the cache's font-crispness assumption. One attempt of 2 allowed, no tuning,
+detector UNWIRED; harness+fixture merge as the reusable R2 bar (R0-kill #52 convention). Verdict-audit
+review independently reproduced every number (VERDICT-STANDS); code review APPROVE 0 findings.
+`reports/2026-07-11-glyph-r1-verdict.md`. Fallback stands: brain-driven read_region alone.
+**⇒ NEXT (priority order):** (1) DAVID: merge #102 (entity-v4 instrument) + #103 (glyph R1 kill) — both
+merge gates satisfied; (2) DAVID: MKDS A/B go/no-go (launch-ready, ≲$10, 2 agents); (3) DAVID: PR #101
+go/no-go (unchanged); (4) v5 entity-bar redesign design doc (unpaid, whenever); (5) sweep stage-2 /
+ARC breadth remain queued from prior blocks.
 **Paid ledger today (2026-07-11): $0** (all probes local/offline; per-block ledgers below remain the source of record).
 _Prior update: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
 `stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
