@@ -18,6 +18,12 @@ heads-up (pre-reg §7 — this overrides the general account-B pre-authorization
   latest predates the whole NDS build!), runs/brain_mkds_armA|armB/ launchers+briefs (blank-wipe lines,
   --max-turns 90, Arm A never sees skill tools or the bar), seamcheck.sh 3 assertions vs fresh image.
 - Entity v4: CLOSED (c). #102 open, merge gate satisfied, awaits David (still merge-worthy: v5 instrument).
+- SIDE-THREAD (NEXT #4 pulled forward while MKDS awaits David): glyph R1 BUILT + gated in worktree
+  ../ai-pokemon-red-glyphr1 (branch feat/glyph-r1-build off main) → **KILL at its own pinned bar**
+  (precision 0.283 ≤ 0.49 kill floor; GBA anti-aliased fonts blow the glyph vocabulary 191-989 keys vs
+  Gen-1's 46 → R0's collision mode returns). One attempt of 2 allowed, no tuning, detector unwired.
+  PR #103 open (kill banked like R0's #52: harness+fixture = the reusable R2 bar); 2 reviewers dispatched
+  (verdict-audit + code/consistency). Suite 1089 passed. Verdict: reports/2026-07-11-glyph-r1-verdict.md.
 
 ## Constraints
 - NO paid run without David's explicit go (pre-reg §7). NO oracle/RAM on the wire. Arm A/B isolation
