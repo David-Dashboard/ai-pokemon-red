@@ -33,7 +33,10 @@ echo** (screen-only / oracle-off-the-wire). Each call appends ONE JSON record to
 (append-only sibling of `oracle.jsonl`/`skills.jsonl`, cloning the `_log_skill` pattern ~1046-1055).
 **`world/claims.jsonl` is NEVER returned to the brain.**
 
-    claim_entity(id:int, x0:int,y0:int,x1:int,y1:int, kind:'threat'|'benign')
+    claim_entity(id:int, x0:int,y0:int,x1:int,y1:int, step:int, kind:'threat'|'benign')
+        [amended 2026-07-11 post-review: `step:int` was omitted from this signature line but is a
+        required tool-schema field and required record key below (R1 finding, PR #102) -- confirmed
+        correct in the build, this line was just stale/incomplete]
         -> {event:'claim_entity', id, region:[x0,y0,x1,y1], step:<BRAIN-supplied>, revealed_at:<server _obs_count>, kind}
     claim_near(id:int, step:int)                      # THE load-bearing tool
         -> {event:'claim_near', id, step:<BRAIN-supplied>, revealed_at:<server _obs_count>}

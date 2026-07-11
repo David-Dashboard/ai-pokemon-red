@@ -67,10 +67,16 @@ def parse_claims(claims: list[dict], oracle: list[dict], skills: list[dict] | No
     macro-interior (order mirrors v3's NEAR handling), then (id, step) dedupe (first-wins).
     `note_reading` records are audit-only and excluded from scoring entirely (doc: "EXCLUDED from
     parse_claims' scored dispatch") -- they do not feed `n_lines` or any other counter here.
-    `malformed` stays at 0 by construction: out-of-enum / short args are rejected at TOOL time
-    (world_mcp.py's claim handlers) and never written to claims.jsonl, so this dict's `malformed` key
-    is imported-but-unreachable, matching the doc's "keep MALFORMED_MAX_FRACTION imported-but-
-    unreachable" instruction."""
+
+    `malformed` (post-review correction, R2 MAJOR 2, PR #102): the tool-time validation in
+    world_mcp.py's claim handlers keeps a REAL run's claims.jsonl malformed-free, but the scorer itself
+    must not assume that -- it reads whatever file is at that path, including a hand-edited or
+    version-skewed one (the project's own d-probe workflow already produces throwaway/hand-rolled
+    claims files). Any record whose `event` is not one of the 5 known names (and isn't `note_reading`,
+    which is deliberately audit-only) counts as malformed, exactly like v3's catch-all counts any
+    ENT/NEAR/DECLARE/REJECT-shaped `remember` line that fails its regex. A record that DOES name a
+    known event but has missing/wrong-typed fields (a hand-corrupted line) also counts as malformed
+    instead of crashing the scorer. This keeps MALFORMED_MAX_FRACTION live."""
     spans = macro_spans(skills or [])
     hp_by_step = _oracle_hp_by_step(oracle)
 
@@ -89,50 +95,55 @@ def parse_claims(claims: list[dict], oracle: list[dict], skills: list[dict] | No
     n_lines = 0
     for rec in claims:
         event = rec.get("event")
-        if event == "claim_entity":
-            n_lines += 1
-            eid = int(rec["id"])
-            x0, y0, x1, y1 = rec["region"]
-            step = int(rec["step"])
-            kind = rec["kind"]
-            if _is_macro_interior(step, spans):
-                macro_interior_ent += 1   # doc "NEAR/ENT claim" -- excluded even though descriptive-only today
-                continue
-            ent_claims.setdefault(eid, []).append(
-                {"region": (int(x0), int(y0), int(x1), int(y1)), "step": step, "claim": kind})
-        elif event == "claim_near":
-            n_lines += 1
-            eid = int(rec["id"])
-            step = int(rec["step"])
-            revealed_at = int(rec["revealed_at"])
-            if revealed_at > step:
-                retroactive += 1
-                continue
-            if _is_macro_interior(step, spans):
-                macro_interior += 1
-                continue
-            key = (eid, step)
-            if key in seen_nears:
-                duplicates += 1
-                continue
-            seen_nears.add(key)
-            matched = step in hp_by_step
-            nears.setdefault(eid, []).append({"step": step, "matched": matched})
-        elif event == "declare":
-            n_lines += 1
-            eid = int(rec["id"])
-            kind = rec.get("kind")
-            if kind == "threat":
-                declared_threats.add(eid)
-            elif kind == "benign":
-                declared_benign.add(eid)
+        if event == "note_reading":
+            continue   # audit-only -- never scored, never counted (doc: "EXCLUDED from parse_claims' scored dispatch")
+        n_lines += 1
+        try:
+            if event == "claim_entity":
+                eid = int(rec["id"])
+                x0, y0, x1, y1 = rec["region"]
+                step = int(rec["step"])
+                kind = rec["kind"]
+                if _is_macro_interior(step, spans):
+                    macro_interior_ent += 1   # doc "NEAR/ENT claim" -- excluded even though descriptive-only today
+                    continue
+                ent_claims.setdefault(eid, []).append(
+                    {"region": (int(x0), int(y0), int(x1), int(y1)), "step": step, "claim": kind})
+            elif event == "claim_near":
+                eid = int(rec["id"])
+                step = int(rec["step"])
+                revealed_at = int(rec["revealed_at"])
+                if revealed_at > step:
+                    retroactive += 1
+                    continue
+                if _is_macro_interior(step, spans):
+                    macro_interior += 1
+                    continue
+                key = (eid, step)
+                if key in seen_nears:
+                    duplicates += 1
+                    continue
+                seen_nears.add(key)
+                matched = step in hp_by_step
+                nears.setdefault(eid, []).append({"step": step, "matched": matched})
+            elif event == "declare":
+                eid = int(rec["id"])
+                kind = rec.get("kind")
+                if kind == "threat":
+                    declared_threats.add(eid)
+                elif kind == "benign":
+                    declared_benign.add(eid)
+                else:
+                    malformed += 1   # unreachable in practice -- world_mcp.py rejects out-of-enum kind at tool time
+            elif event == "reject":
+                eid = int(rec["id"])
+                rejected[eid] = str(rec.get("reason", "")).strip()
             else:
-                malformed += 1   # unreachable in practice -- world_mcp.py rejects out-of-enum kind at tool time
-        elif event == "reject":
-            n_lines += 1
-            eid = int(rec["id"])
-            rejected[eid] = str(rec.get("reason", "")).strip()
-        # "note_reading" and anything else: audit-only / unrecognized -- never scored, never counted.
+                # unrecognized/typo'd/future event name -- v3's catch-all equivalent (R2 MAJOR 2, PR #102)
+                malformed += 1
+        except (KeyError, TypeError, ValueError):
+            # a recognized event with a missing/wrong-typed field -- a hand-corrupted line, not a crash
+            malformed += 1
 
     return {"ent_claims": ent_claims, "nears": nears,
             "declared_threats": declared_threats, "declared_benign": declared_benign,
@@ -212,11 +223,11 @@ def score(claims_path: str, oracle_path: str, skills_path: str) -> dict:
                      f"benign/REJECTed: {sorted(conflicting)})") if conflicting else ""
     if not declared_threats:
         result["verdict"] = "NO_DECLARE"
-        result["reason"] = "no declare(kind='threat') call found" + conflict_note
+        result["reason"] = "no DECLARE threat=<id> line found" + conflict_note
         return result
     if not benign_ids:
         result["verdict"] = "NO_DECLARE"
-        result["reason"] = ("no declare(kind='benign') or reject(...) call found -- arm (b) unexercised"
+        result["reason"] = ("no DECLARE benign=<id> or REJECT id=<id> line found -- arm (b) unexercised"
                             + conflict_note)
         return result
 

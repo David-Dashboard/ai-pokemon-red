@@ -629,11 +629,14 @@ def _kirby_skills_enabled() -> bool:
 # flag per arm, so a KIRBY_SKILLS=1 session doesn't silently also get claim tools and vice versa).
 # Each call appends ONE JSON record to world/claims.jsonl (never read back, never returned to the
 # brain — off-wire, oracle-clean, same no-leak law as oracle.jsonl/skills.jsonl) and acks with a bare
-# "Noted." + the normal trailing observe (doc: "clone the remember dispatch... NO hp/drop/correctness
-# echo"). `step` on claim_entity/claim_near is BRAIN-SUPPLIED (the scored quantity, identical to how
-# v3 works today); `revealed_at` is a SEPARATE server-stamped field taken from `_obs_count` at call
-# time. Do NOT conflate the two (doc "STEP SEMANTICS" — server-stamping `step` was a red-team-proven
-# killer: it makes the retroactive guard dead code and breaks the byte-identical bar).
+# "Noted.", NO trailing observe (post-review correction, R2 MAJOR 1, PR #102: the design doc's original
+# "clone the remember dispatch ... + the normal trailing observe" would re-increment `_obs_count` on
+# every claim ack, so two claim calls about ONE already-seen frame get different `revealed_at`
+# snapshots and the second is wrongly flagged retroactive — see the block comment above `_claim_entity`
+# for the full mechanism). `step` on claim_entity/claim_near is BRAIN-SUPPLIED (the scored quantity,
+# identical to how v3 works today); `revealed_at` is a SEPARATE server-stamped field taken from
+# `_obs_count` at call time. Do NOT conflate the two (doc "STEP SEMANTICS" — server-stamping `step` was
+# a red-team-proven killer: it makes the retroactive guard dead code and breaks the byte-identical bar).
 _KIRBY_CLAIM_ENTITY_TOOL = {
     "name": "claim_entity",
     "description": ("Assert an entity you can currently see: a pixel region and your provisional "
@@ -654,7 +657,10 @@ _KIRBY_CLAIM_NEAR_TOOL = {
     "description": ("Assert you were NEAR entity `id` at world step `step` (the load-bearing claim "
                     "this gate scores). `step` is the world step you are claiming — copy it from the "
                     "observe/read_region/whats_changed result you just read, don't guess it or "
-                    "back-date it once you already know what happened afterward."),
+                    "back-date it once you already know what happened afterward. A claim filed in the "
+                    "same turn where you just observed a drop/consequence is not predictive and does "
+                    "not demonstrate anticipation, even though it will pass the mechanical check — "
+                    "only claim NEAR when you cannot yet tell what happens next."),
     "inputSchema": {"type": "object",
                     "properties": {"id": {"type": "integer"}, "step": {"type": "integer"}},
                     "required": ["id", "step"]},
@@ -682,8 +688,11 @@ _KIRBY_NOTE_READING_TOOL = {
     "description": ("AUDIT-ONLY: record your own off-wire belief about the HUD/life reading at "
                     "`step` and whether you believe a drop just happened. Never scored or re-parsed "
                     "as a claim_entity/claim_near/declare/reject — this is just a typed place for "
-                    "your bookkeeping so it doesn't leak into `reason`/other free text. `hud_life` "
-                    "is optional — omit it (or pass null) if you have no reading."),
+                    "your bookkeeping so it doesn't leak into `reason`/other free text. This does NOT "
+                    "cover entity/proximity beliefs — use claim_near/claim_entity for those; a "
+                    "proximity belief filed only through note_reading is audit trail, never scored, "
+                    "and will NOT count toward the gate. `hud_life` is optional — omit it (or pass "
+                    "null) if you have no reading."),
     "inputSchema": {"type": "object",
                     "properties": {"step": {"type": "integer"},
                                    "hud_life": {"type": "integer"},
@@ -1717,6 +1726,16 @@ class World:
     # world/claims.jsonl. `step` on claim_entity/claim_near is the BRAIN-SUPPLIED value from the args
     # (never touched); `revealed_at` is a SEPARATE server-stamped `_obs_count` snapshot, computed here,
     # never from the brain (doc "STEP SEMANTICS" — do NOT conflate the two).
+    #
+    # NO TRAILING OBSERVE (deviates from doc §"Barrier 1"'s "clone the remember dispatch ... + the
+    # normal trailing observe" — post-review correction, R2 MAJOR 1, PR #102): a claim call never
+    # advances the game (no press, no tick), so re-rendering the screen would only re-perceive the
+    # SAME frame while still incrementing `plugin._obs_count` (it counts every observe() call, not
+    # just genuine new frames). Two claim calls back-to-back about ONE already-seen frame would then
+    # get DIFFERENT `revealed_at` snapshots purely from the first call's own ack render, wrongly
+    # flagging the second as retroactive (reproduced PASS-on-v3 -> INSUFFICIENT_DATA-on-v4 flip on
+    # semantically-identical facts). `revealed_at` must track REAL brain observations only, so claim
+    # acks return "Noted." with no screen content and never touch `_obs_count`.
 
     def _log_claim(self, rec: dict) -> None:
         """world/ sibling of oracle.jsonl/skills.jsonl, same append-only jsonl shape as `_log_skill`.
@@ -1742,7 +1761,7 @@ class World:
         revealed_at = int(getattr(self.plugin, "_obs_count", 0))   # server-stamped, NEVER the scored `step`
         self._log_claim({"event": "claim_entity", "id": eid, "region": [x0, y0, x1, y1],
                          "step": step, "revealed_at": revealed_at, "kind": kind})
-        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+        return [{"type": "text", "text": "Noted."}]   # no trailing observe -- see block comment above
 
     def _claim_near(self, args: dict) -> list[dict]:
         try:
@@ -1752,7 +1771,7 @@ class World:
             return [{"type": "text", "text": "claim_near error: needs integer id and step."}]
         revealed_at = int(getattr(self.plugin, "_obs_count", 0))   # server-stamped, NEVER the scored `step`
         self._log_claim({"event": "claim_near", "id": eid, "step": step, "revealed_at": revealed_at})
-        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+        return [{"type": "text", "text": "Noted."}]   # no trailing observe -- see block comment above
 
     def _declare(self, args: dict) -> list[dict]:
         try:
@@ -1764,7 +1783,7 @@ class World:
         if kind not in ("threat", "benign"):
             return [{"type": "text", "text": "declare error: kind must be \"threat\" or \"benign\"."}]
         self._log_claim({"event": "declare", "id": eid, "kind": kind})
-        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+        return [{"type": "text", "text": "Noted."}]   # no trailing observe -- see block comment above
 
     def _reject(self, args: dict) -> list[dict]:
         try:
@@ -1773,7 +1792,7 @@ class World:
         except (KeyError, TypeError, ValueError):
             return [{"type": "text", "text": "reject error: needs integer id and a string reason."}]
         self._log_claim({"event": "reject", "id": eid, "reason": reason})
-        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+        return [{"type": "text", "text": "Noted."}]   # no trailing observe -- see block comment above
 
     def _note_reading(self, args: dict) -> list[dict]:
         try:
@@ -1791,7 +1810,7 @@ class World:
                 return [{"type": "text", "text": "note_reading error: hud_life must be an integer or null."}]
         self._log_claim({"event": "note_reading", "step": step, "hud_life": hud_life,
                          "drop_believed": drop_believed, "text": text})
-        return [{"type": "text", "text": "Noted."}, *self._content(self.plugin.observe(_AGENT))]
+        return [{"type": "text", "text": "Noted."}]   # no trailing observe -- see block comment above
 
     # -- the free System-1 autopilot (dual-process: wake the brain only at a decision) -----------------------
 

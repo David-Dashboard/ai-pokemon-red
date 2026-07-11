@@ -10,6 +10,16 @@ Pins exactly the two properties the design doc calls out:
   2. the step/revealed_at semantics: a late claim_near (brain-supplied `step` < server-stamped
      `revealed_at`) is counted RETROACTIVE by v4's parse_claims exactly as v3's watermark rule would
      flag the equivalent freeform NEAR line.
+
+Plus two post-review additions (R2's BLOCK + MAJOR 2, PR #102):
+  3. the REAL tool path (World.call, a FakeEmulator, the same builder tests/test_kirby_skill_port.py
+     uses) must NOT manufacture a false RETROACTIVE exclusion when a session makes more than one claim
+     call about a single already-observed frame -- the exact reproduced PASS(v3)->INSUFFICIENT_DATA(v4)
+     divergence R2 flagged BLOCK on. The two earlier drift-guard tests above hard-code
+     `revealed_at == step` for every synthetic record, which never exercises the claim tool's OWN
+     bookkeeping across back-to-back calls -- this test does, through the real handlers.
+  4. MALFORMED_MAX_FRACTION must be reachable: parse_claims must count unrecognized/garbage records the
+     same way v3's catch-all counts unparseable ENT/NEAR/DECLARE/REJECT-shaped `remember` lines.
 """
 from __future__ import annotations
 
@@ -18,6 +28,7 @@ import tempfile
 
 from eval.score_entity_gate_v3 import parse_transcript, score as v3_score
 from eval.score_entity_gate_v4 import parse_claims, score as v4_score
+from tests.test_kirby_skill_port import _make_world
 
 SERVER = "mcp__kirby-gate"
 
@@ -162,3 +173,94 @@ def test_late_claim_near_is_retroactive_exactly_as_v3_watermark_rule():
                                     oracle, skills=[])
     assert boundary_parsed["retroactive"] == 0
     assert boundary_parsed["nears"][1] == [{"step": 5, "matched": True}]
+
+
+# ---------------------------------------------------------------------------
+# 3. R2 MAJOR 1 (the BLOCK): the REAL tool path must not manufacture a false RETROACTIVE exclusion
+#    when a session claims more than one thing about a single already-observed frame. Drives
+#    world_mcp.World.call directly (FakeEmulator, no PyBoy) through claim_entity/claim_near/declare/
+#    reject/note_reading, exactly the sequence the reviewer showed breaks parity: two (or more) claim
+#    calls back-to-back about ONE frame the brain was shown exactly once.
+# ---------------------------------------------------------------------------
+
+def test_real_tool_path_multiple_claims_per_frame_are_not_retroactive(tmp_path, monkeypatch):
+    monkeypatch.setenv("KIRBY_CLAIMS", "1")
+    monkeypatch.delenv("KIRBY_SKILLS", raising=False)
+    out = str(tmp_path / "out")
+    w = _make_world(out)
+
+    # ONE real reveal -- the only thing that may legitimately advance plugin._obs_count here.
+    w.call("observe", {})
+    step = w.plugin._obs_count
+    assert step >= 1
+
+    # THREE claim calls about that SAME already-observed frame, back-to-back, no new reveal in
+    # between -- the natural way a brain reports "I see two things near me in this frame" (R2's exact
+    # reproduction scenario). None of these may bump plugin._obs_count.
+    r1 = w.call("claim_near", {"id": 1, "step": step})
+    r2 = w.call("claim_near", {"id": 2, "step": step})
+    r3 = w.call("claim_entity", {"id": 3, "x0": 0, "y0": 0, "x1": 8, "y1": 8,
+                                 "step": step, "kind": "benign"})
+    assert w.plugin._obs_count == step, "a claim ack must never advance the reveal watermark"
+
+    # acks are bare "Noted." -- no re-rendered screen content riding along.
+    for r in (r1, r2, r3):
+        texts = [c["text"] for c in r if c.get("type") == "text"]
+        assert any(t == "Noted." for t in texts)
+        assert not any("screen_path" in t or "step=" in t for t in texts if t != "Noted.")
+
+    with open(w._claims_log_path, encoding="utf-8") as f:
+        records = [json.loads(line) for line in f if line.strip()]
+    assert len(records) == 3
+    for rec in records:
+        assert rec["step"] == step
+        if "revealed_at" in rec:
+            assert rec["revealed_at"] == step, (
+                "second/third claim about the same frame got a different revealed_at than the "
+                "first -- exactly the R2 MAJOR 1 bug (own trailing observe polluting the watermark)")
+
+    parsed = parse_claims(records, oracle=[], skills=[])
+    assert parsed["retroactive"] == 0
+    assert parsed["nears"][1][0]["step"] == step
+    assert parsed["nears"][2][0]["step"] == step
+    assert 3 in parsed["ent_claims"]
+
+
+# ---------------------------------------------------------------------------
+# 4. R2 MAJOR 2: MALFORMED_MAX_FRACTION must be reachable -- unrecognized/garbage claims.jsonl records
+#    count as malformed exactly like v3's catch-all counts unparseable ENT/NEAR/DECLARE/REJECT-shaped
+#    `remember` lines (mirrors the reviewer's reproduced 8-garbage/2-valid scenario).
+# ---------------------------------------------------------------------------
+
+def test_malformed_fraction_guard_is_live():
+    garbage = [{"event": "clam_near", "id": 1, "step": 1}] * 4 + [{"event": "delcare", "id": 9}] * 4
+    valid = [{"event": "claim_near", "id": 1, "step": s, "revealed_at": s} for s in (1, 2)]
+
+    parsed = parse_claims(garbage + valid, oracle=[], skills=[])
+    assert parsed["malformed"] == 8
+    assert parsed["n_lines"] == 10
+    assert (parsed["malformed"] / parsed["n_lines"]) >= 0.20
+
+    with tempfile.TemporaryDirectory() as d:
+        claims_path = _write_jsonl(f"{d}/claims.jsonl", garbage + valid)
+        oracle_path = _write_jsonl(f"{d}/oracle.jsonl", [_oracle_rec(1, _raw(5)), _oracle_rec(2, _raw(5))])
+        skills_path = _write_jsonl(f"{d}/skills.jsonl", [])
+        result = v4_score(claims_path, oracle_path, skills_path)
+    assert result["verdict"] == "INSUFFICIENT_DATA"
+    assert "malformed" in result["reason"]
+
+
+def test_malformed_fraction_guard_ignores_note_reading_and_recognized_events():
+    # note_reading is deliberately audit-only -- must NOT count toward malformed or n_lines.
+    records = [{"event": "note_reading", "step": 1, "hud_life": 5, "drop_believed": False, "text": "x"}] * 5
+    records += [{"event": "claim_near", "id": 1, "step": 1, "revealed_at": 1}]
+    parsed = parse_claims(records, oracle=[], skills=[])
+    assert parsed["malformed"] == 0
+    assert parsed["n_lines"] == 1
+    assert parsed["nears"][1] == [{"step": 1, "matched": False}]
+
+    # a recognized event with a corrupted field must count as malformed, not crash the scorer.
+    corrupted = [{"event": "claim_near", "id": 1}]   # missing required "step"/"revealed_at"
+    parsed2 = parse_claims(corrupted, oracle=[], skills=[])
+    assert parsed2["malformed"] == 1
+    assert parsed2["n_lines"] == 1
