@@ -98,7 +98,9 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
       per-frame, reproduced verdict flip; MALFORMED_MAX_FRACTION unreachable in v4 parser); gaming red-team
       APPROVE (2 majors INHERITED v3 math — reactive same-step NEAR via revealed_at==step boundary +
       uncapped free n_near — close at BRIEF/PRE-REG level, not code; 2 wording minors). Fixer agent in
-      flight (worktree). After fix: re-review the scorer angle, then #102 awaits David.
+      flight (worktree). FIXED in f8d4c64 (suite 1076 passed); scorer-angle re-review CONFIRMED-FIXED both
+      majors, no new findings (reproduced the round-1 attack post-fix: retroactive==0; malformed guard live).
+      → #102 merge gate SATISFIED (3 reviews + fix response + confirming re-review posted). AWAITS DAVID.
 - [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage.
       MUST fold in: R3's two inherited-math exploits (forbid reactive same-step NEARs + cap NEAR cadence in
       the brief), capped early-NEAR discipline (papercheck), move_blocked-primary wording, thin-visibility
