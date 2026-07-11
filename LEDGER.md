@@ -77,6 +77,13 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
       v3 is_qualifying_conditional_call guard_pass=True; region_changed DEAD in Kirby (fires press 1 in
       6/6 box placements — walk anim/camera scroll, worse than design assumed); right_third box unsafe
       (6/6 idle false fires). Open brief question: move_blocked-primary vs the drop-banking path.
-- [ ] $0 coverage paper-check (second spend gate)
+- [x] $0 coverage paper-check → **REACHABLE-ONLY-IF** (reports/2026-07-11-entity-v4-coverage-papercheck.md):
+      scorer-verified full PASS EXISTS (q_k=1.0 b_k=0.638 threat + benign both arms) but ONLY under
+      disciplined minimal-window NEARs (≤4 threat NEARs, one per drop-cluster, logged as EARLY as the
+      entity is genuinely visible). Honest/natural timing FAILS the 0.70 ceiling every way tried
+      (NEAR-at-drop b_k=0.710; v3.1 real NEARs b_k=0.855; span-start b_k=0.768) — forward-only windows
+      [n,n+15] bleed ~15 non-drop steps per cluster. UNVERIFIED ONLY-IF condition: early visibility of
+      the threat in the gate room → $0 follow-up probe in flight. Pre-reg must teach the capped
+      early-NEAR discipline explicitly; geometry finding is a David flag (bar is honest-hostile).
 - [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage
 - [ ] (David) 1 gated paid attempt → verdict
