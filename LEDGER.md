@@ -93,5 +93,14 @@ gate the paid spend behind $0 checks → (if green) one paid run → verdict.
       GO, but coverage geometry honest-hostile + thin visibility → PASS probability LOW on this savestate.
       DAVID DECISION before any spend: (a) hunt a better room/savestate (slower/ranged enemies = wider
       visibility windows, $0), (b) attempt anyway eyes-open, (c) bank the geometry finding as the verdict.
-- [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage
+- [ ] PR #102 review round 1 DONE (3 reviewers posted): seam-audit APPROVE (2 doc minors); scorer red-team
+      BLOCK (2 real majors: claim-tool observe() advances _obs_count → false-retroactive on multi-claim-
+      per-frame, reproduced verdict flip; MALFORMED_MAX_FRACTION unreachable in v4 parser); gaming red-team
+      APPROVE (2 majors INHERITED v3 math — reactive same-step NEAR via revealed_at==step boundary +
+      uncapped free n_near — close at BRIEF/PRE-REG level, not code; 2 wording minors). Fixer agent in
+      flight (worktree). After fix: re-review the scorer angle, then #102 awaits David.
+- [ ] v4 pre-reg (4 levers: instrumentation/camping/predicate/coverage) + PR + heavy adversarial review + triage.
+      MUST fold in: R3's two inherited-math exploits (forbid reactive same-step NEARs + cap NEAR cadence in
+      the brief), capped early-NEAR discipline (papercheck), move_blocked-primary wording, thin-visibility
+      risk (clusters 2-3) — pre-reg is GATED on David's (a)/(b)/(c) savestate call above.
 - [ ] (David) 1 gated paid attempt → verdict
