@@ -1,0 +1,49 @@
+{
+  "_comment": "Warmup-frame text bboxes for R1's Gate (reports/2026-07-03-glyph-r1-cache-driven-detection.md section 4a). Frames are drawn from each qualifying game's OWN probe-dir recording (runs/probe_*/world/, NOT tracked in this worktree -- resolved against a caller-supplied --probe-root, e.g. the main checkout), EXCLUDING every frame byte-identical (MD5) to a labels.json fixture frame (mechanically checked by eval/score_glyph_r1.py, never assumed). 'targets' bboxes here are loose text-block boxes (same drawing convention as labels.json) used ONLY to seed simulated cache confirmations (core.text_regions_r1.confirm_region, single shared placeholder reading) -- they are NOT scored directly; scoring reuses labels.json's own targets. Up to 5 text-bearing frames per qualifying game, per the pinned bar; a game with fewer than 5 in its probe dir (measured: Mortal Kombat Advance has only 4 total warmup candidates after MD5 exclusion) cannot qualify and is omitted here.",
+  "games": {
+    "Dragon Ball Z: Legacy of Goku I & II": {
+      "probe_dir": "probe_2288_-_2_in_1_-_Dragon_Ball_Z_-_The_Legacy_of_Goku_I___II__U/world",
+      "frames": [
+        {"file": "frame_000006.png", "targets": [[90, 3, 210, 45], [0, 80, 115, 125]]},
+        {"file": "frame_000015.png", "targets": [[90, 3, 210, 45], [0, 80, 115, 125]]},
+        {"file": "frame_000019.png", "targets": [[5, 3, 235, 110]]},
+        {"file": "frame_000023.png", "targets": [[5, 3, 235, 68], [85, 75, 155, 90], [80, 90, 160, 102], [15, 148, 200, 158]]},
+        {"file": "frame_000028.png", "targets": [[70, 3, 175, 18], [175, 30, 230, 42], [175, 70, 230, 82], [175, 110, 230, 122]]}
+      ]
+    },
+    "Final Fantasy VI Advance": {
+      "probe_dir": "probe_2689_-_Final_Fantasy_VI_Advance__U__Xenophobia/world",
+      "frames": [
+        {"file": "frame_000005.png", "targets": [[10, 8, 225, 22], [25, 35, 220, 90], [10, 100, 230, 118], [40, 122, 195, 138]]},
+        {"file": "frame_000006.png", "targets": [[10, 8, 225, 22], [25, 35, 220, 90], [10, 100, 230, 118]]},
+        {"file": "frame_000007.png", "targets": [[75, 40, 205, 60], [65, 55, 210, 95]]},
+        {"file": "frame_000017.png", "targets": [[10, 5, 230, 60], [70, 70, 170, 85], [5, 145, 235, 158]]},
+        {"file": "frame_000020.png", "targets": [[10, 5, 230, 60], [85, 88, 155, 100], [5, 145, 235, 158]]}
+      ]
+    },
+    "Legend of Zelda: Minish Cap": {
+      "probe_dir": "probe_Legend_of_Zelda__The_-_The_Minish_Cap__U/world",
+      "frames": [
+        {"file": "frame_000001.png", "targets": [[60, 15, 180, 45], [50, 75, 190, 105]]},
+        {"file": "frame_000011.png", "targets": [[75, 15, 220, 65], [15, 55, 235, 100], [110, 90, 230, 115]]},
+        {"file": "frame_000018.png", "targets": [[75, 15, 220, 65], [15, 55, 235, 100], [110, 90, 230, 115], [50, 148, 190, 158]]},
+        {"file": "frame_000027.png", "targets": [[10, 5, 150, 22], [8, 28, 25, 42], [8, 58, 25, 72], [8, 88, 25, 102]]},
+        {"file": "frame_000034.png", "targets": [[10, 5, 235, 25], [65, 30, 175, 45], [15, 55, 235, 140]]}
+      ]
+    },
+    "Super Mario Advance 2": {
+      "probe_dir": "probe_Super_Mario_Advance_2_-_Super_Mario_World__U/world",
+      "frames": [
+        {"file": "frame_000005.png", "targets": [[5, 2, 95, 22]]},
+        {"file": "frame_000008.png", "targets": [[5, 2, 95, 22]]},
+        {"file": "frame_000021.png", "targets": [[35, 15, 205, 58]]},
+        {"file": "frame_000029.png", "targets": [[8, 20, 235, 90]]},
+        {"file": "frame_000033.png", "targets": [[8, 20, 235, 90]]}
+      ]
+    }
+  },
+  "excluded": {
+    "Mortal Kombat Advance": "measured 2026-07-11: only 4 warmup candidates remain after MD5-excluding labels.json's 7 labeled frames from the 14-frame probe dir (< the pinned >= 5 text-bearing-frame floor) -- cannot qualify regardless of content. NOTE: the design doc's own section-4a table estimated 7 candidates via raw count subtraction (14-7); the real MD5-mechanical count is lower because 2 groups of intra-probe duplicate frames (frame_000003/4/5 and frame_000007/8/9, byte-identical within each group) each collapse to a single exclusion once one member matches a labeled frame's hash. Measured, not assumed -- see eval/score_glyph_r1.py's own --probe-root run for the receipts.",
+    "Naruto: Ninja Council 2": "excluded per the design doc itself: only 2 labeled Gate-1 target-bearing frames (< the pinned >= 3 floor)."
+  }
+}
