@@ -7,7 +7,72 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
+_Last updated: 2026-07-11 (entity-gate v4 BUILT + review-hardened (PR #102, awaits David) + all four $0
+spend-gate probes run: predicate GO (move_blocked) but coverage geometry honest-hostile + no better
+instrument found — paid attempt NOT recommended as-is; David's (b)/(c)/door-probe call gates everything.)_
+
+**⇒⇒ NEWEST (2026-07-11) — ENTITY-GATE v4: INFRA BUILT + REVIEWED (PR #102 open, merge gate satisfied);
+all $0 spend gates run — every probe THINNED the honest PASS path. $0 spent, no paid runs. ⇒⇒**
+1. **DONE — v4 infra (PR #102, branch feat/entity-gate-v4-structured-claims):** 5 typed claim tools
+   (claim_entity/claim_near/declare/reject/note_reading) on world_mcp.py, KIRBY_CLAIMS-gated, acks-only,
+   decision-uncounted, oracle-off-wire; eval/score_entity_gate_v4.py (v3 math imported UNMODIFIED,
+   parser-only swap — the v3.1 prose-taint class is dead); 2+3 drift-guard tests. Review round: 3
+   adversarial reviewers posted (seam APPROVE / scorer BLOCK / gaming APPROVE); the scorer's 2 reproduced
+   majors FIXED in f8d4c64 (claim acks no longer advance the revealed_at watermark — the reviewer had
+   reproduced a v3-PASS→v4-INSUFFICIENT_DATA flip; malformed-fraction guard live), confirming re-review
+   CONFIRMED-FIXED both, no new findings. Full suite 1076 passed. The gaming red-team's 2 majors are
+   INHERITED v3 math (reactive same-step NEAR at the revealed_at==step boundary + uncapped free n_near)
+   → REQUIRED brief clauses for any pre-reg, recorded in LEDGER.md. **AWAITS DAVID: merge #102.**
+2. **DONE — the four $0 spend-gate probes (all banked in reports/):**
+   (i) (d)-predicate probe → **GO, move_blocked PRIMARY** (press 3-7 to wall, 4/4 directions, passes the
+   frozen qualifying-conditional guard; region_changed DEAD in Kirby — press-1 fire in 6/6 boxes)
+   (`reports/2026-07-05-entity-v4-d-probe.md`). (ii) coverage paper-check → **REACHABLE-ONLY-IF**: a
+   scorer-verified PASS exists ONLY under ≤4 capped early-logged NEARs; every honest/natural timing FAILS
+   the 0.70 camping ceiling (v3.1's real NEARs → b_k 0.855)
+   (`reports/2026-07-11-entity-v4-coverage-papercheck.md`). (iii) early-visibility probe → **PARTIAL**:
+   honest early NEAR groundable for cluster 1 only (~8 presses lead); clusters 2-3 ≈ 0-1 press
+   (`reports/2026-07-11-entity-v4-visibility-probe.md`). (iv) instrument hunt → **NONE BETTER** than
+   kirby_entity2.state; scout/stage1 states dead, final/to_death worse (death spiral); one UNVERIFIED lead
+   (door+enemy sub-room past the pillar wall, reached only at hp 2-3); NEW cadence discrepancy: cluster-1
+   contact at press 2 under hold_frames=30 (46 f/press) vs press 8 at 24 f/press — which cadence rules the
+   paid run decides whether ANY honest early-NEAR window exists
+   (`reports/2026-07-11-entity-v4-instrument-hunt.md`).
+3. **PENDING — v4 pre-reg deliberately NOT written.** Gated on David. If written it MUST fold in:
+   move_blocked-primary wording, capped early-NEAR discipline, forbid reactive same-step NEARs + cap NEAR
+   cadence (the inherited-math exploits), avoid the right_third watch box, resolve the press-cadence
+   question. Recommendation on file (LEDGER): **(c)-lean** — every $0 probe thinned the honest PASS path;
+   if not (c), do the $0 door-sub-room probe from a healthier-hp state before any spend.
+4. **Process notes:** a concurrent non-Claude session (codex) is active in this repo — it hijacked the
+   checkout branch once mid-session (commit recovered onto the right branch; builder/fixer agents ran
+   worktree-isolated after that) and left untracked spanish_teacher.* files (untouched). PR #101 (skill
+   library 10→15) still OPEN awaiting David, unchanged this session.
+**⇒ RESOLVED same day (2026-07-11, David delegated the call):** **(c) executed** — v4 lane CLOSED without
+paid attempt, verdict banked at `reports/2026-07-11-entity-v4-verdict.md` (bar+world pair honest-hostile;
+neither FAIL nor PASS would verdict the capability cleanly; v5 = bar redesign = new gate, fresh pre-reg).
+Entity lane SUSPENDED. #102 still worth merging (the typed-claims instrument survives for v5; gated off).
+**⇒ ALSO 2026-07-11 (same session, after the v4 close): MKDS A/B taken to LAUNCH-READY, $0.** Scout mapped
+the lane (98 tests pass fresh; plan doc §4's s=24/k=10 is STALE — code pins s=4, world_mcp.py:749). Three
+gaps closed: (i) Docker image rebuilt (both tags predated the NDS build; NDS_SKILLS x16 verified in-image);
+(ii) launchers/briefs/seamcheck created under runs/brain_mkds_armA|armB/ (gitignored — on-disk only),
+seamcheck **3/3 PASS** vs the fresh image (flag on/off/cross-flag isolation); (iii) task-progress oracle
+FOUND+VERIFIED: **0x022C8090 u8** (ticks on forward progress, 0 through count-in, reproduced twice; the
+TASVideos pointer chain is DEAD in GP mode — verify-against-run caught it). Reports:
+`reports/2026-07-11-mkds-{launch-surface,oracle-hunt}.md`. **Spend still gated on David per pre-reg §7:**
+2 agents, one attempt each, Arm A first, --max-turns 90, ≲$10 total.
+**⇒ ALSO 2026-07-11 (later same session): GLYPH R1 BUILT + KILLED AT ITS OWN GATE, $0 (PR #103, merge gate
+satisfied).** Precision 0.283 vs the ≤0.49 kill floor (pooled 0.283/0.283/1 phantom; all 4 qualifying GBA
+games individually KILL). The finding: GBA anti-aliased/stylized fonts blow the confirmed-glyph vocabulary
+to 191-989 keys from 5 warmup frames vs Gen-1's 46 → under Hamming≤4 matching, R0's collision mode returns.
+Cache-driven detection inherits the cache's font-crispness assumption. One attempt of 2 allowed, no tuning,
+detector UNWIRED; harness+fixture merge as the reusable R2 bar (R0-kill #52 convention). Verdict-audit
+review independently reproduced every number (VERDICT-STANDS); code review APPROVE 0 findings.
+`reports/2026-07-11-glyph-r1-verdict.md`. Fallback stands: brain-driven read_region alone.
+**⇒ NEXT (priority order):** (1) DAVID: merge #102 (entity-v4 instrument) + #103 (glyph R1 kill) — both
+merge gates satisfied; (2) DAVID: MKDS A/B go/no-go (launch-ready, ≲$10, 2 agents); (3) DAVID: PR #101
+go/no-go (unchanged); (4) v5 entity-bar redesign design doc (unpaid, whenever); (5) sweep stage-2 /
+ARC breadth remain queued from prior blocks.
+**Paid ledger today (2026-07-11): $0** (all probes local/offline; per-block ledgers below remain the source of record).
+_Prior update: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
 `stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
 continuous-time BUILD PR.)_
 
