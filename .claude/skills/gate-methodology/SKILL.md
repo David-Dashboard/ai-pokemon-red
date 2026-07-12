@@ -28,7 +28,9 @@ Write `reports/<date>-<gate>-prereg.md` BEFORE the paid run. It must pin, in wri
       numbers (`q_k >= 0.80`, `q_k - b_k >= 0.15`, `b_k <= 0.70`, `MIN_NEAR = 3`), and the PASS
       definition (e.g. ">=1 GROUNDED threat AND >=1 correctly-rejected benign AND skill guard clears").
 - [ ] **The run brief, verbatim, as an appendix.** The brief IS the intervention; reviewers critique
-      those exact words. Deltas from the prior brief marked (v3.1 uses `[v3.1]` tags).
+      those exact words. Deltas from the prior brief marked (v3.1 uses `[v3.1]` tags). Write it per
+      the **run-brief-authoring** skill (devices, failed-device autopsies, the pre-launch checklist
+      that catches shape/regex collisions like gotcha 2 below).
 - [ ] **Escalation ladder, pre-registered NOW.** "IF this fails the same way, vNext does X" —
       written before the run, not improvised after (v3.1 §3 / §4 pin the v3.2-(a) watermark-look guard
       and v3.2-(b) `min_iters=3` floor as shelf items).

@@ -188,4 +188,6 @@ verify against the frames.) Full detail: memory `cave-noire-hp-oracle.md`.
 - Memory: `entity-v3-verdict.md` (both failure modes), `cave-noire-hp-oracle.md` (BCD oracle gotcha),
   at `C:/Users/Succe/.claude/projects/E--AI-Personas-10-pokemon-and-chess-and-office/memory/`.
 - Cross-reference (do not duplicate): `.claude/skills/gate-methodology/SKILL.md` (§5 scoring, §6 INSUFFICIENT_DATA),
-  `.claude/skills/paid-run-harness/SKILL.md` (seam check, laws 4/6, replay-before-blaming).
+  `.claude/skills/paid-run-harness/SKILL.md` (seam check, laws 4/6, replay-before-blaming),
+  `.claude/skills/eval-probes-and-datasets/SKILL.md` (the full offline toolkit this skill's triage
+  draws from — that skill inventories the probes/scorers; this one owns post-hoc run triage).

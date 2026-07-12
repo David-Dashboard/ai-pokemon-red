@@ -72,6 +72,61 @@ merge gates satisfied; (2) DAVID: MKDS A/B go/no-go (launch-ready, ≲$10, 2 age
 go/no-go (unchanged); (4) v5 entity-bar redesign design doc (unpaid, whenever); (5) sweep stage-2 /
 ARC breadth remain queued from prior blocks.
 **Paid ledger today (2026-07-11): $0** (all probes local/offline; per-block ledgers below remain the source of record).
+_Prior update: 2026-07-05 (skill library grown 10 → 15 on branch `docs/skill-library`: 5 new skills —
+perception-primitives, eval-probes-and-datasets, run-brief-authoring, long-horizon-runs,
+world-lanes-frontier — authored via scout-recon + Sonnet workflows, 2 of 3 adversarial reviews
+completed + triaged, 3rd (accuracy) redone inline after a rate-limit death. AWAITS DAVID: push branch
++ open PR (git push deny-listed in the WSL session, sanctioned PowerShell route unavailable).)_
+
+**⇒⇒ NEWEST (2026-07-05) — SKILL LIBRARY 10 → 15: the retirement library now covers perception,
+measurement, brief-craft, long-horizon runs, and the lane frontier. Branch `docs/skill-library`,
+3 commits, NOT yet pushed/PR'd (awaits David). ⇒⇒**
+1. **DONE — 5 new skills** under `.claude/skills/` (commits `ad63d06`→`cbb40a6` on `docs/skill-library`;
+   every path/line/number verified against the tree at authoring time):
+   **perception-primitives** (the core/ toolbox map: 25-primitive inventory table, constitution
+   digest L0-L3 + Realizer Ladder, three perceiver tiers, symptom→probe decision guide, escalation
+   ladder, lift-on-2nd-use fitness tests); **eval-probes-and-datasets** (probe-first in practice:
+   eval/ toolkit map incl. the 16 gate scorers the eval README omits, ground-truth pipeline
+   record→label→snapshot, THE HELD-OUT LAW (Crystalis/Zelda-LA/SML/F-1/Doom, never tuned on),
+   fixture-first discipline, tripwire tests); **run-brief-authoring** (the brief skeleton across all
+   7 briefs, devices that WORK — watermark, autopsy-on-top, precondition gates — and the two that
+   FAILED: v3 skipped-NEAR, v3.1 quoted-shape regex taint; kickoff -p craft; pre-launch checklist);
+   **long-horizon-runs** (first long-horizon data point BANKED: `runs/brain_kirby_longhaul` 316
+   turns/$42.98/52min EXIT=0, skill loop exercised, stage 1 NOT cleared; cost curve across 6 real
+   runs; the two session windows — 7-day utilization hit 0.87 (warning) at longhaul end; no
+   mid-session checkpoint exists; segmented-chain + verbatim-ferry design marked DESIGN with the
+   chain-as-one-run learning-boundary question flagged for David at pilot pre-reg);
+   **world-lanes-frontier** (per-lane banked/open/pinned-next map: ARC, VizDoom, NDS/continuous,
+   MiniWoB, glyph — at-a-glance table + full receipts).
+2. **DONE — review round:** 3 adversarial reviewers dispatched (consistency / cold-session-usability
+   / accuracy). Consistency + usability reported: 6 MAJORs all fixed (ferry-vs-learning-boundary
+   tension now flagged UNRESOLVED in both long-horizon-runs and cheapness §4; stale 154-phantom
+   figure corrected to module-docstring 236-341; safety-invariants one-attempt carve-out aligned to
+   the ~10-decision rule; gate-methodology→run-brief-authoring, paid-run-harness→long-horizon-runs,
+   run-brief-authoring→lane-skills pointers added; eval-probes §7 regression-pin-test step added)
+   + 9 MINORs fixed. Accuracy reviewer died on the account rate limit (~18:00 CEST reset); its angle
+   REDONE INLINE — ~25 highest-risk citations re-verified, 1 real error found+fixed (HANDOFF
+   watermark line drift 250→310). README.md reorganized into 5 sections, count 15.
+3. **Existing-skill edits (same review round):** safety-invariants law 5, gate-methodology §1,
+   paid-run-harness law 6, diagnose-a-run sources, architecture-and-seam related-skills,
+   cheapness-skill-compilation §4 — all cross-link/consistency fixes, no law changed in substance
+   except the one-attempt carve-out ALIGNMENT (stricter-vaguer wording replaced by the pinned
+   ~10-decision rule, citing paid-run-harness law 6 as owner).
+4. **NOT DONE / AWAITS DAVID:** (i) push `docs/skill-library` + open the PR — this WSL session
+   cannot push (`Bash(git push*)` deny-listed; PowerShell route is Windows-side); suggested:
+   `git -C E:\...\ai-pokemon-red push -u origin docs/skill-library` then `gh pr create` with the
+   review record from this block; (ii) the ferry/chain-as-one-run definitional ruling (flagged in
+   cheapness §4 + long-horizon-runs); (iii) token rotation from the 2026-07-04 leak note is STILL
+   OPEN per the prior block.
+5. **Worked in `../ai-pokemon-red-skills` worktree** (added this session off `docs/skill-library`,
+   merged origin/main in); main checkout untouched except read-only run-artifact reads while
+   `brain_kirby_longhaul` was live.
+
+**⇒ NEXT (priority order):** (1) David: push + PR + merge the 15-skill library; (2) MKDS
+continuous-time BUILD PR (unchanged from below); (3) glyph R1 build; (4) doom scan-and-center port;
+(5) ARC breadth. Long-horizon: the segmented-chain pilot is pre-registerable any time after David
+rules on the ferry question.
+
 _Prior update: 2026-07-04 (retirement handoff + North Star: 10-skill library merged (#97); continuous-time
 `stop_when` design doc merged (#98) resolving NEXT #2; entity v3.1 banked earlier same day. Next: the MKDS
 continuous-time BUILD PR.)_
