@@ -6,6 +6,40 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-07-11 (later) — glyph R1 killed at its own gate: the cache's font-crispness assumption is load-bearing
+- **What:** R1 cache-driven text-region detection built per its merged design and killed at the pinned §4b
+  bar in one attempt (pooled precision 0.283 vs ≤0.49 kill floor; PR #103; detector unwired). Verdict-audit
+  review independently reproduced every number before the kill was banked.
+- **The finding:** the within-run glyph cache's Gate-2 success (96.9% free-serve, 46 glyphs) was measured on
+  Gen-1's crisp 8x8 font. GBA anti-aliased/stylized text explodes the confirmed vocabulary (191-989 keys
+  from 5 warmup frames), and under tolerant matching that reintroduces exactly the textured-backdrop
+  collision mode that killed R0. Mechanisms validated on clean instruments carry hidden preconditions;
+  "generalizes to glyphs" (GB) did not mean "generalizes to fonts" (GBA). Text detection remains open;
+  brain-driven read_region stands as the floor.
+- **Method note:** R0's merged kill-harness made this kill nearly free — the reusable-bar convention
+  (merge the harness even when the candidate dies) paid out one rung later, and the two-sided verdict
+  audit (is the KILL a harness bug? is it hiding a fixable bug?) is worth its cost before banking negatives.
+
+## 2026-07-11 (earlier) — the $0 spend-gate cascade did its job: it argued AGAINST the spend it was gating
+- **What:** entity-gate v4 infra was built + review-hardened in one session (PR #102: typed claim tools,
+  parser-only scorer swap, v3 math untouched), and the pre-registered $0 spend gates all ran: (d)-predicate
+  probe GO (move_blocked), coverage paper-check REACHABLE-ONLY-IF, visibility probe PARTIAL, instrument
+  hunt NONE BETTER. Cost: $0. Verdicts in reports/2026-07-{05,11}-entity-v4-*.md.
+- **The finding:** under the frozen v3 bar, every HONEST NEAR-logging schedule tried fails the 0.70 camping
+  ceiling (v3.1's real NEARs → b_k 0.855; NEAR-at-drop → 0.710), while a scorer-verified PASS exists only
+  for a disciplined ≤4-early-NEAR schedule whose honesty precondition (early visibility) holds for 1 of 4
+  drop-clusters — and shrinks further under the 46 f/press skill cadence. The bar's coverage window
+  geometry (forward-only [n, n+15]) makes coverage and non-camping nearly mutually exclusive on a
+  fast-converging-enemy instrument. That is a property of the BAR+WORLD pair, not of the brain being tested.
+- **Method notes:** (1) stacking cheap $0 probes BEFORE a $5 run flipped the default from "run it" to
+  "don't" — probe-first working exactly as designed, the cascade is reusable (predicate → paper-check →
+  visibility → instrument hunt); (2) adversarial review with reproduction requirements caught a real
+  verdict-flipping infra bug pre-merge (claim-tool acks advancing the revealed_at watermark → false
+  retroactive exclusions) that the drift-guard tests missed because they hard-coded the happy path — tests
+  written by the builder pin what the builder THOUGHT, reviewers must drive the REAL tool path; (3) press
+  cadence is part of the instrument: the same room gives 8 presses of visibility at 24 f/press and 2 at
+  46 f/press — pin the cadence in the pre-reg or the probe numbers don't transfer.
+
 ## 2026-07-03 (latest) — entity gate v1 FAILED, and the failure taught more than a pass would have
 - **What:** the entities generalization of the grounding loop ran its first gate ($4.02): the brain claimed
   threat/benign entities with contact-first logging (a scorer-side revealed-step watermark made retroactive

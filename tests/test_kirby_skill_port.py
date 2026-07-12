@@ -114,6 +114,13 @@ def _make_world(out, *, states=None, screens=None, game="kirby_dreamland") -> Wo
     w._frame_hist = []
     w.kirby_skills_world = game in world_mcp._KIRBY_SKILLS_WORLDS
     w._kirby_skills_enabled = w.kirby_skills_world and world_mcp._kirby_skills_enabled()
+    # Entity-gate v4 structured claims (World.call's dispatch checks self._kirby_claims_enabled
+    # unconditionally, same discipline as kirby_skills_world above) -- most tests in this file never
+    # exercise the claims branch (KIRBY_CLAIMS unset -> False), but tests/test_score_entity_gate_v4.py
+    # reuses this builder to drive claim_entity/claim_near/declare/reject/note_reading through the
+    # real World.call path, so these attributes must exist unconditionally.
+    w.kirby_claims_world = game in world_mcp._KIRBY_CLAIMS_WORLDS
+    w._kirby_claims_enabled = w.kirby_claims_world and world_mcp._kirby_claims_enabled()
     # NDS continuous-time skill port (world_mcp.py's World.call dispatch checks self.nds_skills_world
     # unconditionally, mirroring the kirby_skills_world check above) -- this GB-only test harness never
     # exercises the nds branch, but World.call's dispatch reads the attribute regardless of game, so it
@@ -123,6 +130,7 @@ def _make_world(out, *, states=None, screens=None, game="kirby_dreamland") -> Wo
     w.skills = {}
     import os
     w._skill_log_path = os.path.join(out, "skills.jsonl")
+    w._claims_log_path = os.path.join(out, "claims.jsonl")
     return w
 
 
