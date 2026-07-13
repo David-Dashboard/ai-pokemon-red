@@ -25,4 +25,4 @@ Refresh current truth after PR #105 and PR #106 merged. No code changes, no paid
 - [x] Merge PR #106 after David explicitly delegated it.
 - [x] Pull merged `main`.
 - [x] Refresh `HANDOFF.md` and `LEDGER.md` to current post-merge truth.
-- [ ] Open small hygiene PR and post/record review status.
+- [x] Open PR #107 and post adversarial-review comment; no blocking findings.
