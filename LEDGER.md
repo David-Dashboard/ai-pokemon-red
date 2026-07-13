@@ -1,28 +1,28 @@
-# Ledger - PR #106 conflict resolution after PR #105 merge (ai-pokemon-red)
+# Ledger - post-merge hygiene (ai-pokemon-red)
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative -> HANDOFF.md. -->
 
 ## Goal
-Resolve PR #106 conflicts caused by merging PR #105 into `main`, without rebasing, resetting, merging to
-`main`, touching code/scorers/run artifacts, or changing the v5 design claim.
+Refresh current truth after PR #105 and PR #106 merged. No code changes, no paid run, no scorer edits.
 
 ## Current status (2026-07-13)
-- PR #105 is merged to `main` as `b027fcb`, banking the MKDS A/B verdict.
-- PR #106 was `DIRTY` after #105 merged because both PRs touched `HANDOFF.md` and `LEDGER.md`.
-- This branch merged `origin/main` into `codex/entity-v5-bar-redesign-2026-07-13`.
-- Conflicts were limited to `HANDOFF.md` and `LEDGER.md`.
-- Resolution keeps the MKDS verdict history from `main`, keeps the v5 design doc from PR #106, and records
-  this conflict-resolution step as the newest handoff block.
+- `main` includes PR #105 (`b027fcb`): MKDS continuous-time A/B verdict banked.
+  - Primary batching bar: FAIL (`1.030x` observed vs `1.300x` required).
+  - Conditional guard: PASS.
+  - Spend: `$1.5488415` default-account spend; `$0` account-B blocked launch.
+- `main` includes PR #106 (`75bb785`): entity v5 bar redesign doc banked.
+  - Design only; no code/scorer/tool-schema changes.
+  - No paid v5 run authorized or scheduled.
+- Current branch for this hygiene PR: `codex/post-merge-hygiene-2026-07-13`.
 
-## Constraints
-- No paid run. No code/scorer/tool-schema edits. No self-merge.
-- Leave unrelated untracked files alone.
-- After push, David still merges PR #106.
+## Open items
+- David-owned: rotate the leaked `settings.local.json` bearer token from 2026-07-04. Do not print the
+  token value.
+- Optional: Kirby door/sub-room `$0` probe only if v5 retains Kirby and the lead is worth characterizing
+  before a future v5 pre-registration.
 
 ## Tasks
-- [x] Fetch latest `origin/main`.
-- [x] Confirm PR #105 merged and PR #106 was dirty.
-- [x] Merge `origin/main` into the PR #106 branch.
-- [x] Resolve `HANDOFF.md` and `LEDGER.md` conflicts.
-- [x] Run conflict/diff checks: no conflict markers; `git diff --check` passed with CRLF warnings only.
-- [x] Commit and push the conflict-resolution merge (`f2aab9d`); PR #106 no longer reports `DIRTY`.
+- [x] Merge PR #106 after David explicitly delegated it.
+- [x] Pull merged `main`.
+- [x] Refresh `HANDOFF.md` and `LEDGER.md` to current post-merge truth.
+- [ ] Open small hygiene PR and post/record review status.
