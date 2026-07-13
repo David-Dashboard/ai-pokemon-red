@@ -6,6 +6,15 @@ across games â†’ reality, no ROM/privileged state, **cheap** (minimal API). PokÃ
 
 ---
 
+## 2026-07-13 (latest) - Held-out task seeds need a sealed feasibility check
+- **What:** PR #110's adversarial review found that the exact paid MiniWoB seeds could place required
+  controls below the 177px clickable viewport even though the task class looked suitable. Cost: $0.
+- **The finding:** freezing held-out seeds is insufficient if some frozen instances may be structurally
+  impossible for the agent's action surface. Feasibility must be established before spend without revealing
+  the task solution or permitting seed replacement.
+- **Method note:** freeze the seed manifest and preflight code first, then expose only an aggregate feasibility
+  boolean plus hashes. A false result kills readiness under that gate version; it does not authorize cherry-picking.
+
 ## 2026-07-13 (later) - Kirby door lead killed before spend
 - **What:** the optional Kirby door/sub-room probe stayed local-only and produced
   `reports/2026-07-13-kirby-door-probe.md` plus PR #108. Cost: $0.

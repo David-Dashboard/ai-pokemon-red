@@ -7,26 +7,66 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (PR #109 open; v5 multi-scenario candidate shortlist ready for David merge;
-$0 docs/probe planning only.)_
+_Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 approved and CI-green on
+`codex/minimum-north-star-gate-0-2026-07-13`; $0, no run.)_
 
-**=>=> NEWEST (2026-07-13) - PR #109 OPEN; ENTITY v5 MULTI-SCENARIO SHORTLIST READY; $0. =>=>**
+**=>=> NEWEST (2026-07-13) - MINIMUM NORTH STAR GATE 0 DESIGNED; RED + MINIWOB; $0; NO RUN. =>=>**
+1. **DIRECTION / DAVID:** stop the Cave Noire entity-v5 critical path and work directly toward the
+   North Star through the smallest honest cross-world integrated gate. The prior Cave Noire claim
+   below is superseded; no Cave Noire probe was run and no raw artifact was deleted.
+2. **DONE - candidate audit:** Gate 0 pairs an unbridged `pokemon_red` task (fresh bedroom start ->
+   obtain a starter -> win the first rival battle) with five new `miniwob_click_checkboxes` episodes.
+   MKDS is deferred: its current brief says perception is broken and supplies the straight-accelerate
+   solution, so bridged success or unbridged failure would not be decisive. The banked MiniWoB
+   click-button 5/5 is not rerun.
+3. **DONE - design:** `reports/2026-07-13-minimum-north-star-gate-0-design.md` separates `$0`
+   readiness (R0 Red source status, W0 MiniWoB source status, C0 constancy/scoring dry run) from future
+   paid proof. Paid Gate 0 is allowed only if all three return `GO`; future shape is one blank-agent
+   attempt per world, pre-registered/reviewed, combined ceiling <=`$10`. **No spend is authorized by
+   the design.**
+4. **WHY:** `$0` probes predict whether the result will be interpretable; paid runs are still required
+   to prove the fixed LLM brain can complete the tasks and to measure cost/task + wakes/task. History:
+   MiniWoB click-button bought clean 5/5 evidence for `$1.3557615` after seam validation; entity v2
+   spent about `$80` across 11 instrument-starved/tainted runs.
+5. **DONE - REVIEW:** PR #110 is open, CI is green, and the final posted adversarial review APPROVED it.
+   Its first adversarial review BLOCKED on three confirmed
+   gaps: MiniWoB reused/unlogged seed 0, no exact human-relative Capability or Cheap PASS bars, and
+   unpinned non-world client tools (the banked MiniWoB run called `ToolSearch`). The design now requires
+   disjoint DEV `0..4` vs paid-held-out `1000..1004` seeds + oracle logging/one-attempt enforcement,
+   exact 2x-human and cost/wake bars, and `NO_LEAK` on any non-world tool call.
+   Re-review confirmed those three fixes, then BLOCKED on one new honest gap: exact paid MiniWoB seeds
+   might place required controls below the 177px clickable viewport. The design now requires a sealed
+   exact-seed reachability boolean before spend, with no solution-bearing output. Commit `8222ecf`
+   closed that blocker; final approval is posted at PR #110 comment `4961382435`.
+6. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
+   not print the token.
+**=> NEXT (priority order):** (1) David merges PR #110; (2) build/verify the seed + client-isolation
+readiness instrument under a fresh plan; (3) run R0 + W0 + C0 `$0` readiness only; (4) write a paid
+pre-registration only if all three return `GO`.
+**Paid ledger today (2026-07-13): $0 for Gate 0 design/read-only audit; `$1.5488415` MKDS
+default-account spend already banked in PR #105.**
+
+_Prior update: 2026-07-13 (PR #109 merged; Cave Noire v5 source-status probe claimed, then superseded
+before execution by the Minimum North Star Gate 0 direction.)_
+
+**=>=> NEWEST (2026-07-13) - PR #109 MERGED; CAVE NOIRE v5 SOURCE-STATUS PROBE IN PROGRESS; $0. =>=>**
 1. **DONE:** PR #108 merged to `main` as `914605e`, banking
    `reports/2026-07-13-kirby-door-probe.md`: the Kirby door/sub-room lead is negative for v5 as-is.
-2. **DONE / AWAITS DAVID:** PR #109 is open from
-   `codex/entity-v5-candidate-shortlist-2026-07-13` with CI green and a posted adversarial-review
-   comment. It adds `reports/2026-07-13-entity-v5-candidate-shortlist.md`: Kirby old-room and door
-   leads are dead as primary v5 paths; Cave Noire controlled-combat/corridor is the top next `$0`
-   source-status probe; Gauntlet/GB-generic/GBA/NDS are deferred until consequence-oracle readiness.
-3. **SCOPE:** docs/read-only artifact inspection only unless explicitly claimed in LEDGER. No paid run, no
-   v5 pre-registration, no scorer/code/tool-schema edits.
-4. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do not
+2. **DONE:** PR #109 merged to `main` as `1e1edd9`, banking
+   `reports/2026-07-13-entity-v5-candidate-shortlist.md`: Kirby old-room and door leads are dead as
+   primary v5 paths; Cave Noire controlled-combat/corridor is the top next `$0` source-status probe.
+3. **IN PROGRESS:** run the Cave Noire controlled-combat source-status probe on
+   `codex/cave-noire-v5-source-status-2026-07-13`. Target report:
+   `reports/2026-07-13-cave-noire-v5-source-status.md`.
+4. **SCOPE:** fresh local probe artifacts only, plus report/HANDOFF/LEDGER. No paid run, no v5
+   pre-registration, no scorer/code/tool-schema edits.
+5. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do not
    print the token.
-**=> NEXT (priority order):** (1) David merge/reject PR #109; (2) after #109 lands, run the Cave Noire
-controlled-combat source-status probe from the shortlist; (3) token rotation if David wants it done
-in-thread.
-**Paid ledger today (2026-07-13): $0 for Kirby probe work; `$1.5488415` MKDS default-account spend already
-banked in PR #105.**
+**=> NEXT (priority order):** (1) finish Cave Noire source-status probe/report; (2) PR + posted
+adversarial review; (3) after David merges, decide whether Cave Noire merits a v5 pre-registration or
+whether to audit Gauntlet/GB-generic/GBA oracle readiness first.
+**Paid ledger today (2026-07-13): $0 for v5 shortlist / Cave Noire probe work; `$1.5488415` MKDS
+default-account spend already banked in PR #105.**
 
 _Prior update: 2026-07-13 (post-merge hygiene after PR #105 and PR #106 landed; no paid run; token
 rotation remains David-owned.)_

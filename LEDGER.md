@@ -1,34 +1,44 @@
-# Ledger - entity v5 candidate shortlist (ai-pokemon-red)
+# Ledger - Minimum North Star Gate 0 design (ai-pokemon-red)
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative -> HANDOFF.md. -->
 
 ## Goal
-Write `reports/2026-07-13-entity-v5-candidate-shortlist.md`: a $0 shortlist
-across several candidate scenarios/games for the entity-gate v5 source-status
-checks.
+Define the smallest honest cross-world integrated gate for the North Star, with
+`$0` readiness work separated from future paid proof.
 
 ## Current status (2026-07-13)
-- Branch: `codex/entity-v5-candidate-shortlist-2026-07-13`, cut from merged
-  `main` at PR #108 (`914605e`).
-- Commit: `2a33d2e` (`docs: shortlist entity v5 candidates`), pushed.
-- PR: #109 open, CI green, adversarial-review comment posted.
+- PR #109 merged to `main` as `1e1edd9`.
+- David explicitly redirected the critical path from Cave Noire entity v5 to a
+  Minimum North Star Gate.
+- Branch: `codex/minimum-north-star-gate-0-2026-07-13`, cut from merged `main`.
+- Gate 0 worlds: unbridged `pokemon_red` starter+rival task and new
+  `miniwob_click_checkboxes` five-episode task.
+- MKDS was removed from Gate 0 after the audit found broken perception plus a
+  solution-bearing brief; it remains a later perception-readiness lane.
+- PR #110 is open, CI green, and has a final posted adversarial APPROVE. Initial
+  review's three blockers and re-review's paid-seed reachability blocker are
+  closed; commit `8222ecf` seals the solution-free exact-seed preflight.
 - Token rotation is David-owned/trivial and not the blocker.
 
 ## Constraints
-- No paid run. No v5 pre-registration.
+- No paid run and no paid pre-registration under this task.
 - No scorer/code/tool-schema edits.
-- Read-only artifact inspection and docs only unless explicitly added here.
+- Documentation/read-only evidence only; raw outputs are append-only.
+- Cave Noire source-status is paused, not run or deleted.
 - Do not touch unrelated untracked Spanish-teacher files or local agent/config dirs.
 
 ## Tasks
-- [x] Pull merged `main` after PR #108.
-- [x] Branch-scan and create `codex/entity-v5-candidate-shortlist-2026-07-13`.
-- [x] Claim shortlist task in HANDOFF/LEDGER.
-- [x] Read existing v5/entity/world evidence.
-- [x] Write `reports/2026-07-13-entity-v5-candidate-shortlist.md`.
-- [x] Verify, PR, and post adversarial-review comment.
+- [x] Pull merged `main` after PR #109.
+- [x] Branch-scan and create `codex/minimum-north-star-gate-0-2026-07-13`.
+- [x] Audit Red, MKDS, and MiniWoB run evidence and current tool surfaces.
+- [x] Replace MKDS with MiniWoB click-checkboxes after David confirmation.
+- [x] Write `reports/2026-07-13-minimum-north-star-gate-0-design.md`.
+- [x] Append the superseding HANDOFF block and verify the complete diff.
+- [x] Commit, push, open PR #110, and obtain the initial posted review.
+- [x] Commit/push the review fixes and obtain posted re-review.
 
 ## Next
-- Await David merge/reject on PR #109.
-- After #109 lands, run the Cave Noire controlled-combat source-status probe
-  from the shortlist.
+- David merges PR #110.
+- After merge, plan the seed/client-isolation readiness build;
+  then run R0 + W0 + C0 `$0` readiness only. A paid pre-registration is allowed
+  only if all three return `GO`.
