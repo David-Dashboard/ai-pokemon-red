@@ -11,8 +11,12 @@ brain authenticated through David's ChatGPT subscription.
 - David explicitly switched both future arms from Claude to Codex CLI.
 - Branch: `codex/gate0-codex-readiness-2026-07-13`, from merged `main`.
 - Branch scan found no overlapping remote readiness work.
-- Codex is installed at the WindowsApps alias, but this task's sandbox cannot
-  execute it even with escalation. The free auth/version handshake remains pending.
+- David installed Codex with OpenAI's official PowerShell installer. This task
+  still resolves the WindowsApps alias and receives access denied, so the free
+  ChatGPT-auth/version/model handshake remains pending.
+- Readiness implementation is complete on the feature branch without a model
+  call or held-out preflight; the final tracked-project suite passed (`1163`).
+  PR and adversarial-review gates remain open.
 
 ## Constraints
 - No API key and no paid/subscription-quota brain run in this implementation task.
@@ -24,13 +28,18 @@ brain authenticated through David's ChatGPT subscription.
 - [x] Confirm the Codex-provider plan and branch-scan.
 - [x] Sync merged `main` and create the feature branch.
 - [x] Claim the work in HANDOFF/LEDGER.
-- [ ] Implement pinned MiniWoB seeds, seed/episode oracle logging, and one-attempt progression.
-- [ ] Implement the sealed exact-seed reachability preflight.
-- [ ] Implement the isolated ephemeral Codex launcher and NO_LEAK transcript/inventory checker.
-- [ ] Amend the Gate 0 design for Codex subscription accounting.
-- [ ] Run targeted/full tests, open PR, and obtain posted adversarial review.
+- [x] Implement pinned MiniWoB seeds, seed/episode oracle logging, and one-attempt progression.
+- [x] Implement the sealed exact-seed reachability preflight.
+- [x] Implement the isolated ephemeral Codex launcher and NO_LEAK transcript/inventory checker.
+- [x] Amend the Gate 0 design for Codex subscription accounting.
+- [x] Run targeted component tests.
+- [x] Run the full tracked-project suite (`1163 passed`).
+- [ ] Open PR and obtain posted adversarial review.
 
 ## Next
-- Commit/push this claim, then dispatch one Codex implementer with the agreed scope.
+- Commit/push the feature branch, open the PR, and obtain a posted adversarial
+  review before merge.
+- Resolve the executable path and complete the free auth/version/model handshake;
+  keep C0 `NO_GO_INSUFFICIENT_WAKES` until wake accounting is grounded.
 - After David merges the readiness PR, run R0 + W0 + C0 only.
 - A subscription-quota pre-registration/run is allowed only if all three return `GO`.
