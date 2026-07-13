@@ -7,7 +7,37 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (Gate 0 provider switched to Codex CLI + ChatGPT subscription;
+_Last updated: 2026-07-13 (Gate 0 Codex readiness implemented and opened as PR #111;
+$0, no model call or held-out preflight.)_
+
+**=>=> NEWEST (2026-07-13) - GATE 0 CODEX READINESS PR #111 OPEN; $0; NO RUN. =>=>**
+1. **DONE - readiness implementation:** commit `3984292` on
+   `codex/gate0-codex-readiness-2026-07-13` pins MiniWoB DEV seeds `0..4` and paid-held-out seeds
+   `1000..1004`, logs seed/episode/abandonment, and enforces one attempt per seed.
+2. **DONE - sealed preflight:** `tools/preflight_gate0_miniwob.py` can inspect the exact paid seeds only
+   after code/manifest freeze and emits only aggregate reachability plus hashes. It was **not run** in
+   this session, so no held-out content was exposed.
+3. **DONE - Codex isolation/accounting:** `tools/run_gate0_codex.ps1` requires ChatGPT auth, rejects API
+   keys, disables non-world client surfaces, pins one world MCP, and records executable/model/config/task
+   receipts. `tools/check_gate0_codex.py` returns `NO_LEAK` on any non-world tool and intentionally returns
+   `NO_GO_INSUFFICIENT_WAKES` because official Codex JSONL does not document per-model wake boundaries.
+   The Gate 0 wake bars were not weakened.
+4. **DONE - verification:** full tracked-project suite passed (`1163 passed`), PowerShell AST parsing
+   passed, and `git diff --check` passed. PR #111 is open.
+5. **PENDING - merge gate:** PR #111 still requires a posted adversarial review and David's merge;
+   consult the PR for the latest review/CI state. This session will not merge it.
+6. **PENDING - free handshake:** David installed Codex with OpenAI's official PowerShell installer, but
+   this task still resolves the protected WindowsApps alias and gets access denied. Exact auth/version/
+   model and direct-MCP handshake receipts remain required after merge; installation alone is not C0 GO.
+7. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
+   not print the token.
+**=> NEXT (priority order):** (1) finish PR #111 adversarial review/fix loop; (2) David merges; (3) in a
+fresh task resolve the CLI path and run R0 + W0 + C0 readiness only; (4) write the subscription-quota
+pre-registration only if all three return `GO`.
+**Paid ledger today (2026-07-13): $0 for Gate 0 readiness; no Codex/model call and no held-out
+preflight. `$1.5488415` MKDS default-account spend remains banked in PR #105.**
+
+_Prior update: 2026-07-13 (Gate 0 provider switched to Codex CLI + ChatGPT subscription;
 readiness work claimed on `codex/gate0-codex-readiness-2026-07-13`; $0, no run.)_
 
 **=>=> NEWEST (2026-07-13) - MINIMUM NORTH STAR GATE 0 DESIGNED; RED + MINIWOB; $0; NO RUN. =>=>**

@@ -16,7 +16,7 @@ brain authenticated through David's ChatGPT subscription.
   ChatGPT-auth/version/model handshake remains pending.
 - Readiness implementation is complete on the feature branch without a model
   call or held-out preflight; the final tracked-project suite passed (`1163`).
-  PR and adversarial-review gates remain open.
+  PR #111 is open; its posted adversarial-review gate remains open.
 
 ## Constraints
 - No API key and no paid/subscription-quota brain run in this implementation task.
@@ -34,11 +34,12 @@ brain authenticated through David's ChatGPT subscription.
 - [x] Amend the Gate 0 design for Codex subscription accounting.
 - [x] Run targeted component tests.
 - [x] Run the full tracked-project suite (`1163 passed`).
-- [ ] Open PR and obtain posted adversarial review.
+- [x] Open PR #111.
+- [ ] Obtain posted adversarial review and address every finding.
 
 ## Next
-- Commit/push the feature branch, open the PR, and obtain a posted adversarial
-  review before merge.
+- Obtain a posted adversarial review on PR #111 and address every finding before
+  David merges.
 - Resolve the executable path and complete the free auth/version/model handshake;
   keep C0 `NO_GO_INSUFFICIENT_WAKES` until wake accounting is grounded.
 - After David merges the readiness PR, run R0 + W0 + C0 only.
