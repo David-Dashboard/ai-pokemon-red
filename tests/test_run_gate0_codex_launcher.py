@@ -17,12 +17,24 @@ def test_launcher_is_free_handshake_only_and_fail_closed():
 
 
 def test_launcher_proves_chatgpt_auth_without_copying_it():
-    assert "$codex.Source --version" in SCRIPT
-    assert "$codex.Source login status" in SCRIPT
+    assert "& $ResolvedCodexPath --version" in SCRIPT
+    assert "& $ResolvedCodexPath login status" in SCRIPT
     assert "$env:OPENAI_API_KEY -or $env:CODEX_API_KEY" in SCRIPT
     assert "did not prove ChatGPT subscription authentication" in SCRIPT
     assert "latest alias" in SCRIPT
     assert "Copy-Item" not in SCRIPT and "auth.json" not in SCRIPT
+
+
+def test_launcher_resolves_exactly_one_scalar_codex_exe_path():
+    assert "Get-Command codex -CommandType Application -All" in SCRIPT
+    assert ".EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)" in SCRIPT
+    assert "$CodexExeCandidates.Count -ne 1" in SCRIPT
+    assert "Expected exactly one Codex .exe application candidate" in SCRIPT
+    assert "[string]$ResolvedCodexPath = $CodexExeCandidates[0].Source" in SCRIPT
+    assert SCRIPT.count("& $ResolvedCodexPath") == 3
+    assert "codex_path = $ResolvedCodexPath" in SCRIPT
+    assert "Get-FileSha256 $ResolvedCodexPath" in SCRIPT
+    assert "$codex.Source" not in SCRIPT
 
 
 def test_effective_config_uses_explicit_overrides_in_isolated_home():
