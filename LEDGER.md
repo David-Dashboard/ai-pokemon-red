@@ -8,6 +8,8 @@ Gate 0 handshake launcher uses or records it.
 
 ## Current status (2026-07-14)
 - Branch: `codex/fix-gate0-codex-resolution-2026-07-14`.
+- Commit `a61a8aa` is pushed and PR #112 is open. Its first posted adversarial
+  review requested behavioral resolver coverage and accurate continuity state.
 - Merged main returned two Codex application candidates, `codex.exe` and the
   extensionless `codex`; `$codex.Source` therefore became multi-valued and the
   launcher attempted a malformed concatenated path.
@@ -17,7 +19,7 @@ Gate 0 handshake launcher uses or records it.
 ## Constraints
 - Touch only HANDOFF.md, LEDGER.md, tools/run_gate0_codex.ps1, and
   tests/test_run_gate0_codex_launcher.py.
-- Do not run Codex/model/handshake/preflight, rebuild images, spend, push, or open a PR.
+- Do not run Codex/model/handshake/preflight, rebuild images, or spend.
 - Do not weaken any existing launcher guard or add model execution.
 - Do not touch unrelated untracked Spanish-teacher files or local agent/config dirs.
 
@@ -29,6 +31,12 @@ Gate 0 handshake launcher uses or records it.
 - [x] Run AST parsing and targeted/full tracked tests (`8 passed`; `1142 passed`).
 - [x] Run final `git diff --check`.
 - [x] Commit only the four scoped files.
+- [x] Replace text-only resolver coverage with behavioral tests of the exact production function AST.
+- [x] Correct HANDOFF/LEDGER for the open PR #112 and requested-changes review state.
+- [x] Run targeted/full tracked tests (`11 passed`; `1145 passed`).
+- [x] Run final AST parsing and `git diff --check`.
+- [x] Commit the four-file review fix.
 
 ## Next
-- Parent reviews the scoped commit. Free handshake remains a separate action.
+- Parent commits/pushes the PR #112 behavioral-test/docs fix and requests posted re-review. Free
+  handshake remains a separate action.

@@ -7,19 +7,24 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution fix complete locally; $0, no model call
-or held-out preflight.)_
+_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution PR #112 behavioral-test review fix
+complete locally; $0, no model call or held-out preflight.)_
 
-**=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**
+**=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION PR #112 REVIEW FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**
 1. **DONE:** on `codex/fix-gate0-codex-resolution-2026-07-14`, the free-handshake launcher now fails
    closed unless Windows resolves exactly one Codex application whose source ends case-insensitively in
    `.exe`, then uses that single scalar path for every Codex invocation and receipt/hash field.
-2. **SCOPE:** launcher, narrow regression coverage, HANDOFF, and LEDGER only. No Codex/model/handshake/
-   preflight execution, image rebuild, spend, push, or PR in this task.
-3. **DONE - evidence:** PowerShell AST parsing passed; targeted launcher tests: `8 passed`; full suite
-   from the exact 69 tracked `tests/test_*.py` files: `1142 passed`; `git diff --check` passed. The
-   unrelated untracked Spanish test was excluded.
-**=> NEXT:** parent reviews the scoped commit. Running the free handshake remains a separate action.
+2. **DONE - PR / REVIEW:** commit `a61a8aa` is pushed and PR #112 is open. The first posted adversarial
+   review requested changes because resolver coverage matched text instead of executing production logic,
+   and the continuity block still described the pre-PR state.
+3. **DONE - REVIEW FIX:** pytest extracts and evaluates the exact production `Resolve-CodexExecutable`
+   function AST without running the launcher body, and proves one `.exe` plus extensionless selects the
+   `.exe` while zero and multiple `.exe` candidates fail closed.
+4. **DONE - EVIDENCE:** PowerShell AST parsing passed; targeted launcher suite: `11 passed`; full suite
+   from the exact 69 tracked `tests/test_*.py` files: `1145 passed`; the unrelated untracked Spanish test
+   was excluded; `git diff --check` passed.
+**=> NEXT:** parent commits/pushes the behavioral-test/docs fix and requests posted re-review. Running
+the free handshake remains a separate action.
 **Paid ledger today (2026-07-14): $0; no Codex/model call and no held-out preflight.**
 
 **=>=> NEWEST (2026-07-14) - GATE 0 CODEX READINESS PR #111 REVIEW-APPROVED; $0; NO RUN. =>=>**
