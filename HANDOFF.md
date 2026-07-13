@@ -7,24 +7,26 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution PR #112 behavioral-test review fix
-complete locally; $0, no model call or held-out preflight.)_
+_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution PR #112 CI portability fix complete
+locally/pending push; $0, no model call or held-out preflight.)_
 
-**=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION PR #112 REVIEW FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**
+**=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION PR #112 CI FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**
 1. **DONE:** on `codex/fix-gate0-codex-resolution-2026-07-14`, the free-handshake launcher now fails
    closed unless Windows resolves exactly one Codex application whose source ends case-insensitively in
    `.exe`, then uses that single scalar path for every Codex invocation and receipt/hash field.
-2. **DONE - PR / REVIEW:** commit `a61a8aa` is pushed and PR #112 is open. The first posted adversarial
+2. **DONE - PR / REVIEW:** PR #112 is open. The first posted adversarial
    review requested changes because resolver coverage matched text instead of executing production logic,
    and the continuity block still described the pre-PR state.
-3. **DONE - REVIEW FIX:** pytest extracts and evaluates the exact production `Resolve-CodexExecutable`
+3. **DONE - REVIEW FIX:** behavioral-test fix `5cc4594` is pushed. Pytest extracts and evaluates the exact production `Resolve-CodexExecutable`
    function AST without running the launcher body, and proves one `.exe` plus extensionless selects the
-   `.exe` while zero and multiple `.exe` candidates fail closed.
-4. **DONE - EVIDENCE:** PowerShell AST parsing passed; targeted launcher suite: `11 passed`; full suite
-   from the exact 69 tracked `tests/test_*.py` files: `1145 passed`; the unrelated untracked Spanish test
-   was excluded; `git diff --check` passed.
-**=> NEXT:** parent commits/pushes the behavioral-test/docs fix and requests posted re-review. Running
-the free handshake remains a separate action.
+   `.exe` while zero and multiple `.exe` candidates fail closed. Re-review was requested and is held
+   pending green CI.
+4. **CONFIRMED CI FAILURE / FIX COMPLETE LOCALLY:** Linux CI failed only because the behavioral test hardcoded
+   the Windows executable name `powershell`. The local fix prefers `powershell`, falls back to `pwsh`, and
+   skips only the three behavioral subprocess tests if neither exists. Windows evidence: PowerShell AST
+   passed; targeted `11 passed`; full 69-file tracked suite `1145 passed`; pending commit/push and CI.
+**=> NEXT:** commit/push the local CI portability fix, then resume re-review after green CI. Running the
+free handshake remains a separate action.
 **Paid ledger today (2026-07-14): $0; no Codex/model call and no held-out preflight.**
 
 **=>=> NEWEST (2026-07-14) - GATE 0 CODEX READINESS PR #111 REVIEW-APPROVED; $0; NO RUN. =>=>**

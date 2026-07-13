@@ -8,8 +8,11 @@ Gate 0 handshake launcher uses or records it.
 
 ## Current status (2026-07-14)
 - Branch: `codex/fix-gate0-codex-resolution-2026-07-14`.
-- Commit `a61a8aa` is pushed and PR #112 is open. Its first posted adversarial
-  review requested behavioral resolver coverage and accurate continuity state.
+- PR #112 is open. Behavioral resolver fix `5cc4594` is pushed; re-review was
+  requested and is held pending green CI.
+- Linux CI failed because the behavioral test hardcoded `powershell`. The local
+  portability fix prefers `powershell`, falls back to `pwsh`, and skips only the
+  three behavioral subprocess tests if neither exists; it is pending push.
 - Merged main returned two Codex application candidates, `codex.exe` and the
   extensionless `codex`; `$codex.Source` therefore became multi-valued and the
   launcher attempted a malformed concatenated path.
@@ -36,7 +39,11 @@ Gate 0 handshake launcher uses or records it.
 - [x] Run targeted/full tracked tests (`11 passed`; `1145 passed`).
 - [x] Run final AST parsing and `git diff --check`.
 - [x] Commit the four-file review fix.
+- [x] Make the behavioral-test PowerShell executable lookup portable across Windows/Linux.
+- [x] Run Windows targeted/full tracked tests and AST parsing (`11 passed`; `1145 passed`).
+- [x] Run final `git diff --check`.
+- [x] Stage the scoped CI portability fix for parent commit.
 
 ## Next
-- Parent commits/pushes the PR #112 behavioral-test/docs fix and requests posted re-review. Free
-  handshake remains a separate action.
+- Finish and push the PR #112 CI portability fix, then resume re-review after green CI. Free handshake
+  remains a separate action.
