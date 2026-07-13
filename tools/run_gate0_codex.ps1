@@ -33,6 +33,16 @@ function Get-FileSha256([string]$Path) {
     return Get-BytesSha256 ([IO.File]::ReadAllBytes($Path))
 }
 
+function Resolve-CodexExecutable([object[]]$Candidates) {
+    $exeCandidates = @($Candidates | Where-Object {
+        ([string]$_.Source).EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($exeCandidates.Count -ne 1) {
+        throw "Expected exactly one Codex .exe application candidate; found $($exeCandidates.Count)."
+    }
+    return [string]$exeCandidates[0].Source
+}
+
 if ($Model -match '(?i)(^|[-_.])latest($|[-_.])') {
     throw 'Model must be an explicit model identifier, not a latest alias.'
 }
@@ -47,15 +57,17 @@ if (Test-Path -LiteralPath $OutputDir) {
 
 # Authentication is observed through the user's normal CODEX_HOME. It is never copied into the
 # isolated config home used below for the free MCP inventory command.
-$codex = Get-Command codex -CommandType Application -ErrorAction Stop
-$versionText = (& $codex.Source --version 2>$null | Out-String).Trim()
+[string]$ResolvedCodexPath = Resolve-CodexExecutable -Candidates @(
+    Get-Command codex -CommandType Application -All -ErrorAction Stop
+)
+$versionText = (& $ResolvedCodexPath --version 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $versionText -notmatch '^codex(?:-cli)?\s+[0-9][0-9A-Za-z.+-]*$') {
     throw 'Codex version is unavailable or not safely parseable.'
 }
 if ($env:OPENAI_API_KEY -or $env:CODEX_API_KEY) {
     throw 'OPENAI_API_KEY or CODEX_API_KEY is set; Gate 0 requires ChatGPT authentication.'
 }
-$loginText = (& $codex.Source login status 2>&1 | Out-String).Trim()
+$loginText = (& $ResolvedCodexPath login status 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $loginText -notmatch '(?i)\bchatgpt\b' -or
     $loginText -match '(?i)\bapi(?:[ -]?key)?\b') {
     throw 'Codex login status did not prove ChatGPT subscription authentication.'
@@ -206,7 +218,7 @@ $McpListArgs += @('mcp', 'list', '--json')
 $OldCodexHome = $env:CODEX_HOME
 try {
     $env:CODEX_HOME = $IsolatedHome
-    $McpListText = (& $codex.Source @McpListArgs 2>> $McpListErrPath | Out-String).Trim()
+    $McpListText = (& $ResolvedCodexPath @McpListArgs 2>> $McpListErrPath | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Codex rejected the isolated explicit MCP configuration.' }
 } finally {
     if ($null -eq $OldCodexHome) { Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue }
@@ -258,8 +270,8 @@ $Receipt = [ordered]@{
     auth_method = 'chatgpt'
     planned_model = $Model
     codex_version = $versionText
-    codex_path = $codex.Source
-    codex_executable_sha256 = Get-FileSha256 $codex.Source
+    codex_path = $ResolvedCodexPath
+    codex_executable_sha256 = Get-FileSha256 $ResolvedCodexPath
     critical_config_transport = 'explicit_cli_overrides'
     mcp_servers_observed = @($Server)
     mcp_tools_observed = $ObservedNames

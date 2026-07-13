@@ -1,9 +1,53 @@
+import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 from tools.check_gate0_codex import SERVER, TOOLS
 
 
 SCRIPT = (Path(__file__).parents[1] / "tools" / "run_gate0_codex.ps1").read_text(encoding="utf-8")
+SCRIPT_PATH = Path(__file__).parents[1] / "tools" / "run_gate0_codex.ps1"
+POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
+requires_powershell = pytest.mark.skipif(
+    POWERSHELL is None,
+    reason="PowerShell is required to exercise the production resolver AST",
+)
+RESOLVER_HARNESS = r"""
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    $env:GATE0_LAUNCHER_PATH, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) { throw 'Launcher did not parse.' }
+$functions = @($ast.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Resolve-CodexExecutable'
+}, $true))
+if ($functions.Count -ne 1) { throw 'Expected exactly one resolver function definition.' }
+Invoke-Expression $functions[0].Extent.Text
+$decoded = $env:GATE0_CODEX_CANDIDATES | ConvertFrom-Json
+$candidates = @($decoded | ForEach-Object { $_ })
+$resolved = Resolve-CodexExecutable -Candidates $candidates
+[Console]::Out.Write([string]$resolved)
+"""
+
+
+def run_production_resolver(*sources):
+    env = os.environ.copy()
+    env["GATE0_LAUNCHER_PATH"] = str(SCRIPT_PATH)
+    env["GATE0_CODEX_CANDIDATES"] = json.dumps([{"Source": source} for source in sources])
+    return subprocess.run(
+        [POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", RESOLVER_HARNESS],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
 
 
 def test_launcher_is_free_handshake_only_and_fail_closed():
@@ -17,12 +61,42 @@ def test_launcher_is_free_handshake_only_and_fail_closed():
 
 
 def test_launcher_proves_chatgpt_auth_without_copying_it():
-    assert "$codex.Source --version" in SCRIPT
-    assert "$codex.Source login status" in SCRIPT
+    assert "& $ResolvedCodexPath --version" in SCRIPT
+    assert "& $ResolvedCodexPath login status" in SCRIPT
     assert "$env:OPENAI_API_KEY -or $env:CODEX_API_KEY" in SCRIPT
     assert "did not prove ChatGPT subscription authentication" in SCRIPT
     assert "latest alias" in SCRIPT
     assert "Copy-Item" not in SCRIPT and "auth.json" not in SCRIPT
+
+
+@requires_powershell
+def test_launcher_resolver_selects_one_exe_over_extensionless_candidate():
+    result = run_production_resolver(r"C:\Tools\CoDeX.ExE", r"C:\Tools\codex")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == r"C:\Tools\CoDeX.ExE"
+
+
+@requires_powershell
+def test_launcher_resolver_fails_without_exe_candidate():
+    result = run_production_resolver(r"C:\Tools\codex")
+    assert result.returncode != 0
+    assert "Expected exactly one Codex .exe application candidate; found 0" in result.stderr
+
+
+@requires_powershell
+def test_launcher_resolver_fails_with_multiple_exe_candidates():
+    result = run_production_resolver(r"C:\One\codex.exe", r"C:\Two\CODEX.EXE")
+    assert result.returncode != 0
+    assert "Expected exactly one Codex .exe application candidate; found 2" in result.stderr
+
+
+def test_launcher_uses_only_the_scalar_resolved_codex_path():
+    assert "Resolve-CodexExecutable -Candidates @(" in SCRIPT
+    assert "Get-Command codex -CommandType Application -All" in SCRIPT
+    assert SCRIPT.count("& $ResolvedCodexPath") == 3
+    assert "codex_path = $ResolvedCodexPath" in SCRIPT
+    assert "Get-FileSha256 $ResolvedCodexPath" in SCRIPT
+    assert "$codex.Source" not in SCRIPT
 
 
 def test_effective_config_uses_explicit_overrides_in_isolated_home():
