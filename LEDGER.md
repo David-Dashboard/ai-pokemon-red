@@ -1,12 +1,40 @@
-# Ledger — MKDS continuous-time A/B: $0 launch-surface prep (ai-pokemon-red)
+# Ledger - MKDS continuous-time A/B verdict banked (ai-pokemon-red)
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative → HANDOFF.md. Prior run
      (entity-gate v4, CLOSED (c) 2026-07-11) is fully banked in HANDOFF + reports/2026-07-11-entity-v4-verdict.md. -->
 
 ## Goal
-Get the pre-registered MKDS continuous-time A/B (reports/2026-07-04-mkds-continuous-time-build-plan.md §7)
-to launch-ready with $0, then STOP: the paid run itself needs David's explicit go + cost/agent-count
-heads-up (pre-reg §7 — this overrides the general account-B pre-authorization).
+Bank the pre-registered MKDS continuous-time A/B
+(`reports/2026-07-04-mkds-continuous-time-build-plan.md` section 7) after David's explicit paid-run go
+and default `~/.claude` fallback authorization. Current next work is the v5 entity-bar redesign design doc
+($0, no code/run); no paid run is armed.
+
+## Current status (2026-07-13)
+- David gave explicit go for the paid A/B on 2026-07-13; cost/agent-count heads-up was given
+  (2 agents, <=$10 planned).
+- Prechecks passed: Docker image `sha256:dfd12eac87bb...`; seamcheck 3/3 PASS; no prior Arm A/B run
+  artifacts existed; launch briefs did not expose RAM/oracle address.
+- Arm A artifacts: `runs/brain_mkds_armA/transcript.jsonl`, `run.exit`, `run.err`.
+- Arm A result: `run.exit` = `EXIT=1`; `run.err` empty; no `world/` dir; result
+  `api_error_status=429`, `duration_api_ms=0`, `num_turns=1`, `total_cost_usd=0`.
+- Reset text: `You've hit your weekly limit - resets Jul 16, 8pm (Europe/Stockholm)`.
+- Report: `reports/2026-07-13-mkds-ab-blocked.md`.
+- Next: wait until **2026-07-16 20:00 Europe/Stockholm**; then, if David still wants the A/B,
+  launch Arm A first under the same discipline. Arm B is unstarted.
+
+## Current status update (2026-07-13 default account)
+- David authorized using the default `~/.claude` account/config after the account-B cap.
+- Default-account A/B completed in separate dirs: `runs/brain_mkds_armA_default/` and
+  `runs/brain_mkds_armB_default/`.
+- Verdict: **FAIL primary batching bar**, **PASS conditional guard**.
+- Arm A: 2984 oracle frames / 13 in-world decisions = 229.538 frames/decision; cost `$0.77483`.
+- Arm B: 2365 oracle frames / 10 in-world decisions = 236.500 frames/decision; cost `$0.7740115`.
+- Ratio: `1.030x`, below required `1.300x`.
+- Arm B conditional guard: PASS (`skills.jsonl`: 10 `run_skill`, 9 `stop_when_fired=true`).
+- Caveat: checkpoint RAM byte `0x022C8090` was not logged in either `oracle.jsonl`; do not claim
+  RAM-confirmed checkpoint/lap progress.
+- Report: `reports/2026-07-13-mkds-ab-verdict.md`.
+- Next: v5 entity-bar redesign design doc ($0, no code/run).
 
 ## Handoff
 - Lane state (scout, 2026-07-11): #100 build MERGED + verified (NDS_SKILLS tools, enum pinned IN CODE:
@@ -53,4 +81,13 @@ heads-up (pre-reg §7 — this overrides the general account-B pre-authorization
       are the tracked record; no separate PR needed for gitignored launchers)
 - [x] HANDOFF updated + go/no-go package handed to David (2026-07-11): READY — seam 3/3, oracle verified,
       briefs on disk, 2 agents, one attempt each, --max-turns 90, ≲$10 total
-- [ ] (DAVID) explicit go → launch discipline: Arm A first, --max-turns 90, account-B, banked as-is
+- [x] (DAVID) explicit go received 2026-07-13; Arm A launched first and blocked before MCP/world connection by account-B weekly-limit 429.
+
+## Blocked status appended 2026-07-13
+- [x] Explicit go received 2026-07-13; launch discipline used: Arm A first, --max-turns 90, account-B.
+- [x] Pre-launch seamcheck re-run 2026-07-13: 3/3 PASS.
+- [x] Arm A launched first; blocked before MCP/world connection by account-B weekly-limit 429; $0; not a scored A/B attempt.
+- [x] Default `~/.claude` account authorized and used in separate `_default` dirs.
+- [x] Arm A default completed.
+- [x] Arm B default completed.
+- [x] A/B verdict banked: FAIL primary bar, PASS conditional guard.
