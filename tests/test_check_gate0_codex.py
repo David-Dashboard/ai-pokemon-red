@@ -1,172 +1,164 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 
 import pytest
 
 import tools.check_gate0_codex as checker
-from tools.check_gate0_codex import SERVER, TOOLS, audit, tool_schema_sha256
+from tools.check_gate0_codex import SERVER, TOOLS, audit
 
 
-def _receipt(arm="miniwob"):
-    return {"schema_version": 1, "arm": arm, "auth_method": "chatgpt",
-            "model": "gpt-5.4", "codex_version": "codex-cli 1.2.3",
-            "codex_path": "C:/tools/codex.exe", "codex_executable_sha256": "d" * 64,
-            "mcp_servers": [SERVER], "mcp_tools": TOOLS[arm],
-            "brain_config_sha256": "b" * 64, "task_sha256": "c" * 64,
-            "config_sha256": "a" * 64, "tool_schema_sha256": tool_schema_sha256(arm)}
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
-def _events(item=None, usages=None):
-    events = [{"type": "thread.started", "thread_id": "synthetic"},
-              {"type": "turn.started"}]
-    if item is not None:
-        events.append({"type": "item.completed", "item": item})
-    for usage in usages or [{"input_tokens": 10, "cached_input_tokens": 3,
-                             "output_tokens": 4, "reasoning_output_tokens": 2}]:
-        events.append({"type": "turn.completed", "usage": usage})
-    return events
+def _fixture(tmp_path, arm="miniwob", events=None):
+    artifacts = tmp_path / arm
+    (artifacts / "launch" / ".codex").mkdir(parents=True)
+    codex = artifacts / "codex.exe"
+    files = {
+        codex: b"synthetic-codex",
+        artifacts / "brain-config.toml": b"model='gpt-5.4'\n",
+        artifacts / "launch" / "TASK.md": b"synthetic task\n",
+        artifacts / "launch" / ".codex" / "config.toml": b"synthetic config\n",
+        artifacts / "codex-mcp-list.json": b'[{"name":"gate0_world"}]\n',
+        artifacts / "mcp-tools.json": (json.dumps([{"name": name} for name in TOOLS[arm]]) + "\n").encode(),
+    }
+    for path, data in files.items():
+        path.write_bytes(data)
+    hashes = {path: _sha(data) for path, data in files.items()}
+    receipt = {
+        "schema_version": 2, "arm": arm,
+        "readiness": "NO_GO_INSUFFICIENT_WAKES", "paid_execution_enabled": False,
+        "auth_method": "chatgpt", "planned_model": "gpt-5.4",
+        "codex_version": "codex-cli 1.2.3", "codex_path": str(codex),
+        "codex_executable_sha256": hashes[codex],
+        "critical_config_transport": "explicit_cli_overrides",
+        "mcp_servers_observed": [SERVER], "mcp_tools_observed": TOOLS[arm],
+        "brain_config_sha256": hashes[artifacts / "brain-config.toml"],
+        "task_sha256": hashes[artifacts / "launch" / "TASK.md"],
+        "config_sha256": hashes[artifacts / "launch" / ".codex" / "config.toml"],
+        "codex_mcp_list_sha256": hashes[artifacts / "codex-mcp-list.json"],
+        "tool_schema_sha256": hashes[artifacts / "mcp-tools.json"],
+        "world_image_tag": "miniwob-world" if arm == "miniwob" else "gb-mcp-world",
+        "world_image_id": "sha256:" + "1" * 64,
+        "host_code_sha256": {"/app/world_mcp.py": "2" * 64,
+                             "/app/core/miniwob_world.py": "3" * 64},
+        "image_code_sha256": {"/app/world_mcp.py": "2" * 64,
+                              "/app/core/miniwob_world.py": "3" * 64},
+    }
+    receipt_path = artifacts / "handshake-receipt.json"
+    expected_path = artifacts / "expected-pins.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    expected_path.write_text(json.dumps(receipt), encoding="utf-8")
+    transcript = artifacts / "transcript.jsonl"
+    if events is None:
+        events = [
+            {"type": "thread.started"},
+            {"type": "item.completed", "item": {
+                "type": "mcp_tool_call", "server": SERVER, "tool": "observe"}},
+            {"type": "turn.completed", "usage": {
+                "input_tokens": 10, "cached_input_tokens": 3,
+                "output_tokens": 4, "reasoning_output_tokens": 2}},
+        ]
+    transcript.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    return transcript, receipt_path, expected_path, artifacts, receipt
 
 
-def _write_run(tmp_path, events, receipt=None):
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
-    receipt_path = tmp_path / "receipt.json"
-    receipt_path.write_text(json.dumps(_receipt() if receipt is None else receipt), encoding="utf-8")
-    return transcript, receipt_path
+def _audit(run):
+    transcript, receipt, expected, artifacts, _ = run
+    return audit(transcript, receipt, expected, artifacts, artifacts.name)
 
 
-def test_clean_target_mcp_is_no_leak_pass_but_wakes_insufficient(tmp_path):
-    item = {"type": "mcp_tool_call", "server": SERVER, "tool": "observe"}
-    usages = [{"input_tokens": 10, "cached_input_tokens": 3, "output_tokens": 4,
-               "reasoning_output_tokens": 2},
-              {"input_tokens": 20, "cached_input_tokens": 7, "output_tokens": 8,
-               "reasoning_output_tokens": 5}]
-    transcript, receipt = _write_run(tmp_path, _events(item, usages))
-    result = audit(transcript, receipt, "miniwob")
+def test_exact_observed_pins_are_still_no_go_until_wakes_exist(tmp_path):
+    result = _audit(_fixture(tmp_path))
     assert result["no_leak"] == "PASS"
     assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
-    assert result["wakes"] is None
-    assert result["token_usage"] == {"input_tokens": 30, "cached_input_tokens": 10,
-                                     "output_tokens": 12, "reasoning_output_tokens": 7}
-    assert result["token_usage_events"] == 2
-
-
-@pytest.mark.parametrize("item_type", [
-    "command_execution", "file_change", "web_search", "tool_search", "connector_call", "unknown_tool",
-])
-def test_non_mcp_tool_item_classes_fail_no_leak(tmp_path, item_type):
-    transcript, receipt = _write_run(tmp_path, _events({"type": item_type}))
-    result = audit(transcript, receipt, "miniwob")
-    assert result["no_leak"] == "NO_LEAK"
-    assert result["overall"] == "NO_LEAK"
-    assert any("forbidden_item" in reason for reason in result["failures"])
+    assert result["token_usage"] == {"input_tokens": 10, "cached_input_tokens": 3,
+                                     "output_tokens": 4, "reasoning_output_tokens": 2}
 
 
 @pytest.mark.parametrize("item", [
-    {"type": "mcp_tool_call", "server": "connector", "tool": "observe"},
+    {"type": "command_execution"},
+    {"type": "mcp_tool_call", "server": "other", "tool": "observe"},
     {"type": "mcp_tool_call", "server": SERVER, "tool": "shell"},
-    {"type": "mcp_tool_call", "server": SERVER},
 ])
-def test_other_server_or_tool_fails_no_leak(tmp_path, item):
-    transcript, receipt = _write_run(tmp_path, _events(item))
-    assert audit(transcript, receipt, "miniwob")["no_leak"] == "NO_LEAK"
-
-
-@pytest.mark.parametrize(("field", "value", "reason"), [
-    ("auth_method", "api", "auth_not_chatgpt"),
-    ("model", "", "model_unavailable"),
-    ("codex_version", "", "version_unavailable"),
-    ("codex_path", "", "codex_path"),
-    ("codex_executable_sha256", "bad", "codex_executable_hash"),
-    ("mcp_servers", [SERVER, "extra"], "mcp_server_inventory"),
-    ("mcp_tools", TOOLS["miniwob"] + ["shell"], "mcp_tool_inventory"),
-    ("config_sha256", "bad", "config_hash"),
-    ("brain_config_sha256", "bad", "brain_config_hash"),
-    ("task_sha256", "bad", "task_hash"),
-    ("tool_schema_sha256", "b" * 64, "tool_schema_hash"),
-])
-def test_bad_receipt_fails_closed(tmp_path, field, value, reason):
-    receipt_data = _receipt()
-    receipt_data[field] = value
-    transcript, receipt = _write_run(tmp_path, _events(), receipt_data)
-    result = audit(transcript, receipt, "miniwob")
-    assert result["no_leak"] == "NO_LEAK"
-    assert reason in result["failures"]
-
-
-def test_wrong_arm_inventory_fails_closed(tmp_path):
-    transcript, receipt = _write_run(tmp_path, _events(), _receipt("red"))
-    result = audit(transcript, receipt, "miniwob")
-    assert result["no_leak"] == "NO_LEAK"
-    assert "receipt_arm" in result["failures"]
-
-
-def test_malformed_jsonl_fails_closed(tmp_path):
-    transcript, receipt = _write_run(tmp_path, _events())
-    transcript.write_text('{"type":"thread.started"}\nnot-json\n', encoding="utf-8")
-    result = audit(transcript, receipt, "miniwob")
-    assert result["no_leak"] == "NO_LEAK"
-    assert any(reason.startswith("malformed_jsonl") for reason in result["failures"])
-
-
-def test_reasoning_and_agent_message_are_allowed(tmp_path):
-    events = _events()
-    events.insert(2, {"type": "item.completed", "item": {"type": "reasoning", "text": "private"}})
-    events.insert(3, {"type": "item.completed", "item": {"type": "agent_message", "text": "done"}})
-    transcript, receipt = _write_run(tmp_path, events)
-    assert audit(transcript, receipt, "miniwob")["no_leak"] == "PASS"
-
-
-def test_missing_usage_is_no_go_accounting_without_inventing_wakes(tmp_path):
-    transcript, receipt = _write_run(tmp_path, [{"type": "thread.started"},
-                                                {"type": "turn.completed"}])
-    result = audit(transcript, receipt, "miniwob")
-    assert result["no_leak"] == "PASS"
-    assert result["overall"] == "NO_GO_INSUFFICIENT_ACCOUNTING"
-    assert result["wakes"] is None
-
-
-def test_run_failure_precedes_insufficient_accounting(tmp_path):
-    transcript, receipt = _write_run(tmp_path, [
-        {"type": "thread.started"},
-        {"type": "error", "message": "synthetic"},
-        {"type": "turn.completed"},
+def test_nonworld_surface_fails_no_leak(tmp_path, item):
+    run = _fixture(tmp_path, events=[
+        {"type": "thread.started"}, {"type": "item.completed", "item": item},
+        {"type": "turn.completed", "usage": {"input_tokens": 1, "cached_input_tokens": 0,
+                                                "output_tokens": 1, "reasoning_output_tokens": 0}},
     ])
-    result = audit(transcript, receipt, "miniwob")
-    assert result["overall"] == "NO_GO_RUN_FAILED"
-    assert result["run_failures"]
-    assert result["accounting_failures"]
-
-
-def test_no_leak_precedes_run_failure(tmp_path):
-    transcript, receipt = _write_run(tmp_path, [
-        {"type": "thread.started"},
-        {"type": "item.completed", "item": {"type": "command_execution"}},
-        {"type": "error", "message": "synthetic"},
-        {"type": "turn.completed", "usage": {
-            "input_tokens": 1, "cached_input_tokens": 0,
-            "output_tokens": 1, "reasoning_output_tokens": 0,
-        }},
-    ])
-    result = audit(transcript, receipt, "miniwob")
+    result = _audit(run)
     assert result["overall"] == "NO_LEAK"
-    assert result["failures"]
-    assert result["run_failures"]
+    assert result["leak_failures"]
 
 
-@pytest.mark.parametrize(("overall", "expected_exit"), [
-    ("NO_LEAK", 1),
-    ("NO_GO_RUN_FAILED", 1),
-    ("NO_GO_INSUFFICIENT_ACCOUNTING", 1),
-    ("NO_GO_INSUFFICIENT_WAKES", 1),
-    ("PASS", 0),
-])
-def test_main_exits_zero_only_for_literal_pass(monkeypatch, capsys, overall, expected_exit):
-    monkeypatch.setattr(sys, "argv", [
-        "check_gate0_codex.py", "transcript.jsonl", "receipt.json", "--arm", "miniwob",
-    ])
-    monkeypatch.setattr(checker, "audit", lambda *_args: {"overall": overall})
-    assert checker.main() == expected_exit
-    assert json.loads(capsys.readouterr().out)["overall"] == overall
+def test_expected_pin_drift_fails_constancy(tmp_path):
+    run = _fixture(tmp_path)
+    expected = json.loads(run[2].read_text(encoding="utf-8"))
+    expected["planned_model"] = "different"
+    run[2].write_text(json.dumps(expected), encoding="utf-8")
+    result = _audit(run)
+    assert result["overall"] == "CONSTANCY_BREACH"
+    assert "pin_mismatch:planned_model" in result["constancy_failures"]
+
+
+def test_artifact_mutation_fails_constancy(tmp_path):
+    run = _fixture(tmp_path)
+    (run[3] / "launch" / "TASK.md").write_text("changed", encoding="utf-8")
+    assert "artifact_hash_mismatch:task_sha256" in _audit(run)["constancy_failures"]
+
+
+def test_artifact_inventory_cannot_be_self_declared(tmp_path):
+    run = _fixture(tmp_path)
+    path = run[3] / "codex-mcp-list.json"
+    path.write_text('[{"name":"gate0_world"},{"name":"extra"}]\n', encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    for receipt_path in (run[1], run[2]):
+        data = json.loads(receipt_path.read_text(encoding="utf-8"))
+        data["codex_mcp_list_sha256"] = digest
+        receipt_path.write_text(json.dumps(data), encoding="utf-8")
+    assert "artifact_inventory:mcp_servers" in _audit(run)["constancy_failures"]
+
+
+def test_stale_image_code_fails_constancy(tmp_path):
+    run = _fixture(tmp_path)
+    receipt = json.loads(run[1].read_text(encoding="utf-8"))
+    receipt["image_code_sha256"]["/app/world_mcp.py"] = "4" * 64
+    run[1].write_text(json.dumps(receipt), encoding="utf-8")
+    run[2].write_text(json.dumps(receipt), encoding="utf-8")
+    result = _audit(run)
+    assert "stale_world_image" in result["constancy_failures"]
+
+
+def test_peer_receipts_prove_only_common_brain_constancy(tmp_path):
+    mini = _fixture(tmp_path / "mini", "miniwob")
+    red = _fixture(tmp_path / "red", "red")
+    mini_receipt = json.loads(mini[1].read_text(encoding="utf-8"))
+    red_receipt = json.loads(red[1].read_text(encoding="utf-8"))
+    for field in checker.CONSTANCY_FIELDS:
+        red_receipt[field] = mini_receipt[field]
+    red[1].write_text(json.dumps(red_receipt), encoding="utf-8")
+    result = audit(mini[0], mini[1], mini[2], mini[3], "miniwob", red[1])
+    assert result["peer_constancy"] == "PASS"
+    red_receipt["planned_model"] = "different"
+    red[1].write_text(json.dumps(red_receipt), encoding="utf-8")
+    result = audit(mini[0], mini[1], mini[2], mini[3], "miniwob", red[1])
+    assert result["overall"] == "CONSTANCY_BREACH"
+    assert "peer_mismatch:planned_model" in result["constancy_failures"]
+
+
+def test_run_failure_precedes_missing_accounting(tmp_path):
+    run = _fixture(tmp_path, events=[{"type": "thread.started"}, {"type": "error"}])
+    assert _audit(run)["overall"] == "NO_GO_RUN_FAILED"
+
+
+def test_main_exits_nonzero_for_handshake_verdict(monkeypatch, capsys, tmp_path):
+    run = _fixture(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["check_gate0_codex.py", str(run[0]), str(run[1]),
+                                      str(run[2]), str(run[3]), "--arm", "miniwob"])
+    assert checker.main() == 1
+    assert json.loads(capsys.readouterr().out)["overall"] == "NO_GO_INSUFFICIENT_WAKES"

@@ -9,9 +9,18 @@ included.
 PR #110's initial adversarial review found three launch blockers that this
 design now makes explicit: MiniWoB seed separation/logging, exact Capability
 and Cheap bars, and mechanical exclusion of non-world client tools. The current
-branch is not yet merged or reviewed, and this task cannot execute the installed
-Codex CLI, so the harness remains **not launch-ready**. These are R0/W0/C0
+branch is not yet merged and its first review requested changes. The installed
+Codex CLI is not executable from this task, so the harness remains **not launch-ready**. These are R0/W0/C0
 prerequisites, not reasons to spend and diagnose later.
+
+PR #111's review added four fail-closed requirements: explicit runtime config
+that does not depend on project trust, independently frozen expected pins plus
+recomputed artifacts, immutable world-image/code receipts, and a mechanically
+enforceable live spend breaker. The review fix deliberately removes paid model
+execution from the current launcher. It can perform only a `$0` handshake,
+emits `paid_execution_enabled=false`, returns `NO_GO_INSUFFICIENT_WAKES`, and
+exits nonzero. A paid launcher must be designed and reviewed later; it does not
+exist in this PR.
 
 ## Decision
 
@@ -205,6 +214,18 @@ LLM brain and prove no reasoning capability.
 - Prove in a free handshake that every required world tool is directly
   callable without `ToolSearch`; otherwise stop and fix isolation before paid
   work.
+- Do not rely on a fresh repository trusting its project config. Pass every
+  critical brain/MCP restriction as an explicit CLI override, run Codex's own
+  `mcp list --json` from an empty isolated `CODEX_HOME`, and require exactly the
+  one frozen server.
+- Resolve each mutable Docker tag to an immutable `sha256:` image ID. Hash
+  `world_mcp.py` and `core/miniwob_world.py` on both host and image, require
+  equality, run the exact image ID, and record the live full `tools/list`
+  schemas. Any stale image is `NO_GO`; rebuild after merge, never wave through
+  a tag.
+- Freeze an expected-pins JSON independently of the observed receipt. The
+  checker must compare every security pin exactly, recompute every referenced
+  artifact/executable hash, and compare the common-brain fields across arms.
 - Pin the common brief template and show a text diff containing only task/tool
   facts.
 - Pin executable/model/version/memory-wipe receipts.
@@ -218,6 +239,11 @@ LLM brain and prove no reasoning capability.
   substitute tool calls, JSONL events, or turns for wakes. C0 remains
   `NO_GO_INSUFFICIENT_WAKES` until a free handshake or a documented observable
   grounds exact wake accounting. The wake bars below do not loosen.
+- Mechanical containment is stronger than a prose promise: the current script
+  contains no `codex exec` path and always records `paid_execution_enabled=false`.
+  C0 cannot become `GO` until a separate paid launcher has observable wake
+  accounting and a live breaker that halts at 250 normalized credits without
+  relying on end-of-run arithmetic.
 - Dry-score synthetic PASS, task FAIL, infra death, and constancy-breach
   fixtures before any paid attempt.
 - Confirm the human baselines and scripted physics fit the bars pinned below;
@@ -327,7 +353,8 @@ decisive.
 
 ## Future paid Gate 0 shape - not authorized here
 
-Only after R0 + W0 + C0 all return `GO`:
+Only after R0 + W0 + C0 all return `GO` **and** the missing paid launcher with
+observable wake accounting/live credit containment has passed its own review:
 
 1. Write a fresh pre-registration with verbatim briefs, exact scorer, human
    baselines, the bars above (tightening allowed; loosening forbidden), budget,
