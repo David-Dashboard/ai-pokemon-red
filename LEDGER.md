@@ -25,4 +25,4 @@ Resolve PR #106 conflicts caused by merging PR #105 into `main`, without rebasin
 - [x] Merge `origin/main` into the PR #106 branch.
 - [x] Resolve `HANDOFF.md` and `LEDGER.md` conflicts.
 - [x] Run conflict/diff checks: no conflict markers; `git diff --check` passed with CRLF warnings only.
-- [ ] Commit and push the conflict-resolution merge.
+- [x] Commit and push the conflict-resolution merge (`f2aab9d`); PR #106 no longer reports `DIRTY`.
