@@ -7,7 +7,7 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (Gate 0 Codex readiness PR #111 review hardening in progress;
+_Last updated: 2026-07-13 (Gate 0 Codex readiness PR #111 review-hardened and awaiting David's merge;
 $0, no model call or held-out preflight.)_
 
 **=>=> NEWEST (2026-07-13) - GATE 0 CODEX READINESS PR #111 OPEN; $0; NO RUN. =>=>**
@@ -25,20 +25,22 @@ $0, no model call or held-out preflight.)_
    `paid_execution_enabled=false`, and exits `NO_GO_INSUFFICIENT_WAKES`. `tools/check_gate0_codex.py`
    requires separately frozen exact pins, recomputes artifact hashes, and compares common-brain receipts
    across arms. No paid launcher exists.
-4. **DONE - final local verification:** PowerShell AST parsing and `git diff --check` pass; final tracked
+4. **DONE - final verification:** PowerShell AST parsing and `git diff --check` pass; final tracked
    suite is `1141 passed` (the count fell from 1163 because overlapping checker cases were consolidated;
-   targeted review-fix suite is `18 passed`). Push and posted re-review remain pending.
-5. **PENDING - merge gate:** PR #111 has a posted `REQUEST CHANGES` review. All fixes must be pushed and
-   receive posted re-review before David merges. This session will not merge it.
+   targeted review-fix suite is `18 passed`), and both CI checks are green.
+5. **DONE - review gate / PENDING DAVID MERGE:** the adversarial re-review approved `dbcfcda` and confirmed
+   all four P0s closed: PR #111 comment `4963235994`. The remaining `NO_GO` conditions are intentional:
+   CLI access here, post-merge image rebuild/free handshake, exact wake accounting, and a live credit breaker.
+   This session will not merge the PR.
 6. **PENDING - free handshake:** David installed Codex with OpenAI's official PowerShell installer, but
    this task still resolves the protected WindowsApps alias and gets access denied. Exact auth/version/
    model pin and direct-MCP handshake receipts remain required after merge; installation alone is not C0 GO.
    Rebuild both images after merge before the handshake; stale host/image code is a hard stop.
 7. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
    not print the token.
-**=> NEXT (priority order):** (1) finish PR #111 fixes/re-review; (2) David merges; (3) rebuild images and
-run the free handshake plus R0/W0/C0 readiness only; (4) keep `NO_GO` until exact wake accounting and a
-live 250-credit breaker exist; (5) only then design/review a paid launcher and pre-registration.
+**=> NEXT (priority order):** (1) David merges PR #111; (2) rebuild images and run the free handshake plus
+R0/W0/C0 readiness only; (3) keep `NO_GO` until exact wake accounting and a live 250-credit breaker exist;
+(4) only then design/review a paid launcher and pre-registration.
 **Paid ledger today (2026-07-13): $0 for Gate 0 readiness; no Codex/model call and no held-out
 preflight. `$1.5488415` MKDS default-account spend remains banked in PR #105.**
 

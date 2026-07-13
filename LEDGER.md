@@ -42,11 +42,11 @@ brain authenticated through David's ChatGPT subscription.
 - [x] Run the final full tracked-project suite (`1141 passed`; security tests consolidated).
 - [x] Open PR #111.
 - [x] Obtain posted adversarial review.
-- [ ] Finish verification, push every review fix, and obtain posted re-review.
+- [x] Finish verification, push every review fix, and obtain posted re-review approval.
 
 ## Next
-- Commit/push the PR #111 review fixes, then obtain posted re-review before
-  David merges.
+- David merges PR #111. Posted re-review approved `dbcfcda`; the final follow-up
+  commit records status only and changes no executable/test behavior.
 - After merge and image rebuild, resolve the executable path and run the free
   handshake. It cannot call a model and must remain `NO_GO_INSUFFICIENT_WAKES`.
 - A paid launcher does not exist. Build/review one only after observable wake
