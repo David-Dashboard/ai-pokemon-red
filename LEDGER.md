@@ -8,6 +8,19 @@ Get the pre-registered MKDS continuous-time A/B (reports/2026-07-04-mkds-continu
 to launch-ready with $0, then STOP: the paid run itself needs David's explicit go + cost/agent-count
 heads-up (pre-reg §7 — this overrides the general account-B pre-authorization).
 
+## Current status (2026-07-13)
+- David gave explicit go for the paid A/B on 2026-07-13; cost/agent-count heads-up was given
+  (2 agents, <=$10 planned).
+- Prechecks passed: Docker image `sha256:dfd12eac87bb...`; seamcheck 3/3 PASS; no prior Arm A/B run
+  artifacts existed; launch briefs did not expose RAM/oracle address.
+- Arm A artifacts: `runs/brain_mkds_armA/transcript.jsonl`, `run.exit`, `run.err`.
+- Arm A result: `run.exit` = `EXIT=1`; `run.err` empty; no `world/` dir; result
+  `api_error_status=429`, `duration_api_ms=0`, `num_turns=1`, `total_cost_usd=0`.
+- Reset text: `You've hit your weekly limit - resets Jul 16, 8pm (Europe/Stockholm)`.
+- Report: `reports/2026-07-13-mkds-ab-blocked.md`.
+- Next: wait until **2026-07-16 20:00 Europe/Stockholm**; then, if David still wants the A/B,
+  launch Arm A first under the same discipline. Arm B is unstarted.
+
 ## Handoff
 - Lane state (scout, 2026-07-11): #100 build MERGED + verified (NDS_SKILLS tools, enum pinned IN CODE:
   elapsed_frames ≤ F=300; idle_settled threshold∈(0.005,0.06), k≥1, k*s≤F with s=4, max_iters=8; 98 tests
@@ -53,4 +66,11 @@ heads-up (pre-reg §7 — this overrides the general account-B pre-authorization
       are the tracked record; no separate PR needed for gitignored launchers)
 - [x] HANDOFF updated + go/no-go package handed to David (2026-07-11): READY — seam 3/3, oracle verified,
       briefs on disk, 2 agents, one attempt each, --max-turns 90, ≲$10 total
-- [ ] (DAVID) explicit go → launch discipline: Arm A first, --max-turns 90, account-B, banked as-is
+- [x] (DAVID) explicit go received 2026-07-13; Arm A launched first and blocked before MCP/world connection by account-B weekly-limit 429.
+
+## Blocked status appended 2026-07-13
+- [x] Explicit go received 2026-07-13; launch discipline used: Arm A first, --max-turns 90, account-B.
+- [x] Pre-launch seamcheck re-run 2026-07-13: 3/3 PASS.
+- [x] Arm A launched first; blocked before MCP/world connection by account-B weekly-limit 429; $0; not a scored A/B attempt.
+- [ ] Wait for account-B reset (2026-07-16 20:00 Europe/Stockholm) before any retry.
+- [ ] Arm B remains unlaunched.

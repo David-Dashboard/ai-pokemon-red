@@ -7,7 +7,34 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-11 (entity-gate v4 BUILT + review-hardened (PR #102, awaits David) + all four $0
+_Last updated: 2026-07-13 (MKDS A/B authorized, seamcheck passed, Arm A launch blocked before world
+connection by account-B weekly-limit 429; $0; Arm B not launched; wait until 2026-07-16 20:00
+Europe/Stockholm before retrying.)_
+
+**=>=> NEWEST (2026-07-13) - MKDS A/B AUTHORIZED BUT BLOCKED BEFORE ATTEMPT; $0; ARM B NOT LAUNCHED. =>=>**
+1. **DONE - paid-run prechecks:** David explicitly authorized the MKDS continuous-time A/B paid run.
+   Required skills were read (`safety-invariants`, `gate-methodology`, `paid-run-harness`,
+   `run-brief-authoring`). Docker image `gb-mcp-world:latest` matched expected
+   `sha256:dfd12eac87bb...`. `runs/brain_mkds_armA/seamcheck.sh` passed 3/3:
+   `NDS_SKILLS=1` exposes skill tools, unset hides them, `KIRBY_SKILLS=1` alone hides them.
+   Arm A/B launch dirs had no prior run artifacts to overwrite; briefs did not expose the RAM oracle.
+2. **BLOCKED - Arm A launch hit account-B weekly cap before MCP/world connection:** Arm A was launched
+   first as required, but `claude` returned a turn-0/turn-1 rate-limit result before the `mkds` MCP
+   server connected (`mcp_servers` still pending). Artifacts: `runs/brain_mkds_armA/transcript.jsonl`,
+   `run.exit`, `run.err`. Facts: `run.exit` = `EXIT=1`, `run.err` empty, no `world/` dir, result
+   `api_error_status=429`, `duration_api_ms=0`, `num_turns=1`, `total_cost_usd=0`. Reset text says
+   weekly limit resets **2026-07-16 20:00 Europe/Stockholm**. Report:
+   `reports/2026-07-13-mkds-ab-blocked.md`.
+3. **PENDING:** Do NOT retry now, do NOT launch Arm B, do NOT switch to account A/API key. Per
+   paid-run-harness law 1, wait for the account-B reset, then relaunch Arm A first under the same
+   one-attempt discipline unless David changes the plan. The A/B verdict is still unrun.
+**=> NEXT (priority order):** (1) after 2026-07-16 20:00 Europe/Stockholm, rerun MKDS A/B from Arm A
+first if David still wants it; (2) v5 entity-bar redesign design doc ($0, no code/run); (3) LEDGER
+hygiene / token-rotation reminder; (4) optional Kirby door-sub-room probe if v5 keeps Kirby.
+**Paid ledger today (2026-07-13): $0** (Arm A blocked by subscription cap before any API-duration work;
+Arm B not launched).
+
+_Prior update: 2026-07-11 (entity-gate v4 BUILT + review-hardened (PR #102, awaits David) + all four $0
 spend-gate probes run: predicate GO (move_blocked) but coverage geometry honest-hostile + no better
 instrument found — paid attempt NOT recommended as-is; David's (b)/(c)/door-probe call gates everything.)_
 
