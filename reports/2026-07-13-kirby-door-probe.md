@@ -41,9 +41,9 @@ v5 attempt?
    worst clusters, but below the v5 design's desired 4-of-5 robust pre-drop
    opportunities.
 4. **Consequence supply fails.** The best no-rescue door-seed route seen
-   (`ra30`) gives 4 HP drops before hp=0 at step 35. Other door-entry variants
-   give 0-2 drops. This does not meet v5's "5+ drops without a death spiral"
-   precheck.
+   (`ra30`) gives 3 non-death HP drops, then hp reaches 0 at step 35. Other
+   door-entry variants give 0-2 drops. This does not meet v5's "5+ drops
+   without a death spiral" precheck.
 5. **Retreat geometry is poor.** Retreat/re-approach variants from the hp4 door
    seed still lose HP during retreat or re-entry (`right5_left10_right20` ends
    hp=1; `left10_right25` ends hp=2). There is no clean on-screen reset lane.
