@@ -82,6 +82,7 @@ class MiniWobWorld:
         self._utterance: str = ""
         self._screenshot: Optional[np.ndarray] = None
         self._seed_counter = seed if seed is not None else 0
+        self._current_seed: Optional[int] = None
         self._timer_armed = False   # the JS override has been injected into the live page at least once
 
     # -- lifecycle -------------------------------------------------------------
@@ -100,6 +101,7 @@ class MiniWobWorld:
         keep re-injecting after each reset as cheap insurance against a page reload resetting it."""
         use_seed = seed if seed is not None else self._seed_counter
         self._seed_counter = use_seed + 1
+        self._current_seed = use_seed
         if not self._timer_armed:
             self.env.reset(seed=use_seed)    # throwaway: only exists to give the injection a live page
             self._disable_episode_timer()
@@ -127,6 +129,12 @@ class MiniWobWorld:
         if self._screenshot is None:
             raise RuntimeError("MiniWobWorld.screenshot read before reset()")
         return self._screenshot
+
+    @property
+    def current_seed(self) -> int:
+        if self._current_seed is None:
+            raise RuntimeError("MiniWobWorld.current_seed read before reset()")
+        return self._current_seed
 
     # -- actions -----------------------------------------------------------------
     # Pixels-only action vocabulary (PROBE_REPORT.md (c)): CLICK_COORDS, TYPE_TEXT, PRESS_KEY. No

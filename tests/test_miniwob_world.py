@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -112,10 +113,11 @@ def fake_env_cls(monkeypatch):
     return _FakeMiniwobEnv
 
 
-def _args(game: str, out: str) -> "world_mcp.argparse.Namespace":
+def _args(game: str, out: str, seeds=None) -> "world_mcp.argparse.Namespace":
     import argparse
     return argparse.Namespace(game=game, rom=None, init_state=None, out=out, record=False,
-                              with_screenshot=False, keep_frames=False)
+                              with_screenshot=False, keep_frames=False, seeds_file=None,
+                              seed=None if seeds is None else list(seeds))
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +308,109 @@ def test_oracle_jsonl_is_where_reward_and_done_actually_go(fake_env_cls, tmp_pat
 
 
 # ---------------------------------------------------------------------------
-# 4. tools/list wiring.
+# 4. Gate 0 click-checkboxes pinned seeds: exact manifests, launch guard, one attempt each.
+# ---------------------------------------------------------------------------
+
+def test_gate0_miniwob_seed_manifests_are_exact():
+    root = Path(__file__).parents[1] / "eval" / "fixtures"
+    assert json.loads((root / "gate0_miniwob_dev_seeds.json").read_text()) == list(range(5))
+    assert json.loads((root / "gate0_miniwob_paid_seeds.json").read_text()) == list(range(1000, 1005))
+
+
+def test_click_checkboxes_requires_pinned_seeds_at_launch(monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, "argv", ["world_mcp.py", "--game", "miniwob_click_checkboxes"])
+    with pytest.raises(SystemExit, match="needs pinned seeds"):
+        world_mcp.main()
+
+
+def test_click_checkboxes_rejects_duplicate_seeds_at_launch(monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, "argv", ["world_mcp.py", "--game", "miniwob_click_checkboxes",
+                                     "--seed", "10", "--seed", "10"])
+    with pytest.raises(SystemExit, match="distinct pinned seeds"):
+        world_mcp.main()
+
+
+def test_click_checkboxes_rejects_duplicate_seeds_in_session(fake_env_cls, tmp_path):
+    with pytest.raises(SystemExit, match="distinct pinned seeds"):
+        MiniWobSession(_args("miniwob_click_checkboxes", str(tmp_path / "out"), seeds=(10, 10)))
+
+
+def test_click_checkboxes_starts_supplied_seed_and_logs_episode_seed(fake_env_cls, tmp_path):
+    out = str(tmp_path / "out")
+    sess = MiniWobSession(_args("miniwob_click_checkboxes", out, seeds=(10, 11)))
+    try:
+        assert sess.mw.current_seed == 10
+        rows = [json.loads(line) for line in Path(out, "oracle.jsonl").read_text().splitlines()]
+        assert rows == [{"episode": 0, "seed": 10, "step": 0, "task": "click-checkboxes",
+                         "reward": 0.0, "done": False, "abandoned": False}]
+    finally:
+        sess.close()
+
+
+def test_early_reset_abandons_once_and_advances_exactly_once(fake_env_cls, tmp_path):
+    out = str(tmp_path / "out")
+    sess = MiniWobSession(_args("miniwob_click_checkboxes", out, seeds=(10, 11, 12)))
+    try:
+        result = sess.call("reset_episode", {})
+        text = " ".join(c["text"] for c in result if c.get("type") == "text")
+        assert "new episode started" in text
+        assert sess.mw.current_seed == 11
+        reset_seeds = [value for kind, value in sess.mw.env.calls if kind == "reset"]
+        assert reset_seeds == [10, 10, 11]
+        rows = [json.loads(line) for line in Path(out, "oracle.jsonl").read_text().splitlines()]
+        assert [(r["episode"], r["seed"], r["done"], r["abandoned"]) for r in rows] == [
+            (0, 10, False, False), (0, 10, True, True), (1, 11, False, False)]
+    finally:
+        sess.close()
+
+
+def test_completed_episode_advances_without_abandonment(fake_env_cls, tmp_path):
+    out = str(tmp_path / "out")
+    sess = MiniWobSession(_args("miniwob_click_checkboxes", out, seeds=(10, 11)))
+    try:
+        sess.call("click", {"x": 25, "y": 105})
+        sess.call("reset_episode", {})
+        rows = [json.loads(line) for line in Path(out, "oracle.jsonl").read_text().splitlines()]
+        assert not any(r["abandoned"] for r in rows)
+        assert sess.mw.current_seed == 11
+    finally:
+        sess.close()
+
+
+def test_pinned_seed_exhaustion_is_stable_and_does_not_reroll(fake_env_cls, tmp_path):
+    out = str(tmp_path / "out")
+    sess = MiniWobSession(_args("miniwob_click_checkboxes", out, seeds=(10,)))
+    try:
+        first = sess.call("reset_episode", {})
+        second = sess.call("reset_episode", {})
+        observe = sess.call("observe", {})
+        action = sess.call("click", {"x": 25, "y": 105})
+        assert "no more pinned seeds" in first[0]["text"]
+        assert "no more pinned seeds" in second[0]["text"]
+        assert "manifest exhausted" in observe[0]["text"]
+        assert "manifest exhausted" in action[0]["text"]
+        reset_seeds = [value for kind, value in sess.mw.env.calls if kind == "reset"]
+        assert reset_seeds == [10, 10]
+        rows = [json.loads(line) for line in Path(out, "oracle.jsonl").read_text().splitlines()]
+        assert sum(r["abandoned"] for r in rows) == 1
+    finally:
+        sess.close()
+
+
+def test_other_miniwob_tasks_keep_sequential_default_seeds(fake_env_cls, tmp_path):
+    sess = MiniWobSession(_args("miniwob_click_button", str(tmp_path / "out")))
+    try:
+        assert sess.mw.current_seed == 0
+        sess.call("reset_episode", {})
+        assert sess.mw.current_seed == 1
+    finally:
+        sess.close()
+
+
+# ---------------------------------------------------------------------------
+# 5. tools/list wiring.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("game", sorted(_MINIWOB_WORLDS))
@@ -338,6 +442,14 @@ def test_click_tool_schema_requires_x_and_y():
     for spec in _static_tools("miniwob_click_button"):
         if spec["name"] == "click":
             assert set(spec["inputSchema"]["required"]) == {"x", "y"}
+
+
+def test_reset_tool_describes_pinned_abandon_advance_semantics():
+    spec = next(t for t in _static_tools("miniwob_click_checkboxes")
+                if t["name"] == "reset_episode")
+    description = spec["description"]
+    assert "abandons" in description and "next pinned seed" in description
+    assert "never rerolls" in description
 
 
 # ---------------------------------------------------------------------------

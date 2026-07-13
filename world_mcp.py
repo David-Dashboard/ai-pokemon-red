@@ -366,7 +366,9 @@ _MINIWOB_KEY_TOOL = {
 }
 _MINIWOB_RESET_TOOL = {
     "name": "reset_episode",
-    "description": "Start a fresh episode of this task (new random instance of the same task template).",
+    "description": ("Start the next episode. On a pinned-seed task, this abandons an unfinished "
+                    "instance and advances exactly once to the next pinned seed; it never rerolls. "
+                    "Other MiniWoB tasks start their next sequential instance."),
     "inputSchema": {"type": "object", "properties": {}},
 }
 _MINIWOB_READ_REGION_TOOL = {
@@ -1993,25 +1995,48 @@ class MiniWobSession:
         self._oracle_path = os.path.join(args.out, "oracle.jsonl")
         self._step_count = 0
         self._task = task
+        self._pinned_seeds = (_load_click_checkboxes_seeds(args) if task == "click-checkboxes" else None)
+        if self._pinned_seeds is not None and not self._pinned_seeds:
+            raise SystemExit("miniwob_click_checkboxes needs pinned seeds: --seeds-file or --seed")
+        self._episode_idx = 0
+        self._exhausted = False
         self._episode_over = False   # env terminated/truncated flag; surfaced ONLY as observe's
                                      # episode-status line, never in an action result (PR #64 fix)
         self.mw = MiniWobWorld(task)
-        self.mw.reset()
+        self.mw.reset(seed=self._pinned_seeds[0] if self._pinned_seeds is not None else None)
         self._frame_hist: list = []   # last <=2 (step, frame) pairs, for whats_changed (mirrors World)
         self._log_oracle(done=False)
         self._track_frame()
 
     # -- oracle logging (scoring only; never in a tool result) -----------------------------------------
 
-    def _log_oracle(self, done: bool) -> None:
+    def _log_oracle(self, done: bool, *, abandoned: bool = False) -> None:
         info = self.mw.last_info or {}
-        rec = {"step": self._step_count, "task": self._task,
-              "reward": float(info.get("reward", 0.0)), "done": bool(done)}
+        rec = {"episode": self._episode_idx, "seed": self.mw.current_seed,
+              "step": self._step_count, "task": self._task,
+              "reward": float(info.get("reward", 0.0)), "done": bool(done),
+              "abandoned": bool(abandoned)}
         try:
             with open(self._oracle_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec) + "\n")
         except OSError:
             pass
+
+    def _advance_pinned_seed(self) -> bool:
+        """Consume the current pinned seed and start the next one exactly once."""
+        if self._exhausted:
+            return False
+        if not self._episode_over:
+            self._log_oracle(done=True, abandoned=True)
+        next_idx = self._episode_idx + 1
+        if next_idx >= len(self._pinned_seeds):
+            self._exhausted = True
+            self._episode_over = True
+            return False
+        self._episode_idx = next_idx
+        self.mw.reset(seed=self._pinned_seeds[self._episode_idx])
+        self._episode_over = False
+        return True
 
     # -- frame tracking for read_region/whats_changed (same shape as World._track_frame) ----------------
 
@@ -2029,7 +2054,9 @@ class MiniWobSession:
     def _observe_content(self) -> list[dict]:
         frame = self.mw.screenshot
         h, w = frame.shape[0], frame.shape[1]
-        status = ("Episode over — call reset_episode to start a fresh one."
+        status = ("Pinned seed manifest exhausted — no more episodes."
+                  if self._exhausted else
+                  "Episode over — call reset_episode to start a fresh one."
                   if self._episode_over else "Episode in progress.")
         lines = [f"Task: \"{self.mw.utterance}\"", f"Screen size: {w}x{h}.", status,
                  f"To see the page, tile read_region crops (max {_REGION_MAX_SIDE}x{_REGION_MAX_SIDE} "
@@ -2100,15 +2127,24 @@ class MiniWobSession:
             return self._whats_changed(args)
         if name == "reset_episode":
             try:
-                self.mw.reset()
+                if self._pinned_seeds is not None:
+                    if not self._advance_pinned_seed():
+                        return [{"type": "text", "text": "[reset_episode -> no more pinned seeds]"},
+                                *self._observe_content()]
+                else:
+                    self.mw.reset()
+                    self._episode_idx += 1
+                    self._episode_over = False
             except Exception as e:
                 return [{"type": "text", "text": f"reset_episode error: {self._sanitize_exc(e)}"}]
-            self._episode_over = False
             self._step_count += 1
             self._log_oracle(done=False)
             self._track_frame()
             return [{"type": "text", "text": "[reset_episode -> new episode started]"},
                     *self._observe_content()]
+        if self._exhausted:
+            return [{"type": "text", "text": "episode error: pinned seed manifest exhausted; "
+                                                  "no more actions are allowed."}]
         # Action results deliberately do NOT include the env's terminated flag — that is the oracle's
         # verdict (PR #64 finding 3). The flag only updates observe's episode-status line + oracle.jsonl.
         if name == "click":
@@ -2195,7 +2231,7 @@ class DoomDtcSession:
         # no .wad/.cfg override knob — the gate is pre-registered, not a --rom-swappable free parameter).
         self.world = VizdoomWorld(GAMES["doom_dtc_gate"]["cfg"])
 
-        self._seeds = _load_doom_seeds(args)
+        self._seeds = _load_pinned_seeds(args)
         if not self._seeds:
             raise SystemExit("doom_dtc_gate needs at least one pinned seed: --seeds-file or --seed")
         self._seed_idx = 0
@@ -2833,10 +2869,8 @@ def _movers_repr(movers) -> str:
     ) + "]"
 
 
-def _load_doom_seeds(args) -> list[int]:
-    """Pinned-seed source: --seeds-file (one int per line, OR a JSON array — e.g. the committed
-    eval/fixtures/gate3d_seeds.json) takes priority; else --seed (repeatable). Never invents a seed —
-    an empty result is a launch-time error (see DoomDtcSession.__init__)."""
+def _load_pinned_seeds(args) -> list[int]:
+    """Shared pinned-seed source: --seeds-file takes priority over repeatable --seed."""
     seeds_file = getattr(args, "seeds_file", None)
     if seeds_file:
         with open(seeds_file, encoding="utf-8") as f:
@@ -2846,6 +2880,13 @@ def _load_doom_seeds(args) -> list[int]:
             return [int(s) for s in json.loads(stripped)]
         return [int(line.strip()) for line in text.splitlines() if line.strip()]
     return [int(s) for s in (getattr(args, "seed", None) or [])]
+
+
+def _load_click_checkboxes_seeds(args) -> list[int]:
+    seeds = _load_pinned_seeds(args)
+    if len(seeds) != len(set(seeds)):
+        raise SystemExit("miniwob_click_checkboxes needs distinct pinned seeds; duplicates would reroll")
+    return seeds
 
 
 def main() -> int:
@@ -2865,10 +2906,10 @@ def main() -> int:
                     help="KEEP every per-step frame PNG on disk (default drops them as debris). Max logging: each "
                          "PNG pairs with its oracle.jsonl step (RAM truth) + the symbolic view the brain saw.")
     ap.add_argument("--seeds-file", default=None,
-                    help="doom_dtc_gate only: path to a file of pinned seeds, one int per line "
-                         "(GATE-3D-A1 §2.2/A1.4: distinct pinned seeds, one attempt each).")
+                    help="doom_dtc_gate or miniwob_click_checkboxes: path to pinned seeds as a JSON "
+                         "array or one int per line (distinct seeds, one attempt each).")
     ap.add_argument("--seed", action="append", type=int, default=None,
-                    help="doom_dtc_gate only: a pinned seed (repeatable, e.g. --seed 1 --seed 2 ...); "
+                    help="doom_dtc_gate or miniwob_click_checkboxes: a pinned seed (repeatable); "
                          "ignored if --seeds-file is given.")
     ap.add_argument("--arc-game", default=None,
                     help="arcagi3 only: the ARC-AGI-3 game_id to play (e.g. ls20). Requires "
@@ -2889,8 +2930,10 @@ def main() -> int:
     # Same reasoning: a missing pinned seed must fail AT LAUNCH — DoomDtcSession is built lazily on the
     # first tool call, and a SystemExit escaping from there would kill the server mid-protocol instead
     # of refusing to start (the PR #64 re-validation nit this mirrors).
-    if args.game in _VIZDOOM_WORLDS and not _load_doom_seeds(args):
+    if args.game in _VIZDOOM_WORLDS and not _load_pinned_seeds(args):
         raise SystemExit("doom_dtc_gate needs at least one pinned seed: --seeds-file or --seed")
+    if args.game == "miniwob_click_checkboxes" and not _load_click_checkboxes_seeds(args):
+        raise SystemExit("miniwob_click_checkboxes needs pinned seeds: --seeds-file or --seed")
     if args.game in _ARCAGI3_WORLDS and not args.arc_game:
         raise SystemExit("arcagi3 needs --arc-game <game_id> (e.g. ls20)")
     # A missing/empty ARC_API_KEY must fail AT LAUNCH too (PR #77 review finding 1): ArcAgi3Session

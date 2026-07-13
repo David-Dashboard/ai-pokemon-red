@@ -6,6 +6,26 @@ across games â†’ reality, no ROM/privileged state, **cheap** (minimal API). PokÃ
 
 ---
 
+## 2026-07-13 (latest) - Readiness must prove effective state, not declared intent
+- **What:** PR #111's first review blocked the Codex Gate 0 launcher on project-trust dependence,
+  self-declared receipts, mutable Docker tags, and an unenforced spend promise. Cost: `$0`; no model or
+  held-out preflight ran.
+- **The finding:** a config file and mutable tag describe intent; they do not prove what the client/world
+  actually used. Readiness needs explicit runtime overrides, independently frozen pins, artifact
+  recomputation, live inventory, immutable image identity, and host/image code parity.
+- **Method note:** while wake/credit containment is unobservable, remove paid execution mechanically.
+  A handshake-only tool that always exits `NO_GO` is the honest intermediate artifact.
+
+## 2026-07-13 (later) - A provider switch must preserve metric observability
+- **What:** the Gate 0 brain provider moved from Claude to ChatGPT-authenticated Codex CLI in PR #111.
+  The readiness work cost `$0`; no Codex model or held-out MiniWoB preflight ran.
+- **The finding:** official `codex exec --json` events expose aggregate token usage but do not document
+  per-model-call wake boundaries. Subscription access can reduce incremental cash cost, but it cannot
+  establish the North Star's Cheap axis while a frozen wake metric is unobservable.
+- **Method note:** freeze executable/auth/model/common-config/tool receipts and fail closed on the missing
+  metric. Do not relabel tool calls, JSONL events, or one aggregate turn as LLM wakes merely to make a
+  new provider fit an existing gate.
+
 ## 2026-07-13 (latest) - Held-out task seeds need a sealed feasibility check
 - **What:** PR #110's adversarial review found that the exact paid MiniWoB seeds could place required
   controls below the 177px clickable viewport even though the task class looked suitable. Cost: $0.
