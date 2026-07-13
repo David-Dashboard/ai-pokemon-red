@@ -7,7 +7,25 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (PR #106 conflicts from merged PR #105 resolved by merging `origin/main` into
+_Last updated: 2026-07-13 (post-merge hygiene after PR #105 and PR #106 landed; no paid run; token
+rotation remains David-owned.)_
+
+**=>=> NEWEST (2026-07-13) - POST-MERGE HYGIENE: #105/#106 LANDED; NEXT IS TOKEN ROTATION / OPTIONAL KIRBY PROBE. =>=>**
+1. **DONE:** PR #105 merged to `main` as `b027fcb`, banking the MKDS continuous-time A/B verdict:
+   conditional guard PASS, primary batching bar FAIL at 1.030x vs required 1.300x, total default-account
+   cost `$1.5488415`, account-B blocked launch cost `$0`.
+2. **DONE:** PR #106 merged to `main` as `75bb785`, banking
+   `reports/2026-07-13-entity-v5-bar-redesign.md`: v5 is a new bar/gate design only, no scorer/code
+   change and no paid run authorization.
+3. **PENDING / DAVID:** rotate the leaked `settings.local.json` bearer token from 2026-07-04. Do not print
+   the token value. **OPTIONAL NEXT:** Kirby door/sub-room `$0` probe only if v5 keeps Kirby and David wants
+   that lead characterized before any v5 pre-registration.
+**=> NEXT (priority order):** (1) David token rotation; (2) optional Kirby door-sub-room `$0` probe if we
+retain Kirby for v5; (3) otherwise pick the next unblocked free-track item from the capability map.
+**Paid ledger today (2026-07-13): $0 for hygiene; `$1.5488415` MKDS default-account spend already banked
+in PR #105.**
+
+_Prior update: 2026-07-13 (PR #106 conflicts from merged PR #105 resolved by merging `origin/main` into
 `codex/entity-v5-bar-redesign-2026-07-13`; $0, no code, no paid run.)_
 
 **=>=> NEWEST (2026-07-13) - PR #106 CONFLICT RESOLVED AFTER #105 MERGE; $0; NO PAID RUN. =>=>**
