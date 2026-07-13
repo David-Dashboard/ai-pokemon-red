@@ -6,6 +6,18 @@ across games â†’ reality, no ROM/privileged state, **cheap** (minimal API). PokÃ
 
 ---
 
+## 2026-07-13 (later) - Kirby door lead killed before spend
+- **What:** the optional Kirby door/sub-room probe stayed local-only and produced
+  `reports/2026-07-13-kirby-door-probe.md` plus PR #108. Cost: $0.
+- **The finding:** the door and sub-room are real, and `move_blocked` fires cleanly
+  in door-area wall checks, but the candidate is not v5-ready: no hp=6 near-door
+  seed, no 5-drop/no-death supply, poor retreat geometry, and no plausible benign
+  comparator. A visually promising room is not a gate instrument until the source
+  status checks pass.
+- **Method note:** count non-death consequences separately from the death transition.
+  The adversarial review caught one overcount in the first report draft; the fixed
+  verdict is stricter and unchanged: do not spend on this Kirby lead as-is.
+
 ## 2026-07-13 - MKDS conditional skills worked, but did not beat a batched baseline
 - **What:** the pre-registered MKDS continuous-time A/B ran on the default `~/.claude` account after account-B
   hit a $0 weekly-limit 429 before MCP/world connection. Verdict: FAIL primary batching bar, PASS conditional
