@@ -33,4 +33,4 @@ paid attempt because the v3/v4 bar+world pair was honest-hostile.
 - [x] Draft `reports/2026-07-13-entity-v5-bar-redesign.md`.
 - [x] Run doc checks / review for coverage of required clauses: verifier found one MAJOR
   (decoy/rejection too soft), patch added plausible-comparator criteria, re-review PASS.
-- [ ] Open PR and post at least one adversarial-review comment.
+- [x] Open PR #106 and post adversarial-review comment.

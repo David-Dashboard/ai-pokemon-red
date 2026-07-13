@@ -7,19 +7,20 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (v5 entity-bar redesign design doc in progress on branch
-`codex/entity-v5-bar-redesign-2026-07-13`; $0, no code, no paid run.)_
+_Last updated: 2026-07-13 (v5 entity-bar redesign design doc PR #106 opened with posted adversarial
+review; $0, no code, no paid run.)_
 
-**=>=> NEWEST (2026-07-13) - ENTITY v5 BAR REDESIGN DESIGN DOC CLAIMED; $0; NO PAID RUN. =>=>**
-1. **IN PROGRESS:** v5 entity-bar redesign design doc only. Deliverable:
+**=>=> NEWEST (2026-07-13) - ENTITY v5 BAR REDESIGN DESIGN DOC PR #106 OPEN; $0; NO PAID RUN. =>=>**
+1. **DONE:** v5 entity-bar redesign design doc written and pushed in PR #106:
    `reports/2026-07-13-entity-v5-bar-redesign.md` on branch
    `codex/entity-v5-bar-redesign-2026-07-13`.
 2. **SCOPE:** replace the v3/v4 forward-only coverage geometry, carry the inherited same-step/cadence
    exploit closures as mandatory brief clauses, pin press cadence, inherit the #102 typed-claims instrument
    as-is, and name the North Star capability bought. No code edits, no scorer edits, no paid v5 run.
-3. **PENDING:** write the design doc, adversarially review it, open a PR, and leave merge for David.
-**=> NEXT (priority order):** (1) finish v5 entity-bar redesign PR; (2) merge/review open PR #105
-(MKDS A/B verdict) when David chooses; (3) hygiene / token-rotation reminder; (4) optional Kirby
+3. **DONE:** adversarial review posted on PR #106. It initially found one MAJOR (decoy/rejection arm too
+   soft); fixed with plausible-comparator criteria and re-reviewed PASS. Merge remains David's.
+**=> NEXT (priority order):** (1) David review/merge PR #106 and PR #105 when ready; (2) hygiene /
+token-rotation reminder; (3) optional Kirby
 door-sub-room probe only if v5 retains Kirby and the design calls for it.
 **Paid ledger today (2026-07-13): $0 for v5 design work.**
 
