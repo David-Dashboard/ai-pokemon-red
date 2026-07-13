@@ -15,6 +15,8 @@ Run a `$0` local probe of the unverified Kirby door+enemy sub-room lead, then wr
   death spiral.
 - Result: door is real and `move_blocked` works, but the lead is negative for v5 as-is: no hp=6
   near-door seed, no 5-drop/no-death supply, weak retreat, and no plausible benign comparator.
+- PR: #108 open from `codex/kirby-door-probe-2026-07-13`; adversarial-review comment posted and CI green
+  after reviewer fix commit `72a77bb`.
 
 ## Constraints
 - No paid run. No v5 pre-registration. No scorer/code/tool-schema edits.
@@ -30,4 +32,11 @@ Run a `$0` local probe of the unverified Kirby door+enemy sub-room lead, then wr
   - Evidence: fresh ignored output under `runs/kirby_door_probe_2026-07-13/`; `trace_*.jsonl`
     summaries plus `move_blocked/summary.json` from the official `run_skill` path.
 - [x] Write `reports/2026-07-13-kirby-door-probe.md`.
-- [ ] Verify, PR, and post adversarial-review comment.
+- [x] Verify, PR, and post adversarial-review comment.
+  - Evidence: `git diff --check`; local repo suite with local-only ignores passed 1129 tests, 2 warnings;
+    GitHub CI passed on PR #108 after push.
+
+## Next
+- Await David merge/reject on PR #108.
+- David-owned token rotation remains open.
+- Do not rerun Kirby door checks unless David wants a manual hp=6 door-state capture.
