@@ -7,17 +7,17 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (Gate 0 Codex readiness PR #111 review-hardened and awaiting David's merge;
+_Last updated: 2026-07-14 (Gate 0 Codex readiness PR #111 review-hardened and awaiting David's merge;
 $0, no model call or held-out preflight.)_
 
-**=>=> NEWEST (2026-07-13) - GATE 0 CODEX READINESS PR #111 OPEN; $0; NO RUN. =>=>**
+**=>=> NEWEST (2026-07-14) - GATE 0 CODEX READINESS PR #111 REVIEW-APPROVED; $0; NO RUN. =>=>**
 1. **DONE - readiness implementation:** commit `3984292` on
    `codex/gate0-codex-readiness-2026-07-13` pins MiniWoB DEV seeds `0..4` and paid-held-out seeds
    `1000..1004`, logs seed/episode/abandonment, and enforces one attempt per seed.
 2. **DONE - sealed preflight:** `tools/preflight_gate0_miniwob.py` can inspect the exact paid seeds only
    after code/manifest freeze and emits only aggregate reachability plus hashes. It was **not run** in
    this session, so no held-out content was exposed.
-3. **IN REVIEW HARDENING - Codex isolation/accounting:** the posted PR #111 review correctly BLOCKED
+3. **DONE - review-hardened Codex isolation/accounting:** the posted PR #111 review correctly BLOCKED
    on fresh-project trust, self-declared receipts, mutable Docker tags, and no enforceable spend breaker.
    The fix removes model execution entirely: `tools/run_gate0_codex.ps1` is a free handshake only, passes
    security-critical config through explicit CLI overrides, resolves and runs an immutable image ID,
@@ -41,7 +41,7 @@ $0, no model call or held-out preflight.)_
 **=> NEXT (priority order):** (1) David merges PR #111; (2) rebuild images and run the free handshake plus
 R0/W0/C0 readiness only; (3) keep `NO_GO` until exact wake accounting and a live 250-credit breaker exist;
 (4) only then design/review a paid launcher and pre-registration.
-**Paid ledger today (2026-07-13): $0 for Gate 0 readiness; no Codex/model call and no held-out
+**Paid ledger today (2026-07-14): $0 for Gate 0 readiness; no Codex/model call and no held-out
 preflight. `$1.5488415` MKDS default-account spend remains banked in PR #105.**
 
 _Prior update: 2026-07-13 (Gate 0 provider switched to Codex CLI + ChatGPT subscription;

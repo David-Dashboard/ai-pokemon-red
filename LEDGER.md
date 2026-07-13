@@ -6,7 +6,7 @@
 Make the merged Minimum North Star Gate 0 launch-ready for one frozen Codex CLI
 brain authenticated through David's ChatGPT subscription.
 
-## Current status (2026-07-13)
+## Current status (2026-07-14)
 - PR #110 merged to `main` as `cc81531`.
 - David explicitly switched both future arms from Claude to Codex CLI.
 - Branch: `codex/gate0-codex-readiness-2026-07-13`, from merged `main`.
@@ -17,7 +17,7 @@ brain authenticated through David's ChatGPT subscription.
 - PR #111 received a posted `REQUEST CHANGES` review. Its four P0 findings were:
   fresh-project trust, self-declared receipts, mutable Docker tags, and no
   enforceable wake/credit breaker.
-- The review fixes are in progress without a model call or held-out preflight:
+- The review fixes are complete and re-review-approved without a model call or held-out preflight:
   the launcher is now free-handshake-only, uses explicit CLI overrides and an
   immutable image ID, proves live MCP inventory plus host/image code parity,
   emits `paid_execution_enabled=false`, and has no model-execution path. The
