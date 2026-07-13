@@ -15,9 +15,9 @@ Define the smallest honest cross-world integrated gate for the North Star, with
   `miniwob_click_checkboxes` five-episode task.
 - MKDS was removed from Gate 0 after the audit found broken perception plus a
   solution-bearing brief; it remains a later perception-readiness lane.
-- PR #110 is open and CI green. Initial review's three blockers are confirmed
-  fixed. Re-review found one new paid-seed reachability blocker; the local
-  amendment adds a sealed solution-free exact-seed preflight.
+- PR #110 is open, CI green, and has a final posted adversarial APPROVE. Initial
+  review's three blockers and re-review's paid-seed reachability blocker are
+  closed; commit `8222ecf` seals the solution-free exact-seed preflight.
 - Token rotation is David-owned/trivial and not the blocker.
 
 ## Constraints
@@ -35,10 +35,10 @@ Define the smallest honest cross-world integrated gate for the North Star, with
 - [x] Write `reports/2026-07-13-minimum-north-star-gate-0-design.md`.
 - [x] Append the superseding HANDOFF block and verify the complete diff.
 - [x] Commit, push, open PR #110, and obtain the initial posted review.
-- [ ] Commit/push the review fixes and obtain posted re-review.
+- [x] Commit/push the review fixes and obtain posted re-review.
 
 ## Next
-- Verify and push the PR #110 review fixes, then request re-review.
-- After David merges the design, plan the seed/client-isolation readiness build;
+- David merges PR #110.
+- After merge, plan the seed/client-isolation readiness build;
   then run R0 + W0 + C0 `$0` readiness only. A paid pre-registration is allowed
   only if all three return `GO`.

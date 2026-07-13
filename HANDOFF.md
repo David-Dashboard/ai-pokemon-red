@@ -7,7 +7,7 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 review blockers addressed on
+_Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 approved and CI-green on
 `codex/minimum-north-star-gate-0-2026-07-13`; $0, no run.)_
 
 **=>=> NEWEST (2026-07-13) - MINIMUM NORTH STAR GATE 0 DESIGNED; RED + MINIWOB; $0; NO RUN. =>=>**
@@ -28,19 +28,21 @@ _Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 review blockers add
    to prove the fixed LLM brain can complete the tasks and to measure cost/task + wakes/task. History:
    MiniWoB click-button bought clean 5/5 evidence for `$1.3557615` after seam validation; entity v2
    spent about `$80` across 11 instrument-starved/tainted runs.
-5. **REVIEW:** PR #110 is open and CI is green. Its first adversarial review BLOCKED on three confirmed
+5. **DONE - REVIEW:** PR #110 is open, CI is green, and the final posted adversarial review APPROVED it.
+   Its first adversarial review BLOCKED on three confirmed
    gaps: MiniWoB reused/unlogged seed 0, no exact human-relative Capability or Cheap PASS bars, and
    unpinned non-world client tools (the banked MiniWoB run called `ToolSearch`). The design now requires
    disjoint DEV `0..4` vs paid-held-out `1000..1004` seeds + oracle logging/one-attempt enforcement,
-   exact 2x-human and cost/wake bars, and `NO_LEAK` on any non-world tool call. Re-review is pending.
+   exact 2x-human and cost/wake bars, and `NO_LEAK` on any non-world tool call.
    Re-review confirmed those three fixes, then BLOCKED on one new honest gap: exact paid MiniWoB seeds
    might place required controls below the 177px clickable viewport. The design now requires a sealed
-   exact-seed reachability boolean before spend, with no solution-bearing output; re-review is pending.
+   exact-seed reachability boolean before spend, with no solution-bearing output. Commit `8222ecf`
+   closed that blocker; final approval is posted at PR #110 comment `4961382435`.
 6. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
    not print the token.
-**=> NEXT (priority order):** (1) push the PR #110 review fixes and obtain posted re-review;
-(2) David merges; (3) build/verify the seed + client-isolation readiness instrument under a fresh plan;
-(4) run R0 + W0 + C0 `$0` readiness only; (5) write a paid pre-registration only if all three return `GO`.
+**=> NEXT (priority order):** (1) David merges PR #110; (2) build/verify the seed + client-isolation
+readiness instrument under a fresh plan; (3) run R0 + W0 + C0 `$0` readiness only; (4) write a paid
+pre-registration only if all three return `GO`.
 **Paid ledger today (2026-07-13): $0 for Gate 0 design/read-only audit; `$1.5488415` MKDS
 default-account spend already banked in PR #105.**
 
