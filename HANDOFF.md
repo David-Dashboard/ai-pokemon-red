@@ -7,7 +7,23 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (MKDS A/B completed on default Claude account after account-B cap: conditional
+_Last updated: 2026-07-13 (PR #106 conflicts from merged PR #105 resolved by merging `origin/main` into
+`codex/entity-v5-bar-redesign-2026-07-13`; $0, no code, no paid run.)_
+
+**=>=> NEWEST (2026-07-13) - PR #106 CONFLICT RESOLVED AFTER #105 MERGE; $0; NO PAID RUN. =>=>**
+1. **DONE:** PR #105 merged to `main` as `b027fcb`, banking the MKDS continuous-time A/B verdict.
+2. **DONE:** PR #106 branch merged `origin/main` and resolved the `HANDOFF.md` / `LEDGER.md` conflicts,
+   preserving the MKDS verdict history plus the v5 entity-bar redesign doc:
+   `reports/2026-07-13-entity-v5-bar-redesign.md`.
+3. **DONE:** PR #106 already has a posted adversarial-review comment; initial MAJOR on the decoy arm was
+   fixed with plausible-comparator criteria and re-reviewed PASS. Merge remains David's.
+**=> NEXT (priority order):** (1) David merge PR #106; (2) after #106 lands, do remaining hygiene only if
+`LEDGER.md` / HANDOFF still need post-merge cleanup; (3) token-rotation reminder remains open; (4) optional
+Kirby door-sub-room probe only if v5 retains Kirby and the design calls for it.
+**Paid ledger today (2026-07-13): $0 for conflict resolution / v5 design work; $1.5488415 default-account
+MKDS spend + $0 account-B blocked launch already banked in PR #105.**
+
+_Prior update: 2026-07-13 (MKDS A/B completed on default Claude account after account-B cap: conditional
 guard PASS, primary batching bar FAIL at 1.030x vs required 1.300x; total default-account cost
 $1.5488415; no checkpoint RAM byte in run oracle logs.)_
 
