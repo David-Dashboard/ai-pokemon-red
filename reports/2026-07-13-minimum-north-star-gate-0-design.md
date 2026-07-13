@@ -157,7 +157,19 @@ LLM brain and prove no reasoning capability.
   seed or episode index. Current MiniWoB is `NO_GO` until seed plumbing lands
   in a separately reviewed readiness PR.
 - Pin DEV seeds `0..4` for `$0`/human work and paid-held-out seeds `1000..1004`.
-  Never render, probe, baseline, or tune on `1000..1004` before the paid arm.
+  Never expose screenshots, utterances, labels, DOM, target counts, or
+  coordinates from `1000..1004` before the paid arm. The sole exception is the
+  sealed reachability check below.
+- After the seed manifest and preflight code are frozen, run one sealed offline
+  reachability check on exact paid seeds `1000..1004`. It may inspect DOM/task
+  fields oracle-side only to answer whether every required checkbox and submit
+  control has a valid click point inside the real `160x177` viewport. Its only
+  output is one aggregate `all_reachable=true|false` plus the seed-manifest and
+  preflight-code hashes;
+  no task content, element count, label, bbox, coordinate, image, or solution
+  may be written or shown. Any `false` makes W0 `NO_GO` before spend. Do not
+  replace the failed seed block under this design; a viewport fix and new gate
+  version are required.
 - Add a launch-time pinned-seed source, log `episode` + `seed` in every oracle
   row, and enforce one attempt per seed. An early `reset_episode` must abandon
   the current seed and advance; it must never re-roll the same instance.

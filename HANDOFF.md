@@ -33,6 +33,9 @@ _Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 review blockers add
    unpinned non-world client tools (the banked MiniWoB run called `ToolSearch`). The design now requires
    disjoint DEV `0..4` vs paid-held-out `1000..1004` seeds + oracle logging/one-attempt enforcement,
    exact 2x-human and cost/wake bars, and `NO_LEAK` on any non-world tool call. Re-review is pending.
+   Re-review confirmed those three fixes, then BLOCKED on one new honest gap: exact paid MiniWoB seeds
+   might place required controls below the 177px clickable viewport. The design now requires a sealed
+   exact-seed reachability boolean before spend, with no solution-bearing output; re-review is pending.
 6. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
    not print the token.
 **=> NEXT (priority order):** (1) push the PR #110 review fixes and obtain posted re-review;

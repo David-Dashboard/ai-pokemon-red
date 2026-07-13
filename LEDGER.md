@@ -15,8 +15,9 @@ Define the smallest honest cross-world integrated gate for the North Star, with
   `miniwob_click_checkboxes` five-episode task.
 - MKDS was removed from Gate 0 after the audit found broken perception plus a
   solution-bearing brief; it remains a later perception-readiness lane.
-- PR #110 is open and CI green. Initial posted review BLOCKED on three verified
-  design gaps; the local amendments address all three and await re-review.
+- PR #110 is open and CI green. Initial review's three blockers are confirmed
+  fixed. Re-review found one new paid-seed reachability blocker; the local
+  amendment adds a sealed solution-free exact-seed preflight.
 - Token rotation is David-owned/trivial and not the blocker.
 
 ## Constraints
