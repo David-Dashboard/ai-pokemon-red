@@ -7,8 +7,8 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution PR #112 CI portability fix complete
-locally/pending push; $0, no model call or held-out preflight.)_
+_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution PR #112 code/test fixes pushed and CI
+green; $0, no model call or held-out preflight.)_
 
 **=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION PR #112 CI FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**
 1. **DONE:** on `codex/fix-gate0-codex-resolution-2026-07-14`, the free-handshake launcher now fails
@@ -21,12 +21,15 @@ locally/pending push; $0, no model call or held-out preflight.)_
    function AST without running the launcher body, and proves one `.exe` plus extensionless selects the
    `.exe` while zero and multiple `.exe` candidates fail closed. Re-review was requested and is held
    pending green CI.
-4. **CONFIRMED CI FAILURE / FIX COMPLETE LOCALLY:** Linux CI failed only because the behavioral test hardcoded
-   the Windows executable name `powershell`. The local fix prefers `powershell`, falls back to `pwsh`, and
-   skips only the three behavioral subprocess tests if neither exists. Windows evidence: PowerShell AST
-   passed; targeted `11 passed`; full 69-file tracked suite `1145 passed`; pending commit/push and CI.
-**=> NEXT:** commit/push the local CI portability fix, then resume re-review after green CI. Running the
-free handshake remains a separate action.
+4. **DONE - CI PORTABILITY:** Linux CI initially failed because the behavioral test hardcoded the Windows
+   executable name `powershell`. Commit `e63a096` prefers `powershell`, falls back to `pwsh`, and skips only
+   those three behavioral subprocess tests if neither exists. Windows evidence: PowerShell AST passed;
+   targeted `11 passed`; full 69-file tracked suite `1145 passed`. Both PR CI checks are green.
+5. **REVIEW STATE:** the posted re-review confirms the production resolver and behavioral-test blockers
+   are closed; its only remaining request was to replace stale pending-push/CI continuity text. This
+   follow-up changes HANDOFF/LEDGER only; executable/test behavior remains `e63a096`.
+**=> NEXT:** David merges PR #112 once the posted current-head review and CI merge gate is visibly
+satisfied; then run the free handshake. This session does not merge or run it.
 **Paid ledger today (2026-07-14): $0; no Codex/model call and no held-out preflight.**
 
 **=>=> NEWEST (2026-07-14) - GATE 0 CODEX READINESS PR #111 REVIEW-APPROVED; $0; NO RUN. =>=>**
