@@ -7,7 +7,29 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (MKDS A/B authorized, seamcheck passed, Arm A launch blocked before world
+_Last updated: 2026-07-13 (MKDS A/B completed on default Claude account after account-B cap: conditional
+guard PASS, primary batching bar FAIL at 1.030x vs required 1.300x; total default-account cost
+$1.5488415; no checkpoint RAM byte in run oracle logs.)_
+
+**=>=> NEWEST (2026-07-13) - MKDS CONTINUOUS-TIME A/B RUN: FAIL PRIMARY BAR, CONDITIONAL GUARD PASS. =>=>**
+1. **DONE - default-account A/B completed after account-B 429:** David authorized using default
+   `~/.claude`. Separate launch dirs preserved the blocked account-B artifacts:
+   `runs/brain_mkds_armA_default/` and `runs/brain_mkds_armB_default/`. Seamcheck passed 3/3 before
+   spend. Both runs exited 0 with empty `run.err`.
+2. **RESULT:** Arm A advanced 2984 oracle frames over 13 in-world decisions = 229.538 frames/decision
+   (`num_turns=17`, cost `$0.77483`). Arm B advanced 2365 oracle frames over 10 in-world decisions =
+   236.500 frames/decision (`num_turns=19`, cost `$0.7740115`). Ratio = **1.030x**, below the pinned
+   **1.300x** bar. Arm B did pass the conditional guard: `skills.jsonl` shows 10 `run_skill` calls,
+   9 with `stop_when_fired=true` before cap/max_iters. Verdict:
+   `reports/2026-07-13-mkds-ab-verdict.md`.
+3. **CAVEAT:** the checkpoint/progress RAM byte `0x022C8090` was not logged in either run's
+   `oracle.jsonl` (`nds` registry still has `watch={}`), so do not claim RAM-confirmed checkpoint/lap
+   progress from this A/B. The primary frame/decision verdict is still scoreable.
+**=> NEXT (priority order):** (1) v5 entity-bar redesign design doc ($0, no code/run); (2) LEDGER
+hygiene / token-rotation reminder; (3) optional Kirby door-sub-room probe if v5 keeps Kirby.
+**Paid ledger today (2026-07-13): $1.5488415 default-account spend + $0 account-B blocked launch.**
+
+_Prior update: 2026-07-13 (MKDS A/B authorized, seamcheck passed, Arm A launch blocked before world
 connection by account-B weekly-limit 429; $0; Arm B not launched; wait until 2026-07-16 20:00
 Europe/Stockholm before retrying.)_
 

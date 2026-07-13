@@ -6,6 +6,19 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-07-13 - MKDS conditional skills worked, but did not beat a batched baseline
+- **What:** the pre-registered MKDS continuous-time A/B ran on the default `~/.claude` account after account-B
+  hit a $0 weekly-limit 429 before MCP/world connection. Verdict: FAIL primary batching bar, PASS conditional
+  guard (`reports/2026-07-13-mkds-ab-verdict.md`); default-account cost `$1.5488415`.
+- **The finding:** Arm B's NDS skill tools executed real continuous-time conditionals (`run_skill` 10 times,
+  9 `stop_when_fired=true`), but achieved only 236.500 frames/decision vs Arm A's 229.538, a 1.030x ratio
+  against the pinned >=1.300x PASS bar. The mechanism fired; the tested surface did not make it materially
+  cheaper than the no-skill baseline.
+- **Method note:** Arm A already had `press_sequence` and used it heavily, so the baseline was not a pure
+  one-button-per-decision loop. Future cheapness gates should pre-register whether existing macro tools count
+  as baseline batching, or choose a surface where the candidate skill's unique advantage cannot be compressed
+  away by an already-batched control arm.
+
 ## 2026-07-11 (later) — glyph R1 killed at its own gate: the cache's font-crispness assumption is load-bearing
 - **What:** R1 cache-driven text-region detection built per its merged design and killed at the pinned §4b
   bar in one attempt (pooled precision 0.283 vs ≤0.49 kill floor; PR #103; detector unwired). Verdict-audit
