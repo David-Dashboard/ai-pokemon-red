@@ -3,6 +3,12 @@
 Status: **$0 design only.** No paid run is authorized by this document. No
 pre-registration, scorer, code, tool-schema, or brain change is included.
 
+PR #110's initial adversarial review found three launch blockers that this
+design now makes explicit: MiniWoB seed separation/logging, exact Capability
+and Cheap bars, and mechanical exclusion of non-world client tools. The current
+harness is therefore **not launch-ready**; these are R0/W0/C0 prerequisites,
+not reasons to spend and diagnose later.
+
 ## Decision
 
 Stop optimizing isolated capability gates long enough to define the smallest
@@ -146,27 +152,104 @@ LLM brain and prove no reasoning capability.
 
 ### W0 - MiniWoB source status
 
-- Launch `miniwob_click_checkboxes` locally with no LLM.
+- Current receipt: `core/miniwob_world.py` starts `_seed_counter` at `0` for
+  every new process, while `world_mcp.py:MiniWobSession._log_oracle()` logs no
+  seed or episode index. Current MiniWoB is `NO_GO` until seed plumbing lands
+  in a separately reviewed readiness PR.
+- Pin DEV seeds `0..4` for `$0`/human work and paid-held-out seeds `1000..1004`.
+  Never render, probe, baseline, or tune on `1000..1004` before the paid arm.
+- Add a launch-time pinned-seed source, log `episode` + `seed` in every oracle
+  row, and enforce one attempt per seed. An early `reset_episode` must abandon
+  the current seed and advance; it must never re-roll the same instance.
+- Launch `miniwob_click_checkboxes` locally with no LLM on DEV seeds only.
 - Verify five fresh episodes render and are reachable through pixels/clicks.
 - Verify reward and DOM remain oracle-only.
 - Record one human baseline: success, wall-clock, clicks, region inspections,
-  and corrections.
+  and corrections on DEV seeds. This predicts readiness only. The formal
+  human-relative score uses the same paid-held-out seeds **after** the agent's
+  paid attempt, so no held-out instance is exposed before the agent runs.
 - Confirm an incorrect/empty click is distinguishable offline and the episode
   reset does not leak the target.
 
 ### C0 - Constancy and scoring dry run
 
 - Save exact tool-list/schema hashes for both worlds.
+- Current receipt: `runs/brain_miniwob/transcript.jsonl` init exposes built-in
+  `Read`/`Bash`/web tools plus external connectors, and the run called
+  `ToolSearch`. Current launch isolation is `NO_GO`.
+- Launch from an isolated client configuration with only the target world MCP
+  connected. Pin the complete init inventory (`tools`, `mcp_servers`, skills,
+  plugins, permission mode), not just the MCP schema. The scorer must return
+  `NO_LEAK` on **any** assistant tool call outside that arm's exact world-MCP
+  allowlist, including `ToolSearch`, shell/file/web tools, or connectors.
+- Prove in a free handshake that every required world tool is directly
+  callable without `ToolSearch`; otherwise stop and fix isolation before paid
+  work.
 - Pin the common brief template and show a text diff containing only task/tool
   facts.
 - Pin executable/model/version/memory-wipe receipts.
 - Dry-score synthetic PASS, task FAIL, infra death, and constancy-breach
   fixtures before any paid attempt.
-- Estimate decision caps from the human baselines and scripted physics rather
-  than copying old arbitrary turn caps.
+- Confirm the human baselines and scripted physics fit the bars pinned below;
+  the future pre-registration may tighten them but never loosen them.
 
 Readiness verdicts are `GO`, `NO_GO`, or `INSUFFICIENT_SOURCE`. Both arms must
 be `GO`; otherwise there is no paid Gate 0.
+
+## Exact Gate 0 bars
+
+Gate 0 is a joint PASS only if every bar below clears. These are design bars;
+the future pre-registration may tighten, not loosen, them after R0/W0/C0.
+
+### Capability bar
+
+For **each** world:
+
+1. the task-specific success predicate above passes; and
+2. agent wall-clock time is `<= 2.0x` the one-human baseline; and
+3. agent primitive control actions are `<= 2.0x` the human baseline.
+
+Wall-clock includes model/provider latency because that latency is part of the
+actual agent. R0/W0 must return `NO_GO` without spend if a free latency/physics
+ceiling already proves the `2.0x` bar impossible. Gate 0 is still only a
+two-task lower bound; the larger graduation battery remains separate.
+
+Red uses the same fixed start for agent and human. For MiniWoB, the agent sees
+held-out seeds `1000..1004` first; only after its artifacts are banked does the
+human replay those exact seeds for the formal time/action denominator. DEV-seed
+human runs are readiness estimates, never the final denominator.
+
+### Cheap bar
+
+Both task success and all four caps are required:
+
+| Arm | LLM wakes | Cost |
+|---|---:|---:|
+| Red starter + rival | `<= 90` | `<= $5.00` |
+| MiniWoB 5 episodes | `<= 50` | `<= $2.00` |
+| **Combined** | `<= 140` | `<= $7.00` |
+
+The looser `$10` combined number below is a **hard spend breaker**, not a PASS
+bar. A successful run costing `$7.01..$10.00` is `FAIL_CHEAP`.
+
+The caps are grounded in existing receipts, with slack for the harder tasks:
+the old Red cold integrated run used 69 wakes and about `$0.6-0.8`; the current
+Red MCP brief caps 90 decisions; MiniWoB click-button used 33 turns and
+`$1.3557615`. R0/W0 may kill these caps as unreachable; they may not raise them.
+
+### Constancy, generality, and no-leak bars
+
+- exact model ID, executable version, common-brain/config hash, memory-wipe
+  receipt, and init-inventory policy match across arms;
+- no brain/contract/tool-schema change between arms;
+- only task text, perceiver/world configuration, and human control vocabulary
+  differ;
+- both world tasks pass; a one-world success is not Generality PASS; and
+- every assistant tool call belongs to the pinned world-MCP allowlist.
+
+Verdicts are `PASS`, `FAIL_CAPABILITY`, `FAIL_CHEAP`,
+`CONSTANCY_BREACH`, `NO_LEAK`, or `INSUFFICIENT_DATA`. Constancy/no-leak checks
+run before task scoring.
 
 ## What `$0` versus paid evidence earns
 
@@ -198,12 +281,12 @@ decisive.
 Only after R0 + W0 + C0 all return `GO`:
 
 1. Write a fresh pre-registration with verbatim briefs, exact scorer, human
-   baselines, decision/wall-clock bars, budget, infra carve-out, and escalation
-   shelf.
+   baselines, the bars above (tightening allowed; loosening forbidden), budget,
+   infra carve-out, and escalation shelf.
 2. Post adversarial review and fix all major design findings before launch.
 3. Run one account-B attempt per world, blank memory before each.
-4. Target a combined ceiling of **no more than `$10`**. The pre-registration
-   must tighten that using the `$0` baselines; `$10` is a ceiling, not a target.
+4. Hard-stop at a combined spend ceiling of **no more than `$10`**. Cheap PASS
+   still requires `<= $7`; `$10` is containment, not a success target.
 5. If Arm R alone reaches the combined ceiling, do not launch Arm W.
 6. Bank PASS/FAIL/INSUFFICIENT_DATA/CONSTANCY_BREACH as printed. Never rescue a
    marginal result with an informal rerun.
