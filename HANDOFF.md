@@ -7,25 +7,24 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (PR #108 open for the Kirby door/sub-room probe; $0 local probe only, no paid
-run.)_
+_Last updated: 2026-07-13 (PR #109 open; v5 multi-scenario candidate shortlist ready for David merge;
+$0 docs/probe planning only.)_
 
-**=>=> NEWEST (2026-07-13) - PR #108 OPEN: KIRBY DOOR/SUB-ROOM PROBE NEGATIVE FOR v5 AS-IS; $0. =>=>**
-1. **DONE:** `reports/2026-07-13-kirby-door-probe.md` characterizes the door+enemy sub-room lead from
-   `reports/2026-07-11-entity-v4-instrument-hunt.md`. The door is real and `move_blocked` works in the
-   door-area wall checks, but the candidate fails v5 source-status checks as-is: no hp=6 near-door seed,
-   no 5-drop/no-death supply, weak retreat geometry, and no plausible benign comparator.
-2. **DONE:** PR #108 is open from `codex/kirby-door-probe-2026-07-13`. Posted adversarial review comment
-   found one minor overcount; fixed in commit `72a77bb`. GitHub CI passed after the fix. Local verification:
-   `git diff --check`; repo suite with local-only ignores passed 1129 tests, 2 warnings. Full unfiltered
-   pytest is polluted by local-only `.claude/worktrees` and `.pytest_cache` permission errors.
-3. **SCOPE HELD:** local PyBoy/world probe only. No paid run, no v5 pre-registration, no scorer/code edits,
-   no tool-schema edits. Fresh artifacts are ignored under `runs/kirby_door_probe_2026-07-13/`.
-4. **PENDING / DAVID:** merge PR #108 if accepted. Token rotation for the leaked 2026-07-04 token remains
-   David-owned; do not print the token.
-**=> NEXT (priority order):** (1) David merge/reject PR #108; (2) David token rotation; (3) if Kirby must
-stay in v5, manually capture a fresh hp=6 state at the door before rerunning only supply/decoy checks;
-otherwise choose the next unblocked free-track item from the capability map after #108 lands.
+**=>=> NEWEST (2026-07-13) - PR #109 OPEN; ENTITY v5 MULTI-SCENARIO SHORTLIST READY; $0. =>=>**
+1. **DONE:** PR #108 merged to `main` as `914605e`, banking
+   `reports/2026-07-13-kirby-door-probe.md`: the Kirby door/sub-room lead is negative for v5 as-is.
+2. **DONE / AWAITS DAVID:** PR #109 is open from
+   `codex/entity-v5-candidate-shortlist-2026-07-13` with CI green and a posted adversarial-review
+   comment. It adds `reports/2026-07-13-entity-v5-candidate-shortlist.md`: Kirby old-room and door
+   leads are dead as primary v5 paths; Cave Noire controlled-combat/corridor is the top next `$0`
+   source-status probe; Gauntlet/GB-generic/GBA/NDS are deferred until consequence-oracle readiness.
+3. **SCOPE:** docs/read-only artifact inspection only unless explicitly claimed in LEDGER. No paid run, no
+   v5 pre-registration, no scorer/code/tool-schema edits.
+4. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do not
+   print the token.
+**=> NEXT (priority order):** (1) David merge/reject PR #109; (2) after #109 lands, run the Cave Noire
+controlled-combat source-status probe from the shortlist; (3) token rotation if David wants it done
+in-thread.
 **Paid ledger today (2026-07-13): $0 for Kirby probe work; `$1.5488415` MKDS default-account spend already
 banked in PR #105.**
 
