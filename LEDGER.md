@@ -10,10 +10,9 @@ checks.
 ## Current status (2026-07-13)
 - Branch: `codex/entity-v5-candidate-shortlist-2026-07-13`, cut from merged
   `main` at PR #108 (`914605e`).
-- User asked to continue; token rotation is David-owned/trivial and not the
-  blocker.
-- Motivation: one-scenario probes are good for cheap kills, but v5 should not
-  escalate until multiple candidate scenarios/games have been screened.
+- Commit: `2a33d2e` (`docs: shortlist entity v5 candidates`), pushed.
+- PR: #109 open, CI green, adversarial-review comment posted.
+- Token rotation is David-owned/trivial and not the blocker.
 
 ## Constraints
 - No paid run. No v5 pre-registration.
@@ -27,4 +26,9 @@ checks.
 - [x] Claim shortlist task in HANDOFF/LEDGER.
 - [x] Read existing v5/entity/world evidence.
 - [x] Write `reports/2026-07-13-entity-v5-candidate-shortlist.md`.
-- [ ] Verify, PR, and post adversarial-review comment.
+- [x] Verify, PR, and post adversarial-review comment.
+
+## Next
+- Await David merge/reject on PR #109.
+- After #109 lands, run the Cave Noire controlled-combat source-status probe
+  from the shortlist.

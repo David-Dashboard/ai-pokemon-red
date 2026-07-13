@@ -7,22 +7,24 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (PR #108 merged; v5 multi-scenario candidate shortlist claimed on
-`codex/entity-v5-candidate-shortlist-2026-07-13`; $0 docs/probe planning only.)_
+_Last updated: 2026-07-13 (PR #109 open; v5 multi-scenario candidate shortlist ready for David merge;
+$0 docs/probe planning only.)_
 
-**=>=> NEWEST (2026-07-13) - PR #108 MERGED; ENTITY v5 MULTI-SCENARIO SHORTLIST IN PROGRESS; $0. =>=>**
+**=>=> NEWEST (2026-07-13) - PR #109 OPEN; ENTITY v5 MULTI-SCENARIO SHORTLIST READY; $0. =>=>**
 1. **DONE:** PR #108 merged to `main` as `914605e`, banking
    `reports/2026-07-13-kirby-door-probe.md`: the Kirby door/sub-room lead is negative for v5 as-is.
-2. **IN PROGRESS:** write `reports/2026-07-13-entity-v5-candidate-shortlist.md`, a $0 shortlist across
-   multiple candidate scenarios/games for the v5 entity gate. Goal: avoid another one-room tunnel by
-   naming which candidates are already dead, which deserve a cheap source-status probe, and what exact
-   receipt each would need before any paid pre-registration.
+2. **DONE / AWAITS DAVID:** PR #109 is open from
+   `codex/entity-v5-candidate-shortlist-2026-07-13` with CI green and a posted adversarial-review
+   comment. It adds `reports/2026-07-13-entity-v5-candidate-shortlist.md`: Kirby old-room and door
+   leads are dead as primary v5 paths; Cave Noire controlled-combat/corridor is the top next `$0`
+   source-status probe; Gauntlet/GB-generic/GBA/NDS are deferred until consequence-oracle readiness.
 3. **SCOPE:** docs/read-only artifact inspection only unless explicitly claimed in LEDGER. No paid run, no
    v5 pre-registration, no scorer/code/tool-schema edits.
 4. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do not
    print the token.
-**=> NEXT (priority order):** (1) finish/publish the v5 candidate shortlist; (2) token rotation if David
-wants it done in-thread; (3) run only the top-ranked cheap source-status probe from the shortlist.
+**=> NEXT (priority order):** (1) David merge/reject PR #109; (2) after #109 lands, run the Cave Noire
+controlled-combat source-status probe from the shortlist; (3) token rotation if David wants it done
+in-thread.
 **Paid ledger today (2026-07-13): $0 for Kirby probe work; `$1.5488415` MKDS default-account spend already
 banked in PR #105.**
 
