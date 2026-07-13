@@ -1,36 +1,28 @@
-# Ledger - entity v5 bar redesign design doc (ai-pokemon-red)
+# Ledger - PR #106 conflict resolution after PR #105 merge (ai-pokemon-red)
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative -> HANDOFF.md. -->
 
 ## Goal
-Write and PR `reports/2026-07-13-entity-v5-bar-redesign.md`: a $0 design doc only, no code changes,
-no scorer edits, no paid run. It must define a new v5 entity-grounding bar after v4 closed without a
-paid attempt because the v3/v4 bar+world pair was honest-hostile.
+Resolve PR #106 conflicts caused by merging PR #105 into `main`, without rebasing, resetting, merging to
+`main`, touching code/scorers/run artifacts, or changing the v5 design claim.
 
 ## Current status (2026-07-13)
-- Branch: `codex/entity-v5-bar-redesign-2026-07-13`, cut from current `main` after `git fetch` and
-  branch scan. No overlapping `entity-v5` branch found.
-- User authorized continuing without waiting; this task is the next non-paid item in `CODEX_HANDOFF.md`.
-- Sources read: `HANDOFF.md`, `LEDGER.md`, `CODEX_HANDOFF.md`, `.claude/PROTOCOL.md`, `CLAUDE.md`,
-  `reports/2026-07-11-entity-v4-verdict.md`, `reports/2026-07-05-northstar-capability-map.md`,
-  `reports/2026-07-11-entity-v4-coverage-papercheck.md`,
-  `reports/2026-07-11-entity-v4-visibility-probe.md`,
-  `reports/2026-07-05-entity-v4-d-probe.md`.
-- Local-only source wrinkle: `reports/2026-07-11-entity-v4-instrument-hunt.md` exists on disk but is
-  untracked and absent from `origin/main`; decide during doc drafting whether the PR must include it as a
-  receipt or avoid depending on it.
+- PR #105 is merged to `main` as `b027fcb`, banking the MKDS A/B verdict.
+- PR #106 was `DIRTY` after #105 merged because both PRs touched `HANDOFF.md` and `LEDGER.md`.
+- This branch merged `origin/main` into `codex/entity-v5-bar-redesign-2026-07-13`.
+- Conflicts were limited to `HANDOFF.md` and `LEDGER.md`.
+- Resolution keeps the MKDS verdict history from `main`, keeps the v5 design doc from PR #106, and records
+  this conflict-resolution step as the newest handoff block.
 
 ## Constraints
-- No paid run. No rerun of banked entity v1-v4 verdicts. No scorer/code/tool-schema edits.
-- New bar means new gate: no "stricter-only" carryover claims from v3/v4.
-- Must address: replace forward-only `[n, n+15]`; forbid reactive same-step NEARs; cap NEAR cadence; pin
-  press cadence; inherit #102 typed claims as-is; name North Star capability bought.
+- No paid run. No code/scorer/tool-schema edits. No self-merge.
+- Leave unrelated untracked files alone.
+- After push, David still merges PR #106.
 
 ## Tasks
-- [x] Read session/handoff/protocol sources and v4 verdict sources.
-- [x] Fetch and scan remote branches; create dedicated feature branch from `main`.
-- [x] Claim task in HANDOFF and re-arm LEDGER for v5 design.
-- [x] Draft `reports/2026-07-13-entity-v5-bar-redesign.md`.
-- [x] Run doc checks / review for coverage of required clauses: verifier found one MAJOR
-  (decoy/rejection too soft), patch added plausible-comparator criteria, re-review PASS.
-- [x] Open PR #106 and post adversarial-review comment.
+- [x] Fetch latest `origin/main`.
+- [x] Confirm PR #105 merged and PR #106 was dirty.
+- [x] Merge `origin/main` into the PR #106 branch.
+- [x] Resolve `HANDOFF.md` and `LEDGER.md` conflicts.
+- [x] Run conflict/diff checks: no conflict markers; `git diff --check` passed with CRLF warnings only.
+- [ ] Commit and push the conflict-resolution merge.
