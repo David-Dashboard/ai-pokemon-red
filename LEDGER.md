@@ -1,44 +1,36 @@
-# Ledger - Minimum North Star Gate 0 design (ai-pokemon-red)
+# Ledger - Gate 0 Codex subscription readiness
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative -> HANDOFF.md. -->
 
 ## Goal
-Define the smallest honest cross-world integrated gate for the North Star, with
-`$0` readiness work separated from future paid proof.
+Make the merged Minimum North Star Gate 0 launch-ready for one frozen Codex CLI
+brain authenticated through David's ChatGPT subscription.
 
 ## Current status (2026-07-13)
-- PR #109 merged to `main` as `1e1edd9`.
-- David explicitly redirected the critical path from Cave Noire entity v5 to a
-  Minimum North Star Gate.
-- Branch: `codex/minimum-north-star-gate-0-2026-07-13`, cut from merged `main`.
-- Gate 0 worlds: unbridged `pokemon_red` starter+rival task and new
-  `miniwob_click_checkboxes` five-episode task.
-- MKDS was removed from Gate 0 after the audit found broken perception plus a
-  solution-bearing brief; it remains a later perception-readiness lane.
-- PR #110 is open, CI green, and has a final posted adversarial APPROVE. Initial
-  review's three blockers and re-review's paid-seed reachability blocker are
-  closed; commit `8222ecf` seals the solution-free exact-seed preflight.
-- Token rotation is David-owned/trivial and not the blocker.
+- PR #110 merged to `main` as `cc81531`.
+- David explicitly switched both future arms from Claude to Codex CLI.
+- Branch: `codex/gate0-codex-readiness-2026-07-13`, from merged `main`.
+- Branch scan found no overlapping remote readiness work.
+- Codex is installed at the WindowsApps alias, but this task's sandbox cannot
+  execute it even with escalation. The free auth/version handshake remains pending.
 
 ## Constraints
-- No paid run and no paid pre-registration under this task.
-- No scorer/code/tool-schema edits.
-- Documentation/read-only evidence only; raw outputs are append-only.
-- Cave Noire source-status is paused, not run or deleted.
+- No API key and no paid/subscription-quota brain run in this implementation task.
+- No brain, `core/contracts.py`, or frozen MCP tool-schema change.
+- Raw run/oracle artifacts remain append-only.
 - Do not touch unrelated untracked Spanish-teacher files or local agent/config dirs.
 
 ## Tasks
-- [x] Pull merged `main` after PR #109.
-- [x] Branch-scan and create `codex/minimum-north-star-gate-0-2026-07-13`.
-- [x] Audit Red, MKDS, and MiniWoB run evidence and current tool surfaces.
-- [x] Replace MKDS with MiniWoB click-checkboxes after David confirmation.
-- [x] Write `reports/2026-07-13-minimum-north-star-gate-0-design.md`.
-- [x] Append the superseding HANDOFF block and verify the complete diff.
-- [x] Commit, push, open PR #110, and obtain the initial posted review.
-- [x] Commit/push the review fixes and obtain posted re-review.
+- [x] Confirm the Codex-provider plan and branch-scan.
+- [x] Sync merged `main` and create the feature branch.
+- [x] Claim the work in HANDOFF/LEDGER.
+- [ ] Implement pinned MiniWoB seeds, seed/episode oracle logging, and one-attempt progression.
+- [ ] Implement the sealed exact-seed reachability preflight.
+- [ ] Implement the isolated ephemeral Codex launcher and NO_LEAK transcript/inventory checker.
+- [ ] Amend the Gate 0 design for Codex subscription accounting.
+- [ ] Run targeted/full tests, open PR, and obtain posted adversarial review.
 
 ## Next
-- David merges PR #110.
-- After merge, plan the seed/client-isolation readiness build;
-  then run R0 + W0 + C0 `$0` readiness only. A paid pre-registration is allowed
-  only if all three return `GO`.
+- Commit/push this claim, then dispatch one Codex implementer with the agreed scope.
+- After David merges the readiness PR, run R0 + W0 + C0 only.
+- A subscription-quota pre-registration/run is allowed only if all three return `GO`.

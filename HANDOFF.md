@@ -7,8 +7,8 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 approved and CI-green on
-`codex/minimum-north-star-gate-0-2026-07-13`; $0, no run.)_
+_Last updated: 2026-07-13 (Gate 0 provider switched to Codex CLI + ChatGPT subscription;
+readiness work claimed on `codex/gate0-codex-readiness-2026-07-13`; $0, no run.)_
 
 **=>=> NEWEST (2026-07-13) - MINIMUM NORTH STAR GATE 0 DESIGNED; RED + MINIWOB; $0; NO RUN. =>=>**
 1. **DIRECTION / DAVID:** stop the Cave Noire entity-v5 critical path and work directly toward the
@@ -28,7 +28,7 @@ _Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 approved and CI-gre
    to prove the fixed LLM brain can complete the tasks and to measure cost/task + wakes/task. History:
    MiniWoB click-button bought clean 5/5 evidence for `$1.3557615` after seam validation; entity v2
    spent about `$80` across 11 instrument-starved/tainted runs.
-5. **DONE - REVIEW:** PR #110 is open, CI is green, and the final posted adversarial review APPROVED it.
+5. **DONE - REVIEW:** PR #110 merged as `cc81531`; CI was green and the final posted adversarial review APPROVED it.
    Its first adversarial review BLOCKED on three confirmed
    gaps: MiniWoB reused/unlogged seed 0, no exact human-relative Capability or Cheap PASS bars, and
    unpinned non-world client tools (the banked MiniWoB run called `ToolSearch`). The design now requires
@@ -38,10 +38,14 @@ _Last updated: 2026-07-13 (Minimum North Star Gate 0 PR #110 approved and CI-gre
    might place required controls below the 177px clickable viewport. The design now requires a sealed
    exact-seed reachability boolean before spend, with no solution-bearing output. Commit `8222ecf`
    closed that blocker; final approval is posted at PR #110 comment `4961382435`.
-6. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
+6. **IN PROGRESS - CODEX READINESS:** David switched both future Gate 0 arms from Claude to one
+   frozen Codex CLI model/config authenticated through the ChatGPT subscription. Branch
+   `codex/gate0-codex-readiness-2026-07-13` owns the seed/oracle, sealed-preflight, client-isolation,
+   and transcript-checking readiness work. No API key, paid/quota run, or brain change is authorized yet.
+7. **PENDING / DAVID:** token rotation for the leaked 2026-07-04 token remains David-owned/trivial; do
    not print the token.
-**=> NEXT (priority order):** (1) David merges PR #110; (2) build/verify the seed + client-isolation
-readiness instrument under a fresh plan; (3) run R0 + W0 + C0 `$0` readiness only; (4) write a paid
+**=> NEXT (priority order):** (1) build/review the Codex seed + client-isolation readiness instrument;
+(2) David merges its PR; (3) run R0 + W0 + C0 `$0` readiness only; (4) write a subscription-quota
 pre-registration only if all three return `GO`.
 **Paid ledger today (2026-07-13): $0 for Gate 0 design/read-only audit; `$1.5488415` MKDS
 default-account spend already banked in PR #105.**
