@@ -2,10 +2,22 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
 from tools.check_gate0_codex import audit as audit_codex
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MODES = {
+    "readiness_dev": (ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json", [0, 1, 2, 3, 4]),
+    "paid_gate0": (ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json", [1000, 1001, 1002, 1003, 1004]),
+}
+SOURCE_PIN_FILES = {
+    "readiness_dev": ROOT / "eval" / "fixtures" / "gate0_readiness_dev_source_pins.json",
+    "paid_gate0": ROOT / "eval" / "fixtures" / "gate0_paid_source_pins.json",
+}
 
 
 def _jsonl(path: str | Path) -> list[dict]:
@@ -18,9 +30,13 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     watches = [row.get("watch") for row in rows if isinstance(row.get("watch"), dict)]
     if not watches or watches[0].get("party") != 0:
         return False, ["red_not_fresh_party_zero"]
-    party_idx = next((i for i, watch in enumerate(watches) if (watch.get("party") or 0) >= 1), None)
+    party_idx = next((i for i in range(1, len(watches))
+                      if watches[i].get("party") != watches[i - 1].get("party")), None)
     if party_idx is None:
         failures.append("red_no_party_0_to_1")
+        return False, failures
+    if watches[party_idx - 1].get("party") != 0 or watches[party_idx].get("party") != 1:
+        failures.append("red_first_party_transition_not_exactly_0_to_1")
         return False, failures
     battle_idx = next((i for i, watch in enumerate(watches)
                        if i > party_idx and watch.get("in_battle") == 2), None)
@@ -32,19 +48,21 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     if exit_idx is None:
         failures.append("red_no_sustained_battle_exit")
         return False, failures
+    safety_span = watches[battle_idx:exit_idx + 10]
     hp_values = []
-    for watch in watches[battle_idx:exit_idx + 1]:
+    battle_map = watches[battle_idx].get("map")
+    for watch in safety_span:
         hi, lo = watch.get("party_hp_hi"), watch.get("party_hp_lo")
         if (isinstance(hi, bool) or isinstance(lo, bool) or not isinstance(hi, int)
                 or not isinstance(lo, int) or not 0 <= hi <= 255 or not 0 <= lo <= 255):
             failures.append("red_missing_player_hp_oracle")
             break
         hp_values.append((hi << 8) | lo)
+        if battle_map is None or watch.get("map") != battle_map:
+            failures.append("red_map_changed_during_battle_exit_span")
+            break
     if hp_values and min(hp_values) == 0:
         failures.append("red_player_hp_reached_zero")
-    battle_map = watches[battle_idx].get("map")
-    if battle_map is None or watches[exit_idx].get("map") != battle_map:
-        failures.append("red_blackout_or_map_change_at_exit")
     post = [(w.get("x"), w.get("y")) for w in watches[exit_idx:] if w.get("x") is not None and w.get("y") is not None]
     if len(set(post)) < 2:
         failures.append("red_no_free_movement_after_exit")
@@ -53,27 +71,32 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
 
 def _miniwob_success(rows: list[dict], expected_seeds: list[int]) -> tuple[bool, list[str]]:
     failures: list[str] = []
-    successes = {}
-    for row in rows:
-        if row.get("done") is True and row.get("abandoned") is not True and row.get("reward") == 1.0:
-            successes[row.get("episode")] = row.get("seed")
-    observed = [successes.get(i) for i in range(len(expected_seeds))]
-    if observed != expected_seeds:
-        failures.append("miniwob_not_5_of_5_on_pinned_seeds")
-    if any(row.get("seed") not in expected_seeds for row in rows):
-        failures.append("miniwob_unexpected_seed")
+    expected = dict(enumerate(expected_seeds))
+    if any(row.get("episode") not in expected or row.get("seed") != expected.get(row.get("episode"))
+           for row in rows):
+        failures.append("miniwob_extra_episode_or_seed_conflict")
+    for episode, seed in expected.items():
+        episode_rows = [row for row in rows if row.get("episode") == episode and row.get("seed") == seed]
+        terminals = [row for row in episode_rows
+                     if row.get("done") is True or row.get("abandoned") is True]
+        if len(terminals) != 1:
+            failures.append(f"miniwob_episode_{episode}_terminal_count")
+        elif not (terminals[0].get("done") is True and terminals[0].get("abandoned") is False
+                  and terminals[0].get("reward") == 1.0):
+            failures.append(f"miniwob_episode_{episode}_terminal_not_success")
     return not failures, failures
 
 
-def _arm_metrics(arm: dict, capability: bool) -> tuple[list[str], list[str]]:
+def _arm_metrics(metrics: dict, capability: bool) -> tuple[list[str], list[str]]:
     capability_failures = [] if capability else ["task_predicate_failed"]
     source_failures: list[str] = []
-    metrics = arm.get("metrics") or {}
     required = ("wall_clock_s", "primitive_actions", "human_wall_clock_s", "human_primitive_actions",
                 "wakes", "cost_usd", "normalized_credits")
     for key in required:
         value = metrics.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        minimum = 0 if key in {"cost_usd", "normalized_credits"} else 0
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or value < minimum or (key not in {"cost_usd", "normalized_credits"} and value <= 0)):
             source_failures.append(f"missing_or_invalid_metric:{key}")
     if source_failures:
         return capability_failures, source_failures
@@ -84,7 +107,81 @@ def _arm_metrics(arm: dict, capability: bool) -> tuple[list[str], list[str]]:
     return capability_failures, source_failures
 
 
-def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]]) -> dict:
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _verify_sources(manifest: dict, audits: dict[str, dict]) -> tuple[dict, list[str]]:
+    failures: list[str] = []
+    mode = manifest.get("mode")
+    if mode not in MODES:
+        return {}, ["unknown_or_missing_gate0_mode"]
+    if any("expected_seeds" in (manifest.get("arms", {}).get(name) or {}) for name in ("red", "miniwob")):
+        failures.append("manifest_seed_override_forbidden")
+    if "source_pins" in manifest or "source_artifacts" in manifest:
+        failures.append("manifest_source_override_forbidden")
+    try:
+        pins_path = SOURCE_PIN_FILES[mode]
+        pins = json.loads(pins_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}, failures + ["source_pins_unreadable"]
+    if pins.get("schema_version") != 1 or pins.get("mode") != mode:
+        failures.append("source_pins_schema_or_mode")
+    seed_path, exact_seeds = MODES[mode]
+    try:
+        if json.loads(seed_path.read_text(encoding="utf-8")) != exact_seeds:
+            failures.append("frozen_seed_contents")
+        if pins.get("frozen_seed_sha256") != _sha256(seed_path):
+            failures.append("frozen_seed_hash")
+    except Exception:
+        failures.append("frozen_seed_source_unreadable")
+
+    source_paths = pins.get("artifact_paths") or {}
+    pin_hashes = pins.get("artifact_sha256") or {}
+    loaded = {}
+    for key in ("red_agent", "red_human", "miniwob_agent", "miniwob_human",
+                "wake_boundary", "live_breaker"):
+        try:
+            path = Path(source_paths[key])
+            if not path.is_absolute():
+                path = ROOT / path
+            if pin_hashes.get(key) != _sha256(path):
+                failures.append(f"source_hash:{key}")
+                continue
+            loaded[key] = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            failures.append(f"source_unreadable:{key}")
+
+    metrics = {}
+    for arm in ("red", "miniwob"):
+        agent, human = loaded.get(f"{arm}_agent"), loaded.get(f"{arm}_human")
+        if not isinstance(agent, dict) or not isinstance(human, dict):
+            continue
+        if (agent.get("schema_version"), agent.get("arm"), agent.get("role"), agent.get("mode")) != (1, arm, "agent", mode):
+            failures.append(f"agent_metric_identity:{arm}")
+        if (human.get("schema_version"), human.get("arm"), human.get("role"), human.get("mode")) != (1, arm, "human", mode):
+            failures.append(f"human_metric_identity:{arm}")
+        metrics[arm] = {
+            "wall_clock_s": agent.get("wall_clock_s"), "primitive_actions": agent.get("primitive_actions"),
+            "human_wall_clock_s": human.get("wall_clock_s"),
+            "human_primitive_actions": human.get("primitive_actions"), "wakes": agent.get("wakes"),
+            "cost_usd": agent.get("cost_usd"), "normalized_credits": agent.get("normalized_credits"),
+        }
+        audit = audits.get(arm) or {}
+        if audit.get("wake_accounting") != "PASS" or audit.get("wakes") != agent.get("wakes"):
+            failures.append(f"audited_wake_boundary:{arm}")
+    wake = loaded.get("wake_boundary") or {}
+    breaker = loaded.get("live_breaker") or {}
+    if wake.get("schema_version") != 1 or wake.get("kind") != "exact_wake_boundary" or wake.get("status") != "PASS":
+        failures.append("wake_boundary_artifact")
+    if (breaker.get("schema_version") != 1 or breaker.get("kind") != "live_credit_breaker"
+            or breaker.get("status") != "PASS" or breaker.get("limit_normalized_credits") != 250):
+        failures.append("live_breaker_artifact")
+    return {"mode": mode, "expected_seeds": exact_seeds, "metrics": metrics}, failures
+
+
+def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]],
+          verified_sources: dict | None = None, source_failures: list[str] | None = None) -> dict:
     arms = manifest.get("arms") or {}
     failures = {"constancy": [], "leak": [], "infra": [], "capability": [], "cheap": [], "source": []}
     for name in ("red", "miniwob"):
@@ -93,25 +190,25 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
         failures["constancy"].extend(f"{name}:{x}" for x in audit.get("constancy_failures", []))
         failures["infra"].extend(f"{name}:{x}" for x in audit.get("run_failures", []))
     red_ok, red_fail = _red_success(oracles.get("red", []))
-    expected_seeds = (arms.get("miniwob") or {}).get("expected_seeds", [0, 1, 2, 3, 4])
+    verified_sources = verified_sources or {}
+    expected_seeds = verified_sources.get("expected_seeds")
+    if expected_seeds is None:
+        mode = manifest.get("mode")
+        expected_seeds = MODES.get(mode, (None, []))[1]
     mw_ok, mw_fail = _miniwob_success(oracles.get("miniwob", []), expected_seeds)
     failures["capability"].extend(f"red:{x}" for x in red_fail)
     failures["capability"].extend(f"miniwob:{x}" for x in mw_fail)
     for name, ok in (("red", red_ok), ("miniwob", mw_ok)):
-        cap, source = _arm_metrics(arms.get(name) or {}, ok)
+        cap, source = _arm_metrics((verified_sources.get("metrics") or {}).get(name, {}), ok)
         failures["capability"].extend(f"{name}:{x}" for x in cap if f"{name}:{x}" not in failures["capability"])
         failures["source"].extend(f"{name}:{x}" for x in source)
 
-    accounting = manifest.get("accounting") or {}
-    if accounting.get("wake_boundary") != "exact_documented":
-        failures["source"].append("no_exact_documented_wake_boundary")
-    if accounting.get("live_credit_breaker") is not True:
-        failures["source"].append("no_live_250_credit_breaker")
+    failures["source"].extend(source_failures or (["unverified_source_artifacts"] if not verified_sources else []))
     if any(audits.get(name, {}).get("accounting_failures") for name in ("red", "miniwob")):
         failures["source"].append("codex_accounting_audit_failed")
 
     if not failures["source"]:
-        metrics = {name: arms[name]["metrics"] for name in ("red", "miniwob")}
+        metrics = verified_sources["metrics"]
         limits = {"red": (90, 5.0, 125), "miniwob": (50, 2.0, 50)}
         for name, (wake_cap, cost_cap, credit_cap) in limits.items():
             if metrics[name]["wakes"] > wake_cap or metrics[name]["cost_usd"] > cost_cap or metrics[name]["normalized_credits"] > credit_cap:
@@ -138,7 +235,7 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
     else:
         verdict, readiness = "PASS", "GO"
     return {"schema_version": 1, "readiness": readiness, "overall": verdict, "failures": failures,
-            "spend_usd": sum((arms.get(name, {}).get("metrics") or {}).get("cost_usd", 0)
+            "spend_usd": sum((verified_sources.get("metrics", {}).get(name, {}) or {}).get("cost_usd", 0)
                              for name in ("red", "miniwob"))}
 
 
@@ -152,7 +249,8 @@ def score_manifest(path: str | Path) -> dict:
                                    Path(audit_args["expected_pins"]), Path(audit_args["artifacts_dir"]),
                                    name, Path(audit_args["peer_receipt"]))
         oracles[name] = _jsonl(arm["oracle"])
-    return score(manifest, audits, oracles)
+    verified, source_failures = _verify_sources(manifest, audits)
+    return score(manifest, audits, oracles, verified, source_failures)
 
 
 def main() -> int:

@@ -27,8 +27,18 @@ paid-held-out seed, API key, or model was used.
     250-credit ceiling.
 - Synthetic coverage proves `PASS`, arm capability failure, Cheap failure, infrastructure death,
   constancy breach, tool leak, and missing wake accounting. No synthetic result is capability evidence.
-- Final canonical root-side verification passed: targeted readiness `64 passed`; full tracked plus scorer
-  `1159 passed, 1 warning`; `git diff --check` passed. Both pytest runs used `uv run --frozen`.
+- PR #114 review hardening removes self-declared `GO`: mode is explicit (`readiness_dev` or
+  `paid_gate0`); exact MiniWoB seeds come from the fixed DEV `0..4` or paid `1000..1004` fixture; metrics,
+  wake-boundary proof, and the live-breaker proof must come from hash-pinned source artifacts named by a
+  fixed mode-specific expected-pins file. Bare manifest numbers/booleans and seed/source overrides remain
+  `INSUFFICIENT_SOURCE`. Human and agent wall/action values and agent wakes must be strictly positive.
+- Red now requires the first party transition to be exactly `0 -> 1`, then a trainer battle, and checks
+  HP plus unchanged map across the battle and all ten sustained-exit rows. Delayed-zero and delayed-map
+  regressions fail. MiniWoB requires exactly one non-abandoned reward-1 terminal per exact episode/seed;
+  duplicates, conflicts, extras, and abandoned-then-success histories fail.
+- Final post-review-fix canonical root-side verification passed: targeted readiness `71 passed in 1.02s`;
+  full tracked plus scorer `1166 passed, 1 warning in 23.74s`; `py_compile` and `git diff --check` passed.
+  Both pytest runs used `uv run --frozen`.
 
 ## R0 - Red source status
 

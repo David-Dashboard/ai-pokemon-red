@@ -37,10 +37,18 @@ safe source-status probes where available, and one honest GO/NO_GO/INSUFFICIENT_
 - [x] Check safe deterministic R0/W0 DEV probe paths; bank exact source blockers without running
   destructive fixed-output scripts or held-out seeds.
 - [x] Write the readiness report and update scorecard/continuity.
-- [x] Final canonical root-side `uv run --frozen`: targeted readiness `64 passed`; full tracked plus
-  scorer `1159 passed, 1 warning`; diff check passed.
+- [x] Final post-review-fix canonical root-side `uv run --frozen`: targeted readiness
+  `71 passed in 1.02s`; full tracked plus scorer `1166 passed, 1 warning in 23.74s`; `py_compile` and diff
+  check passed.
 - [x] Rebuild final images and bank current-head `red-v3`/`miniwob-v2` free receipts.
 - [ ] Independently freeze expected-pins JSON; do not claim full checker GO from observed receipts alone.
+- [x] Close PR #114 self-declared-GO finding: fixed modes/seeds, fixed expected-pins paths, hash-verified
+  metric/wake/breaker artifacts, strict-positive human/agent measurements, and bare-claim rejection.
+- [x] Close PR #114 Red finding: exact first `0 -> 1`; battle after acquisition; HP/map safety through
+  all ten sustained-exit rows; delayed-zero and delayed-map regressions.
+- [x] Close PR #114 MiniWoB finding: exact episode/seed set, exactly one successful terminal each, and
+  rejection of extras, conflicts, duplicates, or abandoned-then-success histories.
+- [x] Canonical root-side post-review verification complete; ready for re-review.
 - [ ] Stage only intended files for parent commit/review.
 
 ## Next

@@ -32,9 +32,14 @@ _Last updated: 2026-07-14 (R0/W0/C0 readiness verdict recorded on the current br
 7. **SAFETY:** no Codex/model execution, paid run, paid-held-out MiniWoB seed `1000..1004` exposure,
    brain/contract/tool-schema edit, or artifact rewrite. Human baselines that require David remain explicit
    blockers rather than invented measurements.
-8. **VERIFICATION:** final canonical root-side `uv run --frozen` targeted readiness `64 passed`; full
-   tracked plus scorer `1159 passed, 1 warning`; `git diff --check` passes.
+8. **VERIFICATION:** final post-review-fix canonical root-side `uv run --frozen` targeted readiness
+   `71 passed in 1.02s`; full tracked plus scorer `1166 passed, 1 warning in 23.74s`; `py_compile` and
+   `git diff --check` pass.
 9. **SPEND:** Gate 0 remains `$0.00`; this slice is free readiness work only.
+10. **PR #114 REVIEW FIX:** scorer `GO` now requires fixed-mode seed fixtures plus hash-pinned metric,
+    exact-wake, and live-breaker source artifacts; bare manifest claims fail source. Red checks exact first
+    `0 -> 1` and HP/map through all ten exit rows. MiniWoB rejects duplicate/conflicting/abandoned terminals.
+    Canonical post-fix verification is green and ready for re-review.
 **=> NEXT:** PR + adversarial review for this complete readiness outcome. After merge, close only the
 named sources; an all-`GO` readiness verdict is required before frozen reviewed paid pre-registration.
 
