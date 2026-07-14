@@ -1,49 +1,66 @@
-# Ledger - Gate 0 Codex executable-resolution fix
+# Ledger - Gate 0 two-arm free-handshake compatibility
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative -> HANDOFF.md. -->
 
 ## Goal
-Resolve exactly one `.exe` Codex application into a scalar path before the free
-Gate 0 handshake launcher uses or records it.
+Make both free handshake-only Gate 0 arms emit safe receipts with intentional
+`NO_GO_INSUFFICIENT_WAKES`, without any model execution or spend.
 
 ## Current status (2026-07-14)
-- Branch: `codex/fix-gate0-codex-resolution-2026-07-14`.
-- PR #112 is open. Behavioral resolver fix `5cc4594` and CI portability fix
-  `e63a096` are pushed; both PR CI checks are green.
-- Posted re-review confirms the production resolver and behavioral-test blockers
-  are closed. Its sole remaining request was this status-only correction of stale
-  pending-push/CI text; executable/test behavior remains `e63a096`.
-- Merged main returned two Codex application candidates, `codex.exe` and the
-  extensionless `codex`; `$codex.Source` therefore became multi-valued and the
-  launcher attempted a malformed concatenated path.
-- Both Docker images were already rebuilt and hash-matched. No auth, MCP, model,
-  handshake, or preflight step ran.
+- Branch: `codex/gate0-free-handshake-compat-2026-07-14`, from merged PR #112.
+- PR #113 is open. `f945bc0` is pushed and CI is green at that head. Production, append-only artifacts,
+  and the score rubric are accepted. The second review requests only spend precision, early-era dedupe,
+  and current status. The current branch head includes the docs-only corrections for those findings;
+  executable and receipts remain `ab64a73`.
+- Both free handshakes are complete with validated safe receipts from the exact user-local Codex CLI
+  0.144.3 path, ChatGPT authentication, immutable image/code parity, and exact per-arm tool inventories.
+- Readiness remains intentionally `NO_GO_INSUFFICIENT_WAKES`; no model or held-out preflight ran.
+- Current experiment blockers are R0/W0/C0, exact wake accounting, a live 250-credit breaker, and a
+  frozen reviewed paid pre-registration.
 
 ## Constraints
-- Touch only HANDOFF.md, LEDGER.md, tools/run_gate0_codex.ps1, and
-  tests/test_run_gate0_codex_launcher.py.
-- Do not run Codex/model/handshake/preflight, rebuild images, or spend.
-- Do not weaken any existing launcher guard or add model execution.
+- This review fix touches only HANDOFF.md, LEDGER.md, and NORTH_STAR_SCORECARD.md.
+- Run only the explicitly approved free handshake commands; never `codex exec`.
+- No model call, held-out preflight/content, API key, spend, brain/scorer/schema change, or image rebuild.
+- Handshake artifacts are append-only; every compatibility retry uses a unique output directory.
 - Do not touch unrelated untracked Spanish-teacher files or local agent/config dirs.
 
 ## Tasks
-- [x] Claim the fix in HANDOFF and LEDGER.
-- [x] Resolve all application candidates and require exactly one `.exe` source.
-- [x] Use one scalar resolved path for version, login, MCP list, hashes, and receipt.
-- [x] Add narrow regression coverage.
-- [x] Run AST parsing and targeted/full tracked tests (`8 passed`; `1142 passed`).
-- [x] Run final `git diff --check`.
-- [x] Commit only the four scoped files.
-- [x] Replace text-only resolver coverage with behavioral tests of the exact production function AST.
-- [x] Correct HANDOFF/LEDGER for the open PR #112 and requested-changes review state.
-- [x] Run targeted/full tracked tests (`11 passed`; `1145 passed`).
-- [x] Run final AST parsing and `git diff --check`.
-- [x] Commit the four-file review fix.
-- [x] Make the behavioral-test PowerShell executable lookup portable across Windows/Linux.
-- [x] Run Windows targeted/full tracked tests and AST parsing (`11 passed`; `1145 passed`).
-- [x] Run final `git diff --check`.
-- [x] Stage the scoped CI portability fix for parent commit.
+- [x] Claim the gate-sized two-arm compatibility slice.
+- [x] Implement stderr-safe production login-status capture with exact scalar executable and fixed args.
+- [x] Behaviorally test the exact production helper AST for stderr success and nonzero exit.
+- [x] Run AST parsing and targeted launcher tests (`15 passed`).
+- [x] Run the Red free handshake to safe receipt output.
+- [x] Run the MiniWoB free handshake to safe receipt output.
+- [x] Verify both receipts and record every append-only attempt/blocker.
+- [x] Add the blunt tracked North Star scorecard.
+- [x] Run the full tracked suite (`1149 passed`) and `git diff --check`.
+- [x] Stage only the intended tracked files for parent commit.
+- [x] Replace unsupported score deltas with the first explicit engineering/proof rubric and formula.
+- [x] Add deduplicated exact and estimated historical usage manifests with tracked source locators.
+- [x] Correct PR #113 review/current-next status without touching production or receipts.
+- [x] Verify score/spend arithmetic and `git diff --check`.
+- [x] Stage only the three docs for parent commit.
+- [x] Audit early live-run accounting against HANDOFF, LEARNINGS, and archived reports #13-17.
+- [x] Remove unproved early-bucket dedupe and replace false-precision estimates with rounded ranges.
+- [x] Record PR #113 second-review/current-head status durably.
+- [x] Validate links/arithmetic/diff and stage only the three docs.
+
+## Attempts
+- Red attempt 1: `runs/gate0_codex_handshake_2026-07-14/red/` stopped before auth/MCP receipt. Windows
+  PowerShell stripped embedded `"rb"` from the immutable-image Python hash program, which exited 1 with
+  `NameError: rb`. No model or emulator started; the append-only path will not be reused.
+- Red attempt 2: `runs/gate0_codex_handshake_2026-07-14/red-compat1/` passed login and immutable
+  image/code parity, then failed because PowerShell stripped quotes from explicit TOML array overrides.
+  Codex saw `[run,-i]` as a string instead of a sequence. No model or emulator started; the path will
+  not be reused.
+- Diagnostic: `runs/gate0_codex_handshake_2026-07-14/diagnostic-mcp-config1/` used only free
+  `codex mcp list --json` calls to isolate TOML array quote loss; no model or world started.
+- Red attempt 3: `runs/gate0_codex_handshake_2026-07-14/red-compat2/` emitted a validated safe receipt,
+  SHA-256 `a76ef3be11890b5b257249ce3000b04e6768ac17fce68590ac2fa3de99849630`.
+- MiniWoB attempt 1: `runs/gate0_codex_handshake_2026-07-14/miniwob/` emitted a validated safe receipt,
+  SHA-256 `c4909f9d321f83e8ef0001b5f95e7f09de250cd276dcfd468fd685057b3e7a98`.
 
 ## Next
-- David merges PR #112 once the posted current-head review and CI merge gate is visibly satisfied.
-  Free handshake remains a separate action after merge.
+- Merge gate: posted approval + green CI on PR #113's current head, then David-only merge. After merge,
+  complete R0/W0/C0 only. Paid Gate 0 remains `NO_GO` until wake accounting and a live breaker are proven.

@@ -43,6 +43,64 @@ function Resolve-CodexExecutable([object[]]$Candidates) {
     return [string]$exeCandidates[0].Source
 }
 
+function ConvertTo-NativeArgument([string]$Value) {
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+    $result = [Text.StringBuilder]::new()
+    [void]$result.Append('"')
+    $backslashes = 0
+    foreach ($char in $Value.ToCharArray()) {
+        if ($char -eq '\') {
+            $backslashes += 1
+            continue
+        }
+        if ($char -eq '"') {
+            [void]$result.Append(('\' * (2 * $backslashes + 1)))
+            [void]$result.Append('"')
+        } else {
+            if ($backslashes -gt 0) { [void]$result.Append(('\' * $backslashes)) }
+            [void]$result.Append($char)
+        }
+        $backslashes = 0
+    }
+    if ($backslashes -gt 0) { [void]$result.Append(('\' * (2 * $backslashes))) }
+    [void]$result.Append('"')
+    return $result.ToString()
+}
+
+function Invoke-RedirectedProcess([string]$ExecutablePath, [string[]]$Arguments) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $ExecutablePath
+    $startInfo.Arguments = (($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        [void]$process.Start()
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        return [pscustomobject]@{
+            StdOut = [string]$stdoutTask.GetAwaiter().GetResult()
+            StdErr = [string]$stderrTask.GetAwaiter().GetResult()
+            ExitCode = [int]$process.ExitCode
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
+function Invoke-CodexLoginStatus([string]$ExecutablePath) {
+    $result = Invoke-RedirectedProcess -ExecutablePath $ExecutablePath -Arguments @('login', 'status')
+    if ($result.ExitCode -ne 0) {
+        throw "Codex login status command exited with code $($result.ExitCode)."
+    }
+    [string]$text = (($result.StdOut + "`n" + $result.StdErr).Trim())
+    return [pscustomobject]@{ Text = $text; ExitCode = $result.ExitCode }
+}
+
 if ($Model -match '(?i)(^|[-_.])latest($|[-_.])') {
     throw 'Model must be an explicit model identifier, not a latest alias.'
 }
@@ -67,8 +125,9 @@ if ($LASTEXITCODE -ne 0 -or $versionText -notmatch '^codex(?:-cli)?\s+[0-9][0-9A
 if ($env:OPENAI_API_KEY -or $env:CODEX_API_KEY) {
     throw 'OPENAI_API_KEY or CODEX_API_KEY is set; Gate 0 requires ChatGPT authentication.'
 }
-$loginText = (& $ResolvedCodexPath login status 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $loginText -notmatch '(?i)\bchatgpt\b' -or
+$loginStatus = Invoke-CodexLoginStatus -ExecutablePath $ResolvedCodexPath
+$loginText = $loginStatus.Text
+if ($loginText -notmatch '(?i)\bchatgpt\b' -or
     $loginText -match '(?i)\bapi(?:[ -]?key)?\b') {
     throw 'Codex login status did not prove ChatGPT subscription authentication.'
 }
@@ -118,7 +177,7 @@ $HostCode = [ordered]@{
     '/app/world_mcp.py' = Get-FileSha256 (Join-Path $RepoRoot 'world_mcp.py')
     '/app/core/miniwob_world.py' = Get-FileSha256 (Join-Path $RepoRoot 'core\miniwob_world.py')
 }
-$HashProgram = 'import hashlib,json,sys; print(json.dumps({p:hashlib.sha256(open(p,"rb").read()).hexdigest() for p in sys.argv[1:]},sort_keys=True))'
+$HashProgram = 'import hashlib,json,sys; print(json.dumps({p:hashlib.sha256(open(p,chr(114)+chr(98)).read()).hexdigest() for p in sys.argv[1:]},sort_keys=True))'
 $ImageCodeText = (& docker run --rm --network none --entrypoint python $ImageId -c $HashProgram `
     '/app/world_mcp.py' '/app/core/miniwob_world.py' 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect code inside the pinned world image.' }
@@ -218,8 +277,10 @@ $McpListArgs += @('mcp', 'list', '--json')
 $OldCodexHome = $env:CODEX_HOME
 try {
     $env:CODEX_HOME = $IsolatedHome
-    $McpListText = (& $ResolvedCodexPath @McpListArgs 2>> $McpListErrPath | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Codex rejected the isolated explicit MCP configuration.' }
+    $McpListResult = Invoke-RedirectedProcess -ExecutablePath $ResolvedCodexPath -Arguments $McpListArgs
+    Write-Utf8NoBom $McpListErrPath $McpListResult.StdErr
+    if ($McpListResult.ExitCode -ne 0) { throw 'Codex rejected the isolated explicit MCP configuration.' }
+    $McpListText = $McpListResult.StdOut.Trim()
 } finally {
     if ($null -eq $OldCodexHome) { Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue }
     else { $env:CODEX_HOME = $OldCodexHome }
