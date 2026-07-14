@@ -7,8 +7,43 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (Gate 0 Codex executable-resolution PR #112 code/test fixes pushed and CI
-green; $0, no model call or held-out preflight.)_
+_Last updated: 2026-07-14 (Gate 0 two-arm free handshakes complete locally; $0, no model call or
+held-out preflight.)_
+
+**=>=> NEWEST (2026-07-14) - GATE 0 TWO-ARM FREE HANDSHAKES COMPLETE LOCALLY; $0; NO MODEL RUN. =>=>**
+1. **POSITION VS NORTH STAR:** `NORTH_STAR_SCORECARD.md` is blunt: overall **19/100**, engineering
+   foundation **75/100**, actual evidence/proof **8/100**. This slice moved overall `18 -> 19` and
+   engineering `72 -> 75`; proof stayed `8 -> 8`. The decisive milestone remains a banked,
+   controlled Gate 0 verdict from one fixed Codex brain on Red + MiniWoB.
+2. **DECISIVE EVIDENCE BOUGHT HERE:** readiness/interpretability only, not capability evidence. Codex CLI
+   0.144.3 with planned model `gpt-5.4` now produces safe free receipts for both arms; fixing handshake
+   bugs does **not** raise the 8/100 proof score.
+3. **RED RECEIPT:** `runs/gate0_codex_handshake_2026-07-14/red-compat2/handshake-receipt.json`, SHA-256
+   `a76ef3be11890b5b257249ce3000b04e6768ac17fce68590ac2fa3de99849630`; exact seven Red tools,
+   one `gate0_world` server, image/code parity, `NO_GO_INSUFFICIENT_WAKES`, paid execution false.
+4. **MINIWOB RECEIPT:** `runs/gate0_codex_handshake_2026-07-14/miniwob/handshake-receipt.json`, SHA-256
+   `c4909f9d321f83e8ef0001b5f95e7f09de250cd276dcfd468fd685057b3e7a98`; exact seven MiniWoB tools,
+   one `gate0_world` server, image/code parity, `NO_GO_INSUFFICIENT_WAKES`, paid execution false.
+5. **SAFETY:** no `codex exec`, model call, held-out preflight/content, API key, spend, brain/scorer/schema
+   change, or artifact rewrite. Every free attempt uses a new append-only output directory.
+6. **BANKED ATTEMPT 1 - RED INFRA FAIL:** `runs/gate0_codex_handshake_2026-07-14/red/` stopped before
+   auth/MCP receipt. The immutable-image Python hash probe exited 1 because Windows PowerShell stripped
+   embedded `"rb"` quotes, producing `NameError: rb`; no model or emulator started. A quote-free hash
+   program plus exact-AST behavioral regression is complete; this path will not be reused.
+7. **BANKED ATTEMPT 2 - RED CONFIG FAIL:** `runs/gate0_codex_handshake_2026-07-14/red-compat1/`
+   passed login and immutable image/code parity, then Codex rejected explicit TOML array overrides because
+   Windows PowerShell removed embedded quotes (`["run","-i"]` became string `[run,-i]`). A redirected
+   Process helper with behavioral quote-preservation coverage is complete; this path will not be reused.
+8. **REMAINING BEFORE EXPERIMENT:** free handshake -> R0/W0/C0 -> frozen reviewed pre-registration ->
+   one Red run + one MiniWoB run -> banked verdict. Paid work remains blocked until exact wake accounting
+   and a live 250-credit breaker are mechanically proven.
+9. **SPEND:** Gate 0 `$0.00`, no model. Reconstructed historical API-equivalent usage is
+   `$333.529338-$334.179338`, but exact historical cash spend is unrecoverable from tracked summaries;
+   most post-2026-06-26 runs used subscription quota and the legacy `~$190` ledger conflicts by about `$73`.
+10. **VERIFICATION:** PowerShell AST passed; targeted launcher suite `15 passed`; full exact 69-file
+    tracked suite `1149 passed`; `git diff --check` passed.
+**=> NEXT:** commit this outcome slice, then run R0/W0/C0 only under the reviewed workflow.
+**Paid ledger today (2026-07-14): $0; no model call and no held-out preflight.**
 
 **=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION PR #112 CI FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**
 1. **DONE:** on `codex/fix-gate0-codex-resolution-2026-07-14`, the free-handshake launcher now fails
