@@ -7,8 +7,36 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (PR #113 current branch head includes second-review spend
-precision/dedupe/status corrections; $0, no model call or held-out preflight.)_
+_Last updated: 2026-07-14 (R0/W0/C0 readiness verdict recorded on the current branch;
+`codex/gate0-r0-w0-c0-readiness-2026-07-14`; $0, no model call or held-out preflight.)_
+
+**=>=> NEWEST (2026-07-14) - R0/W0/C0 READINESS VERDICT RECORDED ON CURRENT BRANCH; $0. =>=>**
+1. **POSITION VS NORTH STAR:** overall **19/100**, engineering foundation **76/100**, actual
+   evidence/proof **8/100**. The decisive milestone is still one banked controlled Gate 0 verdict from
+   the fixed Codex brain on Red + MiniWoB.
+2. **DECISIVE EVIDENCE BOUGHT:** interpretability only. One scorer now fails closed across constancy,
+   leaks, Red/MiniWoB task predicates, 2x-human bars, and Cheap caps. The Red offline oracle now includes
+   existing battle-state plus first-party current-HP signals; a synthetic loss regression prevents
+   same-map exit/movement from masquerading as a win. Proof stays 8/100 because no brain ran.
+3. **BANKED READINESS:** R0, W0, and C0 are each `INSUFFICIENT_SOURCE`; paid Gate 0 is `NO_GO`. Exact
+   receipts and checked paths are in `reports/2026-07-14-gate0-readiness.md`.
+4. **FINAL FREE RECEIPTS:** current-head Red `red-v3` receipt SHA-256
+   `88a5a2d96f1a28218bc29e307b820706dfaef49820b6d6363ac4ad14601723e5`; MiniWoB `miniwob-v2`
+   receipt SHA-256 `0961c5c05d138ee917ee5632be0ee26971d46700c1f20801d473927bf496cc59`.
+   Common brain, image/code parity, and tool inventories pass; both remain fail-closed/no-paid-execution.
+5. **EXACT BLOCKER:** C0 has no independently frozen expected-pins JSON, documented/mechanical exact wake
+   boundary, or live 250-credit breaker. R0/W0 need same-task human baselines and append-safe DEV artifacts.
+6. **BANKED ATTEMPTS:** `red-v1` failed command resolution before directory/receipt; `red-v2` is valid but
+   pre-final-code; `miniwob-v1` is preserved and will not be reused because the lean image lacked the
+   top-level Red import. Final current-head attempts are `red-v3` and `miniwob-v2`.
+7. **SAFETY:** no Codex/model execution, paid run, paid-held-out MiniWoB seed `1000..1004` exposure,
+   brain/contract/tool-schema edit, or artifact rewrite. Human baselines that require David remain explicit
+   blockers rather than invented measurements.
+8. **VERIFICATION:** final canonical root-side `uv run --frozen` targeted readiness `64 passed`; full
+   tracked plus scorer `1159 passed, 1 warning`; `git diff --check` passes.
+9. **SPEND:** Gate 0 remains `$0.00`; this slice is free readiness work only.
+**=> NEXT:** PR + adversarial review for this complete readiness outcome. After merge, close only the
+named sources; an all-`GO` readiness verdict is required before frozen reviewed paid pre-registration.
 
 **=>=> NEWEST (2026-07-14) - PR #113 DOCS CORRECTIONS ON CURRENT BRANCH HEAD; $0; NO MODEL RUN. =>=>**
 1. **POSITION VS NORTH STAR:** `NORTH_STAR_SCORECARD.md` now defines the first rubric-backed baseline:

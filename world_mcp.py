@@ -133,7 +133,9 @@ GAMES = {
     "pokemon_red": {"pkg": "games.pokemon_red", "plugin": "PokemonRedPlugin", "sandbox": "POKEMON_SANDBOX",
                     "perceiver_mod": "games.pokemon_red.perceiver", "perceiver": "OverworldPerceiver",
                     "rom": "roms/PokemonRed.gb",
-                    "watch": {"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163, "badges": 0xD356}},
+                    "watch": {"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163,
+                              "badges": 0xD356, "in_battle": 0xD057,
+                              "party_hp_hi": 0xD16C, "party_hp_lo": 0xD16D}},
     # GBA worlds: use the shared PerceptionPlugin (as play_generic.py does) + FollowCameraPerceiver
     # (core.grid_perceiver) + a locally-built sandbox (_gba_sandbox — mirrors _nds_sandbox()).
     # mgba is not importable on Windows; the emulator is only constructed lazily on first tool CALL.

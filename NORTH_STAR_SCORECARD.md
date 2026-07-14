@@ -4,11 +4,11 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
 
 ## Scores
 
-- **Engineering foundation: 75/100.** Four components, 25 points each:
+- **Engineering foundation: 76/100.** Four components, 25 points each:
   - **Architecture / seam: 20/25.** The fixed-brain/swappable-perceiver boundary is implemented,
     documented, and guarded; a controlled cross-world Gate 0 verdict has not yet audited it end to end.
-  - **Screen/control + offline scoring: 20/25.** Screen-derived control paths and oracle-off-wire scorers
-    exist across several worlds; R0/W0/C0 are still incomplete.
+  - **Screen/control + offline scoring: 21/25.** The single fail-closed Gate 0 scorer and Red battle
+    oracle now exist; live R0/W0 sources and human baselines are still incomplete.
   - **Hermetic auth/tool/image/reproducibility: 20/25.** Both free handshakes now prove ChatGPT auth,
     exact CLI/image/code hashes, one MCP server, and exact per-arm tools; paid execution is not frozen.
   - **Cost/safety/eval operations: 15/25.** Pre-registration, one-attempt, held-out, append-only, and
@@ -23,17 +23,18 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
   - **Cheap: 2/25.** Cost ledgers and one skill A/B batching result exist, but held-out skill compilation,
     exact wakes/task, and a live spend breaker are not proven.
 - **Overall: 19/100.** `ceil(0.15 * engineering + 0.85 * proof)` =
-  `ceil(0.15 * 75 + 0.85 * 8)` = `ceil(18.05)` = `19`. The 85% proof weight prevents engineering
+  `ceil(0.15 * 76 + 0.85 * 8)` = `ceil(18.20)` = `19`. The 85% proof weight prevents engineering
   activity from masquerading as North Star progress.
 
-The free handshakes add **zero proof points**. This slice buys readiness and interpretability, not
-capability evidence.
+The free handshakes and R0/W0/C0 scorer add **zero proof points**. This slice buys readiness and
+interpretability, not capability evidence.
 
 ## Milestone and critical path
 
 - **Decisive milestone:** bank a controlled Gate 0 verdict with one fixed Codex brain on Red + MiniWoB.
-- **Current blocker:** R0/W0/C0 are incomplete; exact wake accounting and a live 250-credit breaker must
-  be proven before a frozen, reviewed paid pre-registration.
+- **Current blocker:** C0 lacks independently frozen expected pins, exact wake accounting, and a live
+  250-credit breaker. Current-head image/free-handshake parity now passes. R0/W0 lack human baselines and
+  append-safe DEV artifacts. All are required before a frozen, reviewed pre-registration.
 - **Critical path:** free handshake -> R0/W0/C0 -> frozen reviewed pre-registration -> one Red run + one
   MiniWoB run -> banked verdict.
 - **Current Gate 0 spend:** `$0.00`; no model call.
