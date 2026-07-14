@@ -7,14 +7,15 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (Gate 0 two-arm free handshakes complete locally; $0, no model call or
-held-out preflight.)_
+_Last updated: 2026-07-14 (PR #113 code/artifacts clean; score/spend derivation review fix complete
+locally; $0, no model call or held-out preflight.)_
 
 **=>=> NEWEST (2026-07-14) - GATE 0 TWO-ARM FREE HANDSHAKES COMPLETE LOCALLY; $0; NO MODEL RUN. =>=>**
-1. **POSITION VS NORTH STAR:** `NORTH_STAR_SCORECARD.md` is blunt: overall **19/100**, engineering
-   foundation **75/100**, actual evidence/proof **8/100**. This slice moved overall `18 -> 19` and
-   engineering `72 -> 75`; proof stayed `8 -> 8`. The decisive milestone remains a banked,
-   controlled Gate 0 verdict from one fixed Codex brain on Red + MiniWoB.
+1. **POSITION VS NORTH STAR:** `NORTH_STAR_SCORECARD.md` now defines the first rubric-backed baseline:
+   overall **19/100**, engineering foundation **75/100**, actual evidence/proof **8/100**. Overall is
+   `ceil(0.15*75 + 0.85*8) = 19`; the 85% proof weight prevents engineering activity from masquerading
+   as progress. The decisive milestone remains a banked controlled verdict from one fixed Codex brain
+   on Red + MiniWoB.
 2. **DECISIVE EVIDENCE BOUGHT HERE:** readiness/interpretability only, not capability evidence. Codex CLI
    0.144.3 with planned model `gpt-5.4` now produces safe free receipts for both arms; fixing handshake
    bugs does **not** raise the 8/100 proof score.
@@ -40,9 +41,11 @@ held-out preflight.)_
 9. **SPEND:** Gate 0 `$0.00`, no model. Reconstructed historical API-equivalent usage is
    `$333.529338-$334.179338`, but exact historical cash spend is unrecoverable from tracked summaries;
    most post-2026-06-26 runs used subscription quota and the legacy `~$190` ledger conflicts by about `$73`.
-10. **VERIFICATION:** PowerShell AST passed; targeted launcher suite `15 passed`; full exact 69-file
-    tracked suite `1149 passed`; `git diff --check` passed.
-**=> NEXT:** commit this outcome slice, then run R0/W0/C0 only under the reviewed workflow.
+10. **PR #113 REVIEW STATE:** PR #113 is open; production code and append-only receipt artifacts reviewed
+    clean. The docs-only score derivation, spend-manifest, and stale-status blockers are addressed locally.
+    Prior code evidence remains PowerShell AST pass, targeted `15 passed`, full tracked `1149 passed`.
+**=> NEXT:** obtain posted approval on the current head and green CI, then David merges; after merge,
+complete R0/W0/C0 only under the reviewed workflow.
 **Paid ledger today (2026-07-14): $0; no model call and no held-out preflight.**
 
 **=>=> NEWEST (2026-07-14) - GATE 0 CODEX EXECUTABLE-RESOLUTION PR #112 CI FIX COMPLETE LOCALLY; $0; NO RUN. =>=>**

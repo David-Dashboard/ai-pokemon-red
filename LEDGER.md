@@ -8,6 +8,8 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
 
 ## Current status (2026-07-14)
 - Branch: `codex/gate0-free-handshake-compat-2026-07-14`, from merged PR #112.
+- PR #113 is open. Review found production code and append-only receipt artifacts clean; its blockers
+  were docs-only score/spend derivation and stale current status, now addressed locally.
 - Both free handshakes are complete with validated safe receipts from the exact user-local Codex CLI
   0.144.3 path, ChatGPT authentication, immutable image/code parity, and exact per-arm tool inventories.
 - Readiness remains intentionally `NO_GO_INSUFFICIENT_WAKES`; no model or held-out preflight ran.
@@ -15,8 +17,7 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
   frozen reviewed paid pre-registration.
 
 ## Constraints
-- Touch only HANDOFF.md, LEDGER.md, NORTH_STAR_SCORECARD.md, tools/run_gate0_codex.ps1, and
-  tests/test_run_gate0_codex_launcher.py.
+- This review fix touches only HANDOFF.md, LEDGER.md, and NORTH_STAR_SCORECARD.md.
 - Run only the explicitly approved free handshake commands; never `codex exec`.
 - No model call, held-out preflight/content, API key, spend, brain/scorer/schema change, or image rebuild.
 - Handshake artifacts are append-only; every compatibility retry uses a unique output directory.
@@ -33,6 +34,11 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
 - [x] Add the blunt tracked North Star scorecard.
 - [x] Run the full tracked suite (`1149 passed`) and `git diff --check`.
 - [x] Stage only the intended tracked files for parent commit.
+- [x] Replace unsupported score deltas with the first explicit engineering/proof rubric and formula.
+- [x] Add deduplicated exact and estimated historical usage manifests with tracked source locators.
+- [x] Correct PR #113 review/current-next status without touching production or receipts.
+- [x] Verify score/spend arithmetic and `git diff --check`.
+- [x] Stage only the three docs for parent commit.
 
 ## Attempts
 - Red attempt 1: `runs/gate0_codex_handshake_2026-07-14/red/` stopped before auth/MCP receipt. Windows
@@ -50,5 +56,5 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
   SHA-256 `c4909f9d321f83e8ef0001b5f95e7f09de250cd276dcfd468fd685057b3e7a98`.
 
 ## Next
-- Commit/open/review this compatibility outcome slice, then run R0/W0/C0 only. Paid Gate 0 remains
-  `NO_GO` until wake accounting and a live 250-credit breaker are mechanically proven.
+- Obtain posted approval on PR #113's current head and green CI, then David merges. After merge, complete
+  R0/W0/C0 only. Paid Gate 0 remains `NO_GO` until wake accounting and a live breaker are proven.
