@@ -40,7 +40,8 @@ capability evidence.
 
 ## Historical usage manifest
 
-These are disjoint API-reported or API-equivalent groups. They total exactly `$220.035810`.
+These are disjoint reported/API-equivalent groups. They total exactly `$220.035810`; that is an
+accounting subtotal, **not historical cash spend**.
 
 | Disjoint group | Amount | Tracked source / locator |
 |---|---:|---|
@@ -60,18 +61,43 @@ These are disjoint API-reported or API-equivalent groups. They total exactly `$2
 | MKDS A/B | `$1.5488415` | [MKDS verdict](reports/2026-07-13-mkds-ab-verdict.md), total cost (~30-37) |
 | **Exact/API-equivalent subtotal** | **`$220.035810`** | Sum of rows above |
 
-Older summaries only support ranges or rounded reconstruction:
+### Early API-era audit and dedupe
 
-| Additional disjoint group | Amount | Tracked source / locator |
-|---|---:|---|
-| Early API runs | `$16.69-$17.34` | [HANDOFF](HANDOFF.md), early paid-run ledgers before the cross-console audit (~880-915) |
-| Other Iteration 1 runs | `$9.740000` | [HANDOFF](HANDOFF.md), Iteration 1 run ledger excluding close + patience (~898-963) |
-| Other entity-v2 runs | `$76.943528` | [HANDOFF](HANDOFF.md), entity-v2 history (`about $80` / seven-run `~$57` ledgers, ~685-721), excluding exact run 11 |
-| Gate3D run 2 | `~$5.000000` | [HANDOFF](HANDOFF.md), Gate3D run ledger (~630-632); explicitly estimated and excluded above |
-| Other day-2 probes | `~$5.120000` | [HANDOFF](HANDOFF.md), day-2 `~$66` ledger (~710-721), excluding separately listed disjoint groups |
-| **Estimated additional subtotal** | **`$113.493528-$114.143528`** | Sum of rows above |
+The tracked early-run records support these constituents:
 
-**Reconstructed API-equivalent total:** `$333.529338-$334.179338`.
+- **Runs #1-12: `~$6.85`.** [HANDOFF](HANDOFF.md), early live-run accounting (~2128-2178) lists
+  `~$3 + $0.23 + $0.33 + $0.11 + $0.83 + $0 + $0.25 + $0.30 + $0.40 + $0.30 + $0.30 + $0.30 + $0.50`.
+  [LEARNINGS](reports/LEARNINGS.md), the battle-run chronology, corroborates the run identities/outcomes.
+- **Pre-run work before the numbered ledger: `~$0.66`.** The same [HANDOFF](HANDOFF.md) accounting
+  (~2172-2179) reports this separately; it is not assigned to or duplicated in runs #1-12.
+- **Runs #13-17: `~$2.05-$2.70`.** The five run-ID-disjoint archived reports give:
+  [#13](reports/_archive/2026-06-20-live-run-13-battle-auto-advance.md) `~$0.15-$0.20`,
+  [#14](reports/_archive/2026-06-20-live-run-14.md) `~$0.10`,
+  [#15](reports/_archive/2026-06-20-live-run-15.md) `~$0.60-$0.80`,
+  [#16](reports/_archive/2026-06-20-live-run-16-interior-nav-drift-fix-end-to-end-re-run.md)
+  `~$0.60-$0.80`, and
+  [#17](reports/_archive/2026-06-20-live-run-17-affordance-layer-probe-saliency-got-the-starter.md)
+  `~$0.60-$0.80`.
+- **Auditable early through-#17 band: `~$9.56-$10.21`.** This is pre-run `$0.66` + numbered runs #1-17.
+  Those records do not overlap the 2026-07-02 Iteration-1 close/patience row in the exact manifest.
 
-This is **not exact cash spend**. Most runs after 2026-06-26 used subscription quota; the legacy `~$190`
-ledger conflicts by about `$73`; exact all-time cash spend is unrecoverable from tracked summaries.
+The prior `$16.69-$17.34` "early API" bucket and `$9.74` "other Iteration 1" bucket are removed: tracked
+summaries do not expose their constituents or prove that they exclude runs #1-17, each other, and the
+exact close/patience row. They are not added to any precise subtotal.
+
+### Rounded additional estimates
+
+- Other entity-v2 attempts: **about `$77`** ([HANDOFF](HANDOFF.md), entity-v2 `about $80` history and
+  seven-run `~$57` ledger, ~685-721), excluding the exact `$3.056472` run-11 row.
+- Gate3D run 2: **about `$5`** ([HANDOFF](HANDOFF.md), Gate3D ledger ~630-632); excluded from the exact
+  Gate3D row.
+- Other day-2 probes: **about `$5`** ([HANDOFF](HANDOFF.md), rounded day-2 `~$66` ledger ~710-721), after
+  the separately listed entity/GBA/MiniWoB groups.
+
+Combining the exact `$220.04` subtotal with only the auditable early band and these rounded additions
+supports a **rough API-equivalent lower reconstruction of about `$317`**. Allowing for unresolved legacy
+summary buckets yields only a **broad rough range of about `$317-$334`**, not a six-decimal total.
+
+This is **reported/API-equivalent usage, not exact cash spend**. Most runs after 2026-06-26 used
+subscription quota; the legacy `~$190` ledger conflicts materially with the reconstruction; exact all-time
+cash spend is unrecoverable from tracked summaries.

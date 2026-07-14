@@ -8,8 +8,10 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
 
 ## Current status (2026-07-14)
 - Branch: `codex/gate0-free-handshake-compat-2026-07-14`, from merged PR #112.
-- PR #113 is open. Review found production code and append-only receipt artifacts clean; its blockers
-  were docs-only score/spend derivation and stale current status, now addressed locally.
+- PR #113 is open. `f945bc0` is pushed and CI is green at that head. Production, append-only artifacts,
+  and the score rubric are accepted. The second review requests only spend precision, early-era dedupe,
+  and current status. The current branch head includes the docs-only corrections for those findings;
+  executable and receipts remain `ab64a73`.
 - Both free handshakes are complete with validated safe receipts from the exact user-local Codex CLI
   0.144.3 path, ChatGPT authentication, immutable image/code parity, and exact per-arm tool inventories.
 - Readiness remains intentionally `NO_GO_INSUFFICIENT_WAKES`; no model or held-out preflight ran.
@@ -39,6 +41,10 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
 - [x] Correct PR #113 review/current-next status without touching production or receipts.
 - [x] Verify score/spend arithmetic and `git diff --check`.
 - [x] Stage only the three docs for parent commit.
+- [x] Audit early live-run accounting against HANDOFF, LEARNINGS, and archived reports #13-17.
+- [x] Remove unproved early-bucket dedupe and replace false-precision estimates with rounded ranges.
+- [x] Record PR #113 second-review/current-head status durably.
+- [x] Validate links/arithmetic/diff and stage only the three docs.
 
 ## Attempts
 - Red attempt 1: `runs/gate0_codex_handshake_2026-07-14/red/` stopped before auth/MCP receipt. Windows
@@ -56,5 +62,5 @@ Make both free handshake-only Gate 0 arms emit safe receipts with intentional
   SHA-256 `c4909f9d321f83e8ef0001b5f95e7f09de250cd276dcfd468fd685057b3e7a98`.
 
 ## Next
-- Obtain posted approval on PR #113's current head and green CI, then David merges. After merge, complete
-  R0/W0/C0 only. Paid Gate 0 remains `NO_GO` until wake accounting and a live breaker are proven.
+- Merge gate: posted approval + green CI on PR #113's current head, then David-only merge. After merge,
+  complete R0/W0/C0 only. Paid Gate 0 remains `NO_GO` until wake accounting and a live breaker are proven.
