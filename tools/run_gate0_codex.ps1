@@ -92,6 +92,47 @@ function Invoke-RedirectedProcess([string]$ExecutablePath, [string[]]$Arguments)
     }
 }
 
+function Invoke-GitBytes([string]$RepoRoot, [string[]]$GitArguments) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = 'git'
+    $startInfo.Arguments = ((@('-C', $RepoRoot) + $GitArguments |
+        ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        [void]$process.Start()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $memory = [IO.MemoryStream]::new()
+        $process.StandardOutput.BaseStream.CopyTo($memory)
+        $process.WaitForExit()
+        [void]$stderrTask.GetAwaiter().GetResult()
+        return [pscustomobject]@{ ExitCode = [int]$process.ExitCode; Bytes = $memory.ToArray() }
+    } finally {
+        $process.Dispose()
+    }
+}
+
+# Canonical-content code hash. The CONTRACT here is world_mcp.py::code_sha256() -- keep the two in
+# lockstep (tests/test_run_gate0_codex_launcher.py pins their agreement on identical repos): SHA-256
+# over the exact git blob bytes at HEAD (git cat-file blob HEAD:<path>), NEVER over raw working-tree
+# bytes, which vary with core.autocrlf/line-ending config across machines and OSes even when the
+# tracked content is byte-identical -- raw-byte hashing made host_code_sha256 non-reproducible from
+# a clean clone (PR #114 readiness-audit MAJOR). When the working tree differs from HEAD (or git is
+# unusable), return the distinct refusal sentinel 'UNHASHABLE' -- never silently fall back to
+# hashing dirty bytes. Byte-stream capture (Invoke-GitBytes) is deliberate: piping git output
+# through PowerShell strings would re-mangle line endings and corrupt the hash.
+function Get-CanonicalCodeSha256([string]$RepoRoot, [string]$RelPath) {
+    $clean = Invoke-GitBytes -RepoRoot $RepoRoot -GitArguments @('diff', '--quiet', 'HEAD', '--', $RelPath)
+    if ($clean.ExitCode -ne 0) { return 'UNHASHABLE' }
+    $blob = Invoke-GitBytes -RepoRoot $RepoRoot -GitArguments @('cat-file', 'blob', "HEAD:$RelPath")
+    if ($blob.ExitCode -ne 0) { return 'UNHASHABLE' }
+    return Get-BytesSha256 $blob.Bytes
+}
+
 function Invoke-CodexLoginStatus([string]$ExecutablePath) {
     $result = Invoke-RedirectedProcess -ExecutablePath $ExecutablePath -Arguments @('login', 'status')
     if ($result.ExitCode -ne 0) {
@@ -172,10 +213,20 @@ if ($LASTEXITCODE -ne 0 -or $ImageId -notmatch '^sha256:[0-9a-f]{64}$') {
 }
 
 # Both Dockerfiles copy these files. A mutable tag is never enough: the exact image must contain
-# the exact host code before even the free tools/list handshake is allowed.
+# the exact host code before even the free tools/list handshake is allowed. Host-side hashes are
+# canonical git-blob hashes at HEAD (Get-CanonicalCodeSha256; contract = world_mcp.py::code_sha256),
+# so the receipt reproduces from any clean clone of the same commit regardless of local line-ending
+# config. The image-side hashes below stay raw in-image bytes (the image is content-addressed, so
+# they are already machine-independent) -- parity therefore also proves the image holds the exact
+# canonical LF content, and an image built from a CRLF checkout correctly refuses as stale.
 $HostCode = [ordered]@{
-    '/app/world_mcp.py' = Get-FileSha256 (Join-Path $RepoRoot 'world_mcp.py')
-    '/app/core/miniwob_world.py' = Get-FileSha256 (Join-Path $RepoRoot 'core\miniwob_world.py')
+    '/app/world_mcp.py' = Get-CanonicalCodeSha256 -RepoRoot $RepoRoot -RelPath 'world_mcp.py'
+    '/app/core/miniwob_world.py' = Get-CanonicalCodeSha256 -RepoRoot $RepoRoot -RelPath 'core/miniwob_world.py'
+}
+foreach ($path in $HostCode.Keys) {
+    if ($HostCode[$path] -eq 'UNHASHABLE') {
+        throw "Host code for $path differs from HEAD or git is unavailable; refusing to hash a dirty working tree."
+    }
 }
 $HashProgram = 'import hashlib,json,sys; print(json.dumps({p:hashlib.sha256(open(p,chr(114)+chr(98)).read()).hexdigest() for p in sys.argv[1:]},sort_keys=True))'
 $ImageCodeText = (& docker run --rm --network none --entrypoint python $ImageId -c $HashProgram `
