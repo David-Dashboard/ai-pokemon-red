@@ -1,0 +1,49 @@
+{
+  "_comment": "Gate 0 pre-registration precondition 3 (reports/2026-07-18-gate0-prereg.md) -- the paid_gate0-mode source-pins manifest eval/score_gate0.py::SOURCE_PIN_FILES['paid_gate0'] expects. Binds the held-out-seed (1000..1004) paid mode to the SAME hash-pinned expected-pins files as readiness_dev (the 20 PIN_FIELDS pin the brain/executable/config, not the task instance -- they do not vary with mode), per-arm audit evidence LOCATIONS, and the six named metric/proof artifacts _verify_sources() reads. See eval/fixtures/gate0_expected_pins.SOURCES.md for field-by-field sourcing.",
+  "schema_version": 1,
+  "mode": "paid_gate0",
+  "frozen_seed_sha256": "8b83d4a8baa79b0dac5c26a97f7a2bbd9af7d5385a937a832d8da24a9d1989ce",
+  "_source_frozen_seed_sha256": "sha256 of eval/fixtures/gate0_miniwob_paid_seeds.json ([1000,1001,1002,1003,1004]) as committed on this branch, matching eval.score_gate0.MODES['paid_gate0'][0].",
+  "artifact_paths": {
+    "red_agent": "runs/gate0_paid/red/agent_metrics.json",
+    "red_human": "runs/gate0_human_baseline/red/human_metrics.json",
+    "miniwob_agent": "runs/gate0_paid/miniwob/agent_metrics.json",
+    "miniwob_human": "runs/gate0_paid_human_baseline/miniwob/human_metrics.json",
+    "wake_boundary": "runs/gate0_paid/wake_boundary.json",
+    "live_breaker": "runs/gate0_live_breaker/live_breaker_dry_run_trip.json"
+  },
+  "_source_artifact_paths": "red_human: SAME file as readiness_dev -- Red has no dev/paid seed split (design doc:273, 'Red uses the same fixed start for agent and human'), and DAVID_BASELINES.md names only this one path for Red. miniwob_human: DELIBERATELY DIFFERENT from readiness_dev's path -- design doc:273-276 requires the paid-seed (1000..1004) human replay to happen AFTER the agent's paid attempt is banked, on the held-out seeds, never before ('DEV-seed human runs are readiness estimates, never the final denominator'); DAVID_BASELINES.md's capture_gate0_baseline_miniwob.py deliberately refuses any seed list but the DEV one, so no tool produces this file yet -- this is a known, surfaced gap (a future capture script for the paid-seed replay), not invented behavior. red_agent/miniwob_agent/wake_boundary: not yet produced (paid attempt + wake accounting are open items outside preconditions 3+4); paths mirror tools/run_gate0_codex.ps1's OutputDir convention under runs/gate0_paid/<arm>/. live_breaker: SAME real artifact as readiness_dev -- the breaker mechanism's correctness (this PR's precondition-4 deliverable) does not depend on dev-vs-paid mode.",
+  "artifact_sha256": {
+    "red_agent": "PENDING_NOT_YET_CAPTURED_paid_attempt_not_run",
+    "red_human": "PENDING_NOT_YET_CAPTURED_precondition_6_numbers_not_run",
+    "miniwob_agent": "PENDING_NOT_YET_CAPTURED_paid_attempt_not_run",
+    "miniwob_human": "PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built",
+    "wake_boundary": "PENDING_NOT_YET_CAPTURED_wake_accounting_not_built",
+    "live_breaker": "0fe2a4b119774941b15f28d3c7355f917a1f6b362a5bc044443570aa88698ed7"
+  },
+  "_source_artifact_sha256": "Placeholders for the five not-yet-existing artifacts are inert by construction: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares this hash, so these strings are never actually checked. live_breaker's hash is REAL and IDENTICAL to readiness_dev's: sha256 of the actual produced runs/gate0_live_breaker/live_breaker_dry_run_trip.json (gitignored, local-only; see reports/2026-07-19-gate0-live-breaker-dry-run.md for the byte-identical committed copy + this same hash).",
+  "audit_paths": {
+    "red": {
+      "transcript": "runs/gate0_paid/red/transcript.jsonl",
+      "receipt": "runs/gate0_paid/red/handshake-receipt.json",
+      "expected_pins": "eval/fixtures/gate0_expected_pins_red.json",
+      "artifacts_dir": "runs/gate0_paid/red",
+      "peer_receipt": "runs/gate0_paid/miniwob/handshake-receipt.json",
+      "oracle": "runs/gate0_paid/red/world/oracle.jsonl"
+    },
+    "miniwob": {
+      "transcript": "runs/gate0_paid/miniwob/transcript.jsonl",
+      "receipt": "runs/gate0_paid/miniwob/handshake-receipt.json",
+      "expected_pins": "eval/fixtures/gate0_expected_pins_miniwob.json",
+      "artifacts_dir": "runs/gate0_paid/miniwob",
+      "peer_receipt": "runs/gate0_paid/red/handshake-receipt.json",
+      "oracle": "runs/gate0_paid/miniwob/world/oracle.jsonl"
+    }
+  },
+  "_source_audit_paths": "Same OutputDir/launch/world layout contract as readiness_dev, under runs/gate0_paid/<arm> instead -- so a real launch with -OutputDir runs/gate0_paid/<arm> lines up with zero renaming. expected_pins point at the SAME two frozen files as readiness_dev (the 20 PIN_FIELDS pin the brain/executable/config, which this pre-reg holds constant across dev and paid mode) -- hash-pinned below via expected_pins_sha256, identical values to gate0_readiness_dev_source_pins.json.",
+  "expected_pins_sha256": {
+    "red": "869932ad2977d43f851b1bd055b7d3c2d55cc95eeec68dbb7dc48e4a5df48b76",
+    "miniwob": "4509dd4be2b51b334b4b4dfb7f2244428016b1e1d7ca39056e94fb22cbe64fc4"
+  },
+  "_source_expected_pins_sha256": "sha256 of eval/fixtures/gate0_expected_pins_red.json / gate0_expected_pins_miniwob.json exactly as committed on this branch -- identical to gate0_readiness_dev_source_pins.json's values, since both modes pin the same brain/executable/config. Recompute if either file is edited."
+}

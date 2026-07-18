@@ -1,0 +1,49 @@
+{
+  "_comment": "Gate 0 pre-registration precondition 3 (reports/2026-07-18-gate0-prereg.md) -- the readiness_dev-mode source-pins manifest eval/score_gate0.py::SOURCE_PIN_FILES['readiness_dev'] expects. Binds the DEV-seed (0..4) rehearsal mode to hash-pinned expected-pins files, per-arm audit evidence LOCATIONS (not content -- content is per-attempt and does not exist pre-run), and the six named metric/proof artifacts _verify_sources() reads. See eval/fixtures/gate0_expected_pins.SOURCES.md for field-by-field sourcing. red_human/miniwob_agent/etc. paths that do not exist yet are intentional forward pointers, not fabricated content (INDEPENDENCE LAW) -- eval/score_gate0.py correctly reports 'source_unreadable:<key>' for each until the owning workstream lands (precondition 6 human baselines: PR #116, ships the rig only, not the numbers; wake-boundary accounting and the paid/dev agent attempts themselves: still open, out of this PR's scope per reports/2026-07-18-gate0-prereg.md preconditions 3+4 only). live_breaker is the one exception: it is real, produced by this PR (precondition 4) -- see reports/2026-07-19-gate0-live-breaker-dry-run.md.",
+  "schema_version": 1,
+  "mode": "readiness_dev",
+  "frozen_seed_sha256": "f76850cb10d22a0c3a8105eacb25323f4a3566e67eed344a6d0a8803dd60214b",
+  "_source_frozen_seed_sha256": "sha256 of eval/fixtures/gate0_miniwob_dev_seeds.json ([0,1,2,3,4]) as committed on this branch, matching eval.score_gate0.MODES['readiness_dev'][0].",
+  "artifact_paths": {
+    "red_agent": "runs/gate0_readiness_dev/red/agent_metrics.json",
+    "red_human": "runs/gate0_human_baseline/red/human_metrics.json",
+    "miniwob_agent": "runs/gate0_readiness_dev/miniwob/agent_metrics.json",
+    "miniwob_human": "runs/gate0_human_baseline/miniwob/human_metrics.json",
+    "wake_boundary": "runs/gate0_readiness_dev/wake_boundary.json",
+    "live_breaker": "runs/gate0_live_breaker/live_breaker_dry_run_trip.json"
+  },
+  "_source_artifact_paths": "red_human/miniwob_human: exact paths named by DAVID_BASELINES.md ('Where a future scorer will point', PR #116) -- coordinated, not invented. red_agent/miniwob_agent/wake_boundary: not yet produced by any workstream (agent attempt + wake-accounting are open items outside preconditions 3+4); paths chosen to mirror the same runs/gate0_readiness_dev/<arm>/ layout tools/run_gate0_codex.ps1's OutputDir convention would naturally produce. live_breaker: real, produced by tools/gate0_credit_breaker.py's synthetic dry run this PR ships (precondition 4).",
+  "artifact_sha256": {
+    "red_agent": "PENDING_NOT_YET_CAPTURED_agent_attempt_not_run",
+    "red_human": "PENDING_NOT_YET_CAPTURED_precondition_6_numbers_not_run",
+    "miniwob_agent": "PENDING_NOT_YET_CAPTURED_agent_attempt_not_run",
+    "miniwob_human": "PENDING_NOT_YET_CAPTURED_precondition_6_numbers_not_run",
+    "wake_boundary": "PENDING_NOT_YET_CAPTURED_wake_accounting_not_built",
+    "live_breaker": "0fe2a4b119774941b15f28d3c7355f917a1f6b362a5bc044443570aa88698ed7"
+  },
+  "_source_artifact_sha256": "Placeholders for the five not-yet-existing artifacts are inert by construction: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares this hash, so these strings are never actually checked -- they exist only so the JSON key is present and self-documenting (never a valid 64-hex sha256, so they can never accidentally satisfy the check either). live_breaker's hash is REAL: sha256 of the actual produced runs/gate0_live_breaker/live_breaker_dry_run_trip.json (gitignored, local-only; see reports/2026-07-19-gate0-live-breaker-dry-run.md for the byte-identical committed copy + this same hash).",
+  "audit_paths": {
+    "red": {
+      "transcript": "runs/gate0_readiness_dev/red/transcript.jsonl",
+      "receipt": "runs/gate0_readiness_dev/red/handshake-receipt.json",
+      "expected_pins": "eval/fixtures/gate0_expected_pins_red.json",
+      "artifacts_dir": "runs/gate0_readiness_dev/red",
+      "peer_receipt": "runs/gate0_readiness_dev/miniwob/handshake-receipt.json",
+      "oracle": "runs/gate0_readiness_dev/red/world/oracle.jsonl"
+    },
+    "miniwob": {
+      "transcript": "runs/gate0_readiness_dev/miniwob/transcript.jsonl",
+      "receipt": "runs/gate0_readiness_dev/miniwob/handshake-receipt.json",
+      "expected_pins": "eval/fixtures/gate0_expected_pins_miniwob.json",
+      "artifacts_dir": "runs/gate0_readiness_dev/miniwob",
+      "peer_receipt": "runs/gate0_readiness_dev/red/handshake-receipt.json",
+      "oracle": "runs/gate0_readiness_dev/miniwob/world/oracle.jsonl"
+    }
+  },
+  "_source_audit_paths": "artifacts_dir/transcript/receipt/oracle layout mirrors tools/run_gate0_codex.ps1's own OutputDir/launch/world contract (lines 179-184, 400) so a real launch with -OutputDir runs/gate0_readiness_dev/<arm> lines up with these pins with zero renaming. expected_pins point at this PR's two frozen files (hash-pinned below via expected_pins_sha256, per eval.score_gate0._verify_audit_paths()'s own requirement).",
+  "expected_pins_sha256": {
+    "red": "869932ad2977d43f851b1bd055b7d3c2d55cc95eeec68dbb7dc48e4a5df48b76",
+    "miniwob": "4509dd4be2b51b334b4b4dfb7f2244428016b1e1d7ca39056e94fb22cbe64fc4"
+  },
+  "_source_expected_pins_sha256": "sha256 of eval/fixtures/gate0_expected_pins_red.json / gate0_expected_pins_miniwob.json exactly as committed on this branch -- recompute if either file is edited."
+}

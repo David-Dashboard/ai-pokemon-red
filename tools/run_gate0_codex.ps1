@@ -400,6 +400,15 @@ $Receipt = [ordered]@{
 $ReceiptPath = Join-Path $OutputDir 'handshake-receipt.json'
 Write-Utf8NoBom $ReceiptPath (($Receipt | ConvertTo-Json -Depth 8) + "`n")
 
+# Live-breaker wiring point (pre-reg precondition 4, reports/2026-07-18-gate0-prereg.md;
+# tools/gate0_credit_breaker.py). This script stays free-handshake-only -- no exec call, no spend --
+# until a separate paid launcher with observable wake accounting exists (design doc:242-246). Once
+# that launcher streams `codex exec --json` output, wrap each turn.completed event through
+# gate0_credit_breaker.run_breaker() and kill the child process the instant it raises
+# BreakerTripped -- that halts AT the 250-normalized-credit limit rather than summing after the
+# fact. The breaker's own halting correctness is proven now, against a synthetic stream, in
+# tests/test_gate0_credit_breaker.py and reports/2026-07-19-gate0-live-breaker-dry-run.md.
+
 Write-Output 'readiness=NO_GO_INSUFFICIENT_WAKES'
 Write-Output 'paid_execution_enabled=false'
 Write-Output "receipt=$ReceiptPath"
