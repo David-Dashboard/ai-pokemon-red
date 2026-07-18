@@ -39,10 +39,13 @@ except Exception:
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import signal
+import subprocess
 import uuid
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -58,6 +61,43 @@ import core.nds_emulator as _nds_emu_mod   # noqa: E402  (for NDS BUTTONS; lazy-
 import core.gba_emulator as _gba_emu_mod   # noqa: E402  (for GBA BUTTONS; lazy-guard: import succeeds even without mgba)
 
 import importlib                            # noqa: E402  (worlds loaded by --game from GAMES — game-agnostic)
+
+_REPO_ROOT = Path(__file__).resolve().parent
+
+
+def code_sha256(path: "str | Path", *, repo_root: "Path | None" = None) -> str:
+    """SHA-256 of a source file's canonical git blob content at HEAD (what `git show HEAD:<path>`
+    returns), never raw working-tree bytes. Raw bytes vary with local line-ending config (CRLF on
+    a `core.autocrlf=true` Windows checkout vs LF elsewhere) even when the tracked content is
+    byte-identical, which would make a host/image code-parity hash non-portable across machines —
+    this is the Gate 0 host_code_sha256/image_code_sha256 parity hash's job. `git show` reads
+    straight from the object database with no smudge/checkout filters, so it is deterministic
+    regardless of the local checkout's line-ending settings.
+
+    Refuses with the distinct sentinel "UNHASHABLE" — never a silent fallback to hashing raw
+    working-tree bytes — whenever the working tree differs from HEAD for this file, or git/the
+    repo is unavailable for any reason (missing git, file outside the repo, detached/shallow
+    clone missing HEAD, etc.).
+    """
+    root = repo_root or _REPO_ROOT
+    target = Path(path)
+    if not target.is_absolute():
+        target = root / target
+    try:
+        rel = target.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return "UNHASHABLE"
+    try:
+        clean = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", rel],
+                                cwd=root, capture_output=True)
+        if clean.returncode != 0:
+            return "UNHASHABLE"   # dirty relative to HEAD (or git error) — never hash disk bytes
+        blob = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root,
+                               capture_output=True, check=True)
+    except Exception:
+        return "UNHASHABLE"
+    return hashlib.sha256(blob.stdout).hexdigest()
+
 
 # Per-world registry so this harness serves ANY world via `--game`, not just Cave Noire. Each entry is the
 # import paths + the per-world bits (default ROM, the RAM `watch` for the SCORING oracle — never on the wire).
@@ -133,7 +173,9 @@ GAMES = {
     "pokemon_red": {"pkg": "games.pokemon_red", "plugin": "PokemonRedPlugin", "sandbox": "POKEMON_SANDBOX",
                     "perceiver_mod": "games.pokemon_red.perceiver", "perceiver": "OverworldPerceiver",
                     "rom": "roms/PokemonRed.gb",
-                    "watch": {"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163, "badges": 0xD356}},
+                    "watch": {"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163,
+                              "badges": 0xD356, "in_battle": 0xD057,
+                              "party_hp_hi": 0xD16C, "party_hp_lo": 0xD16D}},
     # GBA worlds: use the shared PerceptionPlugin (as play_generic.py does) + FollowCameraPerceiver
     # (core.grid_perceiver) + a locally-built sandbox (_gba_sandbox — mirrors _nds_sandbox()).
     # mgba is not importable on Windows; the emulator is only constructed lazily on first tool CALL.

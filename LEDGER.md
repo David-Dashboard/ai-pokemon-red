@@ -1,66 +1,56 @@
-# Ledger - Gate 0 two-arm free-handshake compatibility
+# Ledger - Gate 0 R0/W0/C0 readiness outcome
 
 <!-- SCOPE SPLIT: CURRENT-RUN task state ONLY. Cross-session narrative -> HANDOFF.md. -->
 
 ## Goal
-Make both free handshake-only Gate 0 arms emit safe receipts with intentional
-`NO_GO_INSUFFICIENT_WAKES`, without any model execution or spend.
+Complete the coherent R0/W0/C0 `$0` readiness outcome: one two-arm offline scorer,
+safe source-status probes where available, and one honest GO/NO_GO/INSUFFICIENT_SOURCE report.
 
 ## Current status (2026-07-14)
-- Branch: `codex/gate0-free-handshake-compat-2026-07-14`, from merged PR #112.
-- PR #113 is open. `f945bc0` is pushed and CI is green at that head. Production, append-only artifacts,
-  and the score rubric are accepted. The second review requests only spend precision, early-era dedupe,
-  and current status. The current branch head includes the docs-only corrections for those findings;
-  executable and receipts remain `ab64a73`.
-- Both free handshakes are complete with validated safe receipts from the exact user-local Codex CLI
-  0.144.3 path, ChatGPT authentication, immutable image/code parity, and exact per-arm tool inventories.
-- Readiness remains intentionally `NO_GO_INSUFFICIENT_WAKES`; no model or held-out preflight ran.
-- Current experiment blockers are R0/W0/C0, exact wake accounting, a live 250-credit breaker, and a
-  frozen reviewed paid pre-registration.
+- Branch: `codex/gate0-r0-w0-c0-readiness-2026-07-14`, from merged PR #113.
+- Complete R0 Red source status, W0 MiniWoB DEV source status, and C0 constancy/scoring readiness as one
+  outcome-sized slice.
+- Independently frozen expected pins, exact wake accounting, and the live 250-credit breaker are the
+  known C0 critical-path source gaps.
+- Readiness verdict is recorded on the current branch: R0/W0/C0 each `INSUFFICIENT_SOURCE`; paid Gate 0 `NO_GO`.
+- Final current-head receipts are banked at `red-v3` and `miniwob-v2`; common brain, host/image parity,
+  and tool inventories pass. Both remain `NO_GO_INSUFFICIENT_WAKES`, paid execution false.
+- Preserve `runs/gate0_readiness_2026-07-14/miniwob-v1/` as an infra failure: a top-level Red memory-map
+  import was unavailable in the intentionally lean MiniWoB image. The fix keeps Red addresses local to
+  its registry entry; `miniwob-v1` is never reused. `red-v1` had no directory/receipt; `red-v2` is valid
+  pre-final-code evidence superseded for parity.
+- Current North Star score is overall 19/100, engineering 76/100, proof 8/100.
 
 ## Constraints
-- This review fix touches only HANDOFF.md, LEDGER.md, and NORTH_STAR_SCORECARD.md.
-- Run only the explicitly approved free handshake commands; never `codex exec`.
-- No model call, held-out preflight/content, API key, spend, brain/scorer/schema change, or image rebuild.
-- Handshake artifacts are append-only; every compatibility retry uses a unique output directory.
+- Never run `codex exec` or any model/paid path.
+- Do not expose paid-held-out MiniWoB seeds `1000..1004`.
+- No brain, `core/contracts.py`, agent-visible tool schema, or frozen handshake artifact edits.
+- Raw probe artifacts are append-only and every run uses a unique output directory.
 - Do not touch unrelated untracked Spanish-teacher files or local agent/config dirs.
 
 ## Tasks
-- [x] Claim the gate-sized two-arm compatibility slice.
-- [x] Implement stderr-safe production login-status capture with exact scalar executable and fixed args.
-- [x] Behaviorally test the exact production helper AST for stderr success and nonzero exit.
-- [x] Run AST parsing and targeted launcher tests (`15 passed`).
-- [x] Run the Red free handshake to safe receipt output.
-- [x] Run the MiniWoB free handshake to safe receipt output.
-- [x] Verify both receipts and record every append-only attempt/blocker.
-- [x] Add the blunt tracked North Star scorecard.
-- [x] Run the full tracked suite (`1149 passed`) and `git diff --check`.
-- [x] Stage only the intended tracked files for parent commit.
-- [x] Replace unsupported score deltas with the first explicit engineering/proof rubric and formula.
-- [x] Add deduplicated exact and estimated historical usage manifests with tracked source locators.
-- [x] Correct PR #113 review/current-next status without touching production or receipts.
-- [x] Verify score/spend arithmetic and `git diff --check`.
-- [x] Stage only the three docs for parent commit.
-- [x] Audit early live-run accounting against HANDOFF, LEARNINGS, and archived reports #13-17.
-- [x] Remove unproved early-bucket dedupe and replace false-precision estimates with rounded ranges.
-- [x] Record PR #113 second-review/current-head status durably.
-- [x] Validate links/arithmetic/diff and stage only the three docs.
-
-## Attempts
-- Red attempt 1: `runs/gate0_codex_handshake_2026-07-14/red/` stopped before auth/MCP receipt. Windows
-  PowerShell stripped embedded `"rb"` from the immutable-image Python hash program, which exited 1 with
-  `NameError: rb`. No model or emulator started; the append-only path will not be reused.
-- Red attempt 2: `runs/gate0_codex_handshake_2026-07-14/red-compat1/` passed login and immutable
-  image/code parity, then failed because PowerShell stripped quotes from explicit TOML array overrides.
-  Codex saw `[run,-i]` as a string instead of a sequence. No model or emulator started; the path will
-  not be reused.
-- Diagnostic: `runs/gate0_codex_handshake_2026-07-14/diagnostic-mcp-config1/` used only free
-  `codex mcp list --json` calls to isolate TOML array quote loss; no model or world started.
-- Red attempt 3: `runs/gate0_codex_handshake_2026-07-14/red-compat2/` emitted a validated safe receipt,
-  SHA-256 `a76ef3be11890b5b257249ce3000b04e6768ac17fce68590ac2fa3de99849630`.
-- MiniWoB attempt 1: `runs/gate0_codex_handshake_2026-07-14/miniwob/` emitted a validated safe receipt,
-  SHA-256 `c4909f9d321f83e8ef0001b5f95e7f09de250cd276dcfd468fd685057b3e7a98`.
+- [x] Claim the complete readiness slice in HANDOFF and LEDGER before production edits.
+- [x] Add Red offline battle + first-party HP watch signals from existing memory-map constants, and
+  fail closed when HP reaches zero before trainer-battle exit.
+- [x] Implement one fail-closed two-arm offline Gate 0 scorer.
+- [x] Add synthetic PASS/failure/insufficient-source coverage.
+- [x] Check safe deterministic R0/W0 DEV probe paths; bank exact source blockers without running
+  destructive fixed-output scripts or held-out seeds.
+- [x] Write the readiness report and update scorecard/continuity.
+- [x] Final post-review-fix canonical root-side `uv run --frozen`: targeted readiness
+  `71 passed in 1.02s`; full tracked plus scorer `1166 passed, 1 warning in 23.74s`; `py_compile` and diff
+  check passed.
+- [x] Rebuild final images and bank current-head `red-v3`/`miniwob-v2` free receipts.
+- [ ] Independently freeze expected-pins JSON; do not claim full checker GO from observed receipts alone.
+- [x] Close PR #114 self-declared-GO finding: fixed modes/seeds, fixed expected-pins paths, hash-verified
+  metric/wake/breaker artifacts, strict-positive human/agent measurements, and bare-claim rejection.
+- [x] Close PR #114 Red finding: exact first `0 -> 1`; battle after acquisition; HP/map safety through
+  all ten sustained-exit rows; delayed-zero and delayed-map regressions.
+- [x] Close PR #114 MiniWoB finding: exact episode/seed set, exactly one successful terminal each, and
+  rejection of extras, conflicts, duplicates, or abandoned-then-success histories.
+- [x] Canonical root-side post-review verification complete; ready for re-review.
+- [ ] Stage only intended files for parent commit/review.
 
 ## Next
-- Merge gate: posted approval + green CI on PR #113's current head, then David-only merge. After merge,
-  complete R0/W0/C0 only. Paid Gate 0 remains `NO_GO` until wake accounting and a live breaker are proven.
+- Finish tests and review this outcome slice. After merge, close only the banked readiness sources.
+  Paid Gate 0 remains blocked until R0/W0/C0 all return `GO`.

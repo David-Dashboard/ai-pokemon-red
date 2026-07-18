@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from tools.check_gate0_codex import SERVER, TOOLS
+import world_mcp
 
 
 SCRIPT = (Path(__file__).parents[1] / "tools" / "run_gate0_codex.ps1").read_text(encoding="utf-8")
@@ -81,6 +82,26 @@ $output = & $env:GATE0_SYNTHETIC_EXECUTABLE -c $program $env:GATE0_HASH_FILE
 if ($LASTEXITCODE -ne 0) { throw 'Hash program failed through PowerShell native invocation.' }
 [Console]::Out.Write(($output | Out-String).Trim())
 """
+CANONICAL_CODE_HASH_HARNESS = r"""
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    $env:GATE0_LAUNCHER_PATH, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) { throw 'Launcher did not parse.' }
+foreach ($name in @('ConvertTo-NativeArgument', 'Get-BytesSha256', 'Invoke-GitBytes',
+        'Get-CanonicalCodeSha256')) {
+    $functions = @($ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq $name
+    }, $true))
+    if ($functions.Count -ne 1) { throw "Expected exactly one $name function definition." }
+    Invoke-Expression $functions[0].Extent.Text
+}
+$result = Get-CanonicalCodeSha256 -RepoRoot $env:GATE0_REPO_ROOT -RelPath $env:GATE0_REL_PATH
+[Console]::Out.Write([string]$result)
+"""
 NATIVE_ARGUMENT_HARNESS = r"""
 $ErrorActionPreference = 'Stop'
 $tokens = $null
@@ -143,6 +164,38 @@ def run_production_hash_program(path):
         env=env,
         check=False,
     )
+
+
+def run_production_canonical_code_hash(repo_root, rel_path):
+    env = os.environ.copy()
+    env["GATE0_LAUNCHER_PATH"] = str(SCRIPT_PATH)
+    env["GATE0_REPO_ROOT"] = str(repo_root)
+    env["GATE0_REL_PATH"] = rel_path
+    return subprocess.run(
+        [POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", CANONICAL_CODE_HASH_HARNESS],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+
+def _git(*args, cwd):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+CANONICAL_SAMPLE = b"a = 1\nb = 2\n"
+
+
+def _init_lf_repo(path):
+    path.mkdir(parents=True, exist_ok=True)
+    _git("init", "--quiet", ".", cwd=path)
+    _git("config", "user.email", "test@example.com", cwd=path)
+    _git("config", "user.name", "test", cwd=path)
+    _git("config", "core.autocrlf", "false", cwd=path)
+    (path / "sample.py").write_bytes(CANONICAL_SAMPLE)
+    _git("add", "sample.py", cwd=path)
+    _git("commit", "--quiet", "-m", "init", cwd=path)
 
 
 def run_redirected_process(*arguments):
@@ -272,6 +325,68 @@ def test_launcher_pins_image_and_compares_host_to_image_code():
     assert "'/app/core/miniwob_world.py'" in SCRIPT
     assert "open(p,chr(114)+chr(98))" in SCRIPT
     assert "World image is stale" in SCRIPT
+
+
+def test_host_code_hash_is_canonical_git_blob_not_worktree_bytes():
+    # PR #114 readiness-audit MAJOR: raw working-tree-byte hashing made host_code_sha256
+    # non-reproducible across machines with different core.autocrlf settings. The launcher must
+    # use the canonical git-blob hash (contract: world_mcp.py::code_sha256) for the two code
+    # files and refuse a dirty working tree rather than silently pinning unreviewed bytes.
+    assert "Get-CanonicalCodeSha256 -RepoRoot $RepoRoot -RelPath 'world_mcp.py'" in SCRIPT
+    assert "Get-CanonicalCodeSha256 -RepoRoot $RepoRoot -RelPath 'core/miniwob_world.py'" in SCRIPT
+    assert "world_mcp.py::code_sha256" in SCRIPT
+    assert "'UNHASHABLE'" in SCRIPT
+    assert "refusing to hash a dirty working tree" in SCRIPT
+    assert "Get-FileSha256 (Join-Path $RepoRoot 'world_mcp.py')" not in SCRIPT
+    assert "Get-FileSha256 (Join-Path $RepoRoot 'core\\miniwob_world.py')" not in SCRIPT
+
+
+@requires_powershell
+def test_canonical_code_hash_identical_across_lf_and_crlf_checkouts(tmp_path):
+    lf_repo = tmp_path / "lf"
+    _init_lf_repo(lf_repo)
+    lf_result = run_production_canonical_code_hash(lf_repo, "sample.py")
+    assert lf_result.returncode == 0, lf_result.stderr
+    assert lf_result.stdout == hashlib.sha256(CANONICAL_SAMPLE).hexdigest()
+
+    # A clone of the SAME commit checked out with core.autocrlf=true materializes CRLF bytes on
+    # disk -- raw-byte hashing would diverge here; the canonical git-blob hash must not.
+    crlf_repo = tmp_path / "crlf"
+    subprocess.run(["git", "clone", "--quiet", "-c", "core.autocrlf=true",
+                    str(lf_repo), str(crlf_repo)], check=True, capture_output=True)
+    crlf_bytes = (crlf_repo / "sample.py").read_bytes()
+    assert b"\r\n" in crlf_bytes
+    assert hashlib.sha256(crlf_bytes).hexdigest() != lf_result.stdout
+    crlf_result = run_production_canonical_code_hash(crlf_repo, "sample.py")
+    assert crlf_result.returncode == 0, crlf_result.stderr
+    assert crlf_result.stdout == lf_result.stdout
+
+
+@requires_powershell
+def test_canonical_code_hash_refuses_dirty_worktree(tmp_path):
+    repo = tmp_path / "repo"
+    _init_lf_repo(repo)
+    (repo / "sample.py").write_bytes(CANONICAL_SAMPLE + b"c = 3\n")
+    result = run_production_canonical_code_hash(repo, "sample.py")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "UNHASHABLE"
+
+
+@requires_powershell
+def test_canonical_code_hash_agrees_with_world_mcp_primitive(tmp_path):
+    # world_mcp.code_sha256() is the contract; the launcher's PowerShell reimplementation must
+    # produce the identical value on the identical repo, and the identical refusal when dirty.
+    repo = tmp_path / "repo"
+    _init_lf_repo(repo)
+    ps_hash = run_production_canonical_code_hash(repo, "sample.py")
+    assert ps_hash.returncode == 0, ps_hash.stderr
+    assert ps_hash.stdout == world_mcp.code_sha256(repo / "sample.py", repo_root=repo)
+
+    (repo / "sample.py").write_bytes(CANONICAL_SAMPLE + b"c = 3\n")
+    ps_dirty = run_production_canonical_code_hash(repo, "sample.py")
+    assert ps_dirty.returncode == 0, ps_dirty.stderr
+    assert ps_dirty.stdout == "UNHASHABLE"
+    assert world_mcp.code_sha256(repo / "sample.py", repo_root=repo) == "UNHASHABLE"
 
 
 def test_live_tools_list_must_exactly_match_frozen_inventory():
