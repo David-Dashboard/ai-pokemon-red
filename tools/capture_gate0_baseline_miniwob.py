@@ -40,6 +40,16 @@ eval.score_gate0._miniwob_success):
 
 An incomplete/quit attempt writes `human_metrics.INCOMPLETE_<unix-ts>.json` instead of the canonical
 file (see DAVID_BASELINES.md's re-run rule).
+
+DEV vs paid: `mode` is hard-pinned to "readiness_dev" (module constant, never CLI-overridable) --
+this rig can never produce a `paid_gate0`-mode artifact. The DEV-seed numbers here are a readiness
+estimate only, NEVER the paid gate's human denominator (see DAVID_BASELINES.md's warning box); the
+paid-mode human replay against the held-out seeds (1000..1004) is a separate, not-yet-built tool.
+
+One cold attempt per task (the exam law -- see DAVID_BASELINES.md "Re-run rule"): this script
+refuses to overwrite an existing canonical `human_metrics.json` unless `--allow-retake "<reason>"`
+is passed; the artifact then records `attempt_number` (1 for a first attempt) and `retake_reason`
+(empty for a first attempt).
 """
 from __future__ import annotations
 
@@ -57,12 +67,35 @@ ARM = "miniwob"
 MODE = "readiness_dev"
 REAL_OUT = os.path.normpath(str(ROOT / "runs" / "gate0_human_baseline" / "miniwob"))
 GAME = "miniwob_click_checkboxes"
+# Same modality the paid agent uses: it also never touches a mouse, it emits a structured
+# click/type/key call after receiving screenshot pixels (world_mcp.MiniWobSession.call()). Recorded
+# so a future scorer/verdict-writer can see this from the artifact alone, not just doc prose.
+CAPTURE_MODALITY = "screenshot_relay_typed_action"
 
 
 def _under_real_path(out: str) -> bool:
     norm = os.path.normpath(os.path.abspath(out))
     real = os.path.normpath(os.path.abspath(REAL_OUT))
     return norm == real or norm.startswith(real + os.sep)
+
+
+def _atomic_write_json(path: str, payload: dict) -> None:
+    """temp file + os.replace so a crash mid-write can never leave a truncated/corrupt artifact at
+    `path` -- matches the append-only/fail-closed treatment already given to oracle.jsonl and
+    INCOMPLETE files. On a crash the temp file itself is also cleaned up, so neither `path` nor a
+    stray partial file survives."""
+    tmp = f"{path}.tmp{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _default_opener(path: str) -> None:
@@ -117,6 +150,46 @@ def run(args, prompt: Callable[[str], str] = input,
         print(f"warning: --out {args.out!r} is outside the canonical real baseline path "
               f"{REAL_OUT!r} (fine for a manual dry run; DAVID_BASELINES.md uses the default).",
               file=sys.stderr)
+    # Defense in depth against the prompt-injection seam (fairness review Minor 1): `run()`'s
+    # `prompt` param has no way to prove a live human is answering it. A scripted `prompt` callable
+    # writing to the REAL baseline path with no attached TTY is exactly what a hostile/accidental
+    # non-interactive invocation looks like -- refuse it. --test mode is exempt (it can never reach
+    # the real path anyway, and the test suite's canned-answer seam intentionally has no TTY).
+    if not args.test and _under_real_path(args.out) and not sys.stdin.isatty():
+        print("refusing: real baseline capture requires an interactive TTY (stdin is not a tty) -- "
+              "this guards against a scripted `prompt` answering for a human and silently writing "
+              "to the real baseline path. Use --test for automated/dry runs.", file=sys.stderr)
+        return 2
+
+    # One cold attempt per task (the exam law): refuse to clobber an existing canonical artifact
+    # unless David explicitly says this is a legitimate re-take and why.
+    allow_retake = (args.allow_retake or "").strip()
+    canonical_path = os.path.join(args.out, "human_metrics.json")
+    attempt_number = 1
+    retake_reason = ""
+    if os.path.exists(canonical_path):
+        if not allow_retake:
+            print(f"refusing: {canonical_path} already exists -- one cold attempt per task (see "
+                  "DAVID_BASELINES.md's re-run rule). Pass --allow-retake \"<reason>\" if this is a "
+                  "legitimate re-take of a genuinely botched capture, not a rerun to chase a better "
+                  "score.", file=sys.stderr)
+            return 2
+        try:
+            prior = json.loads(Path(canonical_path).read_text(encoding="utf-8"))
+            attempt_number = int(prior.get("attempt_number") or 1) + 1
+        except Exception:
+            attempt_number = 2
+        retake_reason = allow_retake
+        # world_mcp.MiniWobSession appends to <out>/oracle.jsonl (never truncates), and this rig's
+        # own success check re-reads that WHOLE file after the run -- a retake that just kept
+        # appending would leave 2 terminal rows per episode (one per attempt) and _miniwob_success
+        # would refuse to ever score a retake as success, no matter how clean it was. Archive the
+        # prior attempt's trace under a distinct, never-deleted name (same append-only law as
+        # INCOMPLETE files) so the new attempt starts MiniWobSession with a clean oracle.jsonl.
+        prior_oracle_path = os.path.join(args.out, "oracle.jsonl")
+        if os.path.exists(prior_oracle_path):
+            os.replace(prior_oracle_path,
+                       os.path.join(args.out, f"oracle.attempt{attempt_number - 1}_{int(time.time())}.jsonl"))
 
     from eval.score_gate0 import MODES, _miniwob_success
     _seed_path, expected_seeds = MODES[MODE]
@@ -144,6 +217,7 @@ def run(args, prompt: Callable[[str], str] = input,
     action_count = 0
     step_img = 0
     quit_requested = False
+    input_event_times: list[float] = []
 
     try:
         while not sess._exhausted:
@@ -160,6 +234,7 @@ def run(args, prompt: Callable[[str], str] = input,
 
             sess.call(tool, tool_args)
             action_count += 1
+            input_event_times.append(time.time())
             if first_action_perf is None:
                 first_action_perf = time.perf_counter()
                 started_at = datetime.now(timezone.utc)
@@ -168,6 +243,7 @@ def run(args, prompt: Callable[[str], str] = input,
             if sess._episode_over and not sess._exhausted:
                 sess.call("reset_episode", {})
                 action_count += 1   # bookkeeping call the agent will also have to spend
+                input_event_times.append(time.time())
     finally:
         sess.close()
 
@@ -195,12 +271,20 @@ def run(args, prompt: Callable[[str], str] = input,
         "expected_seeds": expected_seeds,
         "oracle_path": os.path.normpath(oracle_path),
         "test_mode": bool(args.test),
+        "capture_modality": CAPTURE_MODALITY,
+        # one-cold-attempt bookkeeping (DAVID_BASELINES.md "Re-run rule"): attempt_number is 1 for a
+        # normal first capture; retake_reason is only ever non-empty when --allow-retake overrode an
+        # existing canonical human_metrics.json.
+        "attempt_number": attempt_number,
+        "retake_reason": retake_reason,
+        # Per-input-event epoch timestamps (time.time()), independent of the aggregate
+        # primitive_actions count -- lets a future auditor check action cadence directly instead of
+        # trusting the aggregate alone (fairness review Minor 2).
+        "input_event_times": input_event_times,
     }
     name = "human_metrics.json" if success else f"human_metrics.INCOMPLETE_{int(time.time())}.json"
     metrics_path = os.path.join(args.out, name)
-    with open(metrics_path, "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2, sort_keys=True)
-        f.write("\n")
+    _atomic_write_json(metrics_path, metrics)
 
     print(("PASS" if success else "INCOMPLETE") + f" -- wrote {metrics_path}")
     print(json.dumps(metrics, sort_keys=True))
@@ -212,6 +296,10 @@ def main() -> int:
     ap.add_argument("--out", default=REAL_OUT)
     ap.add_argument("--seeds-file", default=str(ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json"))
     ap.add_argument("--player", default="David")
+    ap.add_argument("--allow-retake", metavar="REASON", default=None,
+                     help="required to overwrite an existing canonical human_metrics.json -- state "
+                          "why this is a legitimate re-take (a botched capture), not a rerun to "
+                          "chase a better score.")
     ap.add_argument("--test", action="store_true",
                      help="throwaway smoke-test mode: refuses to write under the real baseline path")
     return run(ap.parse_args())

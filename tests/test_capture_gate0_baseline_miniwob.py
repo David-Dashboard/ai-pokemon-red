@@ -72,11 +72,11 @@ def fake_env_cls(monkeypatch):
     return _FakeEnv
 
 
-def _args(tmp_path, seeds=(0, 1, 2, 3, 4)):
+def _args(tmp_path, seeds=(0, 1, 2, 3, 4), allow_retake=None):
     seeds_file = tmp_path / "seeds.json"
     seeds_file.write_text(json.dumps(list(seeds)), encoding="utf-8")
     return argparse.Namespace(out=str(tmp_path / "out"), seeds_file=str(seeds_file),
-                              player="AutomatedSmokeTest", test=True)
+                              player="AutomatedSmokeTest", test=True, allow_retake=allow_retake)
 
 
 def test_under_real_path_guard():
@@ -153,6 +153,107 @@ def test_refuses_seed_manifest_that_does_not_match_frozen_dev_seeds(tmp_path):
 def test_test_mode_refuses_real_baseline_path(tmp_path):
     seeds_file = tmp_path / "seeds.json"
     seeds_file.write_text(json.dumps([0, 1, 2, 3, 4]), encoding="utf-8")
-    args = argparse.Namespace(out=m.REAL_OUT, seeds_file=str(seeds_file), player="x", test=True)
+    args = argparse.Namespace(out=m.REAL_OUT, seeds_file=str(seeds_file), player="x", test=True,
+                              allow_retake=None)
     rc = m.run(args)
     assert rc == 2
+
+
+def test_first_attempt_has_attempt_number_1_and_empty_retake_reason(fake_env_cls, tmp_path):
+    args = _args(tmp_path)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+    metrics = json.loads((tmp_path / "out" / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["attempt_number"] == 1
+    assert metrics["retake_reason"] == ""
+
+
+def test_overwrite_refused_without_allow_retake(fake_env_cls, tmp_path):
+    args = _args(tmp_path)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+    metrics_path = tmp_path / "out" / "human_metrics.json"
+    original = metrics_path.read_text(encoding="utf-8")
+
+    # Second attempt, no --allow-retake: must refuse outright and leave the first artifact untouched.
+    args2 = _args(tmp_path)
+    answers2 = iter(["click 20 20"] * 5)
+    rc2 = m.run(args2, prompt=lambda _msg: next(answers2), opener=lambda _path: None)
+    assert rc2 == 2
+    assert metrics_path.read_text(encoding="utf-8") == original
+
+
+def test_overwrite_allowed_with_allow_retake_records_attempt_and_reason(fake_env_cls, tmp_path):
+    args = _args(tmp_path)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+
+    args2 = _args(tmp_path, allow_retake="Docker died mid-capture, first attempt never scored")
+    answers2 = iter(["click 20 20"] * 5)
+    rc2 = m.run(args2, prompt=lambda _msg: next(answers2), opener=lambda _path: None)
+    assert rc2 == 0
+    metrics = json.loads((tmp_path / "out" / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["attempt_number"] == 2
+    assert metrics["retake_reason"] == "Docker died mid-capture, first attempt never scored"
+    # the prior attempt's oracle trace was archived (never deleted), not silently appended-into --
+    # otherwise _miniwob_success would see 2 terminal rows per episode and the retake could never
+    # score as success no matter how clean it was.
+    archived = list((tmp_path / "out").glob("oracle.attempt1_*.jsonl"))
+    assert len(archived) == 1
+    fresh_oracle_rows = [json.loads(line) for line in
+                         (tmp_path / "out" / "oracle.jsonl").read_text().splitlines()]
+    assert {row["episode"] for row in fresh_oracle_rows} == {0, 1, 2, 3, 4}
+
+
+def test_artifact_has_capture_modality_and_input_event_times(fake_env_cls, tmp_path):
+    args = _args(tmp_path)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+    metrics = json.loads((tmp_path / "out" / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["capture_modality"] == "screenshot_relay_typed_action"
+    assert isinstance(metrics["input_event_times"], list)
+    assert len(metrics["input_event_times"]) == metrics["primitive_actions"] == 10
+    assert all(isinstance(t, float) for t in metrics["input_event_times"])
+
+
+def test_tty_guard_refuses_real_path_when_stdin_not_a_tty(monkeypatch, tmp_path):
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(json.dumps([0, 1, 2, 3, 4]), encoding="utf-8")
+    monkeypatch.setattr(m.sys.stdin, "isatty", lambda: False, raising=False)
+    args = argparse.Namespace(out=m.REAL_OUT, seeds_file=str(seeds_file), player="x", test=False,
+                              allow_retake=None)
+    rc = m.run(args)
+    assert rc == 2
+
+
+def test_tty_guard_does_not_block_non_real_path(fake_env_cls, monkeypatch, tmp_path):
+    """The TTY guard is scoped to the REAL baseline path -- a scratch --out in non-test mode is a
+    documented, already-warned-about manual dry run and must not be blocked by it."""
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(json.dumps([0, 1, 2, 3, 4]), encoding="utf-8")
+    monkeypatch.setattr(m.sys.stdin, "isatty", lambda: False, raising=False)
+    out = tmp_path / "scratch_non_real"
+    args = argparse.Namespace(out=str(out), seeds_file=str(seeds_file), player="x", test=False,
+                              allow_retake=None)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+    assert (out / "human_metrics.json").exists()
+
+
+def test_atomic_write_leaves_no_partial_file_on_crash(monkeypatch, tmp_path):
+    target = tmp_path / "human_metrics.json"
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("simulated crash mid-write")
+
+    monkeypatch.setattr(m.json, "dump", _boom)
+    with pytest.raises(RuntimeError):
+        m._atomic_write_json(str(target), {"schema_version": 1})
+    assert not target.exists()
+    # no stray temp file left behind either
+    assert list(tmp_path.glob("human_metrics.json.tmp*")) == []
