@@ -18,6 +18,12 @@ SOURCE_PIN_FILES = {
     "readiness_dev": ROOT / "eval" / "fixtures" / "gate0_readiness_dev_source_pins.json",
     "paid_gate0": ROOT / "eval" / "fixtures" / "gate0_paid_source_pins.json",
 }
+# The one MiniWoB task Gate 0 pins for both modes (dev seeds 0-4, paid seeds 1000-1004) — see
+# reports/2026-07-13-minimum-north-star-gate-0-design.md "MiniWoB click-checkboxes".
+MINIWOB_TASK = "click-checkboxes"
+# score_manifest()'s caller-supplied per-arm paths that must be bound to a frozen pin, never
+# taken from the manifest at face value.
+AUDIT_PATH_KEYS = ("transcript", "receipt", "expected_pins", "artifacts_dir", "peer_receipt", "oracle")
 
 
 def _jsonl(path: str | Path) -> list[dict]:
@@ -75,15 +81,33 @@ def _miniwob_success(rows: list[dict], expected_seeds: list[int]) -> tuple[bool,
     if any(row.get("episode") not in expected or row.get("seed") != expected.get(row.get("episode"))
            for row in rows):
         failures.append("miniwob_extra_episode_or_seed_conflict")
+    # Every row must carry the manifest-pinned task. A row with any other task value is a hard
+    # scorer refusal (a malformed/tampered manifest), never silently ignored, regardless of
+    # whether that row happens to be a terminal.
+    if any(row.get("task") != MINIWOB_TASK for row in rows):
+        failures.append("miniwob_wrong_task_row")
     for episode, seed in expected.items():
         episode_rows = [row for row in rows if row.get("episode") == episode and row.get("seed") == seed]
-        terminals = [row for row in episode_rows
-                     if row.get("done") is True or row.get("abandoned") is True]
-        if len(terminals) != 1:
+        terminal_idx = [i for i, row in enumerate(episode_rows)
+                        if row.get("done") is True or row.get("abandoned") is True]
+        if len(terminal_idx) != 1:
             failures.append(f"miniwob_episode_{episode}_terminal_count")
-        elif not (terminals[0].get("done") is True and terminals[0].get("abandoned") is False
-                  and terminals[0].get("reward") == 1.0):
+            continue
+        idx = terminal_idx[0]
+        terminal = episode_rows[idx]
+        reward = terminal.get("reward")
+        # JSON `true`/`false` decode to Python bool, and `True == 1.0` — reject bool explicitly
+        # before the numeric check so a boolean can never stand in for the pinned float reward.
+        success = (terminal.get("done") is True and terminal.get("abandoned") is False
+                  and terminal.get("task") == MINIWOB_TASK
+                  and not isinstance(reward, bool) and isinstance(reward, (int, float))
+                  and reward == 1.0)
+        if not success:
             failures.append(f"miniwob_episode_{episode}_terminal_not_success")
+        elif idx != len(episode_rows) - 1:
+            # A row for this episode/seed was logged after its success terminal (reopened,
+            # duplicated, or otherwise) — the terminal must be the last thing this episode did.
+            failures.append(f"miniwob_episode_{episode}_terminal_not_last_row")
     return not failures, failures
 
 
@@ -109,6 +133,70 @@ def _arm_metrics(metrics: dict, capability: bool) -> tuple[list[str], list[str]]
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _resolve_root(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+def _verify_audit_paths(manifest: dict) -> tuple[dict[str, dict], list[str]]:
+    """Bind score_manifest()'s caller-supplied `codex_audit.*`/`oracle` paths to the same
+    frozen, mode-specific source pins `_verify_sources` uses for everything else.
+
+    These paths point at per-attempt evidence (a live transcript/receipt/oracle) whose CONTENT
+    necessarily differs run to run, so (unlike the metric/wake/breaker artifacts) they cannot be
+    content-hash-pinned in advance -- only their exact LOCATION can be. `expected_pins` is the
+    one component that IS frozen ahead of a run (it is the pre-registered expected values), so
+    its content is additionally hash-pinned. A manifest whose arm doesn't point at exactly the
+    pinned locations -- or whose `expected_pins` file doesn't match the pinned hash -- is refused
+    for that arm: score_manifest() never reads an unpinned path.
+    """
+    failures: list[str] = []
+    mode = manifest.get("mode")
+    if mode not in SOURCE_PIN_FILES:
+        return {}, ["unknown_or_missing_gate0_mode"]
+    try:
+        pins = json.loads(SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))
+    except Exception:
+        return {}, ["audit_source_pins_unreadable"]
+    if pins.get("schema_version") != 1 or pins.get("mode") != mode:
+        return {}, ["audit_source_pins_schema_or_mode"]
+
+    audit_paths = pins.get("audit_paths") or {}
+    expected_hashes = pins.get("expected_pins_sha256") or {}
+    arms = manifest.get("arms") or {}
+    resolved: dict[str, dict] = {}
+    for arm in ("red", "miniwob"):
+        pinned = audit_paths.get(arm)
+        if (not isinstance(pinned, dict) or set(pinned) != set(AUDIT_PATH_KEYS)
+                or any(not isinstance(pinned[k], str) or not pinned[k] for k in AUDIT_PATH_KEYS)):
+            failures.append(f"audit_paths_pin_missing:{arm}")
+            continue
+        codex_audit = (arms.get(arm) or {}).get("codex_audit")
+        codex_audit = codex_audit if isinstance(codex_audit, dict) else {}
+        supplied = {key: codex_audit.get(key) for key in AUDIT_PATH_KEYS if key != "oracle"}
+        supplied["oracle"] = (arms.get(arm) or {}).get("oracle")
+        arm_ok = True
+        for key in AUDIT_PATH_KEYS:
+            if supplied.get(key) != pinned[key]:
+                failures.append(f"audit_path_mismatch:{arm}:{key}")
+                arm_ok = False
+        expected_hash = expected_hashes.get(arm)
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            failures.append(f"expected_pins_hash_pin_missing:{arm}")
+            arm_ok = False
+        elif arm_ok:
+            try:
+                if _sha256(_resolve_root(pinned["expected_pins"])) != expected_hash:
+                    failures.append(f"expected_pins_hash_mismatch:{arm}")
+                    arm_ok = False
+            except Exception:
+                failures.append(f"expected_pins_unreadable:{arm}")
+                arm_ok = False
+        if arm_ok:
+            resolved[arm] = dict(pinned)
+    return resolved, failures
 
 
 def _verify_sources(manifest: dict, audits: dict[str, dict]) -> tuple[dict, list[str]]:
@@ -241,16 +329,18 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
 
 def score_manifest(path: str | Path) -> dict:
     manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+    pinned_paths, path_failures = _verify_audit_paths(manifest)
     audits, oracles = {}, {}
     for name in ("red", "miniwob"):
-        arm = manifest["arms"][name]
-        audit_args = arm["codex_audit"]
-        audits[name] = audit_codex(Path(audit_args["transcript"]), Path(audit_args["receipt"]),
-                                   Path(audit_args["expected_pins"]), Path(audit_args["artifacts_dir"]),
-                                   name, Path(audit_args["peer_receipt"]))
-        oracles[name] = _jsonl(arm["oracle"])
+        pins = pinned_paths.get(name)
+        if pins is None:
+            continue   # unpinned/mismatched source: never read a manifest-chosen path
+        audits[name] = audit_codex(_resolve_root(pins["transcript"]), _resolve_root(pins["receipt"]),
+                                   _resolve_root(pins["expected_pins"]), _resolve_root(pins["artifacts_dir"]),
+                                   name, _resolve_root(pins["peer_receipt"]))
+        oracles[name] = _jsonl(_resolve_root(pins["oracle"]))
     verified, source_failures = _verify_sources(manifest, audits)
-    return score(manifest, audits, oracles, verified, source_failures)
+    return score(manifest, audits, oracles, verified, (source_failures or []) + path_failures)
 
 
 def main() -> int:

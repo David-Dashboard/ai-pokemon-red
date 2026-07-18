@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 
 import eval.score_gate0 as scorer
 from eval.score_gate0 import score
@@ -28,10 +29,10 @@ def _miniwob(success=True):
     rows = []
     for episode, seed in enumerate(range(5)):
         rows.append({"episode": episode, "seed": seed, "reward": 0.0, "done": False,
-                     "abandoned": False})
+                     "abandoned": False, "task": scorer.MINIWOB_TASK})
         if success or episode < 4:
             rows.append({"episode": episode, "seed": seed, "reward": 1.0, "done": True,
-                         "abandoned": False})
+                         "abandoned": False, "task": scorer.MINIWOB_TASK})
     return rows
 
 
@@ -178,6 +179,181 @@ def test_zero_human_or_agent_metric_is_source_failure():
     verified["metrics"]["red"]["human_wall_clock_s"] = 0
     result = score(_manifest(), _audits(), {"red": _red(), "miniwob": _miniwob()}, verified)
     assert result["readiness"] == "INSUFFICIENT_SOURCE"
+
+
+def test_miniwob_bool_reward_is_not_accepted():
+    # PR #114 review exploit "bool_reward": episode 4's terminal reward replaced with JSON `true`.
+    # Python's `True == 1.0`, so the pre-fix code (which only checked `reward == 1.0`) scored this
+    # PASS/GO. isinstance(reward, bool) must be rejected before the numeric comparison.
+    rows = _miniwob()
+    rows[-1]["reward"] = True
+    result = _score(miniwob=rows)
+    assert result["overall"] == "FAIL_CAPABILITY"
+    assert "miniwob:miniwob_episode_4_terminal_not_success" in result["failures"]["capability"]
+
+
+def test_miniwob_reopened_row_with_wrong_task_after_success_is_refused():
+    # PR #114 review exploit "reopened_wrong_task": a done=false, task="wrong-task" row appended
+    # after episode 0's real success (same episode/seed). The pre-fix code never read `task` and
+    # only counted done/abandoned rows as terminals, so the extra row was silently ignored and the
+    # manifest still scored PASS/GO.
+    rows = _miniwob()
+    rows.insert(2, {"episode": 0, "seed": 0, "reward": 0.0, "done": False,
+                    "abandoned": False, "task": "wrong-task"})
+    result = _score(miniwob=rows)
+    assert result["overall"] == "FAIL_CAPABILITY"
+    assert "miniwob:miniwob_wrong_task_row" in result["failures"]["capability"]
+
+
+def test_miniwob_all_rows_wrong_task_is_refused():
+    # PR #114 review exploit "wrong_task_field_ignored"/"reopened_wrong_task_field_ignored":
+    # every row's task set to an entirely different task ("click-button"), otherwise a clean 5/5
+    # success shape. The pre-fix code never checked `task` at all, so this scored PASS/GO.
+    rows = _miniwob()
+    for row in rows:
+        row["task"] = "click-button"
+    result = _score(miniwob=rows)
+    assert result["overall"] == "FAIL_CAPABILITY"
+    assert "miniwob:miniwob_wrong_task_row" in result["failures"]["capability"]
+
+
+def test_verify_audit_paths_accepts_exact_pinned_locations(tmp_path, monkeypatch):
+    expected_pins = tmp_path / "expected-pins.json"
+    expected_pins.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+    pinned = {
+        "transcript": str(tmp_path / "transcript.jsonl"),
+        "receipt": str(tmp_path / "receipt.json"),
+        "expected_pins": str(expected_pins),
+        "artifacts_dir": str(tmp_path / "artifacts"),
+        "peer_receipt": str(tmp_path / "peer-receipt.json"),
+        "oracle": str(tmp_path / "oracle.jsonl"),
+    }
+    pins_doc = {
+        "schema_version": 1, "mode": "readiness_dev",
+        "audit_paths": {"red": pinned, "miniwob": pinned},
+        "expected_pins_sha256": {
+            "red": hashlib.sha256(expected_pins.read_bytes()).hexdigest(),
+            "miniwob": hashlib.sha256(expected_pins.read_bytes()).hexdigest(),
+        },
+    }
+    pins_path = tmp_path / "pins.json"
+    pins_path.write_text(json.dumps(pins_doc), encoding="utf-8")
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "readiness_dev", pins_path)
+    manifest = {
+        "mode": "readiness_dev",
+        "arms": {
+            "red": {"codex_audit": {k: v for k, v in pinned.items() if k != "oracle"},
+                    "oracle": pinned["oracle"]},
+            "miniwob": {"codex_audit": {k: v for k, v in pinned.items() if k != "oracle"},
+                       "oracle": pinned["oracle"]},
+        },
+    }
+    resolved, failures = scorer._verify_audit_paths(manifest)
+    assert failures == []
+    assert resolved["red"] == pinned
+    assert resolved["miniwob"] == pinned
+
+
+def test_score_manifest_rejects_substituted_expected_pins_and_oracle(monkeypatch, tmp_path):
+    # PR #114 review finding: score_manifest() took codex_audit.{transcript,receipt,
+    # expected_pins,artifacts_dir,peer_receipt} and arm["oracle"] verbatim from the manifest with
+    # zero hash-pinning. This end-to-end test drives the real public score_manifest() entry point
+    # (not _verify_sources()/score() directly, which the pre-fix test suite stopped at) and proves
+    # a manifest that substitutes its own audit/oracle evidence for the pinned locations is refused
+    # rather than scored. Pre-fix, score_manifest() has no path-pinning at all, so this substituted
+    # manifest would instead proceed to (and likely crash or falsely score) the attacker files.
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+    attacker_transcript = attacker_dir / "transcript.jsonl"
+    attacker_transcript.write_text("", encoding="utf-8")
+    attacker_receipt = attacker_dir / "receipt.json"
+    attacker_receipt.write_text("{}", encoding="utf-8")
+    attacker_expected_pins = attacker_dir / "expected-pins.json"
+    attacker_expected_pins.write_text("{}", encoding="utf-8")
+    attacker_artifacts_dir = attacker_dir / "artifacts"
+    attacker_artifacts_dir.mkdir()
+    attacker_peer_receipt = attacker_dir / "peer-receipt.json"
+    attacker_peer_receipt.write_text("{}", encoding="utf-8")
+    attacker_oracle = attacker_dir / "oracle.jsonl"
+    attacker_oracle.write_text(json.dumps({"episode": 0, "seed": 0, "reward": 1.0, "done": True,
+                                           "abandoned": False, "task": scorer.MINIWOB_TASK}) + "\n",
+                               encoding="utf-8")
+
+    real_expected_pins = tmp_path / "real-expected-pins.json"
+    real_expected_pins.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+    pinned = {
+        "transcript": str(tmp_path / "real-transcript.jsonl"),
+        "receipt": str(tmp_path / "real-receipt.json"),
+        "expected_pins": str(real_expected_pins),
+        "artifacts_dir": str(tmp_path / "real-artifacts"),
+        "peer_receipt": str(tmp_path / "real-peer-receipt.json"),
+        "oracle": str(tmp_path / "real-oracle.jsonl"),
+    }
+    pins_doc = {
+        "schema_version": 1, "mode": "readiness_dev",
+        "audit_paths": {"red": pinned, "miniwob": pinned},
+        "expected_pins_sha256": {
+            "red": hashlib.sha256(real_expected_pins.read_bytes()).hexdigest(),
+            "miniwob": hashlib.sha256(real_expected_pins.read_bytes()).hexdigest(),
+        },
+    }
+    pins_path = tmp_path / "pins.json"
+    pins_path.write_text(json.dumps(pins_doc), encoding="utf-8")
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "readiness_dev", pins_path)
+
+    substituted_audit = {"transcript": str(attacker_transcript), "receipt": str(attacker_receipt),
+                         "expected_pins": str(attacker_expected_pins),
+                         "artifacts_dir": str(attacker_artifacts_dir),
+                         "peer_receipt": str(attacker_peer_receipt)}
+    manifest = {
+        "mode": "readiness_dev",
+        "arms": {
+            "red": {"codex_audit": substituted_audit, "oracle": str(attacker_oracle)},
+            "miniwob": {"codex_audit": substituted_audit, "oracle": str(attacker_oracle)},
+        },
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = scorer.score_manifest(manifest_path)
+    assert result["readiness"] == "INSUFFICIENT_SOURCE"
+    assert any(f.startswith("audit_path_mismatch:red:") for f in result["failures"]["source"])
+    assert any(f.startswith("audit_path_mismatch:miniwob:") for f in result["failures"]["source"])
+
+
+def test_code_sha256_hashes_canonical_git_blob_not_dirty_worktree_bytes(tmp_path):
+    # PR #114 review finding: host_code_sha256/image_code_sha256 hashed raw working-tree bytes,
+    # which differ by machine/OS line-ending config (CRLF vs LF) even for byte-identical tracked
+    # content -- not portable/reproducible. code_sha256() must hash the canonical git blob at HEAD
+    # instead, and refuse (never silently hash dirty bytes) when the working tree has diverged.
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "test"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "core.autocrlf", "false"], check=True)
+    target = tmp_path / "sample.py"
+    canonical = b"a = 1\nb = 2\n"
+    target.write_bytes(canonical)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "sample.py"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "--quiet", "-m", "init"], check=True)
+
+    canonical_hash = world_mcp.code_sha256(target, repo_root=tmp_path)
+    assert canonical_hash == hashlib.sha256(canonical).hexdigest()
+
+    # The same logical content with CRLF endings hashes to a DIFFERENT value under raw-byte
+    # hashing -- exactly the non-portability this fix closes.
+    crlf_bytes = canonical.replace(b"\n", b"\r\n")
+    assert hashlib.sha256(crlf_bytes).hexdigest() != canonical_hash
+
+    # Write those CRLF bytes to disk without committing: the working tree now diverges from HEAD,
+    # so code_sha256 must refuse rather than silently hash the dirty bytes.
+    target.write_bytes(crlf_bytes)
+    assert world_mcp.code_sha256(target, repo_root=tmp_path) == "UNHASHABLE"
+
+    # Restore to match HEAD exactly: code_sha256 must return to the SAME canonical hash as before
+    # -- it always reads the git-stored blob, never the working-tree bytes, which is what makes
+    # the value portable across machines regardless of local checkout line-ending conventions.
+    subprocess.run(["git", "-C", str(tmp_path), "checkout", "--", "sample.py"], check=True)
+    assert world_mcp.code_sha256(target, repo_root=tmp_path) == canonical_hash
 
 
 def test_frozen_source_pins_load_exact_artifacts(monkeypatch, tmp_path):
