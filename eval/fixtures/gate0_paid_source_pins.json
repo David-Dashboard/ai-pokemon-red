@@ -2,8 +2,8 @@
   "_comment": "Gate 0 pre-registration precondition 3 (reports/2026-07-18-gate0-prereg.md) -- the paid_gate0-mode source-pins manifest eval/score_gate0.py::SOURCE_PIN_FILES['paid_gate0'] expects. Binds the held-out-seed (1000..1004) paid mode to the SAME hash-pinned expected-pins files as readiness_dev (the 20 PIN_FIELDS pin the brain/executable/config, not the task instance -- they do not vary with mode), per-arm audit evidence LOCATIONS, and the six named metric/proof artifacts _verify_sources() reads. See eval/fixtures/gate0_expected_pins.SOURCES.md for field-by-field sourcing.",
   "schema_version": 1,
   "mode": "paid_gate0",
-  "frozen_seed_sha256": "8b83d4a8baa79b0dac5c26a97f7a2bbd9af7d5385a937a832d8da24a9d1989ce",
-  "_source_frozen_seed_sha256": "sha256 of eval/fixtures/gate0_miniwob_paid_seeds.json ([1000,1001,1002,1003,1004]) as committed on this branch, matching eval.score_gate0.MODES['paid_gate0'][0].",
+  "frozen_seed_sha256": "263aaed17ee653c8b32e608d88ed1b8d29d6a424d29ce2e123671b56df159e63",
+  "_source_frozen_seed_sha256": "sha256 of eval/fixtures/gate0_miniwob_paid_seeds.json ([1000,1001,1002,1003,1004]) as committed on this branch, matching eval.score_gate0.MODES['paid_gate0'][0]. This is the hash of the LF-canonical bytes (identical to the git blob): .gitattributes pins eval/fixtures/gate0_*.json to eol=lf so every checkout on every platform materializes these exact bytes -- without that, a Windows autocrlf=true checkout would materialize CRLF and this pin would be non-portable (the same trap PR #114 fixed for host_code_sha256).",
   "artifact_paths": {
     "red_agent": "runs/gate0_paid/red/agent_metrics.json",
     "red_human": "runs/gate0_human_baseline/red/human_metrics.json",
