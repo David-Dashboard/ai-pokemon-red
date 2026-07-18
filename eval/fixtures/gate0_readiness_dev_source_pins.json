@@ -42,8 +42,8 @@
   },
   "_source_audit_paths": "artifacts_dir/transcript/receipt/oracle layout mirrors tools/run_gate0_codex.ps1's own OutputDir/launch/world contract (lines 179-184, 400) so a real launch with -OutputDir runs/gate0_readiness_dev/<arm> lines up with these pins with zero renaming. expected_pins point at this PR's two frozen files (hash-pinned below via expected_pins_sha256, per eval.score_gate0._verify_audit_paths()'s own requirement).",
   "expected_pins_sha256": {
-    "red": "869932ad2977d43f851b1bd055b7d3c2d55cc95eeec68dbb7dc48e4a5df48b76",
-    "miniwob": "4509dd4be2b51b334b4b4dfb7f2244428016b1e1d7ca39056e94fb22cbe64fc4"
+    "red": "794bf61095c64e32b30e627e76bba943a4f17095f0871091c9ad3d4f6688f9c2",
+    "miniwob": "ee9725f4ae4deaa5673a508d8d70af80945b6f6f6028e24ab87caa5e58bbbd50"
   },
   "_source_expected_pins_sha256": "sha256 of eval/fixtures/gate0_expected_pins_red.json / gate0_expected_pins_miniwob.json exactly as committed on this branch -- recompute if either file is edited."
 }

@@ -63,16 +63,33 @@ def test_expected_pins_field_values_satisfy_the_real_receipt_shape_rules(arm):
     assert pins["mcp_tools_observed"] == checker.TOOLS[arm]
     expected_tag = "gb-mcp-world" if arm == "red" else "miniwob-world"
     assert pins["world_image_tag"] == expected_tag
-    for field in ("codex_executable_sha256", "brain_config_sha256", "task_sha256"):
+    for field in ("codex_executable_sha256", "brain_config_sha256", "task_sha256",
+                  "tool_schema_sha256"):
         value = pins[field]
         assert isinstance(value, str) and len(value) == 64
         assert all(c in "0123456789abcdef" for c in value)
+    # Resolved from PR #117's rebuild receipt -- must be a real immutable image ID, exactly the
+    # format _receipt_shape_failures() enforces on receipts.
+    image_id = pins["world_image_id"]
+    assert image_id.startswith("sha256:") and len(image_id) == 71
+    assert all(c in "0123456789abcdef" for c in image_id[7:])
     for path in ("/app/world_mcp.py", "/app/core/miniwob_world.py"):
         for key in ("host_code_sha256", "image_code_sha256"):
             digest = pins[key][path]
             assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
     # host/image code parity is the whole point of precondition 9's rebuild target.
     assert pins["host_code_sha256"] == pins["image_code_sha256"]
+    # The two remaining run-time-only fields must stay fail-closed CONSTRAINT strings (never a
+    # valid 64-hex hash) until frozen at signature -- see gate0_expected_pins.SOURCES.md.
+    for field in ("config_sha256", "codex_mcp_list_sha256"):
+        assert pins[field].startswith("CONSTRAINT:")
+
+
+def test_the_two_arms_pin_distinct_rebuilt_images():
+    red = _load(EXPECTED_PINS_PATHS["red"])
+    miniwob = _load(EXPECTED_PINS_PATHS["miniwob"])
+    assert red["world_image_id"] != miniwob["world_image_id"]
+    assert red["tool_schema_sha256"] != miniwob["tool_schema_sha256"]
 
 
 def test_constancy_fields_match_exactly_between_the_two_arm_pins():
