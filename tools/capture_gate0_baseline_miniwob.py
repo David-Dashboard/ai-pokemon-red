@@ -180,16 +180,6 @@ def run(args, prompt: Callable[[str], str] = input,
         except Exception:
             attempt_number = 2
         retake_reason = allow_retake
-        # world_mcp.MiniWobSession appends to <out>/oracle.jsonl (never truncates), and this rig's
-        # own success check re-reads that WHOLE file after the run -- a retake that just kept
-        # appending would leave 2 terminal rows per episode (one per attempt) and _miniwob_success
-        # would refuse to ever score a retake as success, no matter how clean it was. Archive the
-        # prior attempt's trace under a distinct, never-deleted name (same append-only law as
-        # INCOMPLETE files) so the new attempt starts MiniWobSession with a clean oracle.jsonl.
-        prior_oracle_path = os.path.join(args.out, "oracle.jsonl")
-        if os.path.exists(prior_oracle_path):
-            os.replace(prior_oracle_path,
-                       os.path.join(args.out, f"oracle.attempt{attempt_number - 1}_{int(time.time())}.jsonl"))
 
     from eval.score_gate0 import MODES, _miniwob_success
     _seed_path, expected_seeds = MODES[MODE]
@@ -200,6 +190,27 @@ def run(args, prompt: Callable[[str], str] = input,
         return 2
 
     os.makedirs(args.out, exist_ok=True)
+
+    # world_mcp.MiniWobSession appends terminal rows to <out>/oracle.jsonl incrementally DURING a
+    # run (never truncates), and this rig's own success check re-reads that WHOLE file after the
+    # run -- so ANY stale trace from an earlier session (a scored attempt legitimately re-taken
+    # with --allow-retake, OR a crash/quit after >=1 completed episode but BEFORE the canonical
+    # write -- the documented "just re-run" case) would leave 2 terminal rows for those episodes
+    # and _miniwob_success would refuse to ever score the new run as success, no matter how clean
+    # it was. Archive whenever a prior trace exists at session start, REGARDLESS of whether a
+    # canonical artifact exists (PR #119 re-review MAJOR: gating this on the canonical file left
+    # the partial-crash free-retry path permanently unscoreable, with --allow-retake a no-op since
+    # there was no canonical file to allow retaking). Renamed, never deleted -- same append-only
+    # law as INCOMPLETE files -- and never clobbered on same-second name collisions.
+    prior_oracle_path = os.path.join(args.out, "oracle.jsonl")
+    if os.path.exists(prior_oracle_path):
+        base = os.path.join(args.out, f"oracle.attempt{max(attempt_number - 1, 1)}_{int(time.time())}")
+        archive_path, n = f"{base}.jsonl", 0
+        while os.path.exists(archive_path):
+            n += 1
+            archive_path = f"{base}_{n}.jsonl"
+        os.replace(prior_oracle_path, archive_path)
+        print(f"[stale oracle trace from a previous session archived -> {archive_path}]")
 
     import world_mcp
     sess_args = argparse.Namespace(game=GAME, rom=None, init_state=None, out=args.out, record=False,

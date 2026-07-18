@@ -208,6 +208,48 @@ def test_overwrite_allowed_with_allow_retake_records_attempt_and_reason(fake_env
     assert {row["episode"] for row in fresh_oracle_rows} == {0, 1, 2, 3, 4}
 
 
+def test_free_rerun_after_partial_crash_scores_cleanly(fake_env_cls, tmp_path):
+    """PR #119 re-review MAJOR (live-reproduced by the reviewer): MiniWobSession writes each
+    episode's done=True terminal row to oracle.jsonl incrementally DURING the run, so an attempt
+    that completes episodes 0-1 and then quits BEFORE any canonical human_metrics.json write
+    leaves real stale terminal rows on disk. The documented recovery for exactly this case is a
+    free re-run with no flags ("just re-run the command; nothing extra needed" -- --allow-retake
+    cannot even apply, since there is no canonical file to allow retaking). Pre-fix, the oracle
+    archival was gated on the canonical file's existence, so the free re-run appended onto the
+    stale trace and failed forever with miniwob_episode_0/1_terminal_count. Post-fix, archival
+    fires whenever oracle.jsonl exists at session start, and the clean 5-episode re-run must
+    score as success."""
+    # Attempt 1: episodes 0 and 1 complete (terminal rows hit disk), quit at episode 2's prompt.
+    args = _args(tmp_path)
+    answers = iter(["click 10 10", "click 10 10", "quit"])
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 1
+    out = tmp_path / "out"
+    assert not (out / "human_metrics.json").exists()
+    stale_rows = [json.loads(line) for line in (out / "oracle.jsonl").read_text().splitlines()]
+    assert any(r.get("done") is True for r in stale_rows)   # the poison: real terminal rows on disk
+
+    # Attempt 2: the documented free re-run -- no flags, all 5 episodes clean.
+    args2 = _args(tmp_path)
+    answers2 = iter(["click 10 10"] * 5)
+    rc2 = m.run(args2, prompt=lambda _msg: next(answers2), opener=lambda _path: None)
+    assert rc2 == 0
+    metrics = json.loads((out / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["success"] is True
+    assert metrics["failures"] == []
+    assert metrics["attempt_number"] == 1   # still the FIRST attempt -- the crashed try never scored
+    assert metrics["retake_reason"] == ""
+    # The stale partial trace was archived byte-for-byte (renamed, never deleted), and the live
+    # oracle.jsonl now contains ONLY this run's rows -- one terminal per episode, all 5 episodes.
+    archived = list(out.glob("oracle.attempt1_*.jsonl"))
+    assert len(archived) == 1
+    archived_rows = [json.loads(line) for line in archived[0].read_text().splitlines()]
+    assert archived_rows == stale_rows
+    fresh_rows = [json.loads(line) for line in (out / "oracle.jsonl").read_text().splitlines()]
+    assert {row["episode"] for row in fresh_rows} == {0, 1, 2, 3, 4}
+    assert sum(1 for r in fresh_rows if r.get("done") is True) == 5
+
+
 def test_artifact_has_capture_modality_and_input_event_times(fake_env_cls, tmp_path):
     args = _args(tmp_path)
     answers = iter(["click 10 10"] * 5)

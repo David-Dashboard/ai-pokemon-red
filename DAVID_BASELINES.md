@@ -27,7 +27,10 @@ and verdict banked as-is"). Both scripts now enforce this mechanically, not just
   restarted mid-run, Docker died: if the run never reached a detected SUCCESS, no canonical
   `human_metrics.json` was ever written (only a distinctly-named
   `human_metrics.INCOMPLETE_<timestamp>.json`, which stays on disk -- append-only, never overwritten
-  or deleted). Just re-run the command; nothing extra needed.
+  or deleted). Just re-run the command; nothing extra needed. (For MiniWoB, any partial
+  `oracle.jsonl` the crashed session left behind -- including real terminal rows from episodes it
+  did complete -- is auto-archived at the start of the re-run, so stale rows can never poison the
+  fresh score. Red's scoring uses only the live session's trace, so nothing extra applies there.)
 - **A bad-but-genuine score may NOT be casually re-taken.** If the rig genuinely detected success
   but your time or press count came out worse than you'd like, that *is* the baseline -- re-running
   to chase a better number is exactly the "informal rerun to rescue a marginal result" the design
@@ -153,10 +156,11 @@ Writes to `runs/gate0_human_baseline/miniwob/`:
   verdict-writer interpreting the `<=2.0x` wall-clock bar), and `input_event_times` (a raw
   per-action timestamp list).
 - `oracle.jsonl` -- `MiniWobSession`'s own oracle writer, unmodified (episode/seed/step/task/
-  reward/done/abandoned rows). On a `--allow-retake` run, the PRIOR attempt's `oracle.jsonl` is
-  archived (renamed, never deleted) to `oracle.attempt<N>_<timestamp>.jsonl` first, so the new
-  attempt scores against a clean trace instead of the terminal-count check seeing 2 terminal rows
-  per episode.
+  reward/done/abandoned rows). If an `oracle.jsonl` already exists when a run starts -- whether
+  from a scored attempt being legitimately re-taken with `--allow-retake` OR from a crashed/quit
+  partial attempt that never reached the canonical write -- it is archived (renamed, never
+  deleted) to `oracle.attempt<N>_<timestamp>.jsonl` first, so every run scores against a clean
+  trace instead of the terminal-count check seeing stale terminal rows from a prior session.
 - `ep<N>_step<K>.png` -- exactly what you were shown at each decision, for provenance.
 
 ## Where a future scorer will point
