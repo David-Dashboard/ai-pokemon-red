@@ -30,6 +30,17 @@ Writes, on a DETECTED SUCCESS (oracle-only end-state, exactly eval.score_gate0._
 An incomplete/quit/crashed attempt writes a distinctly-named
 `human_metrics.INCOMPLETE_<unix-ts>.json` instead of the canonical file, so a botched capture can
 never silently masquerade as a banked baseline (see DAVID_BASELINES.md's re-run rule).
+
+Clock/press-count discipline: `wall_clock_s`/`primitive_actions` are FROZEN the instant the oracle
+(`_red_success`) first detects the real end-state, not whenever David happens to notice and close
+the window. The window then auto-closes itself a few seconds later (COMPLETION_GRACE_SECONDS) as an
+unmissable, reaction-time-independent "you're done" signal -- no informal wandering time can leak
+into the banked numbers.
+
+One cold attempt per task (the exam law -- see DAVID_BASELINES.md "Re-run rule"): this script
+refuses to overwrite an existing canonical `human_metrics.json` unless `--allow-retake "<reason>"`
+is passed; the artifact then records `attempt_number` (1 for a first attempt) and `retake_reason`
+(empty for a first attempt).
 """
 from __future__ import annotations
 
@@ -52,6 +63,10 @@ REAL_OUT = os.path.normpath(str(ROOT / "runs" / "gate0_human_baseline" / "red"))
 # Rows sampled continuously (not one-per-keypress): the frozen predicate needs 10 CONSECUTIVE watch
 # rows showing a sustained battle exit, which idle/movement time must also be able to satisfy.
 SAMPLE_EVERY_FRAMES = 15   # ~0.25s at ~60fps
+# How long the window stays open, purely for cosmetic wind-down, after the oracle detects success
+# and the metrics are already frozen -- then it closes itself so "David didn't notice the message"
+# can never inflate the banked wall_clock_s/press_count.
+COMPLETION_GRACE_SECONDS = 4.0
 
 
 def _sha256_file(path: str) -> str:
@@ -66,6 +81,64 @@ def _under_real_path(out: str) -> bool:
     norm = os.path.normpath(os.path.abspath(out))
     real = os.path.normpath(os.path.abspath(REAL_OUT))
     return norm == real or norm.startswith(real + os.sep)
+
+
+def _atomic_write_json(path: str, payload: dict) -> None:
+    """temp file + os.replace so a crash mid-write can never leave a truncated/corrupt artifact at
+    `path` -- matches the append-only/fail-closed treatment the rest of the rig already gives
+    oracle.jsonl and INCOMPLETE files. On a crash the temp file itself is also cleaned up, so
+    neither `path` nor a stray partial file survives."""
+    tmp = f"{path}.tmp{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _build_metrics(args, *, rom_sha256: str, state_sha256: str, oracle_path: str,
+                    wall_clock_s: float, press_count: int, success: bool, failures: list[str],
+                    started_at, completed_at, attempt_number: int, retake_reason: str,
+                    input_event_times: list[float]) -> dict:
+    """Pure artifact-shape builder, factored out so the schema (mode/attempt_number/retake_reason/
+    input_event_times included) is unit-testable without a real PyBoy/SDL2 window -- see
+    tests/test_capture_gate0_baseline_red.py."""
+    return {
+        "schema_version": 1,
+        "arm": ARM,
+        "role": "human",
+        "mode": MODE,
+        "wall_clock_s": round(wall_clock_s, 3),
+        "primitive_actions": press_count,
+        "success": success,
+        "failures": failures,
+        "player": args.player if not args.test else f"TEST:{args.player}",
+        "started_at": started_at.isoformat() if started_at else None,
+        "completed_at": completed_at.isoformat(),
+        "rom_path": os.path.normpath(args.rom),
+        "rom_sha256": rom_sha256,
+        "savestate_path": os.path.normpath(args.state),
+        "savestate_sha256": state_sha256,
+        "oracle_path": os.path.normpath(oracle_path),
+        "test_mode": bool(args.test),
+        # one-cold-attempt bookkeeping (DAVID_BASELINES.md "Re-run rule"): attempt_number is 1 for a
+        # normal first capture; retake_reason is only ever non-empty when --allow-retake overrode an
+        # existing canonical human_metrics.json.
+        "attempt_number": attempt_number,
+        "retake_reason": retake_reason,
+        # Per-input-event epoch timestamps (time.time()), independent of the aggregate
+        # primitive_actions count -- lets a future auditor check press cadence directly instead of
+        # trusting the aggregate alone (fairness review Minor 2). Includes any presses during the
+        # post-detection grace window; the first `primitive_actions` entries are the ones the banked
+        # wall_clock_s/primitive_actions numbers were frozen against.
+        "input_event_times": input_event_times,
+    }
 
 
 def run(args, max_frames: int | None = None) -> int:
@@ -90,9 +163,30 @@ def run(args, max_frames: int | None = None) -> int:
               f"{REAL_OUT!r} (fine for a manual dry run; DAVID_BASELINES.md uses the default).",
               file=sys.stderr)
 
+    # One cold attempt per task (the exam law): refuse to clobber an existing canonical artifact
+    # unless David explicitly says this is a legitimate re-take and why.
+    allow_retake = (args.allow_retake or "").strip()
+    canonical_path = os.path.join(args.out, "human_metrics.json")
+    attempt_number = 1
+    retake_reason = ""
+    if os.path.exists(canonical_path):
+        if not allow_retake:
+            print(f"refusing: {canonical_path} already exists -- one cold attempt per task (see "
+                  "DAVID_BASELINES.md's re-run rule). Pass --allow-retake \"<reason>\" if this is a "
+                  "legitimate re-take of a genuinely botched capture, not a rerun to chase a better "
+                  "score.", file=sys.stderr)
+            return 2
+        try:
+            prior = json.loads(Path(canonical_path).read_text(encoding="utf-8"))
+            attempt_number = int(prior.get("attempt_number") or 1) + 1
+        except Exception:
+            attempt_number = 2
+        retake_reason = allow_retake
+
     os.makedirs(args.out, exist_ok=True)
     rom_sha256 = _sha256_file(args.rom)
     state_sha256 = _sha256_file(args.state)
+    oracle_path = os.path.join(args.out, "oracle.jsonl")
 
     import world_mcp
     from eval.score_gate0 import _red_success
@@ -104,11 +198,30 @@ def run(args, max_frames: int | None = None) -> int:
     from pyboy import PyBoy
     import sdl2
 
-    pb = PyBoy(args.rom, window="SDL2")
-    pb.set_emulation_speed(1)
-    with open(args.state, "rb") as f:
-        pb.load_state(f)
-    pb.tick(4, render=True)
+    # PyBoy/SDL2 window construction + savestate load, guarded: a corrupt/incompatible savestate or
+    # any other setup failure here now goes through the same clean-abort path as the rest of the
+    # rig (no orphaned SDL2 window, an INCOMPLETE artifact instead of a bare traceback + nothing).
+    pb = None
+    try:
+        pb = PyBoy(args.rom, window="SDL2")
+        pb.set_emulation_speed(1)
+        with open(args.state, "rb") as f:
+            pb.load_state(f)
+        pb.tick(4, render=True)
+    except Exception as exc:
+        if pb is not None:
+            pb.stop(save=False)
+        metrics = _build_metrics(
+            args, rom_sha256=rom_sha256, state_sha256=state_sha256, oracle_path=oracle_path,
+            wall_clock_s=0.0, press_count=0, success=False,
+            failures=[f"setup_failed:{type(exc).__name__}"], started_at=None,
+            completed_at=datetime.now(timezone.utc), attempt_number=attempt_number,
+            retake_reason=retake_reason, input_event_times=[])
+        metrics_path = os.path.join(args.out, f"human_metrics.INCOMPLETE_{int(time.time())}.json")
+        _atomic_write_json(metrics_path, metrics)
+        print(f"ERROR during PyBoy/savestate setup ({type(exc).__name__}: {exc}) -- wrote "
+              f"{metrics_path}", file=sys.stderr)
+        return 2
 
     rd = lambda a: pb.memory[a]
 
@@ -121,7 +234,6 @@ def run(args, max_frames: int | None = None) -> int:
               "this is not a fresh bedroom baseline start; the predicate will reject it.",
               file=sys.stderr)
 
-    oracle_path = os.path.join(args.out, "oracle.jsonl")
     oracle = open(oracle_path, "a", encoding="utf-8")
     rows: list[dict] = []
     step_n = 0
@@ -150,17 +262,24 @@ def run(args, max_frames: int | None = None) -> int:
     print("Controls (PyBoy defaults): arrows=move  A=A  S=B  Enter=Start  Backspace=Select.")
     print('Task: "From the fresh bedroom start, obtain your first Pokemon from Professor Oak and '
           'win the first rival battle."')
-    print("The timer starts on your FIRST button press. Close the window (or Ctrl-C) when you are "
-          "done, or to abort.")
+    print(f"The timer starts on your FIRST button press. The window auto-closes "
+          f"{COMPLETION_GRACE_SECONDS:.0f}s after the task is detected complete -- or close it "
+          "yourself (or Ctrl-C) any time to finish early or abort.")
 
     log_row()   # row 0: the fresh state, before any human input
 
     first_input_perf: float | None = None
     started_at = None
     press_count = 0
+    input_event_times: list[float] = []
     success = False
     failures: list[str] = ["red_not_fresh_party_zero"] if fresh_party != 0 else ["no_input_yet"]
     frames_since_sample = 0
+    # Frozen at the instant of oracle-detected completion (fairness review Major 1) -- everything
+    # after that is cosmetic wind-down and must never change the banked numbers.
+    frozen_wall_clock_s: float | None = None
+    frozen_press_count: int | None = None
+    grace_deadline: float | None = None
 
     try:
         frame_i = 0
@@ -173,6 +292,7 @@ def run(args, max_frames: int | None = None) -> int:
                 now = bool(ks[scancode])
                 if now and not held[scancode]:
                     press_count += 1
+                    input_event_times.append(time.time())
                     if first_input_perf is None:
                         first_input_perf = time.perf_counter()
                         started_at = datetime.now(timezone.utc)
@@ -186,9 +306,18 @@ def run(args, max_frames: int | None = None) -> int:
                     ok, failures = _red_success(rows)
                     if ok:
                         success = True
-                        elapsed = time.perf_counter() - first_input_perf
-                        print(f"[task complete -- presses={press_count} wall_clock={elapsed:.1f}s] "
-                              "close the window (or Ctrl-C) to finish and write the baseline.")
+                        frozen_wall_clock_s = time.perf_counter() - first_input_perf
+                        frozen_press_count = press_count
+                        grace_deadline = time.perf_counter() + COMPLETION_GRACE_SECONDS
+                        print("=" * 60)
+                        print(f"[TASK COMPLETE -- presses={frozen_press_count} "
+                              f"wall_clock={frozen_wall_clock_s:.1f}s -- metrics frozen]")
+                        print(f"[window auto-closes in {COMPLETION_GRACE_SECONDS:.0f}s -- "
+                              "or close it now]")
+                        print("=" * 60)
+            if grace_deadline is not None and time.perf_counter() >= grace_deadline:
+                print("[auto-close: grace period elapsed]")
+                break
     except KeyboardInterrupt:
         pass
     finally:
@@ -196,33 +325,23 @@ def run(args, max_frames: int | None = None) -> int:
         oracle.close()
         pb.stop(save=False)
 
-    wall_clock_s = (time.perf_counter() - first_input_perf) if first_input_perf is not None else 0.0
+    if frozen_wall_clock_s is not None:
+        wall_clock_s = frozen_wall_clock_s
+        final_press_count = frozen_press_count
+    else:
+        wall_clock_s = (time.perf_counter() - first_input_perf) if first_input_perf is not None else 0.0
+        final_press_count = press_count
     completed_at = datetime.now(timezone.utc)
 
-    metrics = {
-        "schema_version": 1,
-        "arm": ARM,
-        "role": "human",
-        "mode": MODE,
-        "wall_clock_s": round(wall_clock_s, 3),
-        "primitive_actions": press_count,
-        "success": success,
-        "failures": failures,
-        "player": args.player if not args.test else f"TEST:{args.player}",
-        "started_at": started_at.isoformat() if started_at else None,
-        "completed_at": completed_at.isoformat(),
-        "rom_path": os.path.normpath(args.rom),
-        "rom_sha256": rom_sha256,
-        "savestate_path": os.path.normpath(args.state),
-        "savestate_sha256": state_sha256,
-        "oracle_path": os.path.normpath(oracle_path),
-        "test_mode": bool(args.test),
-    }
+    metrics = _build_metrics(
+        args, rom_sha256=rom_sha256, state_sha256=state_sha256, oracle_path=oracle_path,
+        wall_clock_s=wall_clock_s, press_count=final_press_count, success=success,
+        failures=failures, started_at=started_at, completed_at=completed_at,
+        attempt_number=attempt_number, retake_reason=retake_reason,
+        input_event_times=input_event_times)
     name = "human_metrics.json" if success else f"human_metrics.INCOMPLETE_{int(time.time())}.json"
     metrics_path = os.path.join(args.out, name)
-    with open(metrics_path, "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2, sort_keys=True)
-        f.write("\n")
+    _atomic_write_json(metrics_path, metrics)
 
     print(("PASS" if success else "INCOMPLETE") + f" -- wrote {metrics_path}")
     print(json.dumps(metrics, sort_keys=True))
@@ -237,6 +356,10 @@ def main() -> int:
     ap.add_argument("--player", default="David")
     ap.add_argument("--test", action="store_true",
                      help="throwaway smoke-test mode: refuses to write under the real baseline path")
+    ap.add_argument("--allow-retake", metavar="REASON", default=None,
+                     help="required to overwrite an existing canonical human_metrics.json -- state "
+                          "why this is a legitimate re-take (a botched capture), not a rerun to "
+                          "chase a better score.")
     return run(ap.parse_args())
 
 

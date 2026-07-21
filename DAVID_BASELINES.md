@@ -8,6 +8,39 @@ This is precondition 6 of `reports/2026-07-18-gate0-prereg.md` ("Human baselines
 (who/when)"). Running the two commands below is what makes that precondition `MET` -- this PR ships
 the rig, not the captured numbers.
 
+> **These are DEV-seed readiness numbers, NEVER the paid gate's human denominator.** Both scripts
+> hard-pin `"mode": "readiness_dev"` (Red always; MiniWoB against seeds `0..4`, never
+> CLI-overridable). The design doc (W0 section) is explicit: DEV-seed human runs are a readiness
+> estimate only -- the formal human-relative `<=2.0x` score for the paid Gate 0 attempt uses a
+> **separate, not-yet-built** human replay against the held-out paid seeds (`1000..1004` for
+> MiniWoB; the prereg's Arm W paid-oracle seeds). Do not point `gate0_paid_source_pins.json`'s
+> `miniwob_human`/`red_human` at this rig's output -- `eval.score_gate0._verify_sources` will refuse
+> a mode mismatch, but don't rely on that as the only line of defense.
+
+## Re-run rule (the exam law) -- read this before you press anything
+
+A baseline is **one cold attempt per task**
+(`reports/2026-07-13-minimum-north-star-gate-0-design.md`: "one attempt per world, with artifacts
+and verdict banked as-is"). Both scripts now enforce this mechanically, not just by discipline:
+
+- **A botched capture may be re-taken freely.** Rig crashed, wrong savestate loaded, your machine
+  restarted mid-run, Docker died: if the run never reached a detected SUCCESS, no canonical
+  `human_metrics.json` was ever written (only a distinctly-named
+  `human_metrics.INCOMPLETE_<timestamp>.json`, which stays on disk -- append-only, never overwritten
+  or deleted). Just re-run the command; nothing extra needed. (For MiniWoB, any partial
+  `oracle.jsonl` the crashed session left behind -- including real terminal rows from episodes it
+  did complete -- is auto-archived at the start of the re-run, so stale rows can never poison the
+  fresh score. Red's scoring uses only the live session's trace, so nothing extra applies there.)
+- **A bad-but-genuine score may NOT be casually re-taken.** If the rig genuinely detected success
+  but your time or press count came out worse than you'd like, that *is* the baseline -- re-running
+  to chase a better number is exactly the "informal rerun to rescue a marginal result" the design
+  doc forbids. Both scripts now **refuse to overwrite an existing canonical `human_metrics.json`**
+  and exit non-zero unless you pass `--allow-retake "<reason>"` (e.g.
+  `--allow-retake "Docker died right after the success print, human_metrics.json never actually
+  wrote on my first try"`). The written artifact then records `attempt_number` (2, 3, ...) and your
+  `retake_reason` verbatim -- `attempt_number` is always `1` and `retake_reason` is always empty for
+  a normal first capture. If in doubt whether your situation qualifies, ask before re-running.
+
 ## 1. Pokemon Red (Arm R) -- bedroom -> starter -> rival win
 
 You need `roms/PokemonRed.gb` and `runs/red_start.state` locally (both gitignored, never
@@ -30,15 +63,24 @@ Controls are PyBoy's defaults (same as `human_play.py`): arrow keys move, **A** 
 **B** = the `s` key, **Start** = Enter, **Select** = Backspace. Just play it -- the timer starts on
 your very first keypress. Once the rig detects the real end state (party count `0->1`, then a
 trainer battle, then a sustained exit with your HP never hitting zero, then you move to at least 2
-different tiles), it prints `[task complete ...]` in the terminal -- close the window (or Ctrl-C)
-to finish and write the baseline.
+different tiles), it prints a loud `[TASK COMPLETE ...]` banner **and freezes your wall-clock time
+and press count right there** -- anything you do after that (closing the window, wandering around)
+never changes the banked numbers. The window then **auto-closes itself a few seconds later**
+(`COMPLETION_GRACE_SECONDS`) so you don't have to notice the message or react quickly; you can also
+close it yourself (or Ctrl-C) any time, including before completion, to finish early or abort.
 
 Writes to `runs/gate0_human_baseline/red/`:
-- `human_metrics.json` -- your wall-clock time and button-press count (the exact fields
-  `eval/score_gate0.py` reads for the human side of the `<=2.0x` Capability bar), plus `player`,
-  `started_at`/`completed_at` (ISO 8601 UTC), and `rom_sha256`/`savestate_sha256` for provenance.
+- `human_metrics.json` -- your wall-clock time and button-press count, frozen at detection (the
+  exact fields `eval/score_gate0.py` reads for the human side of the `<=2.0x` Capability bar), plus
+  `player`, `started_at`/`completed_at` (ISO 8601 UTC), `rom_sha256`/`savestate_sha256`,
+  `attempt_number`/`retake_reason`, and `input_event_times` (a raw per-keypress timestamp list, for
+  auditing press cadence independently of the aggregate count) for provenance.
 - `oracle.jsonl` -- the raw watch-row trace (append-only, same RAM fields the real agent's oracle
   would log: x, y, map, party, badges, in_battle, party_hp_hi/lo).
+
+A setup failure (bad ROM, corrupt/incompatible savestate, PyBoy/SDL2 error before you ever get to
+play) is caught cleanly too -- no orphaned window, an `INCOMPLETE` artifact instead of a bare
+traceback.
 
 ## 2. MiniWoB click-checkboxes (Arm W) -- 5 fresh DEV episodes
 
@@ -49,18 +91,28 @@ installed in the main project env -- see `Dockerfile.miniwob`). Build it once if
 docker build -f Dockerfile.miniwob -t miniwob-mcp-world .
 ```
 
-Then run the capture script inside that image (bind-mount the single script file over the image
-root so `import world_mcp` still resolves, and mount `runs/` so the artifacts land on your host):
+Then run the capture script inside that image. The image (`Dockerfile.miniwob`) only bakes in
+`core/` + `world_mcp.py` -- it does NOT contain `tools/` or `eval/`, which the script needs
+(`from eval.score_gate0 import MODES, _miniwob_success`, which itself imports
+`tools.check_gate0_codex`). Mount BOTH directories, preserving their real repo-root nesting under
+`/app` (a flat single-file mount breaks `ROOT = Path(__file__).resolve().parents[1]`'s path math),
+and invoke via `-m` so the `tools`/`eval` packages resolve:
 
 ```
 docker run -it --rm \
-  -v "$PWD/tools/capture_gate0_baseline_miniwob.py:/app/capture_gate0_baseline_miniwob.py" \
+  -v "$PWD/tools:/app/tools" \
+  -v "$PWD/eval:/app/eval" \
   -v "$PWD/runs:/app/runs" \
-  --entrypoint python miniwob-mcp-world capture_gate0_baseline_miniwob.py
+  --entrypoint python miniwob-mcp-world -m tools.capture_gate0_baseline_miniwob
 ```
 
 (On Windows PowerShell, use `${PWD}` or an absolute path in place of `$PWD` if your shell doesn't
-expand it inside `-v`.)
+expand it inside `-v`. On Git Bash, set `MSYS_NO_PATHCONV=1` first -- otherwise Git Bash silently
+mangles the container-side `/app/...` paths into Windows paths and the mount fails.)
+
+The MiniWoB image itself is parity-pinned (Gate 0 pre-reg precondition 9 + C0) -- this fix only
+changes the `docker run` invocation, never `Dockerfile.miniwob`, so no image rebuild or re-pin is
+needed.
 
 **Why not a live interactive browser window?** MiniWoB exists only inside that headless
 Selenium/Chromium image. Making it truly click-with-your-mouse-live would need either host GUI
@@ -92,30 +144,24 @@ Episodes advance automatically once one ends -- 5 fresh DEV-seed episodes (seeds
 `eval/fixtures/gate0_miniwob_dev_seeds.json`; the script refuses to run against any other seed
 list, so you can never accidentally touch the held-out paid seeds `1000..1004`).
 
+The script requires a real interactive terminal (`docker run -it`, as shown above, gives you one)
+when writing to the real baseline path -- this guards against a scripted stand-in silently answering
+for you and writing to the real path; `--test` dry runs are exempt.
+
 Writes to `runs/gate0_human_baseline/miniwob/`:
 - `human_metrics.json` -- same schema shape as Red's (`schema_version`, `arm`, `role="human"`,
-  `mode`, `wall_clock_s`, `primitive_actions`), plus `player`/timestamps/`expected_seeds`.
+  `mode`, `wall_clock_s`, `primitive_actions`), plus `player`/timestamps/`expected_seeds`,
+  `attempt_number`/`retake_reason`, `capture_modality` (`"screenshot_relay_typed_action"` --
+  records that this was a typed-coordinate relay, not native mouse clicking, for a future
+  verdict-writer interpreting the `<=2.0x` wall-clock bar), and `input_event_times` (a raw
+  per-action timestamp list).
 - `oracle.jsonl` -- `MiniWobSession`'s own oracle writer, unmodified (episode/seed/step/task/
-  reward/done/abandoned rows).
+  reward/done/abandoned rows). If an `oracle.jsonl` already exists when a run starts -- whether
+  from a scored attempt being legitimately re-taken with `--allow-retake` OR from a crashed/quit
+  partial attempt that never reached the canonical write -- it is archived (renamed, never
+  deleted) to `oracle.attempt<N>_<timestamp>.jsonl` first, so every run scores against a clean
+  trace instead of the terminal-count check seeing stale terminal rows from a prior session.
 - `ep<N>_step<K>.png` -- exactly what you were shown at each decision, for provenance.
-
-## Re-run rule (the exam law)
-
-A baseline is **one cold attempt per task**
-(`reports/2026-07-13-minimum-north-star-gate-0-design.md`: "one attempt per world, with artifacts
-and verdict banked as-is").
-
-- **A botched capture may be re-taken.** Rig crashed, wrong savestate loaded, your machine
-  restarted mid-run, Docker died -- just re-run the command. A fresh `human_metrics.json` is
-  written on the next success; any earlier `human_metrics.INCOMPLETE_<timestamp>.json` files stay
-  on disk (append-only, never overwritten or deleted -- they're the raw-data record of the botched
-  attempts, not junk to clean up).
-- **A bad score may NOT be re-taken.** If the rig genuinely detected success but your time or press
-  count came out worse than you'd like, that *is* the baseline. Re-running to chase a better number
-  is exactly the "informal rerun to rescue a marginal result" the design doc forbids ("Bank
-  PASS/FAIL/... as printed. Never rescue a marginal result with an informal rerun.").
-- Neither script checks whether `human_metrics.json` already exists before writing -- that
-  discipline is on you, not enforced by the file system. If in doubt, ask before re-running.
 
 ## Where a future scorer will point
 
