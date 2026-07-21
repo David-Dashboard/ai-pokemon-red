@@ -184,6 +184,24 @@ def run(args, max_frames: int | None = None) -> int:
         retake_reason = allow_retake
 
     os.makedirs(args.out, exist_ok=True)
+
+    # This rig appends to <out>/oracle.jsonl and the success check re-reads that WHOLE file, so any
+    # stale trace left over from an earlier session (a legitimate --allow-retake, or a crash/abort
+    # before the canonical write) would have its rows prepended to the new attempt's, corrupting the
+    # party/battle/exit index logic in eval.score_gate0._red_success. Archive whenever a prior trace
+    # exists at session start, regardless of whether a canonical human_metrics.json exists -- same
+    # pattern as the MiniWoB rig (PR #119). Renamed, never deleted -- append-only law -- and never
+    # clobbered on same-second name collisions.
+    prior_oracle_path = os.path.join(args.out, "oracle.jsonl")
+    if os.path.exists(prior_oracle_path):
+        base = os.path.join(args.out, f"oracle.attempt{max(attempt_number - 1, 1)}_{int(time.time())}")
+        archive_path, n = f"{base}.jsonl", 0
+        while os.path.exists(archive_path):
+            n += 1
+            archive_path = f"{base}_{n}.jsonl"
+        os.replace(prior_oracle_path, archive_path)
+        print(f"[stale oracle trace from a previous session archived -> {archive_path}]")
+
     rom_sha256 = _sha256_file(args.rom)
     state_sha256 = _sha256_file(args.state)
     oracle_path = os.path.join(args.out, "oracle.jsonl")
