@@ -25,7 +25,7 @@ run," below, for why fresh receipts were read rather than regenerated.
 | 3 | Frozen expected-pins JSON, independent of any receipt | **MET** | `eval/fixtures/gate0_expected_pins_red.json` / `_miniwob.json`, `schema_version=2`, all 20 `PIN_FIELDS` present, frozen 2026-07-19 against commit `b45b47f`, `planned_model` updated 2026-07-21 to `gpt-5.6-sol` per David's decision. Each file's own header states the INDEPENDENCE LAW (no value copied from an observed receipt). |
 | 4 | Live breaker dry-run TRIP receipt | **MET** | Component: `reports/2026-07-19-gate0-live-breaker-dry-run.md` (deterministic dry-run TRIP, hash `27538b25...`). Full 4a–4d wiring: `reports/2026-07-21-gate0-wired-breaker-trip.md` — `-PaidExec`, `Confirm-PaidExecSignature`, `Invoke-BreakerSupervisedExec` (kill-on-close Job Object + unconditional `taskkill /T /F`), combined cross-arm ledger, all merged via PR #122 (`99c9fa7`, posted-review-gated per project convention). Wired-path zero-spend stub-emitter TRIP receipt: `status=PASS`, `credits_at_trip=252.0`, `child_still_alive_after_kill=false`. That report's own text says "pending re-review" because it was written mid-review; PR #122 **is** that reviewed revision and is already merged onto `main` — so precondition 4 is MET at current HEAD, not still pending. |
 | 5 | Blank-agent wipe line | **MET (mechanism); unexercised in a live paid context** | Every `-OutputDir` must not exist or be empty (`tools/run_gate0_codex.ps1` `Test-Path`/`Get-ChildItem` guard); a fresh, isolated `codex-home` is created per run; `history.persistence="none"` and `features.memories=false` are forced in both `$BrainConfigText` and the effective `$Overrides` array. Verified present verbatim in the real `red-v4`/`miniwob-v3` `brain-config.toml` files this session. No live paid exec has run yet, so the wipe has never been exercised end-to-end against a real model call. |
-| 6 | Human baselines recorded (who/when) | **MET** | Red: David, 2026-07-21, Option-A reconstruction (`reports/2026-07-21-gate0-red-baseline-reconstruction.md`) — `wall_clock_s=233.288`, `primitive_actions=271`, `success=true`. MiniWoB: David, 2026-07-21, 5 fresh DEV episodes, seeds `0..4`, `wall_clock_s=224.83`, `primitive_actions=18`, `success=true` (5/5). Both files re-verified present and loadable this session (§2). **Gap flagged, not fixed here:** `eval/fixtures/gate0_{readiness_dev,paid}_source_pins.json`'s `artifact_sha256.red_human`/`miniwob_human` are still the literal placeholder string `PENDING_NOT_YET_CAPTURED_...` — not yet re-frozen against these real captured files. Freezing those two hashes is a distinct, separate follow-up (out of this PR's DO list); flagged here so it isn't silently missed. |
+| 6 | Human baselines recorded (who/when) | **MET** | Red: David, 2026-07-21, Option-A reconstruction (`reports/2026-07-21-gate0-red-baseline-reconstruction.md`) — `wall_clock_s=233.288`, `primitive_actions=271`, `success=true`. MiniWoB: David, 2026-07-21, 5 fresh DEV episodes, seeds `0..4`, `wall_clock_s=224.83`, `primitive_actions=18`, `success=true` (5/5). Both files re-verified present and loadable this session (§2). **Gap now CLOSED (addendum, this same PR):** `eval/fixtures/gate0_{readiness_dev,paid}_source_pins.json`'s `artifact_sha256.red_human`/`miniwob_human` are no longer the placeholder `PENDING_NOT_YET_CAPTURED_...` — both are now frozen to the real, independently recomputed SHA-256 of the actual captured `human_metrics.json` files (§2's hashes), with a `_source` citation to PR #123 (red) and the played MiniWoB capture. `paid_gate0`'s `miniwob_human` correctly remains `PENDING` — it points at a genuinely different, not-yet-built artifact (the held-out paid-seed replay), not the DEV-seed baseline. Proof: §8. |
 | 7 | Codex CLI executability + auth receipt | **MET** | `codex --version` → `codex-cli 0.144.3`; `codex login status` → `Logged in using ChatGPT`; `OPENAI_API_KEY`/`CODEX_API_KEY` both unset — all reconfirmed this session. `Resolve-CodexExecutable` resolves to exactly one `.exe`. |
 | 8 | Codex-pool quota check | **LAUNCH-TIME (by design)** | Must be confirmed immediately before **each** arm's launch (250-normalized-credit headroom); cannot be pre-satisfied ahead of the actual launch moment. See launch checklist, §6. |
 | 9 | World images rebuilt from a clean checkout, post-merge | **MET** | `gb-mcp-world` → `sha256:5bfabc7513ce037ed077e955fd34445ef564a7b51037bd7fdddeef0cdb900d00`; `miniwob-world` → `sha256:8bb3358e1421dc97c72c07809fdef048f63d64bdfddb170c4d0188337fe6fd0f` — both reconfirmed via `docker image inspect` this session, exactly matching the frozen `world_image_id` pins. `host_code_sha256 == image_code_sha256` parity confirmed in both `red-v4`/`miniwob-v3` receipts. |
@@ -45,9 +45,13 @@ per the frozen source-pin loader's expected paths):
 | miniwob | `runs/gate0_human_baseline/miniwob/human_metrics.json` | `224.83` | `18` (5/5 episodes) | `true` | `32b0c021be2a03215feca51e74a56285a561791f777a6300290860dfaf8f7dcf` |
 
 Both load cleanly as JSON (`schema_version=1`, `role="human"`, `mode="readiness_dev"`), matching the
-shape `eval.score_gate0._verify_sources` expects. As noted in §1 row 6, the source-pins files' own
-`artifact_sha256` entries for these two keys are still unfrozen placeholders — the values above are
-this session's independent recomputation, not yet written back into the pins file.
+shape `eval.score_gate0._verify_sources` expects. **Update (addendum, this same PR):** the values
+above are now written back into the pins files — `eval/fixtures/gate0_readiness_dev_source_pins.json`'s
+`artifact_sha256.red_human`/`miniwob_human` and `eval/fixtures/gate0_paid_source_pins.json`'s
+`artifact_sha256.red_human` are frozen to these exact hashes (`paid_gate0`'s `miniwob_human`
+correctly stays `PENDING` — see §8 for why). This is not a circularity concern like the
+expected-pins case: a source pin *is* the hash of the source artifact itself, computed directly off
+the file, independent of any receipt.
 
 ---
 
@@ -287,7 +291,65 @@ outside this kind of sandboxed session, or with the classifier restriction lifte
 
 ---
 
-## 8. Verification
+## 8. Addendum (same PR, same-day): human-baseline hash pins now frozen
+
+Closes the one gap flagged in the original version of this report (§1 row 6, §2): the source-pins
+fixtures' `red_human`/`miniwob_human` `artifact_sha256` entries were still the literal placeholder
+string `PENDING_NOT_YET_CAPTURED_...`, which would refuse to validate against the now-captured real
+human baselines in real paid-mode scoring.
+
+**Frozen values** (independently recomputed SHA-256 of the actual captured artifacts — same files,
+same hashes as §2):
+
+| File | Field | Frozen value |
+|---|---|---|
+| `eval/fixtures/gate0_readiness_dev_source_pins.json` | `artifact_sha256.red_human` | `5144a5b36a29453c5f07ceba8336f3752055e0437e80f50d61418d61be686264` |
+| `eval/fixtures/gate0_readiness_dev_source_pins.json` | `artifact_sha256.miniwob_human` | `32b0c021be2a03215feca51e74a56285a561791f777a6300290860dfaf8f7dcf` |
+| `eval/fixtures/gate0_paid_source_pins.json` | `artifact_sha256.red_human` | `5144a5b36a29453c5f07ceba8336f3752055e0437e80f50d61418d61be686264` (identical — same file, no dev/paid split for Red) |
+| `eval/fixtures/gate0_paid_source_pins.json` | `artifact_sha256.miniwob_human` | **left as `PENDING_...` — correctly, not an oversight.** `paid_gate0`'s `artifact_paths.miniwob_human` points at `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` — a genuinely different, not-yet-built artifact (the held-out paid-seed `1000..1004` human replay). Freezing a hash here would be fabrication, not a source pin. |
+
+Each edited file's `_source_artifact_sha256` comment was updated in place with a citation: red —
+`reports/2026-07-21-gate0-red-baseline-reconstruction.md` (PR #123, Option-A reconstruction); miniwob
+— the played 5-episode DEV-seed capture (`DAVID_BASELINES.md`, `tools/capture_gate0_baseline_miniwob.py`).
+
+**Independence, addressed explicitly:** this is *not* the same circularity concern as the
+expected-pins file (`config_sha256`/`codex_mcp_list_sha256`, which cannot be pre-pinned because they
+embed the launch invocation). A source pin's whole job **is** to be the hash of its own source
+artifact — computed directly from the file's bytes, never derived from or copied out of a receipt.
+That is exactly what was done here.
+
+**Loader-clean proof.** Copied the real `human_metrics.json` files (from `ai-pokemon-red-prereg`,
+read-only source) into this worktree's own gitignored `runs/gate0_human_baseline/{red,miniwob}/`
+(mirroring what a real launch machine has locally — `runs/` is gitignored, so this is purely local,
+never committed), then called the real loader (`eval.score_gate0._verify_sources`) directly for both
+modes:
+
+- `readiness_dev`: failures = `['source_unreadable:red_agent', 'source_unreadable:miniwob_agent', 'source_unreadable:wake_boundary', 'source_unreadable:live_breaker', 'wake_boundary_artifact', 'live_breaker_artifact']` — **zero** `red_human`/`miniwob_human` failures (both previously-PENDING keys now load and hash-match cleanly). The remaining four failures are pre-existing, correctly-still-open gaps (agent attempts, wake boundary, and a local-only `live_breaker` artifact this session didn't happen to have copied in) — unrelated to this fix.
+- `paid_gate0`: failures include `source_unreadable:miniwob_human` (correct — that path is the not-yet-built paid-seed replay) but **no** `red_human` failure of any kind.
+
+The copied local files were removed again afterward, restoring the worktree to the same
+gitignored-`runs/`-empty state a fresh clone/CI has — this addendum changes only the two committed
+fixture files, no local run state.
+
+**PASS proof re-confirmed.** Re-ran §4's synthetic manifest through `eval/score_gate0.py::score()`
+unchanged: `overall=PASS`/`readiness=GO` still holds (expected — `score()` takes its inputs as
+in-memory dicts, never reads these pin files directly; the freeze cannot regress it, and this
+re-run is the receipt that it in fact does not).
+
+**Full suite green after the freeze** (`UV_PROJECT_ENVIRONMENT=.venv-win-restamp UV_NATIVE_TLS=true
+uv run --frozen pytest -q`):
+```
+1386 passed, 16 skipped in 51.47s
+```
+Identical pass count to before the freeze — no check was weakened; `tests/test_gate0_source_pins.py
+::test_verify_sources_reports_only_the_still_open_gaps` (which asserts `red_human`/`miniwob_human`
+are `source_unreadable` on a clean checkout with no local `runs/` state) still passes, because the
+test's own checkout genuinely has no local `runs/gate0_human_baseline/` — exactly the state this
+addendum restored before running the suite.
+
+---
+
+## 9. Verification
 
 Full suite (`UV_PROJECT_ENVIRONMENT=.venv-win-restamp UV_NATIVE_TLS=true uv run --frozen pytest -q`),
 run against this branch's own worktree at `61abba7` plus this report — tail:
@@ -295,3 +357,5 @@ run against this branch's own worktree at `61abba7` plus this report — tail:
 ```
 1386 passed, 16 skipped in 54.24s
 ```
+
+(See §8 for the re-run after the human-baseline pin freeze: `1386 passed, 16 skipped in 51.47s`.)

@@ -24,8 +24,8 @@ _Last updated: 2026-07-21 (Gate 0 final readiness stamp v2 + signature package, 
    (`Confirm-PaidExecSignature`, `Invoke-BreakerSupervisedExec`, combined cross-arm ledger) is merged
    on `main`, with a wired-path zero-spend TRIP receipt (`status=PASS`, `credits_at_trip=252.0`,
    child confirmed killed). Precondition 6 (human baselines) is `MET` (both captured 2026-07-21);
-   flagged gap: the frozen source-pins files' `red_human`/`miniwob_human` hash pins are still
-   unfrozen placeholders — a separate follow-up, not fixed in this pass.
+   the frozen source-pins files' `red_human`/`miniwob_human` hash pins — previously unfrozen
+   placeholders — are now closed same-day (addendum below).
 3. **SIGNATURE PACKAGE:** the report computes everything answerable ahead of signature — the four
    safety-critical file hashes (`tools/run_gate0_codex.ps1`, `gate0_credit_breaker.py`,
    `gate0_credit_accountant.py`, `gate0_codex_credit_rate.py`, canonical git-blob-at-`61abba7`) and a
@@ -39,13 +39,20 @@ _Last updated: 2026-07-21 (Gate 0 final readiness stamp v2 + signature package, 
    since `red-v4`/`miniwob-v3` (2026-07-21, already on `main`'s evidence trail) were the correct
    fresh receipts to audit; used read-only from the primary checkout, every hash independently
    cross-verified.
-5. **SAFETY:** no Codex/model execution, no brain/contract/tool-schema edit, no existing checkout
+5. **ADDENDUM (same day, same PR): human-baseline hash pins frozen.** `eval/fixtures/gate0_readiness_
+   dev_source_pins.json`'s `artifact_sha256.red_human`/`miniwob_human` and `gate0_paid_source_pins.json`'s
+   `artifact_sha256.red_human` are now the real, independently recomputed SHA-256 of the captured
+   `human_metrics.json` files (`5144a5b3...` red, `32b0c021...` miniwob) — no longer
+   `PENDING_NOT_YET_CAPTURED_...`. `paid_gate0`'s `miniwob_human` correctly stays `PENDING` (points
+   at the genuinely different, not-yet-built paid-seed replay artifact). Proven via the real loader
+   (`eval.score_gate0._verify_sources`, both modes): zero `red_human`/`miniwob_human` failures except
+   the correctly-still-open `paid_gate0` miniwob one. Synthetic-PASS proof re-confirmed unchanged.
+6. **SAFETY:** no Codex/model execution, no brain/contract/tool-schema edit, no existing checkout
    written to (own worktree only; human baselines and the fresh receipts were read-only). Full suite
-   green: `1386 passed, 16 skipped in 54.24s`.
+   green: `1386 passed, 16 skipped in 54.24s` (and again after the pin freeze:
+   `1386 passed, 16 skipped in 51.47s`).
 **⇒ NEXT:** David signs `eval/fixtures/gate0_signature.json` per the report's Signature Package
-(§6) for Arm R, confirms quota (precondition 8), launches Arm R, then repeats for Arm W. Separately:
-freeze the `red_human`/`miniwob_human` hash pins in the two source-pins fixtures against the now-
-captured baseline files.
+(§6) for Arm R, confirms quota (precondition 8), launches Arm R, then repeats for Arm W.
 
 **=>=> PRIOR (2026-07-21) - GATE 0 CHEAP AXIS = COST-PER-TASK, WAKES DEFERRED (DAVID'S DECISION); $0. =>=>**
 1. **POSITION VS NORTH STAR:** does not move the overall/proof score (no paid run) — it unblocks the

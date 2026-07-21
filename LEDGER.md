@@ -30,8 +30,13 @@ exact fields he still needs to supply.
   `PIN_FIELDS` match; `peer_constancy: PASS` both arms.
 - Human baselines (precondition 6) are now captured (David, 2026-07-21): red via Option-A
   reconstruction (`reports/2026-07-21-gate0-red-baseline-reconstruction.md`), miniwob via 5 fresh
-  DEV episodes. Flagged gap (not fixed this pass): the source-pins fixtures' `red_human`/
-  `miniwob_human` hash pins are still unfrozen placeholders.
+  DEV episodes. **Gap closed same-day:** the source-pins fixtures' `red_human`/`miniwob_human`
+  `artifact_sha256` pins are now frozen to the real, independently recomputed hashes of the
+  captured files (`5144a5b3...`/`32b0c021...`); `paid_gate0`'s `miniwob_human` correctly stays
+  `PENDING` (a genuinely different, not-yet-built paid-seed replay artifact). Proven via the real
+  loader (`eval.score_gate0._verify_sources`): no `red_human`/`miniwob_human` failure in either
+  mode (except the correctly-still-pending `paid_gate0` miniwob one); the synthetic-PASS proof
+  still holds unchanged.
 - Live breaker (precondition 4) is fully wired and merged (PR #122): `Confirm-PaidExecSignature`,
   `Invoke-BreakerSupervisedExec`, combined cross-arm ledger; wired-path zero-spend TRIP receipt
   `status=PASS`, `credits_at_trip=252.0`.
@@ -81,11 +86,14 @@ exact fields he still needs to supply.
 - [x] Write `reports/2026-07-21-gate0-readiness-final-v2.md` with the full signature package.
 - [x] Update LEDGER.md + HANDOFF.md top block.
 - [x] Full suite green (`1386 passed, 16 skipped in 54.24s`).
+- [x] Freeze `red_human`/`miniwob_human` `artifact_sha256` pins in
+  `eval/fixtures/gate0_{readiness_dev,paid}_source_pins.json` against the real captured baseline
+  files; prove via the real loader (no PENDING, no mismatch); re-confirm synthetic-PASS still
+  holds; full suite green after the freeze (`1386 passed, 16 skipped in 51.47s`).
 - [ ] Stage only intended files for parent commit/review.
 
 ## Next
 - PR + adversarial review for this readiness-stamp-v2 slice. After merge: David signs
   `eval/fixtures/gate0_signature.json` per the report's Signature Package, confirms quota
-  (precondition 8), and launches Arm R then Arm W. Separately (not this PR): freeze the
-  `red_human`/`miniwob_human` hash pins in the source-pins fixtures against the now-captured
-  baseline files. Paid Gate 0 remains blocked until David signs and quota is confirmed.
+  (precondition 8), and launches Arm R then Arm W. Paid Gate 0 remains blocked until David signs
+  and quota is confirmed.
