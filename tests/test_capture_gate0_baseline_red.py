@@ -211,6 +211,43 @@ def test_no_refusal_when_canonical_artifact_absent(fake_pyboy_raises, tmp_path):
     assert metrics["retake_reason"] == ""
 
 
+# ---- stale oracle.jsonl archival at session start (same pattern as PR #119's MiniWoB rig) ------
+
+def test_stale_oracle_archived_before_a_fresh_attempt(fake_pyboy_raises, tmp_path):
+    """A prior session's oracle.jsonl (left behind by a crash/abort before the canonical write, or
+    a legitimate --allow-retake) must be archived -- renamed, never deleted or appended-into --
+    before a fresh attempt starts, exactly like MiniWoB's rig (PR #119). Pre-fix, Red had no such
+    archival: a re-run's rows would land in the SAME oracle.jsonl as the stale attempt's, corrupting
+    _red_success's party/battle/exit index logic on the combined file (this is what David's aborted
+    second human-baseline attempt was headed for absent a fix -- see DAVID_BASELINES.md). Uses
+    fake_pyboy_raises so this never opens a real SDL2 window: the archival step runs before PyBoy
+    construction, so it's exercised even though this run() call fails immediately afterward."""
+    out = tmp_path / "out"
+    out.mkdir()
+    stale_row = {"step": 0, "t": 1.0, "frame": 4, "watch": {"party": 0, "in_battle": 0, "map": 38,
+                                                             "x": 3, "y": 7, "party_hp_hi": 0,
+                                                             "party_hp_lo": 0}}
+    (out / "oracle.jsonl").write_text(json.dumps(stale_row) + "\n", encoding="utf-8")
+
+    args = _args(tmp_path, out=out, test=False)
+    rc = m.run(args)
+    assert rc == 2   # PyBoy construction still fails (faked) -- only checking the archival ran first
+
+    archived = list(out.glob("oracle.attempt1_*.jsonl"))
+    assert len(archived) == 1
+    assert json.loads(archived[0].read_text(encoding="utf-8").strip()) == stale_row
+    # the stale file is gone from the live path -- a fresh attempt never appends onto it
+    assert not (out / "oracle.jsonl").exists()
+
+
+def test_no_archival_when_no_prior_oracle_exists(fake_pyboy_raises, tmp_path):
+    args = _args(tmp_path, test=False)
+    rc = m.run(args)
+    assert rc == 2
+    out = tmp_path / "out"
+    assert list(out.glob("oracle.attempt*_*.jsonl")) == []
+
+
 # ---- setup-failure -> INCOMPLETE artifact, no orphaned window (CODE-REVIEW MINOR 2) ------------
 
 def test_pyboy_setup_failure_writes_incomplete_artifact_with_mode_and_attempt_fields(fake_pyboy_raises, tmp_path):

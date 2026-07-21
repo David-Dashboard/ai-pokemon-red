@@ -3,7 +3,7 @@ import json
 import subprocess
 
 import eval.score_gate0 as scorer
-from eval.score_gate0 import score
+from eval.score_gate0 import _red_success, score
 from games.pokemon_red.memory_map import ADDR_IS_IN_BATTLE, ADDR_PARTY_MON1, OFF_CUR_HP
 import world_mcp
 
@@ -106,6 +106,44 @@ def test_red_first_party_transition_must_be_exactly_zero_to_one():
     rows = _red()
     rows[1]["watch"]["party"] = 2
     assert _score(red=rows)["overall"] == "FAIL_CAPABILITY"
+
+
+def _load_oracle_fixture(name):
+    path = scorer.ROOT / "eval" / "fixtures" / name
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_red_single_glitched_watch_row_does_not_block_a_real_completion():
+    # Regression for the Gate 0 Red rig missing a genuine human completion (David's second
+    # human-baseline attempt, 2026-07-21): a real oracle.jsonl trace of a human who obtained the
+    # starter, won the rival battle, and then walked out of the lab across several tiles -- a
+    # textbook success -- never printed "[TASK COMPLETE]". The real trace (trimmed to end well
+    # before this same session's later wild-battle rows, so success here can only come from the
+    # rival-battle-and-walk-out section) contains a SINGLE corrupted watch row mid-battle where
+    # PyBoy's polling sampler caught x/y/map/party/badges/in_battle/hp all bounced to 0 for one
+    # tick, sandwiched between otherwise-consistent rows. Pre-fix, that lone glitch row tripped
+    # BOTH "red_map_changed_during_battle_exit_span" and "red_player_hp_reached_zero" and the
+    # predicate could never recover, no matter how much genuine, later data arrived -- this is a
+    # scorer bug, not a live-capture-loop wiring bug: this test drives eval.score_gate0._red_success
+    # directly, offline, on the complete real trace, with no capture rig involved.
+    rows = _load_oracle_fixture("gate0_red_human_attempt2_completion.jsonl")
+    ok, failures = _red_success(rows)
+    assert ok, failures
+    assert failures == []
+
+
+def test_red_real_incomplete_attempt_without_post_exit_movement_still_fails():
+    # Sibling of the above, from the SAME incident: David's first human-baseline attempt (also
+    # archived, also never detected) shows the identical single-tick corruption artifact mid-battle
+    # (proving it's a recurring real PyBoy/RAM-read glitch, not a one-off), but this trace is
+    # trimmed to end before the human resumed walking after the battle -- so it must still
+    # correctly refuse (no >=2 distinct post-exit tiles yet). Guards against the fix in
+    # eval/score_gate0.py overcorrecting into accepting *any* trace with a glitch row, rather than
+    # specifically filtering rows whose `party` count reverts to a stale/impossible value.
+    rows = _load_oracle_fixture("gate0_red_human_attempt1_no_movement.jsonl")
+    ok, failures = _red_success(rows)
+    assert not ok
+    assert failures == ["red_no_free_movement_after_exit"]
 
 
 def test_pass_matrix():

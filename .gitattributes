@@ -6,3 +6,4 @@
 # materialize identical LF bytes, or the hash pins are non-portable — the same CRLF trap PR #114
 # fixed for host_code_sha256.
 eval/fixtures/gate0_*.json text eol=lf
+eval/fixtures/gate0_*.jsonl text eol=lf

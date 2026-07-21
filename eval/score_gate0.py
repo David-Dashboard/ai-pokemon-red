@@ -54,7 +54,15 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     if exit_idx is None:
         failures.append("red_no_sustained_battle_exit")
         return False, failures
-    safety_span = watches[battle_idx:exit_idx + 10]
+    # A single watch row whose `party` count doesn't match the sticky post-acquisition value is a
+    # corrupted one-tick RAM read, never a real state: party count cannot organically drop back to
+    # 0 once the starter is owned (confirmed against real human traces -- runs/gate0_human_baseline/
+    # red/oracle.jsonl -- where PyBoy's polling sampler occasionally caught a mid-battle tick with
+    # x/y/map/party/badges/in_battle/hp all simultaneously bounced to 0, sandwiched between
+    # identical, consistent neighbor rows). Such rows carry no signal and must be dropped before the
+    # map-continuity/HP-safety checks below ever read them, instead of being trusted at face value.
+    established_party = watches[party_idx].get("party")
+    safety_span = [w for w in watches[battle_idx:exit_idx + 10] if w.get("party") == established_party]
     hp_values = []
     battle_map = watches[battle_idx].get("map")
     for watch in safety_span:
@@ -69,7 +77,8 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
             break
     if hp_values and min(hp_values) == 0:
         failures.append("red_player_hp_reached_zero")
-    post = [(w.get("x"), w.get("y")) for w in watches[exit_idx:] if w.get("x") is not None and w.get("y") is not None]
+    post = [(w.get("x"), w.get("y")) for w in watches[exit_idx:]
+            if w.get("x") is not None and w.get("y") is not None and w.get("party") == established_party]
     if len(set(post)) < 2:
         failures.append("red_no_free_movement_after_exit")
     return not failures, failures

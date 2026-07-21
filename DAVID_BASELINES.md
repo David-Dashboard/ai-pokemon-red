@@ -30,7 +30,9 @@ and verdict banked as-is"). Both scripts now enforce this mechanically, not just
   or deleted). Just re-run the command; nothing extra needed. (For MiniWoB, any partial
   `oracle.jsonl` the crashed session left behind -- including real terminal rows from episodes it
   did complete -- is auto-archived at the start of the re-run, so stale rows can never poison the
-  fresh score. Red's scoring uses only the live session's trace, so nothing extra applies there.)
+  fresh score. Red does the same: any `oracle.jsonl` left behind by an aborted/crashed session is
+  auto-archived to `oracle.attempt<N>_<timestamp>.jsonl` at the start of the next run, so a fresh
+  attempt never appends onto a prior one's rows.)
 - **A bad-but-genuine score may NOT be casually re-taken.** If the rig genuinely detected success
   but your time or press count came out worse than you'd like, that *is* the baseline -- re-running
   to chase a better number is exactly the "informal rerun to rescue a marginal result" the design
