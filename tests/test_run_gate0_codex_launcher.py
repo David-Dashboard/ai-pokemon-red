@@ -222,6 +222,22 @@ def test_launcher_is_free_handshake_only_and_fail_closed():
     assert SCRIPT.rstrip().endswith("exit 1")
 
 
+def test_launcher_documents_the_live_breaker_wiring_point_without_adding_exec():
+    # Pre-reg precondition 4 (reports/2026-07-18-gate0-prereg.md): the breaker is built and proven
+    # in tools/gate0_credit_breaker.py, and this script names it as the future paid launcher's
+    # integration point -- WITHOUT adding a live `codex exec` call here (that would break the
+    # free-handshake-only invariant asserted above, which stays load-bearing until a separate paid
+    # launcher exists).
+    assert "tools/gate0_credit_breaker.py" in SCRIPT
+    # Kill contract names BOTH breaker exceptions (review MINOR 2) and the pre-registered
+    # stall backstop (review MINOR 3a) -- catching only BreakerTripped is fail-open.
+    assert "BreakerTripped" in SCRIPT
+    assert "MalformedCreditStream" in SCRIPT
+    assert "stall" in SCRIPT.lower()
+    assert "$codex.Source exec" not in SCRIPT
+    assert SCRIPT.rstrip().endswith("exit 1")
+
+
 def test_launcher_proves_chatgpt_auth_without_copying_it():
     assert "& $ResolvedCodexPath --version" in SCRIPT
     assert "Invoke-CodexLoginStatus -ExecutablePath $ResolvedCodexPath" in SCRIPT

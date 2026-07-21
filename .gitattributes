@@ -1,2 +1,8 @@
 # Shell scripts run in WSL/Linux — never let Windows autocrlf turn them into CRLF (bash chokes).
 *.sh text eol=lf
+
+# Gate 0 hash-pinned fixtures: eval/score_gate0.py's source-pins manifests pin these files' exact
+# on-disk SHA-256 (frozen_seed_sha256, expected_pins_sha256). Every checkout on every platform must
+# materialize identical LF bytes, or the hash pins are non-portable — the same CRLF trap PR #114
+# fixed for host_code_sha256.
+eval/fixtures/gate0_*.json text eol=lf

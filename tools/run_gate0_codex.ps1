@@ -400,6 +400,19 @@ $Receipt = [ordered]@{
 $ReceiptPath = Join-Path $OutputDir 'handshake-receipt.json'
 Write-Utf8NoBom $ReceiptPath (($Receipt | ConvertTo-Json -Depth 8) + "`n")
 
+# Live-breaker wiring point (pre-reg precondition 4, reports/2026-07-18-gate0-prereg.md;
+# tools/gate0_credit_breaker.py). This script stays free-handshake-only -- no exec call, no spend --
+# until a separate paid launcher with observable wake accounting exists (design doc:242-246). Once
+# that launcher streams `codex exec --json` output, it must feed run_breaker(raise_on_trip=True,
+# stall_timeout_s=STALL_TIMEOUT_S) an ITERATOR pulled lazily from the stream (never a buffered/
+# materialized source -- PR #118 breaker review MAJOR 1) and kill the codex child the instant the
+# breaker raises ANY exception: BreakerTripped OR MalformedCreditStream (catching only the former
+# is fail-open -- a malformed/stalled stream crashes the accountant while the child keeps
+# spending). The 300 s stall backstop is pre-registered; the detector's halting correctness is
+# proven against a synthetic stream in tests/test_gate0_credit_breaker.py and
+# reports/2026-07-19-gate0-live-breaker-dry-run.md. Precondition-4 status: COMPONENT MET --
+# WIRING PENDING (PR #118 checklist 4a-4d must clear before any paid launch).
+
 Write-Output 'readiness=NO_GO_INSUFFICIENT_WAKES'
 Write-Output 'paid_execution_enabled=false'
 Write-Output "receipt=$ReceiptPath"
