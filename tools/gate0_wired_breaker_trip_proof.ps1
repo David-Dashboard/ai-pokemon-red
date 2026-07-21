@@ -25,7 +25,7 @@ $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($LauncherPath, [ref]$tokens, [ref]$errors)
 if ($errors.Count -ne 0) { throw 'Launcher did not parse.' }
-foreach ($name in @('ConvertTo-NativeArgument', 'Invoke-BreakerSupervisedExec')) {
+foreach ($name in @('ConvertTo-NativeArgument', 'Get-Gate0KillOnCloseJob', 'Invoke-BreakerSupervisedExec')) {
     $functions = @($ast.FindAll({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
@@ -43,14 +43,21 @@ $VerdictPath = Join-Path $ProofDir 'wired_path_trip_accountant_verdict.json'
 $EmitterPath = Join-Path $RepoRoot 'tools\gate0_stub_codex_emitter.py'
 $AccountantModel = 'stub-model'
 
+# PR #122 review Finding 3 / coordinator M3: tools/gate0_codex_credit_rate.py now rejects an
+# implausible rate outright (a units-mistake proxy like the previous credits_per_usd=1,
+# usd_per_output_token=1.0 fixture here would itself now be REFUSED). This pin sits at the
+# real design-doc value (credits_per_usd=25) and the TOP of the plausible per-token band
+# ($10,000/million output tokens), still clearly labeled synthetic via rate_source, with a larger
+# --output-tokens-per-event below controlling trip timing instead of an implausible rate.
 $RatePin = [ordered]@{
     model = $AccountantModel
-    rate_source = 'SYNTHETIC TEST FIXTURE for PR #118 checklist 4c -- proves the wired kill ' +
-        'path, NOT a real priced rate. See reports/2026-07-21-gate0-wired-breaker-trip.md.'
-    credits_per_usd = 1
+    rate_source = 'SYNTHETIC TEST FIXTURE for PR #122 checklist 4c -- proves the wired kill ' +
+        'path at a real credits_per_usd and the top of the plausible per-token band, NOT a real ' +
+        'priced rate. See reports/2026-07-21-gate0-wired-breaker-trip.md.'
+    credits_per_usd = 25
     usd_per_input_token = 0.0
     usd_per_cached_input_token = 0.0
-    usd_per_output_token = 1.0
+    usd_per_output_token = 0.01
 }
 # [Text.UTF8Encoding]::new($false): no BOM -- matches Write-Utf8NoBom in run_gate0_codex.ps1.
 # Set-Content -Encoding utf8 on Windows PowerShell 5.1 writes a BOM, which broke
@@ -62,8 +69,12 @@ $RatePin = [ordered]@{
 # tests/test_gate0_credit_breaker.py's 45x6 pattern this rate mirrors) so a large, unambiguous
 # tail remains unsent when the kill lands -- proving a genuine mid-stream interruption rather than
 # racing a stream that was already about to finish on its own.
+# 24 output tokens/event * 0.01 $/token * 25 credits/$ = 6 credits/event -- reproduces the exact
+# same "6 credits/event, trip near event 42" arithmetic as tools/gate0_credit_breaker.py's own
+# 45x6 synthetic dry-run pattern (tests/test_gate0_credit_breaker.py), now via a plausible rate
+# and a correspondingly larger per-event token count rather than an implausible rate.
 $IntendedTotal = 150
-$OutputTokensPerEvent = 6
+$OutputTokensPerEvent = 24
 $DelaySeconds = 0.2
 
 $StartedAt = Get-Date

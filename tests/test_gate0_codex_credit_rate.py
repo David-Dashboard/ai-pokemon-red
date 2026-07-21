@@ -76,6 +76,44 @@ def test_load_credit_rate_pin_fails_closed_on_nonpositive_credits_per_usd(tmp_pa
         load_credit_rate_pin(path, "gpt-5.6-sol")
 
 
+def test_load_credit_rate_pin_refuses_the_reviewers_implausibly_low_poc(tmp_path):
+    # PR #122 review Finding 3 / coordinator M3: 1e-12 $/token (a plausible units mistake, e.g.
+    # quoting a per-1M-token price as a per-token price) previously passed validation and made the
+    # 250-credit ceiling need ~2.5 billion turns to reach -- effectively unreachable.
+    path = _write_pin(tmp_path, overrides={"usd_per_output_token": 1e-12})
+    with pytest.raises(CreditRateNotPinned, match="rate_pin_implausible_field:usd_per_output_token"):
+        load_credit_rate_pin(path, "gpt-5.6-sol")
+
+
+def test_load_credit_rate_pin_refuses_the_reviewers_implausibly_high_poc(tmp_path):
+    # A rate 10x+ too high makes a single trivial turn alone trip instantly -- safe but wastes the
+    # one pre-registered attempt on a units error rather than a real run.
+    path = _write_pin(tmp_path, overrides={"usd_per_output_token": 1.0})
+    with pytest.raises(CreditRateNotPinned, match="rate_pin_implausible_field:usd_per_output_token"):
+        load_credit_rate_pin(path, "gpt-5.6-sol")
+
+
+def test_load_credit_rate_pin_allows_an_exact_zero_token_rate(tmp_path):
+    # A genuine "this token class is free" tier is a legitimate price, not a units bug -- only a
+    # NONZERO-but-astronomically-tiny value is the error signature the plausibility band guards.
+    path = _write_pin(tmp_path, overrides={"usd_per_cached_input_token": 0.0})
+    pin = load_credit_rate_pin(path, "gpt-5.6-sol")
+    assert pin["usd_per_cached_input_token"] == 0.0
+
+
+@pytest.mark.parametrize("boundary_value", [1e-8, 1e-2])
+def test_load_credit_rate_pin_accepts_the_plausibility_band_boundaries(tmp_path, boundary_value):
+    path = _write_pin(tmp_path, overrides={"usd_per_output_token": boundary_value})
+    load_credit_rate_pin(path, "gpt-5.6-sol")
+
+
+@pytest.mark.parametrize("bad_credits_per_usd", [1e-6, 0.5, 1e6, 1e9])
+def test_load_credit_rate_pin_refuses_an_implausible_credits_per_usd(tmp_path, bad_credits_per_usd):
+    path = _write_pin(tmp_path, overrides={"credits_per_usd": bad_credits_per_usd})
+    with pytest.raises(CreditRateNotPinned, match="rate_pin_implausible_field:credits_per_usd"):
+        load_credit_rate_pin(path, "gpt-5.6-sol")
+
+
 def test_load_credit_rate_pin_refuses_a_model_mismatch(tmp_path):
     path = _write_pin(tmp_path)
     with pytest.raises(CreditRateNotPinned, match="rate_pin_model_mismatch"):

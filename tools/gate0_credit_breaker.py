@@ -154,7 +154,8 @@ def _timed_iter(iterator: Iterator[dict], stall_timeout_s: float) -> Iterator[di
 
 def run_breaker(events: Iterable[dict], limit: int = LIMIT_NORMALIZED_CREDITS,
                  raise_on_trip: bool = False,
-                 stall_timeout_s: float | None = None) -> dict:
+                 stall_timeout_s: float | None = None,
+                 starting_credits: float = 0.0) -> dict:
     """Consume `events` one at a time, accumulating normalized_credits. The
     INSTANT the running total is >= limit, stop consuming -- any remaining
     events are left unread, which is the whole point: this halts execution
@@ -164,6 +165,15 @@ def run_breaker(events: Iterable[dict], limit: int = LIMIT_NORMALIZED_CREDITS,
     pre-registered) or a stricter pre-registered value; None (default) is only
     for in-memory/sized sources where a stall is impossible.
 
+    `starting_credits` (PR #122 coordinator M4): seeds the running total --
+    e.g. with credits an earlier arm already consumed under the SAME
+    pre-registered COMBINED ceiling (reports/2026-07-18-gate0-prereg.md's
+    "<=250 (combined)" bar, not enforced per-invocation before this). The
+    default 0.0 preserves every existing single-invocation caller's behavior
+    exactly. If the carried total already meets/exceeds `limit`, this trips
+    immediately, before pulling a single event from `events` -- a stream is
+    never asked to "give back" already-spent credits.
+
     Returns a dict describing whether it tripped, the exact credits/event
     index/events-seen at the moment of the trip, and -- for sized sequences
     only -- how many events were left unconsumed as proof the halt was early.
@@ -171,11 +181,14 @@ def run_breaker(events: Iterable[dict], limit: int = LIMIT_NORMALIZED_CREDITS,
     is known WITHOUT consuming it (list/tuple): a receipt must never claim an
     early halt it cannot prove (review MAJOR 1).
     """
-    total = 0.0
+    if (isinstance(starting_credits, bool) or not isinstance(starting_credits, (int, float))
+            or starting_credits != starting_credits or starting_credits < 0):
+        raise MalformedCreditStream(f"invalid_starting_credits:{starting_credits!r}")
+    total = float(starting_credits)
     events_seen = 0
-    tripped = False
-    credits_at_trip = None
-    event_index_at_trip = None
+    tripped = total >= limit
+    credits_at_trip = total if tripped else None
+    event_index_at_trip = -1 if tripped else None  # -1: already over budget before this stream
 
     # Review MAJOR 1 (PR #118): NEVER list()-materialize the source. iter() consumes lazily for
     # EVERY source kind (iterators, generators, and iterable-but-not-iterator wrappers alike);
@@ -184,18 +197,20 @@ def run_breaker(events: Iterable[dict], limit: int = LIMIT_NORMALIZED_CREDITS,
     # arithmetic wearing a live-halt claim -- the exact evidence class precondition 4 forbids.
     sized = isinstance(events, (list, tuple))
     events_in_stream = len(events) if sized else None
-    iterator = iter(events)
-    if stall_timeout_s is not None and not sized:
-        iterator = _timed_iter(iterator, stall_timeout_s)
 
-    for index, event in enumerate(iterator):
-        total += validate_event(event, index)
-        events_seen += 1
-        if total >= limit:
-            tripped = True
-            credits_at_trip = total
-            event_index_at_trip = index
-            break
+    if not tripped:
+        iterator = iter(events)
+        if stall_timeout_s is not None and not sized:
+            iterator = _timed_iter(iterator, stall_timeout_s)
+
+        for index, event in enumerate(iterator):
+            total += validate_event(event, index)
+            events_seen += 1
+            if total >= limit:
+                tripped = True
+                credits_at_trip = total
+                event_index_at_trip = index
+                break
 
     events_after_halt_unconsumed = None
     if tripped and events_in_stream is not None:

@@ -22,7 +22,12 @@ param(
     # Pre-registered wired-path stall backstop (PR #118 breaker review MINOR 3a,
     # tools/gate0_credit_breaker.py::STALL_TIMEOUT_S = 300). Overridable only to a STRICTER
     # (smaller) value at signature time -- the paid path refuses a looser override.
-    [double]$StallTimeoutS = 300
+    [double]$StallTimeoutS = 300,
+    # PR #122 coordinator M4: cross-arm combined-ceiling ledger (see Get-Gate0CombinedCreditLedger,
+    # below). -ResetCombinedLedger starts a FRESH pre-registered attempt's accounting at zero --
+    # pass it deliberately for Arm R of a new attempt, never to paper over a mid-attempt refusal.
+    [string]$LedgerPath = (Join-Path $PSScriptRoot '..\runs\gate0_live_breaker\combined_credit_ledger.json'),
+    [switch]$ResetCombinedLedger
 )
 
 $ErrorActionPreference = 'Stop'
@@ -174,6 +179,23 @@ function Get-GitHeadCommit([string]$RepoRoot) {
 # the reviewed commit/config" and "this is the priced rate for this model" at once. No value here
 # is invented by this script -- everything is compared against either the receipt this run just
 # produced or fields the signer supplied.
+# PR #122 review Finding 1 / coordinator M1 fix: `git rev-parse HEAD` says which commit HEAD
+# POINTS AT -- it says nothing about whether the WORKING TREE matches that commit's blobs.
+# Reproduced live by the reviewer: an uncommitted edit to tools/gate0_credit_breaker.py (e.g.
+# neutering LIMIT_NORMALIZED_CREDITS) at the exact signed commit was invisible to this function,
+# because nothing hashed the safety-critical files themselves -- only world_mcp.py/
+# core/miniwob_world.py got that treatment (Get-CanonicalCodeSha256, reused as-is below, including
+# its UNHASHABLE dirty-tree refusal). The four files that ARE the safety mechanism -- this launcher
+# itself, the breaker, the accountant, and the credit-rate converter -- now get the identical
+# canonical-git-blob-hash-at-HEAD treatment: a signature must carry a matching pin for every one of
+# them, and ANY dirty working tree (UNHASHABLE) or hash mismatch refuses before any child spawn.
+$Gate0SafetyCriticalFiles = [ordered]@{
+    'tools/run_gate0_codex.ps1'        = 'expected_launcher_sha256'
+    'tools/gate0_credit_breaker.py'    = 'expected_credit_breaker_sha256'
+    'tools/gate0_credit_accountant.py' = 'expected_credit_accountant_sha256'
+    'tools/gate0_codex_credit_rate.py' = 'expected_credit_rate_sha256'
+}
+
 function Confirm-PaidExecSignature {
     param(
         [string]$SignaturePath, [string]$RepoRoot, [string]$Arm, [string]$Model,
@@ -204,6 +226,20 @@ function Confirm-PaidExecSignature {
     if ($null -eq $signature.credit_rate_pin) {
         throw 'PaidExec refused: signature carries no credit_rate_pin (4a).'
     }
+    foreach ($relPath in $Gate0SafetyCriticalFiles.Keys) {
+        $field = $Gate0SafetyCriticalFiles[$relPath]
+        $expected = $signature.$field
+        if (-not $expected -or ($expected -isnot [string]) -or $expected.Length -ne 64) {
+            throw "PaidExec refused: signature is missing a valid $field pin for $relPath."
+        }
+        $actual = Get-CanonicalCodeSha256 -RepoRoot $RepoRoot -RelPath $relPath
+        if ($actual -eq 'UNHASHABLE') {
+            throw "PaidExec refused: $relPath differs from its committed HEAD blob (dirty working tree) -- refusing to trust an unreviewed safety-critical file."
+        }
+        if ($actual -ne $expected) {
+            throw "PaidExec refused: $relPath's canonical HEAD-blob hash $actual does not match the signed $field ($expected)."
+        }
+    }
     return $signature
 }
 
@@ -219,6 +255,180 @@ function Get-PaidCodexExecArguments([string[]]$Overrides) {
     return $arguments
 }
 
+# PR #122 review Finding 4 / coordinator M4 fix: reports/2026-07-18-gate0-prereg.md's Cheap-bar
+# table states the hard breaker as "<=250 (combined)" across BOTH arms, but
+# LIMIT_NORMALIZED_CREDITS in tools/gate0_credit_breaker.py is a per-invocation limit -- nothing
+# previously persisted spend across two separate -PaidExec launches (Arm R then Arm W), so each arm
+# could independently spend up to ~250: an actual worst case of ~2x the pre-registered combined
+# hard-stop (the review's exact finding). This ledger closes that gap: a small, gitignored JSON
+# file (runs/ per .gitignore:27) recording the running combined total across launches of the SAME
+# pre-registered attempt. Arm W's breaker starts counting from Arm R's already-consumed total (via
+# --starting-credits, tools/gate0_credit_accountant.py / run_breaker's starting_credits param), so
+# the SAME 250 ceiling now applies across both arms combined, and a launch refuses outright, before
+# spawning anything, if the ledger already shows the combined budget exhausted.
+$Gate0CombinedCreditLimit = 250  # MUST match tools/gate0_credit_breaker.py::LIMIT_NORMALIZED_CREDITS
+
+function Get-Gate0CombinedCreditLedger([string]$LedgerPath) {
+    if (-not (Test-Path -LiteralPath $LedgerPath -PathType Leaf)) {
+        return [pscustomobject]@{
+            schema_version = 1
+            kind = 'gate0_combined_credit_ledger'
+            limit_normalized_credits = $Gate0CombinedCreditLimit
+            consumed_normalized_credits = 0.0
+            entries = @()
+        }
+    }
+    try { $ledger = (Get-Content -LiteralPath $LedgerPath -Raw) | ConvertFrom-Json }
+    catch { throw "PaidExec refused: combined-credit ledger at $LedgerPath is not valid JSON." }
+    if ($ledger.schema_version -ne 1 -or $ledger.kind -ne 'gate0_combined_credit_ledger') {
+        throw "PaidExec refused: combined-credit ledger at $LedgerPath has an unrecognized schema."
+    }
+    if ($null -eq $ledger.consumed_normalized_credits -or $ledger.consumed_normalized_credits -lt 0) {
+        throw "PaidExec refused: combined-credit ledger at $LedgerPath has an invalid consumed_normalized_credits."
+    }
+    return $ledger
+}
+
+# Refuses -PaidExec outright, before any process is spawned, if an earlier arm under this ledger
+# already consumed the full combined budget -- "if Arm R alone reaches the combined ceiling, do not
+# launch Arm W" (design doc launch discipline, reports/2026-07-13-minimum-north-star-gate-0-
+# design.md), now code-enforced rather than left to human discipline alone.
+function Confirm-CombinedCreditBudgetAvailable($Ledger, [int]$Limit) {
+    if ($Ledger.consumed_normalized_credits -ge $Limit) {
+        throw "PaidExec refused: combined credit ledger already shows $($Ledger.consumed_normalized_credits) of $Limit consumed -- the combined ceiling is exhausted, this arm may not launch."
+    }
+}
+
+function Add-Gate0CombinedCreditLedgerEntry {
+    param([string]$LedgerPath, $Ledger, [string]$Arm, [double]$NewTotal, [string]$Result)
+    $entry = [ordered]@{
+        arm = $Arm
+        credits_before_this_arm = $Ledger.consumed_normalized_credits
+        credits_after_this_arm = $NewTotal
+        result = $Result
+        recorded_at = (Get-Date).ToString('o')
+    }
+    $entries = @($Ledger.entries) + [pscustomobject]$entry
+    $updated = [ordered]@{
+        schema_version = 1
+        kind = 'gate0_combined_credit_ledger'
+        limit_normalized_credits = $Ledger.limit_normalized_credits
+        consumed_normalized_credits = $NewTotal
+        entries = $entries
+    }
+    [void](New-Item -ItemType Directory -Path (Split-Path -Parent $LedgerPath) -Force)
+    Write-Utf8NoBom $LedgerPath (($updated | ConvertTo-Json -Depth 10) + "`n")
+    return $updated
+}
+
+# PR #122 review Finding 2 / coordinator M2 fix: a child that exits CLEANLY on its own (tripped or
+# not) after spawning a descendant (e.g. codex.exe's own `docker run` MCP-server child) must not
+# leave that descendant running, untracked, forever. The previous version's only kill path was
+# gated on `-not $child.HasExited`, so a clean exit skipped it entirely -- reproduced live by the
+# reviewer with a PoC child that spawns a DETACHED_PROCESS/CREATE_NEW_PROCESS_GROUP grandchild and
+# exits 0. Windows Job Objects are the OS-native fix: a job created with
+# JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, with NO breakaway flag set, terminates EVERY process still
+# assigned to it -- the child AND any descendant that inherited membership (the default; without an
+# explicit breakaway-allowed flag on the job, a descendant cannot opt out even if it tries) -- the
+# instant the job handle is closed, regardless of how or when the immediate child exited. Verified
+# against exactly the reviewer's PoC: the grandchild is confirmed alive before the job closes and
+# confirmed gone (via a fresh OS process-table poll) after.
+function Get-Gate0KillOnCloseJob {
+    if (-not ([System.Management.Automation.PSTypeName]'Gate0JobObject').Type) {
+        Add-Type -Language CSharp -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class Gate0JobObject
+{
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateJobObjectW(IntPtr a, string lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetInformationJobObject(IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    const int JobObjectExtendedLimitInformation = 9;
+    const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+    public static IntPtr CreateKillOnCloseJob()
+    {
+        IntPtr job = CreateJobObjectW(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) throw new InvalidOperationException("CreateJobObject failed: " + Marshal.GetLastWin32Error());
+        var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        IntPtr ptr = Marshal.AllocHGlobal(length);
+        try
+        {
+            Marshal.StructureToPtr(info, ptr, false);
+            if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, ptr, (uint)length))
+                throw new InvalidOperationException("SetInformationJobObject failed: " + Marshal.GetLastWin32Error());
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+        return job;
+    }
+
+    public static void Assign(IntPtr job, IntPtr processHandle)
+    {
+        if (!AssignProcessToJobObject(job, processHandle))
+            throw new InvalidOperationException("AssignProcessToJobObject failed: " + Marshal.GetLastWin32Error());
+    }
+
+    public static void Close(IntPtr job)
+    {
+        CloseHandle(job);
+    }
+}
+'@
+    }
+    return [Gate0JobObject]::CreateKillOnCloseJob()
+}
+
 # THE KILL CONTRACT (tools/gate0_credit_breaker.py module docstring, PR #118 breaker review MINOR
 # 2/3a): spawns $ChildExecutable (real Codex in production; a zero-spend stub emitter for the 4c
 # proof -- this function does not know or care which) with its stdout relayed, as a live byte
@@ -227,11 +437,16 @@ function Get-PaidCodexExecArguments([string[]]$Overrides) {
 # stall_timeout_s=...) an ITERATOR over that relayed stream. The accountant process's own exit is
 # the kill signal: EITHER breaker exception (BreakerTripped from a real trip, or
 # MalformedCreditStream from a malformed event OR a stall -- catching only the former is
-# fail-open) makes it exit non-zero, and the instant it exits for any reason other than the child
-# having already finished on its own, the child's WHOLE process tree is killed via `taskkill /T
-# /F` (never a lone top-level Stop-Process, which would strand any docker/MCP descendants).
-# Evidence of the kill (exit/alive state, not merely "a signal was sent") is returned so callers
-# can bank a receipt precondition 4c can stand behind.
+# fail-open) makes it exit non-zero. TWO independent, redundant mechanisms then guarantee the
+# child's WHOLE process tree dies on EVERY exit path (trip, clean exit, stall, or an exception in
+# this function itself): (1) the child is assigned to a kill-on-close Job Object the instant it is
+# spawned (Get-Gate0KillOnCloseJob, above) -- closing that job in `finally` kills every process
+# still in it, including a descendant whose immediate parent already exited cleanly (PR #122 review
+# Finding 2); (2) `taskkill /T /F` is ALSO issued unconditionally after the wait loop (never gated
+# on whether the child had already exited) as a defense-in-depth backstop, never a lone top-level
+# Stop-Process, which would strand any docker/MCP descendants). Evidence of the kill (exit/alive
+# state, not merely "a signal was sent") is returned so callers can bank a receipt precondition 4c
+# can stand behind.
 function Invoke-BreakerSupervisedExec {
     param(
         [string]$ChildExecutable, [string[]]$ChildArguments, [string]$ChildStdinText,
@@ -263,11 +478,18 @@ function Invoke-BreakerSupervisedExec {
     $accountant = [Diagnostics.Process]::new()
     $accountant.StartInfo = $acctInfo
 
+    $job = $null
+    $jobClosed = $false
     $startedAt = Get-Date
     try {
+        # Create the kill-on-close job BEFORE the child exists, so assignment happens the instant
+        # Start() returns -- the smallest achievable window before the child could spawn its own
+        # descendant (see Get-Gate0KillOnCloseJob's comment for what this closes -- PR #122 Finding 2).
+        $job = Get-Gate0KillOnCloseJob
         [void]$accountant.Start()
         [void]$child.Start()
         $childId = $child.Id
+        [Gate0JobObject]::Assign($job, $child.Handle)
 
         if ($ChildStdinText) { $child.StandardInput.Write($ChildStdinText) }
         $child.StandardInput.Close()
@@ -286,12 +508,21 @@ function Invoke-BreakerSupervisedExec {
             Start-Sleep -Milliseconds $PollIntervalMs
         }
 
-        $killed = $false
-        $killEvidence = $null
-        if (-not $child.HasExited) {
-            $killed = $true
-            $killEvidence = (& taskkill.exe /PID $childId /T /F 2>&1 | Out-String)
-        }
+        # `ChildKilled` records whether the IMMEDIATE child was still running when supervision
+        # ended (the meaningful "did this forcibly interrupt active work" signal). The taskkill
+        # itself, however, is now UNCONDITIONAL (PR #122 Finding 2 / coordinator M2) -- a no-op on
+        # an already-exited PID for the parent, but `/T` still finds and kills any descendant via
+        # its recorded parent-PID even though the parent itself is gone, catching exactly the
+        # clean-exit-with-orphaned-descendant case the review reproduced. This runs alongside, not
+        # instead of, the Job Object close in `finally` below -- two independent mechanisms.
+        $killed = -not $child.HasExited
+        # taskkill legitimately exits non-zero ("process not found") when the parent PID is
+        # already gone -- expected and harmless now that this call is unconditional. Under
+        # $ErrorActionPreference='Stop', 2>&1 on a native command promotes that stderr line to a
+        # terminating NativeCommandError (confirmed empirically), which must never abort the
+        # supervisor mid-cleanup; try/catch turns it back into evidence, not a thrown exception.
+        try { $killEvidence = (& taskkill.exe /PID $childId /T /F 2>&1 | Out-String) }
+        catch { $killEvidence = $_.Exception.Message }
         try { $accountant.StandardInput.Close() } catch {}
         # [void]: a bare, unassigned `.GetAwaiter().GetResult()` statement on this non-generic
         # Task otherwise leaks onto this function's own output pipeline (empirically confirmed --
@@ -301,6 +532,12 @@ function Invoke-BreakerSupervisedExec {
         try { [void]$relayTask.GetAwaiter().GetResult() } catch {}
         [void]$child.WaitForExit(10000)
         [void]$accountant.WaitForExit(10000)
+
+        # Close the kill-on-close job NOW, before checking liveness below, so the evidence reflects
+        # BOTH kill mechanisms (the unconditional taskkill above and this job close), not just
+        # whichever happened to run first. A no-op if the child (and any descendant) is already
+        # gone; decisive if either one wasn't.
+        if ($job) { [Gate0JobObject]::Close($job); $jobClosed = $true }
 
         # Confirm the kill: the child PID must be truly gone, not merely signaled.
         Start-Sleep -Milliseconds 200
@@ -321,6 +558,10 @@ function Invoke-BreakerSupervisedExec {
             EndedAt = (Get-Date).ToString('o')
         }
     } finally {
+        # Safety net for exceptional exit paths (e.g. Start()/Assign() itself threw, before the
+        # normal-path close above ran): still guarantee the job -- and therefore any descendant --
+        # is torn down. Guarded so a normal-path run never double-closes the same handle value.
+        if ($job -and -not $jobClosed) { try { [Gate0JobObject]::Close($job) } catch {} }
         foreach ($p in @($child, $accountant)) {
             try { if (-not $p.HasExited) { $p.Kill() } } catch {}
         }
@@ -627,18 +868,45 @@ if ($PaidExec) {
         throw "PaidExec refused: credit-rate pin failed preflight validation: $($PreflightResult.StdErr.Trim())"
     }
 
+    # M4: combined <=250 ceiling across both arms. Reset only when explicitly requested (a fresh
+    # pre-registered attempt's Arm R); otherwise load whatever an earlier arm already recorded and
+    # refuse outright, before spawning anything, if the combined budget is already exhausted.
+    if ($ResetCombinedLedger -and (Test-Path -LiteralPath $LedgerPath)) {
+        Remove-Item -LiteralPath $LedgerPath -Force
+    }
+    $Ledger = Get-Gate0CombinedCreditLedger -LedgerPath $LedgerPath
+    Confirm-CombinedCreditBudgetAvailable -Ledger $Ledger -Limit $Gate0CombinedCreditLimit
+
     $VerdictPath = Join-Path $PaidDir 'accountant-verdict.json'
     $ExecArgs = Get-PaidCodexExecArguments -Overrides $Overrides
     $Supervised = Invoke-BreakerSupervisedExec -ChildExecutable $ResolvedCodexPath -ChildArguments $ExecArgs `
         -ChildStdinText $Task -AccountantExecutable 'python' -WorkingDirectory $RepoRoot -AccountantArguments @(
             '-m', 'tools.gate0_credit_accountant', '--rate-pin', $RatePinPath, '--model', $Model,
-            '--verdict-out', $VerdictPath, '--stall-timeout-s', $StallTimeoutS)
+            '--verdict-out', $VerdictPath, '--stall-timeout-s', $StallTimeoutS,
+            '--starting-credits', $Ledger.consumed_normalized_credits)
 
     $Verdict = if (Test-Path -LiteralPath $VerdictPath) {
         (Get-Content -LiteralPath $VerdictPath -Raw) | ConvertFrom-Json
     } else {
         [pscustomobject]@{ result = 'NO_VERDICT_WRITTEN' }
     }
+
+    # Ledger update: COMPLETED/TRIPPED carry an exact, breaker-computed total (which already
+    # includes the carried-over starting credits, since run_breaker seeds `total` from it -- never
+    # add it again). Any other outcome (MALFORMED, RATE_NOT_PINNED, NO_VERDICT_WRITTEN) means the
+    # true spend at failure is NOT precisely known -- conservatively record the ledger as fully
+    # exhausted (the combined limit) rather than risk under-counting real spend and letting a
+    # subsequent arm launch on a false "budget available" read.
+    $NewLedgerTotal = switch ($Verdict.result) {
+        'COMPLETED' { [double]$Verdict.trip.final_total_normalized_credits }
+        'TRIPPED'   { [double]$Verdict.credits_at_trip }
+        default     { [double]$Gate0CombinedCreditLimit }
+    }
+    $Ledger = Add-Gate0CombinedCreditLedgerEntry -LedgerPath $LedgerPath -Ledger $Ledger -Arm $Arm `
+        -NewTotal $NewLedgerTotal -Result $Verdict.result
+    Write-Output "combined_credit_ledger=$LedgerPath"
+    Write-Output "combined_credits_consumed=$($Ledger.consumed_normalized_credits)"
+
     $PaidResult = [ordered]@{
         schema_version = 1
         kind = 'gate0_paid_exec_result'
@@ -646,6 +914,7 @@ if ($PaidExec) {
         signed_commit = $Signature.frozen_commit
         verdict = $Verdict
         supervision = $Supervised
+        combined_credit_ledger = $Ledger
     }
     $PaidResultPath = Join-Path $PaidDir 'paid-exec-result.json'
     Write-Utf8NoBom $PaidResultPath (($PaidResult | ConvertTo-Json -Depth 12) + "`n")

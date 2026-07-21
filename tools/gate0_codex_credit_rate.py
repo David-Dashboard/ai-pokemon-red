@@ -81,6 +81,27 @@ _NUMERIC_RATE_FIELDS = (
     "usd_per_cached_input_token",
     "usd_per_output_token",
 )
+_USD_PER_TOKEN_FIELDS = ("usd_per_input_token", "usd_per_cached_input_token", "usd_per_output_token")
+
+# PR #122 review Finding 3 / coordinator M3 fix: a positive-but-absurd rate silently defeats the
+# 250-credit ceiling in either direction. Reproduced by the reviewer: 1e-12 $/token (a plausible
+# units mistake -- e.g. quoting a per-1K- or per-1M-token price as a per-token price) makes the
+# ceiling need ~2.5 BILLION turns to reach, i.e. effectively unreachable in any real run; a rate
+# 10x too high makes a single trivial 10-token turn alone trip instantly (safe but wastes the one
+# pre-registered attempt). These bounds are deliberately wide -- six orders of magnitude around
+# real 2026-era frontier-model pricing (roughly $0.0000005-$0.0002 per token, i.e. $0.50-$200 per
+# million tokens) -- so a genuine future price change is never blocked, while a >=100x units error
+# in either direction is refused. A field pinned exactly to 0.0 is exempt (a genuine "this token
+# class is free" tier is a legitimate price, not a units bug -- only a NONZERO-but-astronomically-
+# tiny value is the error signature this guards against). `credits_per_usd`'s band brackets the
+# design doc's pinned "25 credits = $1.00" (reports/2026-07-13-minimum-north-star-gate-0-design.md:
+# 297-300) with the same generosity. Invoke-BreakerSupervisedExec's MaxWallClockS (3600s default,
+# tools/run_gate0_codex.ps1) remains a SEPARATE, independent backstop for a rate that is
+# implausible-but-still-inside this band -- this check does not replace it, only narrows the gap.
+MIN_USD_PER_TOKEN = 1e-8   # $0.01 / million tokens
+MAX_USD_PER_TOKEN = 1e-2   # $10,000 / million tokens
+MIN_CREDITS_PER_USD = 1
+MAX_CREDITS_PER_USD = 1000
 
 
 class CreditRateNotPinned(Exception):
@@ -95,7 +116,12 @@ def load_credit_rate_pin(path: Path, expected_model: str) -> dict:
     if not path.is_file():
         raise CreditRateNotPinned(f"rate_pin_missing:{path}")
     try:
-        pin = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig, not utf-8: strips a leading byte-order mark if present (byte-identical to
+        # utf-8 otherwise). Not exploitable today -- the launcher always writes this file itself
+        # via Write-Utf8NoBom, confirmed BOM-free -- but matches the same defensive read the
+        # credit-event stream reader in gate0_credit_accountant.py already uses, for the same
+        # hard-won reason (review MINOR, PR #122).
+        pin = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         raise CreditRateNotPinned(f"rate_pin_unreadable:{path}") from exc
     if not isinstance(pin, dict):
@@ -111,6 +137,12 @@ def load_credit_rate_pin(path: Path, expected_model: str) -> dict:
             raise CreditRateNotPinned(f"rate_pin_invalid_field:{field}")
     if pin["credits_per_usd"] <= 0:
         raise CreditRateNotPinned("rate_pin_nonpositive_credits_per_usd")
+    for field in _USD_PER_TOKEN_FIELDS:
+        value = pin[field]
+        if value != 0 and not (MIN_USD_PER_TOKEN <= value <= MAX_USD_PER_TOKEN):
+            raise CreditRateNotPinned(f"rate_pin_implausible_field:{field}")
+    if not (MIN_CREDITS_PER_USD <= pin["credits_per_usd"] <= MAX_CREDITS_PER_USD):
+        raise CreditRateNotPinned("rate_pin_implausible_field:credits_per_usd")
     if not isinstance(pin["model"], str) or pin["model"] != expected_model:
         raise CreditRateNotPinned(f"rate_pin_model_mismatch:{pin.get('model')!r}!={expected_model!r}")
     return pin

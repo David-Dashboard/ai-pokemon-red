@@ -47,10 +47,12 @@ def test_completes_cleanly_when_the_stream_never_trips(tmp_path):
 
 
 def test_exits_2_and_writes_tripped_verdict_when_the_limit_is_crossed(tmp_path):
-    # One event already exceeds the 250 default limit.
-    rate_pin = _write_pin(tmp_path, usd_per_output_token=1000.0)
+    # One event already exceeds the 250 default limit. usd_per_output_token pinned at the TOP of
+    # the plausibility band (PR #122 M3, tools/gate0_codex_credit_rate.py) -- controlling trip
+    # timing via token COUNT, not an implausible rate, now that the rate itself is bounds-checked.
+    rate_pin = _write_pin(tmp_path, usd_per_output_token=1e-2)
     verdict_path = tmp_path / "verdict.json"
-    stdin_text = _token_count_line(1) + "\n" + _token_count_line(1) + "\n"
+    stdin_text = _token_count_line(25_000) + "\n" + _token_count_line(1) + "\n"
     result = _run(stdin_text, rate_pin, verdict_path)
     assert result.returncode == 2
     verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
@@ -77,8 +79,31 @@ def test_exits_3_and_refuses_before_reading_any_stream_when_the_rate_pin_is_abse
     assert verdict["result"] == "RATE_NOT_PINNED"
 
 
+def test_starting_credits_carries_over_and_can_trip_on_the_first_event(tmp_path):
+    # PR #122 coordinator M4: a large --starting-credits (from an earlier arm's ledger entry)
+    # means even a small new event can push the combined total over 250.
+    rate_pin = _write_pin(tmp_path, usd_per_output_token=1e-4)
+    verdict_path = tmp_path / "verdict.json"
+    stdin_text = _token_count_line(1) + "\n"
+    result = _run(stdin_text, rate_pin, verdict_path, stall_timeout_s=5)
+    # sanity: this event alone must not trip without the carried-over total
+    assert result.returncode == 0, result.stderr
+
+    result2 = subprocess.run(
+        [sys.executable, "-m", "tools.gate0_credit_accountant", "--rate-pin", str(rate_pin),
+         "--model", "stub-model", "--verdict-out", str(verdict_path), "--stall-timeout-s", "5",
+         "--starting-credits", "250"],
+        input=_token_count_line(1) + "\n", capture_output=True, text=True, cwd=ROOT,
+    )
+    assert result2.returncode == 2
+    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    assert verdict["result"] == "TRIPPED"
+    assert verdict["events_seen"] == 0
+    assert verdict["event_index_at_trip"] == -1
+
+
 def test_pass_through_events_do_not_trip_the_breaker(tmp_path):
-    rate_pin = _write_pin(tmp_path, usd_per_output_token=1000.0)
+    rate_pin = _write_pin(tmp_path, usd_per_output_token=0.001)
     verdict_path = tmp_path / "verdict.json"
     stdin_text = json.dumps({"type": "agent_message_delta", "delta": "hi"}) + "\n"
     result = _run(stdin_text, rate_pin, verdict_path)

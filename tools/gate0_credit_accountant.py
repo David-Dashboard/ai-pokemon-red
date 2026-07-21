@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -68,6 +69,11 @@ def main() -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--verdict-out", type=Path, required=True)
     parser.add_argument("--stall-timeout-s", type=float, default=float(STALL_TIMEOUT_S))
+    # PR #122 coordinator M4: the combined <=250 ceiling across both arms (reports/2026-07-18-
+    # gate0-prereg.md) is enforced by seeding this run's breaker with whatever an earlier arm
+    # already consumed -- tools/run_gate0_codex.ps1 reads that from the cross-arm ledger and
+    # passes it here. 0.0 (default) preserves single-invocation behavior exactly.
+    parser.add_argument("--starting-credits", type=float, default=0.0)
     args = parser.parse_args()
 
     try:
@@ -77,7 +83,8 @@ def main() -> int:
         return 3
 
     try:
-        trip = run_breaker(_credit_events(rate_pin), raise_on_trip=True, stall_timeout_s=args.stall_timeout_s)
+        trip = run_breaker(_credit_events(rate_pin), raise_on_trip=True,
+                            stall_timeout_s=args.stall_timeout_s, starting_credits=args.starting_credits)
     except BreakerTripped as exc:
         _write_verdict(args.verdict_out, {
             "result": "TRIPPED",
@@ -95,4 +102,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    # os._exit(), not SystemExit/sys.exit(): found empirically while proving PR #122's M2 fix.
+    # tools/gate0_credit_breaker.py::_timed_iter's stall backstop runs a daemon thread that may
+    # still be blocked mid-read on this process's stdin (real bytes are still arriving from a
+    # still-running child even after THIS process has already tripped and is exiting). A normal
+    # interpreter shutdown races that thread against stdin's buffered-I/O lock and can crash with
+    # "_enter_buffered_busy: could not acquire lock ... at interpreter shutdown" (observed:
+    # STATUS_ACCESS_VIOLATION), which delayed PowerShell's supervisor from noticing this process
+    # had exited by several seconds -- directly undermining the "kill immediately" contract this
+    # process exists to serve. The verdict file is already fully written and closed by
+    # _write_verdict() above (a synchronous, already-closed file write) before this line runs, so
+    # skipping normal finalization here loses nothing: os._exit() terminates immediately via the
+    # OS syscall, without waiting on or racing any daemon thread.
+    os._exit(exit_code)
