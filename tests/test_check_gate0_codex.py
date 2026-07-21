@@ -72,12 +72,56 @@ def _audit(run):
     return audit(transcript, receipt, expected, artifacts, artifacts.name)
 
 
-def test_exact_observed_pins_are_still_no_go_until_wakes_exist(tmp_path):
+def test_exact_observed_pins_now_pass_with_a_real_wake_count(tmp_path):
+    # Was test_exact_observed_pins_are_still_no_go_until_wakes_exist: audit() used to hardcode
+    # wakes=None/wake_accounting="INSUFFICIENT_WAKES" unconditionally, so a transcript with clean
+    # pins and a valid turn.completed event could never reach PASS. A wake = one turn.completed
+    # event with valid usage -- the SAME event already counted for token_usage_events -- so the
+    # default fixture's single turn.completed now yields a real count, not a fabricated one.
     result = _audit(_fixture(tmp_path))
     assert result["no_leak"] == "PASS"
-    assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    assert result["overall"] == "PASS"
+    assert result["wake_accounting"] == "PASS"
+    assert result["wakes"] == 1
+    assert result["primitive_action_events"] == 1
     assert result["token_usage"] == {"input_tokens": 10, "cached_input_tokens": 3,
                                      "output_tokens": 4, "reasoning_output_tokens": 2}
+
+
+def test_wakes_counts_every_turn_completed_event(tmp_path):
+    usage = {"input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0}
+    events = [{"type": "thread.started"}]
+    for _ in range(5):
+        events.append({"type": "item.completed", "item": {
+            "type": "mcp_tool_call", "server": SERVER, "tool": "observe"}})
+        events.append({"type": "turn.completed", "usage": usage})
+    result = _audit(_fixture(tmp_path, events=events))
+    assert result["overall"] == "PASS"
+    assert result["wake_accounting"] == "PASS"
+    assert result["wakes"] == 5
+    assert result["primitive_action_events"] == 5
+
+
+def test_missing_transcript_data_still_reports_insufficient_wakes_honestly(tmp_path):
+    # The free-handshake case (no codex exec ever ran, so no transcript exists) must not fabricate
+    # a wake count just because the receipt/pins/artifacts are otherwise clean.
+    result = _audit(_fixture(tmp_path, events=[]))
+    assert result["overall"] == "NO_LEAK"
+    assert "transcript_empty" in result["leak_failures"]
+    assert result["wakes"] is None
+    assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
+
+
+def test_invalid_usage_accounting_failure_keeps_wakes_insufficient(tmp_path):
+    run = _fixture(tmp_path, events=[
+        {"type": "thread.started"},
+        {"type": "turn.completed", "usage": {"input_tokens": -1, "cached_input_tokens": 0,
+                                              "output_tokens": 0, "reasoning_output_tokens": 0}},
+    ])
+    result = _audit(run)
+    assert result["overall"] == "NO_GO_INSUFFICIENT_ACCOUNTING"
+    assert result["wakes"] is None
+    assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
 
 
 @pytest.mark.parametrize("item", [
@@ -156,9 +200,74 @@ def test_run_failure_precedes_missing_accounting(tmp_path):
     assert _audit(run)["overall"] == "NO_GO_RUN_FAILED"
 
 
-def test_main_exits_nonzero_for_handshake_verdict(monkeypatch, capsys, tmp_path):
+def test_main_exits_zero_for_a_clean_synthetic_transcript(monkeypatch, capsys, tmp_path):
+    # Was test_main_exits_nonzero_for_handshake_verdict: the default fixture is a clean transcript
+    # with one real turn.completed decision, so main() must now report PASS/exit 0, not the old
+    # hardcoded NO_GO_INSUFFICIENT_WAKES.
     run = _fixture(tmp_path)
     monkeypatch.setattr(sys, "argv", ["check_gate0_codex.py", str(run[0]), str(run[1]),
                                       str(run[2]), str(run[3]), "--arm", "miniwob"])
+    assert checker.main() == 0
+    assert json.loads(capsys.readouterr().out)["overall"] == "PASS"
+
+
+def test_main_exits_nonzero_when_transcript_lacks_wake_data(monkeypatch, capsys, tmp_path):
+    run = _fixture(tmp_path, events=[])
+    monkeypatch.setattr(sys, "argv", ["check_gate0_codex.py", str(run[0]), str(run[1]),
+                                      str(run[2]), str(run[3]), "--arm", "miniwob"])
     assert checker.main() == 1
-    assert json.loads(capsys.readouterr().out)["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    result = json.loads(capsys.readouterr().out)
+    assert result["overall"] == "NO_LEAK"
+    assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
+
+
+def test_build_agent_metrics_reuses_the_same_audit_pass(tmp_path):
+    result = _audit(_fixture(tmp_path))
+    metrics = checker.build_agent_metrics(result, "miniwob", "readiness_dev",
+                                          wall_clock_s=12.5, cost_usd=0.5, normalized_credits=10.0)
+    assert metrics == {
+        "schema_version": 1, "arm": "miniwob", "role": "agent", "mode": "readiness_dev",
+        "wall_clock_s": 12.5, "primitive_actions": 1, "wakes": 1,
+        "cost_usd": 0.5, "normalized_credits": 10.0,
+    }
+
+
+def test_build_agent_metrics_refuses_a_non_pass_audit(tmp_path):
+    result = _audit(_fixture(tmp_path, events=[]))
+    assert result["overall"] != "PASS"
+    with pytest.raises(ValueError, match="audit_not_clean"):
+        checker.build_agent_metrics(result, "miniwob", "readiness_dev",
+                                    wall_clock_s=12.5, cost_usd=0.5, normalized_credits=10.0)
+
+
+def test_main_write_agent_metrics_end_to_end(monkeypatch, capsys, tmp_path):
+    run = _fixture(tmp_path)
+    out_path = tmp_path / "agent_metrics.json"
+    monkeypatch.setattr(sys, "argv", [
+        "check_gate0_codex.py", str(run[0]), str(run[1]), str(run[2]), str(run[3]),
+        "--arm", "miniwob", "--write-agent-metrics", str(out_path),
+        "--mode", "readiness_dev", "--wall-clock-s", "12.5",
+        "--cost-usd", "0.5", "--normalized-credits", "10.0",
+    ])
+    assert checker.main() == 0
+    capsys.readouterr()
+    written = json.loads(out_path.read_text(encoding="utf-8"))
+    assert written == {
+        "schema_version": 1, "arm": "miniwob", "role": "agent", "mode": "readiness_dev",
+        "wall_clock_s": 12.5, "primitive_actions": 1, "wakes": 1,
+        "cost_usd": 0.5, "normalized_credits": 10.0,
+    }
+
+
+def test_main_write_agent_metrics_refuses_missing_data_transcript(monkeypatch, capsys, tmp_path):
+    run = _fixture(tmp_path, events=[])
+    out_path = tmp_path / "agent_metrics.json"
+    monkeypatch.setattr(sys, "argv", [
+        "check_gate0_codex.py", str(run[0]), str(run[1]), str(run[2]), str(run[3]),
+        "--arm", "miniwob", "--write-agent-metrics", str(out_path),
+        "--mode", "readiness_dev", "--wall-clock-s", "12.5",
+        "--cost-usd", "0.5", "--normalized-credits", "10.0",
+    ])
+    assert checker.main() == 1
+    capsys.readouterr()
+    assert not out_path.exists()
