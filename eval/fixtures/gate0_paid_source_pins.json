@@ -19,9 +19,9 @@
     "miniwob_agent": "PENDING_NOT_YET_CAPTURED_paid_attempt_not_run",
     "miniwob_human": "PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built",
     "wake_boundary": "PENDING_NOT_YET_CAPTURED_wake_accounting_not_built",
-    "live_breaker": "0fe2a4b119774941b15f28d3c7355f917a1f6b362a5bc044443570aa88698ed7"
+    "live_breaker": "27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734"
   },
-  "_source_artifact_sha256": "Placeholders for the five not-yet-existing artifacts are inert by construction: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares this hash, so these strings are never actually checked. live_breaker's hash is REAL and IDENTICAL to readiness_dev's: sha256 of the actual produced runs/gate0_live_breaker/live_breaker_dry_run_trip.json (gitignored, local-only; see reports/2026-07-19-gate0-live-breaker-dry-run.md for the byte-identical committed copy + this same hash).",
+  "_source_artifact_sha256": "Placeholders for the five not-yet-existing artifacts are inert by construction: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares this hash, so these strings are never actually checked. live_breaker's hash is REAL, DETERMINISTIC, and IDENTICAL to readiness_dev's (PR #118 pins review MINOR 1 fix): no wall-clock timestamp in the content, LF-forced write -- regenerable byte-exactly on any platform from tools/gate0_credit_breaker.py; see reports/2026-07-19-gate0-live-breaker-dry-run.md.",
   "audit_paths": {
     "red": {
       "transcript": "runs/gate0_paid/red/transcript.jsonl",

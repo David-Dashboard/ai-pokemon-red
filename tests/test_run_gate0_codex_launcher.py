@@ -229,7 +229,11 @@ def test_launcher_documents_the_live_breaker_wiring_point_without_adding_exec():
     # free-handshake-only invariant asserted above, which stays load-bearing until a separate paid
     # launcher exists).
     assert "tools/gate0_credit_breaker.py" in SCRIPT
+    # Kill contract names BOTH breaker exceptions (review MINOR 2) and the pre-registered
+    # stall backstop (review MINOR 3a) -- catching only BreakerTripped is fail-open.
     assert "BreakerTripped" in SCRIPT
+    assert "MalformedCreditStream" in SCRIPT
+    assert "stall" in SCRIPT.lower()
     assert "$codex.Source exec" not in SCRIPT
     assert SCRIPT.rstrip().endswith("exit 1")
 

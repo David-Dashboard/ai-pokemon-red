@@ -19,9 +19,9 @@
     "miniwob_agent": "PENDING_NOT_YET_CAPTURED_agent_attempt_not_run",
     "miniwob_human": "PENDING_NOT_YET_CAPTURED_precondition_6_numbers_not_run",
     "wake_boundary": "PENDING_NOT_YET_CAPTURED_wake_accounting_not_built",
-    "live_breaker": "0fe2a4b119774941b15f28d3c7355f917a1f6b362a5bc044443570aa88698ed7"
+    "live_breaker": "27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734"
   },
-  "_source_artifact_sha256": "Placeholders for the five not-yet-existing artifacts are inert by construction: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares this hash, so these strings are never actually checked -- they exist only so the JSON key is present and self-documenting (never a valid 64-hex sha256, so they can never accidentally satisfy the check either). live_breaker's hash is REAL: sha256 of the actual produced runs/gate0_live_breaker/live_breaker_dry_run_trip.json (gitignored, local-only; see reports/2026-07-19-gate0-live-breaker-dry-run.md for the byte-identical committed copy + this same hash).",
+  "_source_artifact_sha256": "Placeholders for the five not-yet-existing artifacts are inert by construction: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares this hash, so these strings are never actually checked -- they exist only so the JSON key is present and self-documenting (never a valid 64-hex sha256, so they can never accidentally satisfy the check either). live_breaker's hash is REAL and DETERMINISTIC (PR #118 pins review MINOR 1 fix): the artifact contains no wall-clock timestamp and is written LF-forced, so its bytes are a pure function of tools/gate0_credit_breaker.py's committed code -- anyone can regenerate runs/gate0_live_breaker/live_breaker_dry_run_trip.json on any platform (`uv run --frozen python tools/gate0_credit_breaker.py dry-run-synthetic --out <path>`) and reproduce exactly this hash; see reports/2026-07-19-gate0-live-breaker-dry-run.md.",
   "audit_paths": {
     "red": {
       "transcript": "runs/gate0_readiness_dev/red/transcript.jsonl",

@@ -73,6 +73,83 @@ def test_breaker_halts_early_on_a_true_generator_never_materializing_the_rest():
     assert result["events_in_stream"] is None
 
 
+class _CountingIterableSource:
+    """Iterable but NOT an iterator (__iter__ without __next__) -- the PR #118 breaker review
+    MAJOR 1 repro shape: an easy wrapper class for a future paid launcher to hand over."""
+
+    def __init__(self, n):
+        self.n = n
+        self.pulled = 0
+
+    def __iter__(self):
+        def _gen():
+            for i in range(self.n):
+                self.pulled += 1
+                yield {"turn": i, "normalized_credits": 6}
+        return _gen()
+
+
+def test_iterable_but_not_iterator_source_is_never_materialized():
+    # PR #118 breaker review MAJOR 1: pre-fix, `list(events) if not hasattr(events, "__next__")`
+    # silently DRAINED any iterable-not-iterator source in full (45/45 pulled) before trip logic
+    # ran, then issued a receipt claiming halted_before_exhausting_stream=True with a 3-event
+    # "unconsumed tail" -- post-hoc arithmetic wearing a live-halt claim. Post-fix, iter() pulls
+    # lazily for every source kind: the source must have exactly 3 events never pulled.
+    source = _CountingIterableSource(45)
+    result = run_breaker(source, limit=250)
+    assert result["tripped"] is True
+    assert result["credits_at_trip"] == 252
+    assert result["events_seen_before_halt"] == 42
+    assert source.pulled == 42, "source was materialized: events pulled past the trip point"
+    assert result["source_kind"] == "lazy_iterator"
+    # An unsized source can never claim a counted tail or an early-halt boolean it cannot prove.
+    assert result["events_in_stream"] is None
+    assert result["unconsumed_events_after_halt"] is None
+    assert result["halted_before_exhausting_stream"] is False
+
+
+def test_sized_sequence_tail_claim_requires_no_consumption_to_prove():
+    # The counted-tail/early-halt claim survives ONLY where it is honest: list/tuple sources,
+    # whose len() is known without consuming anything.
+    result = run_breaker(tuple(_events(*([6] * 45))), limit=250)
+    assert result["source_kind"] == "sized_sequence"
+    assert result["events_in_stream"] == 45
+    assert result["unconsumed_events_after_halt"] == 3
+    assert result["halted_before_exhausting_stream"] is True
+
+
+def test_stall_timeout_fails_closed():
+    # PR #118 breaker review MINOR 3a: a silent stream must not block the accountant forever
+    # while the child spends. With the backstop armed, a stall raises MalformedCreditStream
+    # (a kill-the-child exception per the wiring contract), never a hang.
+    import time
+
+    def stalling_stream():
+        yield {"normalized_credits": 1}
+        time.sleep(2)
+        yield {"normalized_credits": 1}
+
+    with pytest.raises(MalformedCreditStream, match="stall_timeout:1"):
+        run_breaker(stalling_stream(), limit=250, stall_timeout_s=0.2)
+
+
+def test_timed_path_still_trips_and_propagates_malformed_events():
+    def stream_45x6():
+        for i in range(45):
+            yield {"normalized_credits": 6}
+
+    result = run_breaker(stream_45x6(), limit=250, stall_timeout_s=5)
+    assert result["tripped"] is True
+    assert result["credits_at_trip"] == 252
+
+    def malformed_second():
+        yield {"normalized_credits": 6}
+        yield {"bad": True}
+
+    with pytest.raises(MalformedCreditStream, match="missing_normalized_credits:1"):
+        run_breaker(malformed_second(), limit=250, stall_timeout_s=5)
+
+
 def test_raise_on_trip_carries_the_same_evidence():
     with pytest.raises(BreakerTripped) as excinfo:
         run_breaker(_events(*([10] * 26)), limit=250, raise_on_trip=True)
