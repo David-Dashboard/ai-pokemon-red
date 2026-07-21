@@ -1,0 +1,26 @@
+{
+  "_comment": "TEMPLATE ONLY -- not a real signature. tools/run_gate0_codex.ps1 -PaidExec reads eval/fixtures/gate0_signature.json (no leading dot, not committed on main) and refuses to launch if that file is absent, so this example intentionally does not authorize anything: none of the placeholder values below will ever match a real commit/hash/model. David authors the real file at signature time by copying this shape and filling in every REPLACE_* value with independently observed/pinned data -- never guessed.",
+  "schema_version": 1,
+  "frozen_commit": "REPLACE_WITH_git_rev-parse_HEAD_AT_SIGNATURE_TIME",
+  "arm": "REPLACE_WITH_red_or_miniwob",
+  "planned_model": "REPLACE_WITH_the_pinned_model_e.g._gpt-5.6-sol",
+  "signed_by": "REPLACE_WITH_signer_name",
+  "signed_at": "REPLACE_WITH_ISO8601_signature_timestamp",
+  "expected_config_sha256": "REPLACE_WITH_this_launch's_freshly_computed_handshake-receipt.json:config_sha256",
+  "expected_codex_mcp_list_sha256": "REPLACE_WITH_this_launch's_freshly_computed_handshake-receipt.json:codex_mcp_list_sha256",
+  "_comment_safety_critical_hashes": "PR #122 review Finding 1. Canonical git-blob-at-HEAD hashes (same contract as host_code_sha256/Get-CanonicalCodeSha256 -- `git cat-file blob HEAD:<path>`, refusing UNHASHABLE on any dirty working tree) of the four files that ARE the paid-exec safety mechanism. Compute each with: git -C <repo> diff --quiet HEAD -- <path> && git -C <repo> cat-file blob HEAD:<path> | sha256sum. A signature naming a commit but not also pinning these four is refused.",
+  "expected_launcher_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/run_gate0_codex.ps1",
+  "expected_credit_breaker_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_credit_breaker.py",
+  "expected_credit_accountant_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_credit_accountant.py",
+  "expected_credit_rate_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_codex_credit_rate.py",
+  "credit_rate_pin": {
+    "_comment": "PR #118 checklist 4a. rate_source is mandatory prose citing WHERE these numbers came from (an OpenAI pricing page + date observed, an invoice, a support confirmation) -- tools/gate0_codex_credit_rate.py::load_credit_rate_pin refuses an empty rate_source or a model mismatch. reasoning_output_tokens is a priced-as-output SUBSET of output_tokens (see that module's docstring for the empirical evidence), so it has no separate rate field.",
+    "model": "REPLACE_WITH_the_same_planned_model_above",
+    "rate_source": "REPLACE_WITH_a_citation_for_these_numbers_not_a_guess",
+    "credits_per_usd": 0,
+    "usd_per_input_token": 0,
+    "usd_per_cached_input_token": 0,
+    "usd_per_output_token": 0
+  },
+  "notes": "REPLACE_WITH_any_signature-time_context_worth_recording"
+}

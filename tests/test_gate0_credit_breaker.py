@@ -150,6 +150,51 @@ def test_timed_path_still_trips_and_propagates_malformed_events():
         run_breaker(malformed_second(), limit=250, stall_timeout_s=5)
 
 
+def test_starting_credits_defaults_to_zero_and_preserves_existing_behavior():
+    result = run_breaker(_events(10, 20, 30), limit=250, starting_credits=0.0)
+    assert result["tripped"] is False
+    assert result["final_total_normalized_credits"] == 60
+
+
+def test_starting_credits_carries_over_from_a_prior_arm():
+    # PR #122 coordinator M4: the combined ceiling across two arms is enforced by seeding the
+    # second arm's breaker with the first arm's already-consumed total.
+    result = run_breaker(_events(5, 5), limit=250, starting_credits=246)
+    assert result["tripped"] is True
+    assert result["credits_at_trip"] == 251
+    assert result["event_index_at_trip"] == 0
+    assert result["events_seen_before_halt"] == 1
+
+
+def test_starting_credits_already_at_limit_trips_before_reading_any_event():
+    def poisoned_stream():
+        raise AssertionError("must not pull from the stream when already over budget")
+        yield  # pragma: no cover
+
+    result = run_breaker(poisoned_stream(), limit=250, starting_credits=250)
+    assert result["tripped"] is True
+    assert result["credits_at_trip"] == 250
+    assert result["event_index_at_trip"] == -1
+    assert result["events_seen_before_halt"] == 0
+
+
+def test_starting_credits_over_limit_raises_immediately_with_raise_on_trip():
+    def poisoned_stream():
+        raise AssertionError("must not pull from the stream when already over budget")
+        yield  # pragma: no cover
+
+    with pytest.raises(BreakerTripped) as excinfo:
+        run_breaker(poisoned_stream(), limit=250, starting_credits=300, raise_on_trip=True)
+    assert excinfo.value.credits_at_trip == 300
+    assert excinfo.value.event_index == -1
+
+
+@pytest.mark.parametrize("bad_value", [-1, "10", True, float("nan")])
+def test_starting_credits_fails_closed_on_invalid_value(bad_value):
+    with pytest.raises(MalformedCreditStream, match="invalid_starting_credits"):
+        run_breaker(_events(1), limit=250, starting_credits=bad_value)
+
+
 def test_raise_on_trip_carries_the_same_evidence():
     with pytest.raises(BreakerTripped) as excinfo:
         run_breaker(_events(*([10] * 26)), limit=250, raise_on_trip=True)
