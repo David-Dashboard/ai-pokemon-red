@@ -12,7 +12,12 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
   - **Hermetic auth/tool/image/reproducibility: 20/25.** Both free handshakes now prove ChatGPT auth,
     exact CLI/image/code hashes, one MCP server, and exact per-arm tools; paid execution is not frozen.
   - **Cost/safety/eval operations: 15/25.** Pre-registration, one-attempt, held-out, append-only, and
-    fail-closed practices exist; exact wake accounting and a live 250-credit breaker are missing.
+    fail-closed practices exist; independently frozen expected pins and a proven live-breaker
+    dry-run TRIP receipt are still missing at signature/launch time. Exact per-decision wake
+    accounting is no longer a tracked gap here — it is DEFERRED (David's decision, 2026-07-21):
+    Codex's JSONL stream has no per-model-decision observable
+    (`reports/2026-07-21-gate0-wake-grounding.md`), so Gate 0's scorer now grounds Cheap on
+    cost-per-task instead and reports wakes informationally, never gating.
 - **Actual evidence / proof: 8/100.** Four North Star claims, 25 points each:
   - **Capability: 3/25.** Isolated banked successes exist, including MiniWoB click-button 5/5, but no
     controlled human-grade Red + MiniWoB Gate 0 verdict exists.
@@ -20,8 +25,13 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
     frozen same-brain paired verdict that rules out configuration and bridge differences.
   - **Generality: 2/25.** GB/GBA/NDS/browser/ARC probes show breadth, but much of it is exploratory,
     bridged, or below human-grade completion.
-  - **Cheap: 2/25.** Cost ledgers and one skill A/B batching result exist, but held-out skill compilation,
-    exact wakes/task, and a live spend breaker are not proven.
+  - **Cheap: 2/25.** Cost ledgers and one skill A/B batching result exist, but held-out skill compilation
+    and a live spend breaker are not proven. For Gate 0 specifically, Cheap is grounded on cost-per-task
+    ($-cost caps + the live credit breaker); wakes-per-task is DEFERRED — no per-model-decision
+    observable exists in Codex's JSONL stream (`reports/2026-07-21-gate0-wake-grounding.md`) — and
+    re-enters scope per the capability-map tripwire (`reports/2026-07-05-northstar-capability-map.md`
+    §B3). This is a documented reduction of one of Cheap's two yardsticks for the first gate, not a
+    loosening of the cost bar.
 - **Overall: 19/100.** `ceil(0.15 * engineering + 0.85 * proof)` =
   `ceil(0.15 * 76 + 0.85 * 8)` = `ceil(18.20)` = `19`. The 85% proof weight prevents engineering
   activity from masquerading as North Star progress.
@@ -32,9 +42,12 @@ interpretability, not capability evidence.
 ## Milestone and critical path
 
 - **Decisive milestone:** bank a controlled Gate 0 verdict with one fixed Codex brain on Red + MiniWoB.
-- **Current blocker:** C0 lacks independently frozen expected pins, exact wake accounting, and a live
-  250-credit breaker. Current-head image/free-handshake parity now passes. R0/W0 lack human baselines and
-  append-safe DEV artifacts. All are required before a frozen, reviewed pre-registration.
+- **Current blocker:** signature-time and launch-time items only — C0 lacks an independently frozen
+  expected-pins JSON and a proven live-breaker dry-run TRIP receipt; R0/W0 lack human baselines and
+  append-safe DEV artifacts. (Exact wake accounting is no longer on this list: it is DEFERRED, not a
+  blocker — Gate 0's Cheap axis is grounded on cost-per-task instead, see the Cheap sub-score above.)
+  Current-head image/free-handshake parity now passes. All remaining items are required before a
+  frozen, reviewed pre-registration.
 - **Critical path:** free handshake -> R0/W0/C0 -> frozen reviewed pre-registration -> one Red run + one
   MiniWoB run -> banked verdict.
 - **Current Gate 0 spend:** `$0.00`; no model call.

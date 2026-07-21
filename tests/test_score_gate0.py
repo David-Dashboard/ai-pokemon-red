@@ -187,10 +187,41 @@ def test_arm_capability_failure():
     assert result["readiness"] == "NO_GO"
 
 
-def test_cheap_failure():
+def test_capability_over_2x_human_still_fails_unaffected_by_wake_amendment():
+    # The 2x-human wall-clock/action bar (design doc "Capability bar") is untouched by the
+    # 2026-07-21 Cheap-basis amendment -- a task success that took too long/too many actions vs.
+    # the human baseline must still fail capability even though wakes are now non-gating.
     verified = _verified()
-    verified["metrics"]["red"]["wakes"] = 91
-    assert score(_manifest(), _audits(), {"red": _red(), "miniwob": _miniwob()}, verified)["overall"] == "FAIL_CHEAP"
+    verified["metrics"]["red"]["wall_clock_s"] = 2 * verified["metrics"]["red"]["human_wall_clock_s"] + 1
+    result = score(_manifest(), _audits(), {"red": _red(), "miniwob": _miniwob()}, verified)
+    assert result["overall"] == "FAIL_CAPABILITY"
+    assert "red:wall_clock_over_2x_human" in result["failures"]["capability"]
+
+
+def test_cheap_failure():
+    # 2026-07-21 amendment: Cheap now rests on cost-per-task, not wakes-per-task (wakes/task is
+    # deferred -- reports/2026-07-13-minimum-north-star-gate-0-design.md AMENDMENT block,
+    # reports/2026-07-21-gate0-wake-grounding.md). A wake overrun alone must NOT gate FAIL_CHEAP
+    # anymore -- only a $/credit cap breach does. See test_wake_cap_alone_no_longer_blocks_pass
+    # and test_gate0_wake_accounting_integration.py for the wakes-non-gating proof.
+    verified = _verified()
+    verified["metrics"]["red"]["cost_usd"] = 5.01
+    result = score(_manifest(), _audits(), {"red": _red(), "miniwob": _miniwob()}, verified)
+    assert result["overall"] == "FAIL_CHEAP"
+    assert "red:arm_cap" in result["failures"]["cheap"]
+
+
+def test_wake_cap_alone_no_longer_blocks_pass():
+    # The pre-amendment per-arm wake cap (<=90/<=50) and combined cap (<=140) are dropped from
+    # gating -- a wake count far over the OLD caps must not affect the verdict as long as cost/
+    # credit caps clear. Wakes still ride along in the verdict payload, informational only.
+    verified = _verified()
+    verified["metrics"]["red"]["wakes"] = 9999
+    verified["metrics"]["miniwob"]["wakes"] = 9999
+    result = score(_manifest(), _audits(), {"red": _red(), "miniwob": _miniwob()}, verified)
+    assert result["overall"] == "PASS"
+    assert result["cheap_basis"] == "cost_per_task"
+    assert result["wake_accounting"]["status"] == "DEFERRED"
 
 
 def test_infra_death_is_insufficient_data():

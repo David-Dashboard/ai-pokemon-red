@@ -18,6 +18,14 @@ skill:
 > **Cheap.** Free fast System 1 does routine work; the costly System 2 (LLM) wakes only at decisions.
 > **Measured as cost/task and wakes/task, held low.** (`HANDOFF.md` §1 claim 4, verbatim.)
 
+**Gate-0-scoped caveat (2026-07-21, does not revise the claim above):** wakes/task is load-bearing
+for the claim in general, but Gate 0 specifically DEFERS it — Codex's JSONL stream has no
+per-model-decision observable (`reports/2026-07-21-gate0-wake-grounding.md`), so
+`tools/check_gate0_codex.py::audit()` is permanently fail-closed on wakes. Cost/task alone carries
+Cheap for that first gate (`eval/score_gate0.py`'s `cheap_basis: "cost_per_task"`); wakes/task
+re-enters scope per the tripwire in `reports/2026-07-05-northstar-capability-map.md` §B3. Other
+instruments (the ARC-AGI-3 skill-rung-1 A/B below, any Claude-brain gate) still measure both.
+
 Those two metrics — **cost/task** and **wakes/task** — are the numbers this axis holds low. A "wake"
 = one LLM decision. In the harness a wake is counted as `self.decisions` (`world_mcp.py` ~line 765,
 commented: "your LLM wakes (press/goto/explore) — the cost the north star keeps LOW"). The claim is

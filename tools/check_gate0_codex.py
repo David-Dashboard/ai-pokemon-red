@@ -4,10 +4,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 
 SERVER = "gate0_world"
+# eval/score_gate0.py::MODES -- duplicated here (not imported) to keep this module free of any
+# eval.* import, matching its existing zero-cross-package-import shape.
+AGENT_METRICS_MODES = ("readiness_dev", "paid_gate0")
 TOOLS = {
     "red": ["observe", "explore", "goto", "remember", "press_button", "press_sequence", "wait"],
     "miniwob": ["observe", "read_region", "whats_changed", "click", "type_text",
@@ -170,6 +174,7 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
     run_failures: list[str] = []
     usage = {field: 0 for field in TOKEN_FIELDS}
     usage_events = 0
+    primitive_action_events = 0
 
     try:
         receipt = _load_json(Path(receipt_path))
@@ -249,6 +254,8 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
                     leak_failures.append(f"non_target_mcp:{line_number}")
                 elif tool not in allowed_tools:
                     leak_failures.append(f"non_allowlisted_tool:{line_number}")
+                else:
+                    primitive_action_events += 1
                 continue
             leak_failures.append(f"forbidden_item:{line_number}:{item_type}")
             continue
@@ -257,6 +264,21 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
     if usage_events == 0:
         accounting_failures.append("no_observable_token_usage")
 
+    # WAKE ACCOUNTING STAYS FAIL-CLOSED BY DESIGN -- grounded, not a stub
+    # (reports/2026-07-21-gate0-wake-grounding.md, PR #126). An earlier version of this function
+    # set wakes = usage_events (one wake per turn.completed event with valid usage), reusing the
+    # same loop as token accounting above. A real `codex exec --json` transcript falsified that: a
+    # single turn.completed bundled >=2 real model decisions -- its usage is CUMULATIVE FOR THE
+    # WHOLE TURN, not per-decision -- and no other event in Codex's JSONL schema marks a
+    # per-model-call boundary (item.completed/item.started carry no usage and do not group by
+    # originating model call). That is a >=2x undercount, not a rounding error. Do not substitute
+    # tool calls, turns, or any other JSONL event for wakes (matches reports/2026-07-13-minimum-
+    # north-star-gate-0-design.md L237-241's own caveat against exactly this substitution). wakes/
+    # wake_accounting stay hardcoded until Codex ships a documented per-model-call boundary event:
+    # any transcript, however clean, reports wakes=None / wake_accounting="INSUFFICIENT_WAKES", so
+    # overall can never reach "PASS" via a wake count. primitive_action_events (below, counted in
+    # the same loop) is unaffected -- it counts actual allowlisted tool-call items, not model
+    # decisions, and has no analogous undercount problem.
     if leak_failures:
         overall, no_leak = "NO_LEAK", "NO_LEAK"
     elif constancy_failures:
@@ -278,10 +300,44 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
             f.startswith("peer_") for f in constancy_failures) else "NOT_PROVEN",
         "token_usage": usage,
         "token_usage_events": usage_events,
+        "primitive_action_events": primitive_action_events,
         "leak_failures": leak_failures,
         "constancy_failures": constancy_failures,
         "accounting_failures": accounting_failures,
         "run_failures": run_failures,
+    }
+
+
+def build_agent_metrics(result: dict, arm: str, mode: str, wall_clock_s: float, cost_usd: float,
+                         normalized_credits: float) -> dict:
+    """Build the eval/score_gate0.py-shaped `{arm}_agent` metrics record straight off an audit()
+    result -- wakes and primitive_actions are read from the SAME pass over the transcript that
+    already produced them above, never recomputed. wall_clock_s/cost_usd/normalized_credits are
+    not observable from the transcript alone (they are supervision-level timing and signed-rate-
+    pin outputs tools/gate0_credit_accountant.py and the paid launcher already produce), so the
+    caller supplies them. Fail-closed: refuses to build a metrics record from anything but a clean
+    overall=PASS/wake_accounting=PASS audit -- an agent_metrics.json `wakes` field must never be
+    sourced from a run whose wake accounting itself could not be trusted.
+
+    As of reports/2026-07-21-gate0-wake-grounding.md, audit() itself can never actually produce
+    overall=PASS/wake_accounting=PASS (wake accounting is permanently fail-closed until Codex
+    exposes a real per-model-call boundary event -- see the comment above the return statement in
+    audit()) -- so this function is unreachable via any real audit() call today. It is kept as
+    forward-looking plumbing (schema + fail-closed refusal logic already correct and tested) for
+    whenever a grounded wake mechanism exists; it is not itself a way to reach PASS."""
+    if (result.get("overall") != "PASS" or result.get("wake_accounting") != "PASS"
+            or not isinstance(result.get("wakes"), int) or isinstance(result.get("wakes"), bool)):
+        raise ValueError("audit_not_clean: refusing to write agent_metrics.json from a non-PASS audit")
+    return {
+        "schema_version": 1,
+        "arm": arm,
+        "role": "agent",
+        "mode": mode,
+        "wall_clock_s": wall_clock_s,
+        "primitive_actions": result["primitive_action_events"],
+        "wakes": result["wakes"],
+        "cost_usd": cost_usd,
+        "normalized_credits": normalized_credits,
     }
 
 
@@ -293,10 +349,34 @@ def main() -> int:
     parser.add_argument("artifacts_dir", type=Path)
     parser.add_argument("--arm", required=True, choices=sorted(TOOLS))
     parser.add_argument("--peer-receipt", type=Path)
+    parser.add_argument("--write-agent-metrics", type=Path,
+                         help="Also write an eval/score_gate0.py-shaped agent_metrics.json here, "
+                              "from the SAME audit() pass (requires --mode/--wall-clock-s/"
+                              "--cost-usd/--normalized-credits).")
+    parser.add_argument("--mode", choices=AGENT_METRICS_MODES)
+    parser.add_argument("--wall-clock-s", type=float)
+    parser.add_argument("--cost-usd", type=float)
+    parser.add_argument("--normalized-credits", type=float)
     args = parser.parse_args()
     summary = audit(args.transcript, args.receipt, args.expected_pins, args.artifacts_dir,
                     args.arm, args.peer_receipt)
     print(json.dumps(summary, sort_keys=True))
+    if args.write_agent_metrics is not None:
+        missing = [name for name, value in (
+            ("--mode", args.mode), ("--wall-clock-s", args.wall_clock_s),
+            ("--cost-usd", args.cost_usd), ("--normalized-credits", args.normalized_credits),
+        ) if value is None]
+        if missing:
+            parser.error(f"--write-agent-metrics requires {', '.join(missing)}")
+        try:
+            metrics = build_agent_metrics(summary, args.arm, args.mode, args.wall_clock_s,
+                                          args.cost_usd, args.normalized_credits)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            return 1
+        args.write_agent_metrics.parent.mkdir(parents=True, exist_ok=True)
+        args.write_agent_metrics.write_text(json.dumps(metrics, sort_keys=True) + "\n",
+                                            encoding="utf-8", newline="\n")
     return 0 if summary["overall"] == "PASS" else 1
 
 

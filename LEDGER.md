@@ -10,11 +10,16 @@ safe source-status probes where available, and one honest GO/NO_GO/INSUFFICIENT_
 - Branch: `codex/gate0-r0-w0-c0-readiness-2026-07-14`, from merged PR #113.
 - Complete R0 Red source status, W0 MiniWoB DEV source status, and C0 constancy/scoring readiness as one
   outcome-sized slice.
-- Independently frozen expected pins, exact wake accounting, and the live 250-credit breaker are the
-  known C0 critical-path source gaps.
+- Independently frozen expected pins and a proven live-breaker dry-run TRIP receipt are the known
+  C0 critical-path source gaps (signature/launch-time items).
+- **2026-07-21 update:** exact wake accounting is no longer a tracked blocker here. David decided
+  Gate 0's Cheap axis is grounded on cost-per-task; wakes-per-task is DEFERRED (no per-model-decision
+  observable exists in Codex's JSONL stream, `reports/2026-07-21-gate0-wake-grounding.md`) and
+  `eval/score_gate0.py` no longer gates the verdict on it (`feat/gate0-wake-accounting`, PR #125).
 - Readiness verdict is recorded on the current branch: R0/W0/C0 each `INSUFFICIENT_SOURCE`; paid Gate 0 `NO_GO`.
 - Final current-head receipts are banked at `red-v3` and `miniwob-v2`; common brain, host/image parity,
-  and tool inventories pass. Both remain `NO_GO_INSUFFICIENT_WAKES`, paid execution false.
+  and tool inventories pass. Both remain `NO_GO_INSUFFICIENT_WAKES` at the readiness-receipt level
+  (audit()'s fail-closed hardcode, per design — no paid execution has run), paid execution false.
 - Preserve `runs/gate0_readiness_2026-07-14/miniwob-v1/` as an infra failure: a top-level Red memory-map
   import was unavailable in the intentionally lean MiniWoB image. The fix keeps Red addresses local to
   its registry entry; `miniwob-v1` is never reused. `red-v1` had no directory/receipt; `red-v2` is valid

@@ -7,10 +7,43 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (R0/W0/C0 readiness verdict recorded on the current branch;
-`codex/gate0-r0-w0-c0-readiness-2026-07-14`; $0, no model call or held-out preflight.)_
+_Last updated: 2026-07-21 (Gate 0 Cheap-basis amendment: cost-per-task, wakes deferred;
+`feat/gate0-wake-accounting`, PR #125; $0, no model call.)_
 
-**=>=> NEWEST (2026-07-14) - R0/W0/C0 READINESS VERDICT RECORDED ON CURRENT BRANCH; $0. =>=>**
+**=>=> NEWEST (2026-07-21) - GATE 0 CHEAP AXIS = COST-PER-TASK, WAKES DEFERRED (DAVID'S DECISION); $0. =>=>**
+1. **POSITION VS NORTH STAR:** does not move the overall/proof score (no paid run) — it unblocks the
+   PASS *path* for the still-unlaunched Gate 0. `reports/2026-07-21-gate0-wake-grounding.md` (PR #126)
+   proved Codex's JSONL stream has no per-model-decision boundary event (one `turn.completed` bundles
+   `>=2` real decisions, cumulative usage), so `tools/check_gate0_codex.py::audit()` is permanently
+   fail-closed on wakes (`wake_accounting="INSUFFICIENT_WAKES"`). Pre-amendment, `eval/score_gate0.py`
+   required `wake_accounting == "PASS"`, so the verdict could never reach `PASS` for ANY run, however
+   clean — an accounting gap, not a capability/cost/constancy finding.
+2. **DECISION (David, 2026-07-21):** Gate 0's Cheap axis is grounded on COST-PER-TASK ($5/$2/$7
+   per-arm/combined + 125/50/175/250 normalized-credit caps — all UNCHANGED, still fully gating).
+   Wakes-per-task is DEFERRED — computed and reported in the verdict (`cheap_basis: "cost_per_task"`,
+   `wake_accounting.status: "DEFERRED"`) but never gates. Documented reduction of one of Cheap's two
+   yardsticks for this first gate, not a loosening of the cost bar (see accepted-divergence note in
+   both amended docs, below).
+3. **CHANGED:** `eval/score_gate0.py` (`_arm_metrics`, `_verify_sources`, `score` — cost/credit caps
+   and every other guard byte-for-byte unchanged); AMENDMENT blocks appended to
+   `reports/2026-07-13-minimum-north-star-gate-0-design.md` and `reports/2026-07-18-gate0-prereg.md`
+   (original bodies untouched); this scorecard/ledger/skill reconciliation.
+4. **VERIFICATION:** four synthetic verdicts proven end-to-end through the real, still-fail-closed
+   `audit_codex()`: clean run within cost caps + wakes insufficient -> `PASS`/`GO`; same run over the
+   $5.00 cost cap -> `FAIL_CHEAP`; leak/constancy breach -> still `NO_LEAK`/`CONSTANCY_BREACH`;
+   capability `>2x` human -> still `FAIL_CAPABILITY`. Full suite green (`tests/test_score_gate0.py`,
+   `tests/test_gate0_wake_accounting_integration.py` updated to match).
+5. **SAFETY:** no Codex/model execution, no brain/contract/tool-schema edit; `check_gate0_codex.py`/
+   `gate0_wake_boundary.py` untouched (still permanently fail-closed on wakes, as PR #126 left them).
+**⇒ NEXT:** (a) re-enable wakes/task measurement when Codex ships a per-model-decision boundary event
+OR a world-seam wake counter is built+gated (evidence: `reports/2026-07-21-gate0-wake-grounding.md`;
+tracked at `reports/2026-07-05-northstar-capability-map.md` §B3); (b) capture ONE clean corroborating
+Codex transcript (successful tool call, no stderr noise) to strengthen the wake-grounding evidence
+(tracked, non-blocking); (c) close the remaining signature/launch-time C0 items (independently frozen
+expected-pins JSON, proven live-breaker dry-run TRIP receipt) and the R0/W0 human baselines before a
+frozen, reviewed pre-registration.
+
+**⇒⇒ PRIOR (2026-07-14) - R0/W0/C0 READINESS VERDICT RECORDED ON CURRENT BRANCH; $0. ⇒⇒**
 1. **POSITION VS NORTH STAR:** overall **19/100**, engineering foundation **76/100**, actual
    evidence/proof **8/100**. The decisive milestone is still one banked controlled Gate 0 verdict from
    the fixed Codex brain on Red + MiniWoB.
@@ -897,6 +930,11 @@ This is **not** about beating Pokémon. Pokémon Red is the **first probe world*
      the a11y-tree is at most an optional second condition for productivity apps — never the thing we claim on.)
 4. **Cheap.** Free fast System 1 does routine work; the costly System 2 (LLM) wakes only at decisions.
    Measured as cost/task and wakes/task, held low.
+   *(Gate-0-scoped caveat, 2026-07-21, does not revise this claim: for Gate 0 specifically, wakes/task
+   is DEFERRED — Codex's JSONL stream has no per-model-decision observable
+   (`reports/2026-07-21-gate0-wake-grounding.md`) — so that gate's Cheap axis is scored on cost/task
+   alone; wakes/task re-enters scope per the tripwire in
+   `reports/2026-07-05-northstar-capability-map.md` §B3. Other gates/instruments keep both metrics.)*
 
 **Falsified if:** constancy breaks (a new world forces brain edits or a new System-1 per genre); OR pixels-only
 can't reach human-grade where a privileged-channel version can; OR it only works on the easy slice and

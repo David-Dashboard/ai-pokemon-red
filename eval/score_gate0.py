@@ -128,8 +128,13 @@ def _miniwob_success(rows: list[dict], expected_seeds: list[int]) -> tuple[bool,
 def _arm_metrics(metrics: dict, capability: bool) -> tuple[list[str], list[str]]:
     capability_failures = [] if capability else ["task_predicate_failed"]
     source_failures: list[str] = []
+    # "wakes" is intentionally NOT required here (2026-07-21 Cheap-basis amendment -- see score()
+    # and reports/2026-07-13-minimum-north-star-gate-0-design.md's AMENDMENT block): Codex's JSONL
+    # stream has no documented per-model-decision boundary, so a wake count can never be trusted.
+    # wakes is still read/reported (see _verify_sources' wake_info) but never gates -- Cheap rests
+    # on cost_usd/normalized_credits, required below exactly as strict as before.
     required = ("wall_clock_s", "primitive_actions", "human_wall_clock_s", "human_primitive_actions",
-                "wakes", "cost_usd", "normalized_credits")
+                "cost_usd", "normalized_credits")
     for key in required:
         value = metrics.get(key)
         minimum = 0 if key in {"cost_usd", "normalized_credits"} else 0
@@ -255,6 +260,15 @@ def _verify_sources(manifest: dict, audits: dict[str, dict]) -> tuple[dict, list
             failures.append(f"source_unreadable:{key}")
 
     metrics = {}
+    # Wakes-per-task is DEFERRED for Gate 0 (2026-07-21 amendment: reports/2026-07-13-minimum-
+    # north-star-gate-0-design.md AMENDMENT block + reports/2026-07-21-gate0-wake-grounding.md,
+    # PR #126). Codex's JSONL stream has no documented per-model-decision boundary event, so
+    # tools/check_gate0_codex.py::audit() is permanently fail-closed on this axis by design
+    # (wake_accounting="INSUFFICIENT_WAKES", wakes=None) -- it can never report "PASS". wakes/
+    # wake_accounting are still computed and carried into the verdict payload below (informational,
+    # see score()'s "wake_accounting" field) but they NEVER gate the verdict. Cheap now rests on
+    # cost_usd/normalized_credits only -- those checks (below, in score()) are untouched.
+    wake_info: dict[str, object] = {}
     for arm in ("red", "miniwob"):
         agent, human = loaded.get(f"{arm}_agent"), loaded.get(f"{arm}_human")
         if not isinstance(agent, dict) or not isinstance(human, dict):
@@ -270,16 +284,19 @@ def _verify_sources(manifest: dict, audits: dict[str, dict]) -> tuple[dict, list
             "cost_usd": agent.get("cost_usd"), "normalized_credits": agent.get("normalized_credits"),
         }
         audit = audits.get(arm) or {}
-        if audit.get("wake_accounting") != "PASS" or audit.get("wakes") != agent.get("wakes"):
-            failures.append(f"audited_wake_boundary:{arm}")
+        wake_info[arm] = {"wakes": agent.get("wakes"), "wake_accounting": audit.get("wake_accounting")}
     wake = loaded.get("wake_boundary") or {}
     breaker = loaded.get("live_breaker") or {}
-    if wake.get("schema_version") != 1 or wake.get("kind") != "exact_wake_boundary" or wake.get("status") != "PASS":
+    # Structural pin only (present, correctly shaped) -- `status` is the SAME deferred wake axis as
+    # the per-arm check above, so it is reported (below) but no longer required to be "PASS".
+    if wake.get("schema_version") != 1 or wake.get("kind") != "exact_wake_boundary":
         failures.append("wake_boundary_artifact")
+    else:
+        wake_info["exact_wake_boundary_status"] = wake.get("status")
     if (breaker.get("schema_version") != 1 or breaker.get("kind") != "live_credit_breaker"
             or breaker.get("status") != "PASS" or breaker.get("limit_normalized_credits") != 250):
         failures.append("live_breaker_artifact")
-    return {"mode": mode, "expected_seeds": exact_seeds, "metrics": metrics}, failures
+    return {"mode": mode, "expected_seeds": exact_seeds, "metrics": metrics, "wake_info": wake_info}, failures
 
 
 def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]],
@@ -311,12 +328,17 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
 
     if not failures["source"]:
         metrics = verified_sources["metrics"]
-        limits = {"red": (90, 5.0, 125), "miniwob": (50, 2.0, 50)}
-        for name, (wake_cap, cost_cap, credit_cap) in limits.items():
-            if metrics[name]["wakes"] > wake_cap or metrics[name]["cost_usd"] > cost_cap or metrics[name]["normalized_credits"] > credit_cap:
+        # Cheap bar rests on cost-per-task only (2026-07-21 amendment, reports/2026-07-13-minimum-
+        # north-star-gate-0-design.md AMENDMENT block): the $/credit caps below are UNCHANGED from
+        # the original design (design doc "Cheap bar" table) -- the wake-per-task caps (90/50/140
+        # wakes) that used to sit alongside them are dropped from gating because no per-decision
+        # wake count is observable (see _verify_sources' wake_info comment). Wakes stay reported,
+        # never gating (see the "wake_accounting" field on the returned verdict, below).
+        limits = {"red": (5.0, 125), "miniwob": (2.0, 50)}
+        for name, (cost_cap, credit_cap) in limits.items():
+            if metrics[name]["cost_usd"] > cost_cap or metrics[name]["normalized_credits"] > credit_cap:
                 failures["cheap"].append(f"{name}:arm_cap")
-        if (sum(m["wakes"] for m in metrics.values()) > 140
-                or sum(m["cost_usd"] for m in metrics.values()) > 7.0
+        if (sum(m["cost_usd"] for m in metrics.values()) > 7.0
                 or sum(m["normalized_credits"] for m in metrics.values()) > 175):
             failures["cheap"].append("combined_cap")
         if sum(m["normalized_credits"] for m in metrics.values()) > 250:
@@ -337,6 +359,16 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
     else:
         verdict, readiness = "PASS", "GO"
     return {"schema_version": 1, "readiness": readiness, "overall": verdict, "failures": failures,
+            # Cheap is grounded on cost-per-task (2026-07-21 amendment). wake_accounting is
+            # informational only -- computed/reported for the record, never gating -- until Codex
+            # ships a per-model-decision boundary event (reports/2026-07-21-gate0-wake-grounding.md).
+            "cheap_basis": "cost_per_task",
+            "wake_accounting": {
+                "status": "DEFERRED",
+                "reason": "no_per_model_decision_observable_in_codex_jsonl_stream",
+                "evidence": "reports/2026-07-21-gate0-wake-grounding.md",
+                "detail": verified_sources.get("wake_info", {}),
+            },
             "spend_usd": sum((verified_sources.get("metrics", {}).get(name, {}) or {}).get("cost_usd", 0)
                              for name in ("red", "miniwob"))}
 
