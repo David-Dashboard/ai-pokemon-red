@@ -42,8 +42,8 @@
   },
   "_source_audit_paths": "Same OutputDir/launch/world layout contract as readiness_dev, under runs/gate0_paid/<arm> instead -- so a real launch with -OutputDir runs/gate0_paid/<arm> lines up with zero renaming. expected_pins point at the SAME two frozen files as readiness_dev (the 20 PIN_FIELDS pin the brain/executable/config, which this pre-reg holds constant across dev and paid mode) -- hash-pinned below via expected_pins_sha256, identical values to gate0_readiness_dev_source_pins.json.",
   "expected_pins_sha256": {
-    "red": "794bf61095c64e32b30e627e76bba943a4f17095f0871091c9ad3d4f6688f9c2",
-    "miniwob": "ee9725f4ae4deaa5673a508d8d70af80945b6f6f6028e24ab87caa5e58bbbd50"
+    "red": "ff00540b58704039d4da437ab677eb094f7a688d72f06a70148ee6fdfb850a82",
+    "miniwob": "5d34c5ca56df78de3621001b6a8adb66eff51a72f5f51c9d14e1df8d65aa3870"
   },
   "_source_expected_pins_sha256": "sha256 of eval/fixtures/gate0_expected_pins_red.json / gate0_expected_pins_miniwob.json exactly as committed on this branch -- identical to gate0_readiness_dev_source_pins.json's values, since both modes pin the same brain/executable/config. Recompute if either file is edited."
 }
