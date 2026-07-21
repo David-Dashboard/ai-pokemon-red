@@ -1,21 +1,31 @@
-"""End-to-end proof that Gate 0's wake accounting stays honestly fail-closed
-(reports/2026-07-21-gate0-wake-grounding.md, PR #126): a real `codex exec --json` transcript
-showed a single turn.completed bundles >=2 real model decisions (cumulative usage for the whole
-turn), with no per-decision boundary event anywhere in Codex's JSONL schema to count instead. So
-tools/check_gate0_codex.py::audit() reverted PR #125's `wakes = usage_events` definition (which
-undercounted by >=2x) back to the fail-closed `wakes=None` / `wake_accounting="INSUFFICIENT_WAKES"`
-hardcode.
+"""End-to-end proof of the 2026-07-21 Cheap-basis amendment (David's decision, recorded in
+reports/2026-07-13-minimum-north-star-gate-0-design.md's AMENDMENT block and
+reports/2026-07-18-gate0-prereg.md's AMENDMENT block): Gate 0's Cheap axis is grounded on
+COST-PER-TASK; wakes-per-task is DEFERRED and no longer gates the verdict.
 
-This test proves that reversion actually blocks eval/score_gate0.py's verdict end-to-end -- not
-just in audit()'s own return value, but all the way through the scorer -- even in the HARDEST
-case: a fully clean, leak/constancy/run/accounting-free synthetic transcript per arm (the exact
-shape that, pre-#126, would have earned a PASS wake count), and even if something external
-hand-writes an agent_metrics.json with an arbitrary "wakes" number (our own writer,
-build_agent_metrics(), correctly refuses to do this itself -- modeled here as a bypass to prove the
-SCORER is the one holding the line, not just the writer). The pipeline still cannot reach PASS --
-specifically and only on the wake/cheap-accounting axis (failures["source"] ->
-audited_wake_boundary:<arm> / wake_boundary_artifact) -- with capability/leak/constancy/infra all
-otherwise clean, proving the run itself was genuinely successful and only the wake axis blocks it.
+Background (reports/2026-07-21-gate0-wake-grounding.md, PR #126): a real `codex exec --json`
+transcript showed a single turn.completed bundles >=2 real model decisions (cumulative usage for
+the whole turn), with no per-decision boundary event anywhere in Codex's JSONL schema to count
+instead. So tools/check_gate0_codex.py::audit() reverted PR #125's `wakes = usage_events`
+definition (which undercounted by >=2x) back to the fail-closed `wakes=None` /
+`wake_accounting="INSUFFICIENT_WAKES"` hardcode -- correctly honest, but pre-amendment this also
+made eval/score_gate0.py's verdict permanently unable to reach PASS on ANY run, however clean,
+because the scorer required `wake_accounting == "PASS"`.
+
+These tests drive the REAL audit_codex() (permanently fail-closed on wakes, unchanged by this
+amendment) all the way through the real scorer, proving:
+
+1. `test_synthetic_successful_run_within_cost_caps_now_passes_wakes_deferred` -- a fully clean,
+   leak/constancy/run/accounting-free synthetic transcript per arm, with cost/credits WITHIN the
+   unchanged $/credit caps, now reaches PASS/GO even though audit()'s wake_accounting is (and
+   stays) "INSUFFICIENT_WAKES" throughout -- wakes are reported in the verdict payload
+   (`wake_accounting.status == "DEFERRED"`, `cheap_basis == "cost_per_task"`) but never gate.
+2. `test_synthetic_run_over_cost_cap_still_fails_cheap_even_with_wakes_deferred` -- the SAME clean/
+   wakes-deferred setup, but with cost pushed over the unchanged per-arm cap, still fails
+   FAIL_CHEAP -- proving the cost bar's strictness is completely unchanged by this amendment.
+3. `test_all_arms_refuse_a_real_wake_count` (below, unmodified) -- the writer-level guarantee
+   (build_agent_metrics() itself still refuses to write a "wakes" number from a non-PASS audit)
+   is untouched by this amendment; it is orthogonal to whether the SCORER gates on wakes.
 
 Everything here is $0 and synthetic -- no codex exec, no paid run.
 """
@@ -120,19 +130,22 @@ def _miniwob_oracle():
     return rows
 
 
-def _build_sources_with_fabricated_wakes(tmp_path, audits: dict[str, dict]) -> tuple[dict, dict]:
+def _build_sources_with_fabricated_wakes(tmp_path, audits: dict[str, dict],
+                                          agent_cost: dict | None = None) -> tuple[dict, dict]:
     """Write red_agent/miniwob_agent/red_human/miniwob_human/wake_boundary/live_breaker.json.
 
     The agent metrics files are hand-written directly (NOT via build_agent_metrics, which
     correctly refuses -- see test_all_arms_refuse_a_real_wake_count) to model the one remaining
-    way a wake number could reach agent_metrics.json: someone bypasses our writer entirely. Even
-    then, _verify_sources() must still refuse, because it cross-checks the file's `wakes` against
-    audit()'s OWN wake_accounting/wakes -- not the other way around -- so a fabricated file can
-    never manufacture a PASS.
+    way a wake number could reach agent_metrics.json: someone bypasses our writer entirely. Under
+    the 2026-07-21 Cheap-basis amendment this "wakes" number is purely informational (reported in
+    the verdict payload, never gating) -- it can never manufacture a PASS by itself, and it can
+    never manufacture a FAIL_CHEAP by itself either; only cost_usd/normalized_credits gate Cheap
+    now (see eval/score_gate0.py::score()). `agent_cost` lets callers push cost over/under the
+    unchanged per-arm cap ($5.00 red / $2.00 miniwob) to test that axis specifically.
     """
     agent_wall_clock = {"red": 20.0, "miniwob": 10.0}
     agent_primitive_actions = {"red": 10, "miniwob": 5}
-    agent_cost = {"red": 1.0, "miniwob": 0.5}
+    agent_cost = agent_cost or {"red": 1.0, "miniwob": 0.5}
     agent_credits = {"red": 20.0, "miniwob": 10.0}
     human_wall_clock = {"red": 15.0, "miniwob": 8.0}
     human_primitive_actions = {"red": 8, "miniwob": 4}
@@ -196,7 +209,7 @@ def test_all_arms_refuse_a_real_wake_count(tmp_path):
                                         wall_clock_s=20.0, cost_usd=1.0, normalized_credits=20.0)
 
 
-def test_synthetic_successful_run_still_cannot_pass_on_the_wake_axis(tmp_path, monkeypatch):
+def _audit_clean_arms(tmp_path):
     audits = {}
     for arm in ("red", "miniwob"):
         transcript, receipt, expected, artifacts_dir = _build_arm_transcript(tmp_path, arm)
@@ -204,8 +217,11 @@ def test_synthetic_successful_run_still_cannot_pass_on_the_wake_axis(tmp_path, m
         assert audits[arm]["overall"] == "NO_GO_INSUFFICIENT_WAKES"
         assert audits[arm]["wake_accounting"] == "INSUFFICIENT_WAKES"
         assert audits[arm]["wakes"] is None
+    return audits
 
-    artifact_paths, artifact_hashes = _build_sources_with_fabricated_wakes(tmp_path, audits)
+
+def _score_with_fabricated_sources(tmp_path, monkeypatch, audits, agent_cost=None):
+    artifact_paths, artifact_hashes = _build_sources_with_fabricated_wakes(tmp_path, audits, agent_cost)
     seed_path = scorer.MODES["readiness_dev"][0]
     pins = {
         "schema_version": 1, "mode": "readiness_dev",
@@ -218,24 +234,49 @@ def test_synthetic_successful_run_still_cannot_pass_on_the_wake_axis(tmp_path, m
 
     manifest = {"mode": "readiness_dev", "arms": {"red": {}, "miniwob": {}}}
     oracles = {"red": _red_oracle(), "miniwob": _miniwob_oracle()}
-
     verified, source_failures = scorer._verify_sources(manifest, audits)
-    # Unconditional: audit()'s wake_accounting != "PASS" alone trips this for both arms, regardless
-    # of what number the (bypassed) agent_metrics.json claims.
-    assert "audited_wake_boundary:red" in source_failures
-    assert "audited_wake_boundary:miniwob" in source_failures
-    # The mechanism-demo artifact is a second, independent refusal.
-    assert "wake_boundary_artifact" in source_failures
+    return scorer.score(manifest, audits, oracles, verified, source_failures)
 
-    result = scorer.score(manifest, audits, oracles, verified, source_failures)
-    assert result["overall"] == "INSUFFICIENT_DATA", result
-    assert result["readiness"] == "INSUFFICIENT_SOURCE", result
-    # Isolation: the run itself was genuinely clean/successful on every OTHER axis -- only the
-    # wake/cheap-accounting axis blocks it, proving this is specifically the wake gap, not a
-    # capability failure, a leak, a constancy breach, or an infra death.
-    assert result["failures"]["leak"] == []
-    assert result["failures"]["constancy"] == []
-    assert result["failures"]["infra"] == []
-    assert result["failures"]["capability"] == []
-    assert all(f in ("audited_wake_boundary:red", "audited_wake_boundary:miniwob",
-                    "wake_boundary_artifact") for f in result["failures"]["source"])
+
+def test_synthetic_successful_run_within_cost_caps_now_passes_wakes_deferred(tmp_path, monkeypatch):
+    """Scenario (a): clean run, within cost caps, wakes accounting INSUFFICIENT -> PASS/GO.
+
+    Drives the REAL audit_codex() (permanently fail-closed on wakes: overall=
+    NO_GO_INSUFFICIENT_WAKES, wake_accounting=INSUFFICIENT_WAKES, wakes=None for both arms,
+    confirmed above) all the way through the real scorer. Cost ($1.00 red / $0.50 miniwob) and
+    credits (20/10) are well within the unchanged per-arm and combined caps. Pre-amendment this
+    configuration could never leave INSUFFICIENT_DATA (audited_wake_boundary:<arm> +
+    wake_boundary_artifact); post-amendment it must reach PASS, with wakes/wake_accounting
+    reported informationally, never gating.
+    """
+    audits = _audit_clean_arms(tmp_path)
+    result = _score_with_fabricated_sources(tmp_path, monkeypatch, audits)
+
+    assert result["overall"] == "PASS", result
+    assert result["readiness"] == "GO", result
+    # Isolation: every failure bucket is empty -- capability/leak/constancy/infra/source/cheap all
+    # clear, so this PASS is not masking anything on another axis.
+    for bucket in ("leak", "constancy", "infra", "capability", "source", "cheap"):
+        assert result["failures"][bucket] == [], (bucket, result)
+    # The deferred-wake bookkeeping is present and honest: still INSUFFICIENT_WAKES per arm.
+    assert result["cheap_basis"] == "cost_per_task"
+    assert result["wake_accounting"]["status"] == "DEFERRED"
+    for arm in ("red", "miniwob"):
+        assert result["wake_accounting"]["detail"][arm]["wake_accounting"] == "INSUFFICIENT_WAKES"
+
+
+def test_synthetic_run_over_cost_cap_still_fails_cheap_even_with_wakes_deferred(tmp_path, monkeypatch):
+    """Scenario (b): SAME clean/wakes-deferred setup as above, but red's cost pushed to $5.01
+    (over the unchanged $5.00 per-arm cap) -> FAIL_CHEAP. Proves the cost bar's strictness is
+    completely unchanged by the 2026-07-21 amendment -- only the wake axis stopped gating.
+    """
+    audits = _audit_clean_arms(tmp_path)
+    result = _score_with_fabricated_sources(tmp_path, monkeypatch, audits,
+                                             agent_cost={"red": 5.01, "miniwob": 0.5})
+
+    assert result["overall"] == "FAIL_CHEAP", result
+    assert result["readiness"] == "NO_GO", result
+    assert "red:arm_cap" in result["failures"]["cheap"]
+    # Still isolated to cheap -- capability/leak/constancy/infra/source stay clear.
+    for bucket in ("leak", "constancy", "infra", "capability", "source"):
+        assert result["failures"][bucket] == [], (bucket, result)

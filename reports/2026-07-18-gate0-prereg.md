@@ -170,6 +170,33 @@ Frozen commit: ______________________ (the commit whose `eval/score_gate0.py`,
   world success is explicitly excluded, design doc:322); "fix the failed seam, then wait for a new
   pre-registration; do not rerun the passing arm" (design doc:394-395).
 
+## AMENDMENT (2026-07-21, David's decision) — Cheap axis grounded on cost-per-task; wakes deferred
+
+**Does not retro-edit anything above — this DRAFT's bars, arms, and preconditions are left as
+originally written.** PR #126 (`reports/2026-07-21-gate0-wake-grounding.md`) proved, against a real
+`codex exec --json` transcript, that Codex's JSONL stream has no documented per-model-decision
+boundary event (one `turn.completed` bundled `>=2` real decisions, cumulative usage) — so
+`tools/check_gate0_codex.py::audit()` correctly reverted to a fail-closed `wakes=None`/
+`wake_accounting="INSUFFICIENT_WAKES"` hardcode. Pre-amendment, that made `eval/score_gate0.py`'s
+verdict permanently unable to reach `PASS`, on any run however clean, purely because the scorer
+required `wake_accounting == "PASS"` — an axis nobody can currently measure, not a capability, cost,
+or constancy failure.
+
+**Gate 0's Cheap axis is grounded on COST-PER-TASK** ($-cost caps + the live credit breaker) exactly
+as pinned in this document's "Cheap bar" table above (`<=$5.00`/`<=$2.00`/`<=$7.00` per-arm/combined,
+`<=125`/`<=50`/`<=175` normalized credits, `<=250` hard breaker) — **unchanged, still fully gating.**
+**Wakes-per-task is DEFERRED** — no documented per-model-decision observable exists in the Codex
+JSONL stream (evidence: `reports/2026-07-21-gate0-wake-grounding.md`); it re-enters scope when Codex
+ships a per-decision boundary event or a world-seam counter is built+gated. This is a documented
+reduction of one of Cheap's two yardsticks for the FIRST gate, not a loosening of the cost bar.
+
+Wakes/`wake_accounting` stay COMPUTED and REPORTED in the scorer's verdict (`wake_accounting.status
+== "DEFERRED"`, plus a new `cheap_basis == "cost_per_task"` field) for the record, but never gate
+`overall`. Scorer change lands on `feat/gate0-wake-accounting` (`eval/score_gate0.py`); its tests pin
+the four synthetic verdicts: clean run within cost caps + wakes insufficient -> `PASS`/`GO`; same but
+over a cost cap -> `FAIL_CHEAP` (cost bar unchanged, still bites); leak/constancy breach -> still
+`NO_LEAK`/`CONSTANCY_BREACH`; capability `>2x` human -> still `FAIL_CAPABILITY`.
+
 ## Sources
 
 Design doc `reports/2026-07-13-minimum-north-star-gate-0-design.md` (all cited lines above);

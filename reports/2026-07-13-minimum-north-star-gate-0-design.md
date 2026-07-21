@@ -402,6 +402,37 @@ Proceed now with R0 + W0 + C0 only. Do not run Cave Noire, MKDS, or a paid brain
 under this design. The next tracked artifact is a `$0` Gate 0 readiness report;
 only an all-`GO` result can justify a paid pre-registration.
 
+## AMENDMENT (2026-07-21, David's decision) — Cheap axis grounded on cost-per-task; wakes deferred
+
+**This amendment does not retro-edit anything above; the body of this design doc, including the
+original two-yardstick Cheap bar table, is left as originally written and frozen.** It records a
+scope decision made after PR #126 (`reports/2026-07-21-gate0-wake-grounding.md`) proved, against a
+real `codex exec --json` transcript, that Codex's JSONL stream has no documented per-model-decision
+boundary event: a single `turn.completed` bundled `>=2` real model decisions with cumulative usage,
+so `tools/check_gate0_codex.py::audit()` cannot count wakes without a `>=2x` undercount. It reverted
+to a fail-closed hardcode (`wakes=None`, `wake_accounting="INSUFFICIENT_WAKES"`) — correctly honest,
+but it also meant `eval/score_gate0.py`'s verdict could never reach `PASS` for ANY run, however
+clean, because the pre-amendment scorer required `wake_accounting == "PASS"` to avoid an
+`INSUFFICIENT_DATA` verdict. That made Gate 0 permanently unlaunchable on an axis nobody can
+currently measure, not on a real capability, cost, or constancy question.
+
+**Decision:** Gate 0's Cheap axis is grounded on **COST-PER-TASK** ($-cost caps + the live credit
+breaker) as pinned in "Cheap bar" above ($5/$2/$7 per-arm/combined, 125/50/175/250 normalized
+credits) — those thresholds are UNCHANGED and remain fully gating. **Wakes-per-task is DEFERRED** —
+no documented per-model-decision observable exists in the Codex JSONL stream (evidence:
+`reports/2026-07-21-gate0-wake-grounding.md`); it re-enters scope when Codex ships a per-decision
+boundary event or a world-seam counter is built+gated. This is a documented reduction of one of
+Cheap's two yardsticks for the FIRST gate, not a loosening of the cost bar.
+
+Wakes and `wake_accounting` stay COMPUTED and REPORTED in the scorer's verdict payload (an
+informational `wake_accounting` field marked `"status": "DEFERRED"`, plus `cheap_basis:
+"cost_per_task"`) — they are logged for the record and re-evaluated when a grounded wake mechanism
+exists, but they never gate `PASS`/`FAIL_CHEAP`. Implemented in `eval/score_gate0.py`
+(`_arm_metrics`, `_verify_sources`, `score`) on `feat/gate0-wake-accounting`; see that PR's tests
+for the four pinned synthetic verdicts (clean-within-cost-caps -> PASS; over-cost-cap ->
+FAIL_CHEAP; leak/constancy breach -> still fails; capability >2x human -> still FAIL_CAPABILITY)
+proving every non-wake guard is untouched.
+
 ## Sources
 
 - `HANDOFF.md` (canonical North Star and current paid ledger)
