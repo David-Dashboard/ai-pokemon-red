@@ -197,6 +197,11 @@ the four synthetic verdicts: clean run within cost caps + wakes insufficient -> 
 over a cost cap -> `FAIL_CHEAP` (cost bar unchanged, still bites); leak/constancy breach -> still
 `NO_LEAK`/`CONSTANCY_BREACH`; capability `>2x` human -> still `FAIL_CAPABILITY`.
 
+**Residual divergence, named (per adversarial review):** cost-per-task and decision-count can
+diverge — a run with many cheap decisions passes on cost though it would exceed the old wake cap;
+this is accepted because Gate 0's Cheap bar IS cost, and no working wake defense existed to weaken
+(audit was already hardcoded fail-closed).
+
 ## Sources
 
 Design doc `reports/2026-07-13-minimum-north-star-gate-0-design.md` (all cited lines above);

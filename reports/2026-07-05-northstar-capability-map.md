@@ -172,6 +172,11 @@ CONTEXT-BRIEFING's tripwire table still has ▶ (unbuilt) rows. Each is a small 
 - Confident-wrong-rate threshold alert on held-out wall-recall (extend `eval/cross_game.py`).
 - The one-sentence rule as a review-checklist item in **dev-workflow** (prose, free).
 (✅ already exist: contract hash, no-RAM-leak, import boundaries, cost breaker, lean-game fitness.)
+- ▶ **Gate 0 Cheap-measurement tripwire (added 2026-07-21, unbuilt):** re-enable wakes/task
+  measurement when Codex ships a per-model-decision boundary event OR a world-seam wake counter is
+  built+gated (evidence: `reports/2026-07-21-gate0-wake-grounding.md`). Until then, Gate 0's Cheap
+  axis is grounded on cost/task only (`reports/2026-07-13-minimum-north-star-gate-0-design.md` and
+  `reports/2026-07-18-gate0-prereg.md` AMENDMENT blocks; `eval/score_gate0.py`).
 
 ### B4. The capability-evidence ledger (lives in THIS doc — update per gate)
 

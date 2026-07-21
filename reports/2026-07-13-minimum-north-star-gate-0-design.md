@@ -433,6 +433,11 @@ for the four pinned synthetic verdicts (clean-within-cost-caps -> PASS; over-cos
 FAIL_CHEAP; leak/constancy breach -> still fails; capability >2x human -> still FAIL_CAPABILITY)
 proving every non-wake guard is untouched.
 
+**Residual divergence, named (per adversarial review):** cost-per-task and decision-count can
+diverge — a run with many cheap decisions passes on cost though it would exceed the old wake cap;
+this is accepted because Gate 0's Cheap bar IS cost, and no working wake defense existed to weaken
+(audit was already hardcoded fail-closed).
+
 ## Sources
 
 - `HANDOFF.md` (canonical North Star and current paid ledger)
