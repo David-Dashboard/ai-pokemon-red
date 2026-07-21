@@ -1,19 +1,28 @@
-"""Gate 0 exact-wake-boundary mechanism proof (report 2026-07-21-gate0-readiness-final.md section 4).
+"""Gate 0 exact-wake-boundary mechanism demo (reports/2026-07-21-gate0-wake-grounding.md, PR #126).
 
-Proves the wake-counting MECHANISM in tools/check_gate0_codex.py::audit() is correct against a
-fixed, deterministic synthetic Codex transcript -- at $0, no paid run involved -- the same kind of
-standalone detector-correctness proof tools/gate0_credit_breaker.py's dry_run_synthetic() already
-provides for the live credit breaker (see that module's docstring). eval/score_gate0.py's
-_verify_sources() reads this artifact's `status` field (must be "PASS") as one of the six named
-source artifacts a scored gate needs, independent of any specific arm's real paid-run wakes --
-those are cross-checked separately per-arm via audit()/agent_metrics.json.
+This module originally tried to PROVE the wake-counting mechanism in
+tools/check_gate0_codex.py::audit() correct against a fixed synthetic transcript. A real
+`codex exec --json` capture (PR #126) falsified the wake definition it would have proven: a single
+turn.completed event bundles >=2 real model decisions (its usage is cumulative for the whole turn),
+and no other event in Codex's JSONL schema marks a per-model-call boundary -- so there is no sound
+mechanism to demonstrate yet. audit() reverted to its fail-closed hardcode (wakes=None,
+wake_accounting="INSUFFICIENT_WAKES") and this module's job changed to match: it now demonstrates
+that fail-closed guarantee HOLDS, even against a fully clean, leak/constancy/run/accounting-free
+synthetic transcript -- i.e. wake accounting is not silently regressing back to "count something
+and call it PASS" the moment nothing else is wrong.
+
+`status` in the returned/written artifact can therefore never be "PASS" today -- eval/score_gate0.py's
+_verify_sources() treats any wake_boundary status other than exactly "PASS" as a
+`wake_boundary_artifact` source failure (by design: this keeps Gate 0 from ever scoring on a wake
+count nobody can vouch for). `fail_closed_regression_guard_holds` is the field that actually says
+whether THIS demo passed: True means audit() correctly stayed fail-closed as documented; False would
+mean audit() silently started reporting wakes again -- a regression -- and demands investigation.
 
 Deterministic by construction: the embedded synthetic transcript is a fixed Python literal (hashed
-into the artifact, like gate0_credit_breaker.py's synthetic_credit_stream), and nothing time- or
-machine-dependent (wall clock, temp paths, PIDs) is written into the artifact itself -- only the
-fixed events and the audit() result they produce. The scratch files audit() needs to read
-(receipt/expected-pins/artifacts_dir) are materialized into a throwaway temp directory purely to
-satisfy audit()'s file-based API; their paths never appear in the returned artifact.
+into the artifact, like tools/gate0_credit_breaker.py's synthetic_credit_stream), and nothing time-
+or machine-dependent (wall clock, temp paths, PIDs) is written into the artifact itself. The scratch
+files audit() needs to read (receipt/expected-pins/artifacts_dir) are materialized into a throwaway
+temp directory purely to satisfy audit()'s file-based API; their paths never appear in the artifact.
 """
 from __future__ import annotations
 
@@ -27,15 +36,17 @@ from tools.check_gate0_codex import SERVER, TOOLS, audit
 
 
 _ARM = "miniwob"
-# 6 decisions (turn.completed events), one mcp_tool_call each -- small, fixed, and easy to hand-
-# verify: wakes must come back exactly 6, primitive_action_events exactly 6.
-_EXPECTED_WAKES = 6
+# 6 decisions (turn.completed events), one mcp_tool_call each -- small and fixed. Under the
+# reverted, fail-closed audit(), the exact count no longer matters for `wakes` (always None), but
+# primitive_action_events (a real, sound count -- see check_gate0_codex.py's comment) is still
+# expected to come back exactly 6.
+_DECISION_COUNT = 6
 _USAGE = {"input_tokens": 12, "cached_input_tokens": 4, "output_tokens": 5, "reasoning_output_tokens": 1}
 
 
 def _synthetic_transcript_events() -> list[dict]:
     events = [{"type": "thread.started"}]
-    for _ in range(_EXPECTED_WAKES):
+    for _ in range(_DECISION_COUNT):
         events.append({"type": "item.completed", "item": {
             "type": "mcp_tool_call", "server": SERVER, "tool": "observe"}})
         events.append({"type": "turn.completed", "usage": dict(_USAGE)})
@@ -50,7 +61,9 @@ def _write(path: Path, data: bytes) -> str:
 def _build_fixture(tmp_dir: Path) -> tuple[Path, Path, Path, Path]:
     """Materialize a self-consistent, clean receipt/expected-pins/artifacts_dir -- same shape as
     tests/test_check_gate0_codex.py's `_fixture()` helper -- so audit() reports zero leak/
-    constancy/run failures. That is the only way to ever reach the wake-accounting branch."""
+    constancy/run/accounting failures. That is the hardest case for the fail-closed guarantee:
+    nothing else is wrong, so if wake accounting were ever going to slip back to reporting a
+    number, this is exactly the input that would let it."""
     artifacts = tmp_dir / _ARM
     (artifacts / "launch" / ".codex").mkdir(parents=True)
     codex = artifacts / "codex.exe"
@@ -93,10 +106,12 @@ def _build_fixture(tmp_dir: Path) -> tuple[Path, Path, Path, Path]:
 
 def dry_run_synthetic() -> dict:
     """Run audit() against the fixed synthetic transcript above and build the eval/score_gate0.py-
-    shaped exact_wake_boundary artifact. `status` is only ever "PASS" if audit() actually reported
-    overall=PASS/wake_accounting=PASS AND the wake count matches the known-correct expected value
-    -- earned by the mechanism, never hand-typed (mirrors gate0_credit_breaker.py's
-    dry_run_synthetic() "earned_pass" discipline)."""
+    shaped exact_wake_boundary artifact. `status` is always "FAIL" today -- no exact wake boundary
+    is provable given Codex's current JSONL schema (see module docstring) -- but
+    `fail_closed_regression_guard_holds` reports whether audit() actually kept its documented
+    fail-closed promise (wakes=None/wake_accounting="INSUFFICIENT_WAKES"/overall != "PASS") even
+    for this maximally-clean transcript. That flag going False would mean the fail-closed guarantee
+    silently broke -- the actual regression this demo exists to catch."""
     events = _synthetic_transcript_events()
     stream_bytes = ("\n".join(json.dumps(e) for e in events) + "\n").encode("utf-8")
     stream_sha256 = hashlib.sha256(stream_bytes).hexdigest()
@@ -105,21 +120,29 @@ def dry_run_synthetic() -> dict:
         transcript_path, receipt_path, expected_path, artifacts_dir = _build_fixture(Path(tmp))
         result = audit(transcript_path, receipt_path, expected_path, artifacts_dir, _ARM)
 
-    earned_pass = (result["overall"] == "PASS" and result["wake_accounting"] == "PASS"
-                   and result["wakes"] == _EXPECTED_WAKES
-                   and result["primitive_action_events"] == _EXPECTED_WAKES)
+    fail_closed_holds = (result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+                         and result["wake_accounting"] == "INSUFFICIENT_WAKES"
+                         and result["wakes"] is None
+                         and result["primitive_action_events"] == _DECISION_COUNT)
     return {
         "schema_version": 1,
         "kind": "exact_wake_boundary",
-        "status": "PASS" if earned_pass else "FAIL",
-        "wake_definition": (
-            "One wake = one turn.completed transcript event carrying a valid usage object -- the "
-            "same event tools/check_gate0_codex.py::audit() already counts as token_usage_events "
-            "for token accounting. See reports/2026-07-21-gate0-readiness-final.md section 4."
+        # Intentionally never "PASS": eval/score_gate0.py::_verify_sources() requires exactly
+        # status == "PASS" to accept this artifact, so any other string (this one included)
+        # correctly keeps Gate 0 from scoring on a wake count nobody can vouch for.
+        "status": "FAIL",
+        "blocked_reason": (
+            "reports/2026-07-21-gate0-wake-grounding.md: a real codex exec --json transcript "
+            "showed a single turn.completed bundles >=2 real model decisions (cumulative usage "
+            "for the whole turn), and no per-decision boundary event exists in Codex's JSONL "
+            "schema to count instead. tools/check_gate0_codex.py::audit() reverted its "
+            "wakes = usage_events definition (which undercounted by >=2x) back to the fail-closed "
+            "wakes=None / wake_accounting=INSUFFICIENT_WAKES hardcode. This artifact cannot report "
+            "status=PASS until Codex ships a documented per-model-call boundary event."
         ),
+        "fail_closed_regression_guard_holds": fail_closed_holds,
         "mode": "dry_run_synthetic",
         "produced_by": "tools/gate0_wake_boundary.py:dry_run_synthetic",
-        "expected_wakes": _EXPECTED_WAKES,
         "synthetic_transcript_events": events,
         "synthetic_transcript_sha256": stream_sha256,
         "audit_result": result,
@@ -131,7 +154,9 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     dry = sub.add_parser("dry-run-synthetic",
                           help="Run audit() against a built-in synthetic transcript and write the "
-                               "exact_wake_boundary artifact.")
+                               "exact_wake_boundary artifact (always status=FAIL today; see "
+                               "fail_closed_regression_guard_holds for whether the demo itself "
+                               "confirms fail-closed behavior).")
     dry.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "dry-run-synthetic":
@@ -142,9 +167,15 @@ def main() -> int:
         # dry-run writer already avoids).
         args.out.write_text(json.dumps(artifact, indent=2, sort_keys=False) + "\n",
                             encoding="utf-8", newline="\n")
-        print(json.dumps({"status": artifact["status"], "wakes": artifact["audit_result"]["wakes"],
-                          "out": str(args.out)}, sort_keys=True))
-        return 0 if artifact["status"] == "PASS" else 1
+        print(json.dumps({
+            "status": artifact["status"],
+            "fail_closed_regression_guard_holds": artifact["fail_closed_regression_guard_holds"],
+            "out": str(args.out),
+        }, sort_keys=True))
+        # Exit code tracks whether the fail-closed GUARANTEE holds, not artifact["status"] (which
+        # is permanently "FAIL" by design -- see module docstring). 0 = confirmed fail-closed;
+        # nonzero = regression, investigate immediately.
+        return 0 if artifact["fail_closed_regression_guard_holds"] else 1
     return 1
 
 

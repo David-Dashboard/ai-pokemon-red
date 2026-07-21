@@ -264,38 +264,38 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
     if usage_events == 0:
         accounting_failures.append("no_observable_token_usage")
 
-    # A wake = one turn.completed event carrying valid usage -- the SAME event this loop already
-    # counts as usage_events for token accounting above (report 2026-07-21-gate0-readiness-final.md
-    # §4: "one turn.completed event ... reuse usage_events already computed in the same loop"). No
-    # new counting mechanism, no new channel: wakes just names the number token accounting already
-    # produces. Fail-closed: a real, non-fabricated wake count is only ever reported once every
-    # other category above is clean (leak/constancy/run/accounting) -- accounting_failures already
-    # guarantees usage_events > 0 whenever it is empty (see "no_observable_token_usage" above), so
-    # this branch never reports wakes=0 dressed as a pass. Any other branch keeps the fail-closed
-    # INSUFFICIENT_WAKES hardcode: a transcript with a leak, a constancy breach, a run failure, or
-    # broken accounting cannot be trusted to yield a genuine wake count, so none is fabricated.
+    # WAKE ACCOUNTING STAYS FAIL-CLOSED BY DESIGN -- grounded, not a stub
+    # (reports/2026-07-21-gate0-wake-grounding.md, PR #126). An earlier version of this function
+    # set wakes = usage_events (one wake per turn.completed event with valid usage), reusing the
+    # same loop as token accounting above. A real `codex exec --json` transcript falsified that: a
+    # single turn.completed bundled >=2 real model decisions -- its usage is CUMULATIVE FOR THE
+    # WHOLE TURN, not per-decision -- and no other event in Codex's JSONL schema marks a
+    # per-model-call boundary (item.completed/item.started carry no usage and do not group by
+    # originating model call). That is a >=2x undercount, not a rounding error. Do not substitute
+    # tool calls, turns, or any other JSONL event for wakes (matches reports/2026-07-13-minimum-
+    # north-star-gate-0-design.md L237-241's own caveat against exactly this substitution). wakes/
+    # wake_accounting stay hardcoded until Codex ships a documented per-model-call boundary event:
+    # any transcript, however clean, reports wakes=None / wake_accounting="INSUFFICIENT_WAKES", so
+    # overall can never reach "PASS" via a wake count. primitive_action_events (below, counted in
+    # the same loop) is unaffected -- it counts actual allowlisted tool-call items, not model
+    # decisions, and has no analogous undercount problem.
     if leak_failures:
         overall, no_leak = "NO_LEAK", "NO_LEAK"
-        wakes, wake_accounting = None, "INSUFFICIENT_WAKES"
     elif constancy_failures:
         overall, no_leak = "CONSTANCY_BREACH", "PASS"
-        wakes, wake_accounting = None, "INSUFFICIENT_WAKES"
     elif run_failures:
         overall, no_leak = "NO_GO_RUN_FAILED", "PASS"
-        wakes, wake_accounting = None, "INSUFFICIENT_WAKES"
     elif accounting_failures:
         overall, no_leak = "NO_GO_INSUFFICIENT_ACCOUNTING", "PASS"
-        wakes, wake_accounting = None, "INSUFFICIENT_WAKES"
     else:
-        overall, no_leak = "PASS", "PASS"
-        wakes, wake_accounting = usage_events, "PASS"
+        overall, no_leak = "NO_GO_INSUFFICIENT_WAKES", "PASS"
     return {
         "schema_version": 2,
         "arm": expected_arm,
         "no_leak": no_leak,
         "overall": overall,
-        "wakes": wakes,
-        "wake_accounting": wake_accounting,
+        "wakes": None,
+        "wake_accounting": "INSUFFICIENT_WAKES",
         "peer_constancy": "PASS" if peer_receipt_path is not None and not any(
             f.startswith("peer_") for f in constancy_failures) else "NOT_PROVEN",
         "token_usage": usage,
@@ -317,7 +317,14 @@ def build_agent_metrics(result: dict, arm: str, mode: str, wall_clock_s: float, 
     pin outputs tools/gate0_credit_accountant.py and the paid launcher already produce), so the
     caller supplies them. Fail-closed: refuses to build a metrics record from anything but a clean
     overall=PASS/wake_accounting=PASS audit -- an agent_metrics.json `wakes` field must never be
-    sourced from a run whose wake accounting itself could not be trusted."""
+    sourced from a run whose wake accounting itself could not be trusted.
+
+    As of reports/2026-07-21-gate0-wake-grounding.md, audit() itself can never actually produce
+    overall=PASS/wake_accounting=PASS (wake accounting is permanently fail-closed until Codex
+    exposes a real per-model-call boundary event -- see the comment above the return statement in
+    audit()) -- so this function is unreachable via any real audit() call today. It is kept as
+    forward-looking plumbing (schema + fail-closed refusal logic already correct and tested) for
+    whenever a grounded wake mechanism exists; it is not itself a way to reach PASS."""
     if (result.get("overall") != "PASS" or result.get("wake_accounting") != "PASS"
             or not isinstance(result.get("wakes"), int) or isinstance(result.get("wakes"), bool)):
         raise ValueError("audit_not_clean: refusing to write agent_metrics.json from a non-PASS audit")
