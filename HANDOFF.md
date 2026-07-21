@@ -7,8 +7,52 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-14 (R0/W0/C0 readiness verdict recorded on the current branch;
-`codex/gate0-r0-w0-c0-readiness-2026-07-14`; $0, no model call or held-out preflight.)_
+_Last updated: 2026-07-21 (Gate 0 final readiness stamping pass; $0, no model call, no held-out
+preflight; `docs/gate0-stamping`.)_
+
+**=>=> NEWEST (2026-07-21) - GATE 0 FINAL READINESS STAMPED: 8/9 MET, ONE NEW $0-CLOSABLE GAP FOUND; NOT YET LAUNCH-READY. =>=>**
+1. **POSITION VS NORTH STAR:** unchanged by this pass — overall **19/100**, engineering foundation
+   **76/100**, actual evidence/proof **8/100**. This slice is readiness/interpretability work; no
+   brain ran, no score changed.
+2. **8 of 9 pre-reg preconditions now `MET`** (`reports/2026-07-18-gate0-prereg.md`'s table),
+   re-verified fresh against `main`@`99c9fa7` (#122 merged): scorer on `main`, frozen expected-pins,
+   the live credit breaker (component + wiring, PR #118 + #122 review-fix round), the blank-wipe
+   mechanism, both human baselines, Codex CLI/auth, and the rebuilt world images' code parity.
+   Precondition 8 (David's quota check) is inherently launch-time. Full detail + evidence pointers:
+   `reports/2026-07-21-gate0-readiness-final.md`.
+3. **NOT LAUNCH-READY — new finding.** `tools/check_gate0_codex.py::audit()` hardcodes
+   `wakes=None`/`wake_accounting="INSUFFICIENT_WAKES"` unconditionally; no tool writes the
+   `agent_metrics.json`/`wake_boundary.json` artifacts `eval/score_gate0.py` requires for a scored
+   paid run. Traced through the scorer's own dispatch: **a genuinely successful paid run launched
+   today would still print `INSUFFICIENT_DATA`/`INSUFFICIENT_SOURCE`, never `PASS`.** Ruling (the
+   report answers this explicitly): this is NOT "only observable during the paid run" — a wake
+   count is exactly as offline-computable from a transcript as the token-usage accounting the same
+   function already does; it's a closable-at-$0 mechanism gap, buildable and testable before any
+   spend. Recommendation: close it before signing, or David explicitly accepts the
+   `INSUFFICIENT_DATA` risk in writing — David's call, not decided here.
+4. **HUMAN BASELINES BANKED** (precondition 6, closed this cycle by two separate sessions +
+   re-verified here): Red (David, Option-A reconstruction, `wall_clock_s=233.288`,
+   `primitive_actions=271`, sha256 `5144a5b36a29453c5f07ceba8336f3752055e0437e80f50d61418d61be686264`);
+   MiniWoB (David, played live, `wall_clock_s=224.83`, `primitive_actions=18`, 5/5 reward, sha256
+   `32b0c021be2a03215feca51e74a56285a561791f777a6300290860dfaf8f7dcf`).
+5. **SIGNATURE PACKAGE COMPUTED** where possible: the 4 PR #122 safety-critical file hashes
+   (launcher/breaker/accountant/rate-converter, canonical git-blob-at-HEAD, valid for `99c9fa7`)
+   are quoted in the report. `config_sha256`/`codex_mcp_list_sha256` remain genuinely
+   launch-invocation-dependent (by design, embed the real paid `-OutputDir`) — cannot be
+   pre-frozen by anyone, ever; must be read off a fresh handshake receipt at actual signature time.
+   `credit_rate_pin` needs David's real ChatGPT/Codex usage-page numbers — formula + how to read
+   them is in the report §6.
+6. **SAFETY / TOOLING NOTE:** this session's Bash/PowerShell auto-mode classifier refused to run
+   `tools/run_gate0_codex.ps1` (spawns `docker`/`codex.exe`) from two different tool paths; not
+   routed around (safety-invariants law 9). Everything not requiring that specific script was
+   completed directly (git introspection, the 4 file hashes, full pytest, baseline hash-verification).
+7. **VERIFICATION:** full suite `1369 passed, 16 skipped` (`uv run --frozen pytest -q`,
+   `UV_PROJECT_ENVIRONMENT=.venv-win-stamp`), own worktree from `origin/main`@`99c9fa7`.
+8. **SPEND:** `$0.00`. Gate 0 cumulative spend remains `$0.00`.
+**=> NEXT:** David reads `reports/2026-07-21-gate0-readiness-final.md` §4 and decides: close the
+wake-accounting gap first (recommended, $0, small), or explicitly accept the INSUFFICIENT_DATA
+risk. Either way, precondition 8 (quota check) and the signature package (§6) happen immediately
+before each arm's actual launch, per the launch checklist (§7).
 
 **=>=> NEWEST (2026-07-14) - R0/W0/C0 READINESS VERDICT RECORDED ON CURRENT BRANCH; $0. =>=>**
 1. **POSITION VS NORTH STAR:** overall **19/100**, engineering foundation **76/100**, actual
