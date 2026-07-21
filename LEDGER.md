@@ -6,25 +6,39 @@
 Complete the coherent R0/W0/C0 `$0` readiness outcome: one two-arm offline scorer,
 safe source-status probes where available, and one honest GO/NO_GO/INSUFFICIENT_SOURCE report.
 
-## Current status (2026-07-14)
-- Branch: `codex/gate0-r0-w0-c0-readiness-2026-07-14`, from merged PR #113.
-- Complete R0 Red source status, W0 MiniWoB DEV source status, and C0 constancy/scoring readiness as one
-  outcome-sized slice.
-- Independently frozen expected pins and a proven live-breaker dry-run TRIP receipt are the known
-  C0 critical-path source gaps (signature/launch-time items).
-- **2026-07-21 update:** exact wake accounting is no longer a tracked blocker here. David decided
-  Gate 0's Cheap axis is grounded on cost-per-task; wakes-per-task is DEFERRED (no per-model-decision
-  observable exists in Codex's JSONL stream, `reports/2026-07-21-gate0-wake-grounding.md`) and
-  `eval/score_gate0.py` no longer gates the verdict on it (`feat/gate0-wake-accounting`, PR #125).
-- Readiness verdict is recorded on the current branch: R0/W0/C0 each `INSUFFICIENT_SOURCE`; paid Gate 0 `NO_GO`.
-- Final current-head receipts are banked at `red-v3` and `miniwob-v2`; common brain, host/image parity,
-  and tool inventories pass. Both remain `NO_GO_INSUFFICIENT_WAKES` at the readiness-receipt level
-  (audit()'s fail-closed hardcode, per design — no paid execution has run), paid execution false.
-- Preserve `runs/gate0_readiness_2026-07-14/miniwob-v1/` as an infra failure: a top-level Red memory-map
-  import was unavailable in the intentionally lean MiniWoB image. The fix keeps Red addresses local to
-  its registry entry; `miniwob-v1` is never reused. `red-v1` had no directory/receipt; `red-v2` is valid
-  pre-final-code evidence superseded for parity.
-- Current North Star score is overall 19/100, engineering 76/100, proof 8/100.
+**2026-07-21 (this slice):** produce the FINAL Gate 0 readiness stamp + David's signature package
+against current `main` (`61abba7`, PR #125 merged) — supersedes the stale `docs/gate0-stamping`
+(PR #124). Re-verify the 9 preconditions, prove the gate can now `PASS` (synthetic manifest through
+`score()`), compute every signature-time hash answerable ahead of signature, and hand David the
+exact fields he still needs to supply.
+
+## Current status (2026-07-21)
+- Branch: `docs/gate0-readiness-final-v2`, from merged `main`@`61abba7` (PR #125). Supersedes the
+  stale `docs/gate0-stamping` (PR #124), which predated PR #125's Cheap-basis amendment.
+- **GATE 0 IS LAUNCH-READY, PENDING DAVID'S SIGNATURE + QUOTA CHECK.** 9-precondition table
+  re-verified against current `main`: 1–7, 9 `MET`; 8 (Codex-pool quota) `LAUNCH-TIME` by design
+  (checked immediately before each arm's launch). Full detail, computed hashes, and the signature
+  package: `reports/2026-07-21-gate0-readiness-final-v2.md`.
+- Proven this session: a synthetic manifest through `eval/score_gate0.py::score()` (clean audits,
+  real banked human baselines 233.288s/271 red, 224.83s/18 miniwob, in-cap metrics) returns
+  `overall=PASS`/`readiness=GO` — the gate's PASS path is mechanically reachable now. An over-cost
+  variant correctly returns `FAIL_CHEAP`.
+- `tools/check_gate0_codex.py` re-run against the fresh `red-v4`/`miniwob-v3` free-handshake
+  receipts (2026-07-21, pinned model `gpt-5.6-sol`, rebuilt images) with current merged pins:
+  `constancy_failures` reduces to exactly the two by-design `CONSTRAINT:launch-invocation-dependent-
+  recompute-at-signature` fields (`config_sha256`, `codex_mcp_list_sha256`); all other 18
+  `PIN_FIELDS` match; `peer_constancy: PASS` both arms.
+- Human baselines (precondition 6) are now captured (David, 2026-07-21): red via Option-A
+  reconstruction (`reports/2026-07-21-gate0-red-baseline-reconstruction.md`), miniwob via 5 fresh
+  DEV episodes. Flagged gap (not fixed this pass): the source-pins fixtures' `red_human`/
+  `miniwob_human` hash pins are still unfrozen placeholders.
+- Live breaker (precondition 4) is fully wired and merged (PR #122): `Confirm-PaidExecSignature`,
+  `Invoke-BreakerSupervisedExec`, combined cross-arm ledger; wired-path zero-spend TRIP receipt
+  `status=PASS`, `credits_at_trip=252.0`.
+- Wake accounting stays DEFERRED, non-gating (David's 2026-07-21 decision, PR #125/#126) — Cheap
+  rests on cost-per-task only, unchanged caps.
+- Current North Star score is unchanged (overall 19/100, engineering 76/100, proof 8/100) — this
+  slice is readiness/interpretability only, no paid run.
 
 ## Constraints
 - Never run `codex exec` or any model/paid path.
@@ -46,7 +60,7 @@ safe source-status probes where available, and one honest GO/NO_GO/INSUFFICIENT_
   `71 passed in 1.02s`; full tracked plus scorer `1166 passed, 1 warning in 23.74s`; `py_compile` and diff
   check passed.
 - [x] Rebuild final images and bank current-head `red-v3`/`miniwob-v2` free receipts.
-- [ ] Independently freeze expected-pins JSON; do not claim full checker GO from observed receipts alone.
+- [x] Independently freeze expected-pins JSON (PR #118) — `eval/fixtures/gate0_expected_pins_{red,miniwob}.json`.
 - [x] Close PR #114 self-declared-GO finding: fixed modes/seeds, fixed expected-pins paths, hash-verified
   metric/wake/breaker artifacts, strict-positive human/agent measurements, and bare-claim rejection.
 - [x] Close PR #114 Red finding: exact first `0 -> 1`; battle after acquisition; HP/map safety through
@@ -54,8 +68,24 @@ safe source-status probes where available, and one honest GO/NO_GO/INSUFFICIENT_
 - [x] Close PR #114 MiniWoB finding: exact episode/seed set, exactly one successful terminal each, and
   rejection of extras, conflicts, duplicates, or abandoned-then-success histories.
 - [x] Canonical root-side post-review verification complete; ready for re-review.
+
+### 2026-07-21 final-stamp-v2 slice
+- [x] Re-verify both human baselines exist, load, recompute sha256 (§2 of the report).
+- [x] Re-run `tools/check_gate0_codex.py` against the fresh `red-v4`/`miniwob-v3` receipts with
+  current merged pins/scorer; quote verbatim output both arms.
+- [x] Construct the minimal synthetic successful manifest and prove `score()` reaches `PASS`/`GO`;
+  prove an over-cost variant reaches `FAIL_CHEAP`.
+- [x] Re-verify the 9-precondition table against current `main`.
+- [x] Compute the 2 signature-time hashes' recipe (worked example) + the 4 safety-critical
+  canonical git-blob hashes at `61abba7`.
+- [x] Write `reports/2026-07-21-gate0-readiness-final-v2.md` with the full signature package.
+- [x] Update LEDGER.md + HANDOFF.md top block.
+- [x] Full suite green (`1386 passed, 16 skipped in 54.24s`).
 - [ ] Stage only intended files for parent commit/review.
 
 ## Next
-- Finish tests and review this outcome slice. After merge, close only the banked readiness sources.
-  Paid Gate 0 remains blocked until R0/W0/C0 all return `GO`.
+- PR + adversarial review for this readiness-stamp-v2 slice. After merge: David signs
+  `eval/fixtures/gate0_signature.json` per the report's Signature Package, confirms quota
+  (precondition 8), and launches Arm R then Arm W. Separately (not this PR): freeze the
+  `red_human`/`miniwob_human` hash pins in the source-pins fixtures against the now-captured
+  baseline files. Paid Gate 0 remains blocked until David signs and quota is confirmed.

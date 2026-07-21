@@ -7,10 +7,47 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-21 (Gate 0 Cheap-basis amendment: cost-per-task, wakes deferred;
-`feat/gate0-wake-accounting`, PR #125; $0, no model call.)_
+_Last updated: 2026-07-21 (Gate 0 final readiness stamp v2 + signature package, supersedes PR #124;
+`docs/gate0-readiness-final-v2`; $0, no model call.)_
 
-**=>=> NEWEST (2026-07-21) - GATE 0 CHEAP AXIS = COST-PER-TASK, WAKES DEFERRED (DAVID'S DECISION); $0. =>=>**
+**=>=> NEWEST (2026-07-21) - GATE 0 LAUNCH-READY PENDING DAVID'S SIGNATURE + QUOTA CHECK; $0. =>=>**
+1. **POSITION VS NORTH STAR:** does not move overall/proof (still no paid run) — closes out
+   readiness: `reports/2026-07-21-gate0-readiness-final-v2.md` re-runs the checker against the fresh
+   `red-v4`/`miniwob-v3` receipts on current `main` (`61abba7`, PR #125 merged) and **proves the gate
+   can now `PASS`** — a synthetic manifest through `eval/score_gate0.py::score()` returns
+   `overall=PASS`/`readiness=GO` (wakes deferred, non-gating) using the REAL banked human baselines
+   (red `233.288s`/271 actions; miniwob `224.83s`/18 actions, 5/5), and an over-cost variant
+   correctly returns `FAIL_CHEAP` (the cost bar still bites).
+2. **9-PRECONDITION TABLE (re-verified against current main):** 1–7, 9 `MET`; 8 (Codex-pool quota)
+   is `LAUNCH-TIME` by design — checked immediately before each arm's launch, cannot be
+   pre-satisfied. Precondition 4 (live breaker) is now fully `MET`: PR #122's 4a–4d wiring
+   (`Confirm-PaidExecSignature`, `Invoke-BreakerSupervisedExec`, combined cross-arm ledger) is merged
+   on `main`, with a wired-path zero-spend TRIP receipt (`status=PASS`, `credits_at_trip=252.0`,
+   child confirmed killed). Precondition 6 (human baselines) is `MET` (both captured 2026-07-21);
+   flagged gap: the frozen source-pins files' `red_human`/`miniwob_human` hash pins are still
+   unfrozen placeholders — a separate follow-up, not fixed in this pass.
+3. **SIGNATURE PACKAGE:** the report computes everything answerable ahead of signature — the four
+   safety-critical file hashes (`tools/run_gate0_codex.ps1`, `gate0_credit_breaker.py`,
+   `gate0_credit_accountant.py`, `gate0_codex_credit_rate.py`, canonical git-blob-at-`61abba7`) and a
+   worked demonstration of the `config_sha256`/`codex_mcp_list_sha256` recompute recipe — and marks
+   exactly what David must still supply: `frozen_commit`, `signed_at`, and the `credit_rate_pin`
+   block (exact recipe to read it off the ChatGPT/Codex usage page, with the `[1e-8,1e-2]` $/token
+   and `[1,1000]` credits/USD plausibility bands from PR #122).
+4. **NOT DONE THIS SESSION (transparency):** a fresh free-handshake re-run via
+   `tools/run_gate0_codex.ps1` was attempted but blocked by this sandbox's own auto-mode permission
+   classifier before any process spawned (harness-level, not a project rule) — turned out unneeded,
+   since `red-v4`/`miniwob-v3` (2026-07-21, already on `main`'s evidence trail) were the correct
+   fresh receipts to audit; used read-only from the primary checkout, every hash independently
+   cross-verified.
+5. **SAFETY:** no Codex/model execution, no brain/contract/tool-schema edit, no existing checkout
+   written to (own worktree only; human baselines and the fresh receipts were read-only). Full suite
+   green: `1386 passed, 16 skipped in 54.24s`.
+**⇒ NEXT:** David signs `eval/fixtures/gate0_signature.json` per the report's Signature Package
+(§6) for Arm R, confirms quota (precondition 8), launches Arm R, then repeats for Arm W. Separately:
+freeze the `red_human`/`miniwob_human` hash pins in the two source-pins fixtures against the now-
+captured baseline files.
+
+**=>=> PRIOR (2026-07-21) - GATE 0 CHEAP AXIS = COST-PER-TASK, WAKES DEFERRED (DAVID'S DECISION); $0. =>=>**
 1. **POSITION VS NORTH STAR:** does not move the overall/proof score (no paid run) — it unblocks the
    PASS *path* for the still-unlaunched Gate 0. `reports/2026-07-21-gate0-wake-grounding.md` (PR #126)
    proved Codex's JSONL stream has no per-model-decision boundary event (one `turn.completed` bundles
