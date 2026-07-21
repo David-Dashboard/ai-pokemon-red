@@ -9,7 +9,20 @@ param(
     [string]$Model,
 
     [Parameter(Mandatory = $true)]
-    [string]$OutputDir
+    [string]$OutputDir,
+
+    # Everything below is OFF by default so a bare invocation stays the byte-identical
+    # free-handshake-only script this launcher has always been
+    # (tests/test_run_gate0_codex_launcher.py::test_launcher_is_free_handshake_only_and_fail_closed).
+    # -PaidExec is the ONLY way to reach a live `codex exec` call (PR #118 checklist 4b); it is
+    # refused unless a David-signed eval/fixtures/gate0_signature.json (or an explicit
+    # -SignaturePath override) authorizes the exact frozen commit this checkout is on.
+    [switch]$PaidExec,
+    [string]$SignaturePath = (Join-Path $PSScriptRoot '..\eval\fixtures\gate0_signature.json'),
+    # Pre-registered wired-path stall backstop (PR #118 breaker review MINOR 3a,
+    # tools/gate0_credit_breaker.py::STALL_TIMEOUT_S = 300). Overridable only to a STRICTER
+    # (smaller) value at signature time -- the paid path refuses a looser override.
+    [double]$StallTimeoutS = 300
 )
 
 $ErrorActionPreference = 'Stop'
@@ -140,6 +153,180 @@ function Invoke-CodexLoginStatus([string]$ExecutablePath) {
     }
     [string]$text = (($result.StdOut + "`n" + $result.StdErr).Trim())
     return [pscustomobject]@{ Text = $text; ExitCode = $result.ExitCode }
+}
+
+# ---------------------------------------------------------------------------------------------
+# Paid-exec wiring (PR #118 checklist 4a-4d). Every function below is inert unless -PaidExec is
+# passed AND every gate here passes; none of it changes the free-handshake-only default path.
+# ---------------------------------------------------------------------------------------------
+
+function Get-GitHeadCommit([string]$RepoRoot) {
+    $result = Invoke-GitBytes -RepoRoot $RepoRoot -GitArguments @('rev-parse', 'HEAD')
+    if ($result.ExitCode -ne 0) { throw 'Could not resolve the current commit for signature verification.' }
+    return ([Text.Encoding]::UTF8.GetString($result.Bytes)).Trim()
+}
+
+# 4b signature gate. Refuses -PaidExec unless a David-authored artifact names the EXACT frozen
+# commit this checkout is on plus the two launch-invocation-dependent hashes (config_sha256,
+# codex_mcp_list_sha256 -- PR #118 body's "CONSTRAINT... signature-time recompute recipe" pair)
+# already computed by this run's own free-handshake logic above. It also carries the 4a credit-
+# rate pin (see tools/gate0_codex_credit_rate.py) so one signed artifact authorizes both "this is
+# the reviewed commit/config" and "this is the priced rate for this model" at once. No value here
+# is invented by this script -- everything is compared against either the receipt this run just
+# produced or fields the signer supplied.
+function Confirm-PaidExecSignature {
+    param(
+        [string]$SignaturePath, [string]$RepoRoot, [string]$Arm, [string]$Model,
+        [string]$ExpectedConfigSha256, [string]$ExpectedMcpListSha256
+    )
+    if (-not (Test-Path -LiteralPath $SignaturePath -PathType Leaf)) {
+        throw "PaidExec refused: no signature file at $SignaturePath. David must author one before any paid launch."
+    }
+    try { $signature = (Get-Content -LiteralPath $SignaturePath -Raw) | ConvertFrom-Json }
+    catch { throw "PaidExec refused: signature file at $SignaturePath is not valid JSON." }
+    if ($signature.schema_version -ne 1) { throw 'PaidExec refused: signature schema_version must be 1.' }
+    $headCommit = Get-GitHeadCommit -RepoRoot $RepoRoot
+    if ([string]$signature.frozen_commit -ne $headCommit) {
+        throw "PaidExec refused: signature pins commit $($signature.frozen_commit), checkout is at $headCommit."
+    }
+    if ([string]$signature.arm -ne $Arm) {
+        throw "PaidExec refused: signature pins arm $($signature.arm), this launch is arm $Arm."
+    }
+    if ([string]$signature.planned_model -ne $Model) {
+        throw "PaidExec refused: signature pins model $($signature.planned_model), this launch is model $Model."
+    }
+    if ([string]$signature.expected_config_sha256 -ne $ExpectedConfigSha256) {
+        throw 'PaidExec refused: signature expected_config_sha256 does not match this run''s freshly computed config_sha256.'
+    }
+    if ([string]$signature.expected_codex_mcp_list_sha256 -ne $ExpectedMcpListSha256) {
+        throw 'PaidExec refused: signature expected_codex_mcp_list_sha256 does not match this run''s freshly computed codex_mcp_list_sha256.'
+    }
+    if ($null -eq $signature.credit_rate_pin) {
+        throw 'PaidExec refused: signature carries no credit_rate_pin (4a).'
+    }
+    return $signature
+}
+
+# Reuses the exact same explicit-override vocabulary the free-handshake `codex mcp list --json`
+# probe already proved Codex accepts (`$Overrides`, built once, above) -- `codex exec --json` gets
+# the identical model/sandbox/mcp wiring, never a second hand-typed config. The prompt is piped
+# over stdin (never a CLI argument) for the same reason TASK.md is a file: arbitrary task text
+# must never be re-quoted through a shell.
+function Get-PaidCodexExecArguments([string[]]$Overrides) {
+    $arguments = @('exec', '--json')
+    foreach ($override in $Overrides) { $arguments += @('-c', $override) }
+    $arguments += '-'
+    return $arguments
+}
+
+# THE KILL CONTRACT (tools/gate0_credit_breaker.py module docstring, PR #118 breaker review MINOR
+# 2/3a): spawns $ChildExecutable (real Codex in production; a zero-spend stub emitter for the 4c
+# proof -- this function does not know or care which) with its stdout relayed, as a live byte
+# stream via .NET CopyToAsync (never buffered/materialized -- MAJOR 1), into $AccountantExecutable
+# (tools/gate0_credit_accountant.py), which feeds run_breaker(raise_on_trip=True,
+# stall_timeout_s=...) an ITERATOR over that relayed stream. The accountant process's own exit is
+# the kill signal: EITHER breaker exception (BreakerTripped from a real trip, or
+# MalformedCreditStream from a malformed event OR a stall -- catching only the former is
+# fail-open) makes it exit non-zero, and the instant it exits for any reason other than the child
+# having already finished on its own, the child's WHOLE process tree is killed via `taskkill /T
+# /F` (never a lone top-level Stop-Process, which would strand any docker/MCP descendants).
+# Evidence of the kill (exit/alive state, not merely "a signal was sent") is returned so callers
+# can bank a receipt precondition 4c can stand behind.
+function Invoke-BreakerSupervisedExec {
+    param(
+        [string]$ChildExecutable, [string[]]$ChildArguments, [string]$ChildStdinText,
+        [string]$AccountantExecutable, [string[]]$AccountantArguments,
+        [string]$WorkingDirectory = '',
+        [int]$PollIntervalMs = 100, [int]$MaxWallClockS = 3600
+    )
+    $childInfo = [Diagnostics.ProcessStartInfo]::new()
+    $childInfo.FileName = $ChildExecutable
+    $childInfo.Arguments = (($ChildArguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    $childInfo.UseShellExecute = $false
+    $childInfo.RedirectStandardInput = $true
+    $childInfo.RedirectStandardOutput = $true
+    $childInfo.RedirectStandardError = $true
+    $childInfo.CreateNoWindow = $true
+    if ($WorkingDirectory) { $childInfo.WorkingDirectory = $WorkingDirectory }
+    $child = [Diagnostics.Process]::new()
+    $child.StartInfo = $childInfo
+
+    $acctInfo = [Diagnostics.ProcessStartInfo]::new()
+    $acctInfo.FileName = $AccountantExecutable
+    $acctInfo.Arguments = (($AccountantArguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    $acctInfo.UseShellExecute = $false
+    $acctInfo.RedirectStandardInput = $true
+    $acctInfo.RedirectStandardOutput = $true
+    $acctInfo.RedirectStandardError = $true
+    $acctInfo.CreateNoWindow = $true
+    if ($WorkingDirectory) { $acctInfo.WorkingDirectory = $WorkingDirectory }
+    $accountant = [Diagnostics.Process]::new()
+    $accountant.StartInfo = $acctInfo
+
+    $startedAt = Get-Date
+    try {
+        [void]$accountant.Start()
+        [void]$child.Start()
+        $childId = $child.Id
+
+        if ($ChildStdinText) { $child.StandardInput.Write($ChildStdinText) }
+        $child.StandardInput.Close()
+
+        $childErrTask = $child.StandardError.ReadToEndAsync()
+        $acctErrTask = $accountant.StandardError.ReadToEndAsync()
+        $acctOutTask = $accountant.StandardOutput.ReadToEndAsync()
+        # The live relay: bytes flow from the child's stdout straight into the accountant's stdin
+        # as they arrive. Nothing here reads the child's output into a PowerShell variable first.
+        $relayTask = $child.StandardOutput.BaseStream.CopyToAsync($accountant.StandardInput.BaseStream)
+
+        while ($true) {
+            if ($accountant.HasExited) { break }
+            if ($child.HasExited -and $relayTask.IsCompleted) { break }
+            if (((Get-Date) - $startedAt).TotalSeconds -gt $MaxWallClockS) { break }
+            Start-Sleep -Milliseconds $PollIntervalMs
+        }
+
+        $killed = $false
+        $killEvidence = $null
+        if (-not $child.HasExited) {
+            $killed = $true
+            $killEvidence = (& taskkill.exe /PID $childId /T /F 2>&1 | Out-String)
+        }
+        try { $accountant.StandardInput.Close() } catch {}
+        # [void]: a bare, unassigned `.GetAwaiter().GetResult()` statement on this non-generic
+        # Task otherwise leaks onto this function's own output pipeline (empirically confirmed --
+        # it is not just "no-op discarded"), silently turning the single-object return below into
+        # a two-element array. Observing/swallowing the relay's own exception (e.g. a broken pipe
+        # because the accountant already exited on a trip) must never do that.
+        try { [void]$relayTask.GetAwaiter().GetResult() } catch {}
+        [void]$child.WaitForExit(10000)
+        [void]$accountant.WaitForExit(10000)
+
+        # Confirm the kill: the child PID must be truly gone, not merely signaled.
+        Start-Sleep -Milliseconds 200
+        $stillAlive = $null -ne (Get-Process -Id $childId -ErrorAction SilentlyContinue)
+
+        [pscustomobject]@{
+            ChildId = $childId
+            ChildExitCode = if ($child.HasExited) { $child.ExitCode } else { $null }
+            ChildHasExited = $child.HasExited
+            ChildStillAliveAfterKill = $stillAlive
+            ChildKilled = $killed
+            KillEvidence = $killEvidence
+            ChildStdErr = $childErrTask.GetAwaiter().GetResult()
+            AccountantExitCode = if ($accountant.HasExited) { $accountant.ExitCode } else { $null }
+            AccountantStdOut = $acctOutTask.GetAwaiter().GetResult()
+            AccountantStdErr = $acctErrTask.GetAwaiter().GetResult()
+            StartedAt = $startedAt.ToString('o')
+            EndedAt = (Get-Date).ToString('o')
+        }
+    } finally {
+        foreach ($p in @($child, $accountant)) {
+            try { if (-not $p.HasExited) { $p.Kill() } } catch {}
+        }
+        $child.Dispose()
+        $accountant.Dispose()
+    }
 }
 
 if ($Model -match '(?i)(^|[-_.])latest($|[-_.])') {
@@ -401,17 +588,71 @@ $ReceiptPath = Join-Path $OutputDir 'handshake-receipt.json'
 Write-Utf8NoBom $ReceiptPath (($Receipt | ConvertTo-Json -Depth 8) + "`n")
 
 # Live-breaker wiring point (pre-reg precondition 4, reports/2026-07-18-gate0-prereg.md;
-# tools/gate0_credit_breaker.py). This script stays free-handshake-only -- no exec call, no spend --
-# until a separate paid launcher with observable wake accounting exists (design doc:242-246). Once
-# that launcher streams `codex exec --json` output, it must feed run_breaker(raise_on_trip=True,
-# stall_timeout_s=STALL_TIMEOUT_S) an ITERATOR pulled lazily from the stream (never a buffered/
-# materialized source -- PR #118 breaker review MAJOR 1) and kill the codex child the instant the
-# breaker raises ANY exception: BreakerTripped OR MalformedCreditStream (catching only the former
-# is fail-open -- a malformed/stalled stream crashes the accountant while the child keeps
-# spending). The 300 s stall backstop is pre-registered; the detector's halting correctness is
-# proven against a synthetic stream in tests/test_gate0_credit_breaker.py and
-# reports/2026-07-19-gate0-live-breaker-dry-run.md. Precondition-4 status: COMPONENT MET --
-# WIRING PENDING (PR #118 checklist 4a-4d must clear before any paid launch).
+# tools/gate0_credit_breaker.py). Without -PaidExec this script remains exactly what it always
+# was -- free-handshake-only, no exec call, no spend, ending in the NO_GO receipt below. The
+# `codex exec --json` path now exists ONLY behind -PaidExec (PR #118 checklist 4a-4d) and is
+# refused unless a signed eval/fixtures/gate0_signature.json authorizes this exact commit
+# (Confirm-PaidExecSignature, above). When it does run, Invoke-BreakerSupervisedExec feeds
+# run_breaker(raise_on_trip=True, stall_timeout_s=StallTimeoutS) an ITERATOR pulled lazily from
+# the live relayed stream (never a buffered/materialized source -- PR #118 breaker review MAJOR 1)
+# and kills the codex child's WHOLE process tree the instant the accountant subprocess signals
+# either breaker exception: BreakerTripped OR MalformedCreditStream (catching only the former is
+# fail-open -- a malformed/stalled stream crashes the accountant while the child keeps spending).
+# The 300 s stall backstop is pre-registered (STALL_TIMEOUT_S); the detector's halting correctness
+# is proven against a synthetic stream in tests/test_gate0_credit_breaker.py and
+# reports/2026-07-19-gate0-live-breaker-dry-run.md, and the wired path's own zero-spend stub-emitter
+# TRIP receipt is banked at reports/2026-07-21-gate0-wired-breaker-trip.md (PR #118 checklist 4c).
+
+if ($PaidExec) {
+    $Signature = Confirm-PaidExecSignature -SignaturePath $SignaturePath -RepoRoot $RepoRoot `
+        -Arm $Arm -Model $Model -ExpectedConfigSha256 $Receipt.config_sha256 `
+        -ExpectedMcpListSha256 $Receipt.codex_mcp_list_sha256
+    if ($StallTimeoutS -gt 300) {
+        throw 'PaidExec refused: -StallTimeoutS may only tighten the pre-registered 300 s backstop, never loosen it.'
+    }
+
+    $PaidDir = Join-Path $OutputDir 'paid'
+    [void](New-Item -ItemType Directory -Path $PaidDir -Force)
+    $RatePinPath = Join-Path $PaidDir 'credit_rate_pin.json'
+    Write-Utf8NoBom $RatePinPath (($Signature.credit_rate_pin | ConvertTo-Json -Depth 8) + "`n")
+
+    # 4a preflight: the SAME Python validation the accountant subprocess uses, run once up front so
+    # an invalid/absent/model-mismatched rate pin refuses BEFORE any process is spawned. Invoked by
+    # absolute path (this module has no internal tools.* imports of its own -- see its docstring --
+    # so unlike the accountant it never needs -m/cwd resolution).
+    $RateCheckerPath = Join-Path $RepoRoot 'tools\gate0_codex_credit_rate.py'
+    $PreflightResult = Invoke-RedirectedProcess -ExecutablePath 'python' -Arguments @(
+        $RateCheckerPath, 'validate', '--rate-pin', $RatePinPath, '--model', $Model)
+    if ($PreflightResult.ExitCode -ne 0) {
+        throw "PaidExec refused: credit-rate pin failed preflight validation: $($PreflightResult.StdErr.Trim())"
+    }
+
+    $VerdictPath = Join-Path $PaidDir 'accountant-verdict.json'
+    $ExecArgs = Get-PaidCodexExecArguments -Overrides $Overrides
+    $Supervised = Invoke-BreakerSupervisedExec -ChildExecutable $ResolvedCodexPath -ChildArguments $ExecArgs `
+        -ChildStdinText $Task -AccountantExecutable 'python' -WorkingDirectory $RepoRoot -AccountantArguments @(
+            '-m', 'tools.gate0_credit_accountant', '--rate-pin', $RatePinPath, '--model', $Model,
+            '--verdict-out', $VerdictPath, '--stall-timeout-s', $StallTimeoutS)
+
+    $Verdict = if (Test-Path -LiteralPath $VerdictPath) {
+        (Get-Content -LiteralPath $VerdictPath -Raw) | ConvertFrom-Json
+    } else {
+        [pscustomobject]@{ result = 'NO_VERDICT_WRITTEN' }
+    }
+    $PaidResult = [ordered]@{
+        schema_version = 1
+        kind = 'gate0_paid_exec_result'
+        arm = $Arm
+        signed_commit = $Signature.frozen_commit
+        verdict = $Verdict
+        supervision = $Supervised
+    }
+    $PaidResultPath = Join-Path $PaidDir 'paid-exec-result.json'
+    Write-Utf8NoBom $PaidResultPath (($PaidResult | ConvertTo-Json -Depth 12) + "`n")
+    Write-Output "paid_exec_result=$PaidResultPath"
+    if ($Verdict.result -eq 'COMPLETED' -and -not $Supervised.ChildKilled) { exit 0 }
+    exit 2
+}
 
 Write-Output 'readiness=NO_GO_INSUFFICIENT_WAKES'
 Write-Output 'paid_execution_enabled=false'
