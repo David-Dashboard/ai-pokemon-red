@@ -102,6 +102,35 @@ def test_red_delayed_map_change_during_sustained_exit_still_fails():
     assert "red:red_map_changed_during_battle_exit_span" in result["failures"]["capability"]
 
 
+def test_red_corrupted_party_byte_does_not_mask_a_real_death():
+    # PR #121 review Major 1 PoC #1: a `party`-only filter (the PR's original fix) would drop ANY
+    # row whose party byte alone misreads, regardless of what its other fields say -- so a row that
+    # is a GENUINE HP=0 death, with only the unrelated `party` byte corrupted (x/y/map/in_battle all
+    # still legitimate, in-battle-map), got silently erased: `ok=True, failures=[]`. The correct
+    # filter only drops a row when EVERY watched field simultaneously reads 0 (the actual observed
+    # corruption signature in the real traces) -- a lone corrupted `party` byte alongside a real
+    # death must still fail.
+    rows = _red()
+    rows[7]["watch"]["party_hp_lo"] = 0
+    rows[7]["watch"]["party"] = 2
+    result = _score(red=rows)
+    assert result["overall"] == "FAIL_CAPABILITY"
+    assert "red:red_player_hp_reached_zero" in result["failures"]["capability"]
+
+
+def test_red_corrupted_party_byte_does_not_mask_a_real_map_change():
+    # PR #121 review Major 1 PoC #2: same exploit against the map-continuity check -- a row with a
+    # GENUINE map change (the whiteout-teleport-home case red_map_changed_during_battle_exit_span
+    # exists to catch) plus a merely-corrupted `party` byte must still fail, not be silently
+    # dropped by a party-keyed filter.
+    rows = _red()
+    rows[7]["watch"]["map"] = 99
+    rows[7]["watch"]["party"] = 2
+    result = _score(red=rows)
+    assert result["overall"] == "FAIL_CAPABILITY"
+    assert "red:red_map_changed_during_battle_exit_span" in result["failures"]["capability"]
+
+
 def test_red_first_party_transition_must_be_exactly_zero_to_one():
     rows = _red()
     rows[1]["watch"]["party"] = 2
@@ -139,7 +168,7 @@ def test_red_real_incomplete_attempt_without_post_exit_movement_still_fails():
     # trimmed to end before the human resumed walking after the battle -- so it must still
     # correctly refuse (no >=2 distinct post-exit tiles yet). Guards against the fix in
     # eval/score_gate0.py overcorrecting into accepting *any* trace with a glitch row, rather than
-    # specifically filtering rows whose `party` count reverts to a stale/impossible value.
+    # specifically filtering rows matching the full corruption signature (every watched field 0).
     rows = _load_oracle_fixture("gate0_red_human_attempt1_no_movement.jsonl")
     ok, failures = _red_success(rows)
     assert not ok
