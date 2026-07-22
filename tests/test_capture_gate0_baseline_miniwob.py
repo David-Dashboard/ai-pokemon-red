@@ -5,6 +5,14 @@ tests/test_miniwob_world.py uses stands in for the real gymnasium env. "David" i
 canned `prompt` callable (dependency-injected via capture_gate0_baseline_miniwob.run()'s `prompt`
 param) -- these tests exercise the RIG's plumbing (dispatch, episode advance, artifact schema,
 success/incomplete detection), never real MiniWoB gameplay.
+
+HELD-OUT LAW: the `--mode paid_gate0` tests below exercise the rig's PLUMBING (mode selection,
+path resolution, the --i-am-human guard, seed cross-contamination refusal) using the exact same
+`_FakeEnv` fake -- never a real MiniWoB env, and never anything that could produce or observe real
+held-out-seed task content. The paid seed *numbers* (1000-1004) are not sensitive -- they are
+already committed in eval/fixtures/gate0_miniwob_paid_seeds.json and eval/score_gate0.py; what must
+never leak into a dev/build process is the actual rendered environment content for those seeds,
+which these tests never touch (the fake env ignores its seed argument entirely).
 """
 from __future__ import annotations
 
@@ -72,11 +80,13 @@ def fake_env_cls(monkeypatch):
     return _FakeEnv
 
 
-def _args(tmp_path, seeds=(0, 1, 2, 3, 4), allow_retake=None):
+def _args(tmp_path, seeds=(0, 1, 2, 3, 4), allow_retake=None, mode="readiness_dev",
+          i_am_human=False):
     seeds_file = tmp_path / "seeds.json"
     seeds_file.write_text(json.dumps(list(seeds)), encoding="utf-8")
     return argparse.Namespace(out=str(tmp_path / "out"), seeds_file=str(seeds_file),
-                              player="AutomatedSmokeTest", test=True, allow_retake=allow_retake)
+                              player="AutomatedSmokeTest", test=True, allow_retake=allow_retake,
+                              mode=mode, i_am_human=i_am_human)
 
 
 def test_under_real_path_guard():
@@ -299,3 +309,117 @@ def test_atomic_write_leaves_no_partial_file_on_crash(monkeypatch, tmp_path):
     assert not target.exists()
     # no stray temp file left behind either
     assert list(tmp_path.glob("human_metrics.json.tmp*")) == []
+
+
+# ---------------------------------------------------------------------------------------------
+# --mode paid_gate0 (held-out-seed replay for the paid gate's MiniWoB human denominator)
+# ---------------------------------------------------------------------------------------------
+
+def test_mode_config_paths_are_distinct_and_match_source_pins():
+    """paid_gate0's real_out must be the EXACT path gate0_paid_source_pins.json's
+    artifact_paths.miniwob_human names -- a silent drift here would make a real capture land
+    somewhere score_gate0's source-pin verification never looks."""
+    dev_out = m.MODE_CONFIG["readiness_dev"]["real_out"]
+    paid_out = m.MODE_CONFIG["paid_gate0"]["real_out"]
+    assert dev_out != paid_out
+    assert paid_out.replace("\\", "/").endswith("runs/gate0_paid_human_baseline/miniwob")
+    assert dev_out.replace("\\", "/").endswith("runs/gate0_human_baseline/miniwob")
+    assert m.MODE_CONFIG["readiness_dev"]["seeds_file"] != m.MODE_CONFIG["paid_gate0"]["seeds_file"]
+
+
+def test_under_real_path_guard_is_mode_aware():
+    dev_out, paid_out = m.MODE_CONFIG["readiness_dev"]["real_out"], m.MODE_CONFIG["paid_gate0"]["real_out"]
+    assert m._under_real_path(dev_out, dev_out)
+    assert not m._under_real_path(paid_out, dev_out)
+    assert m._under_real_path(paid_out, paid_out)
+    assert not m._under_real_path(dev_out, paid_out)
+
+
+def test_paid_mode_dry_run_five_episode_success_writes_conformant_artifact(fake_env_cls, tmp_path):
+    args = _args(tmp_path, seeds=(1000, 1001, 1002, 1003, 1004), mode="paid_gate0", i_am_human=True)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+
+    metrics = json.loads((tmp_path / "out" / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["mode"] == "paid_gate0"
+    assert metrics["success"] is True
+    assert metrics["expected_seeds"] == [1000, 1001, 1002, 1003, 1004]
+    oracle_rows = [json.loads(line) for line in (tmp_path / "out" / "oracle.jsonl").read_text().splitlines()]
+    assert {row["seed"] for row in oracle_rows} == {1000, 1001, 1002, 1003, 1004}
+
+
+def test_paid_mode_refuses_without_i_am_human(fake_env_cls, tmp_path):
+    args = _args(tmp_path, seeds=(1000, 1001, 1002, 1003, 1004), mode="paid_gate0", i_am_human=False)
+    rc = m.run(args, prompt=lambda _msg: (_ for _ in ()).throw(AssertionError("must not prompt")),
+               opener=lambda _path: None)
+    assert rc == 2
+    # refused before any directory/artifact was created -- no partial state left behind either.
+    assert not (tmp_path / "out").exists()
+
+
+def test_paid_mode_refuses_dev_seed_manifest_cross_contamination(fake_env_cls, tmp_path):
+    """A DEV seeds file (0..4) must never satisfy --mode paid_gate0."""
+    args = _args(tmp_path, seeds=(0, 1, 2, 3, 4), mode="paid_gate0", i_am_human=True)
+    rc = m.run(args)
+    assert rc == 2
+    assert not (tmp_path / "out").exists()
+
+
+def test_dev_mode_refuses_paid_seed_manifest_cross_contamination(fake_env_cls, tmp_path):
+    """The held-out paid seeds (1000..1004) must never satisfy --mode readiness_dev (the default)."""
+    args = _args(tmp_path, seeds=(1000, 1001, 1002, 1003, 1004))  # mode defaults to readiness_dev
+    rc = m.run(args)
+    assert rc == 2
+    assert not (tmp_path / "out").exists()
+
+
+def test_paid_mode_test_flag_refuses_real_baseline_path(tmp_path):
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(json.dumps([1000, 1001, 1002, 1003, 1004]), encoding="utf-8")
+    args = argparse.Namespace(out=m.MODE_CONFIG["paid_gate0"]["real_out"], seeds_file=str(seeds_file),
+                              player="x", test=True, allow_retake=None, mode="paid_gate0",
+                              i_am_human=True)
+    rc = m.run(args)
+    assert rc == 2
+
+
+def test_paid_mode_default_out_and_seeds_file_when_omitted(tmp_path):
+    """Passing --out/--seeds-file=None (argparse's default when the flag is omitted) must resolve
+    to paid_gate0's own canonical paths, not silently fall back to the DEV ones. run() mutates
+    `args` in place while resolving defaults, so inspect the Namespace after the call -- a stronger
+    check than the return code alone (both a correct and an incorrect resolution can return 2, for
+    different reasons)."""
+    args = argparse.Namespace(out=None, seeds_file=None, player="x", test=True, allow_retake=None,
+                              mode="paid_gate0", i_am_human=True)
+    m.run(args)
+    assert args.out == m.MODE_CONFIG["paid_gate0"]["real_out"]
+    assert args.seeds_file == str(m.MODE_CONFIG["paid_gate0"]["seeds_file"])
+
+
+def test_paid_mode_never_prints_task_utterance(fake_env_cls, tmp_path, capsys):
+    """HELD-OUT LAW: --mode paid_gate0 must never echo task/page text to stdout. The DEV mode's
+    utterance print is unaffected (asserted in the second half below)."""
+    args = _args(tmp_path, seeds=(1000, 1001, 1002, 1003, 1004), mode="paid_gate0", i_am_human=True)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Select the indicated checkboxes" not in out   # the fake env's utterance text
+    assert "suppressed in --mode paid_gate0" in out
+
+    # fresh --out subdir so this dev run's artifact doesn't collide with the paid run's above
+    dev_args = _args(tmp_path, seeds=(0, 1, 2, 3, 4))
+    dev_args.out = str(tmp_path / "dev_out")
+    answers2 = iter(["click 10 10"] * 5)
+    rc2 = m.run(dev_args, prompt=lambda _msg: next(answers2), opener=lambda _path: None)
+    assert rc2 == 0
+    dev_out = capsys.readouterr().out
+    assert "Select the indicated checkboxes" in dev_out   # unaffected for readiness_dev
+
+
+def test_unknown_mode_refused(tmp_path):
+    args = _args(tmp_path, mode="bogus_mode")
+    rc = m.run(args)
+    assert rc == 2
+    assert not (tmp_path / "out").exists()

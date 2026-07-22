@@ -1,4 +1,13 @@
-"""Gate 0 Arm W human-baseline capture rig (MiniWoB click-checkboxes, DEV seeds 0..4).
+"""Gate 0 Arm W human-baseline capture rig (MiniWoB click-checkboxes).
+
+Two modes, selected with `--mode`:
+  * `readiness_dev` (the default) -- DEV seeds 0..4, a readiness estimate only.
+  * `paid_gate0` -- the HELD-OUT seeds `eval.score_gate0.MODES["paid_gate0"]` pins (1000..1004),
+    the paid gate's actual human denominator for the MiniWoB arm. Sanctioned use is post-Arm-W-only:
+    David replays these 5 episodes AFTER the paid agent's Arm W attempt is already banked (never
+    before -- see DAVID_BASELINES.md's warning box and reports/2026-07-13-minimum-north-star-
+    gate-0-design.md:273-276). `--mode paid_gate0` additionally requires `--i-am-human` (see below)
+    -- a scripted stand-in must never be able to produce this artifact.
 
 HARD LAW: this script only launches episodes, times, records, and writes artifacts. It never picks a
 click/type/key action -- every action comes from David, typed at the terminal after he has LOOKED AT
@@ -32,19 +41,35 @@ exact command) -- no Dockerfile change needed.
 
 Writes, on a DETECTED SUCCESS (5/5 non-abandoned reward-1.0 episodes, exactly
 eval.score_gate0._miniwob_success):
-    runs/gate0_human_baseline/miniwob/human_metrics.json  -- schema_version 1, arm=miniwob,
-                                                              role=human, mode=readiness_dev,
-                                                              wall_clock_s, primitive_actions (+extras)
-    runs/gate0_human_baseline/miniwob/oracle.jsonl         -- MiniWobSession's own oracle writer
-    runs/gate0_human_baseline/miniwob/ep<N>_step<K>.png    -- what David was shown at each decision
+    <out>/human_metrics.json  -- schema_version 1, arm=miniwob, role=human, mode=<--mode>,
+                                  wall_clock_s, primitive_actions (+extras)
+    <out>/oracle.jsonl         -- MiniWobSession's own oracle writer
+    <out>/ep<N>_step<K>.png    -- what David was shown at each decision
+
+`<out>` defaults per mode (both gitignored under runs/, never committed):
+    readiness_dev -> runs/gate0_human_baseline/miniwob/
+    paid_gate0    -> runs/gate0_paid_human_baseline/miniwob/  (the exact path
+                     eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names)
 
 An incomplete/quit attempt writes `human_metrics.INCOMPLETE_<unix-ts>.json` instead of the canonical
 file (see DAVID_BASELINES.md's re-run rule).
 
-DEV vs paid: `mode` is hard-pinned to "readiness_dev" (module constant, never CLI-overridable) --
-this rig can never produce a `paid_gate0`-mode artifact. The DEV-seed numbers here are a readiness
-estimate only, NEVER the paid gate's human denominator (see DAVID_BASELINES.md's warning box); the
-paid-mode human replay against the held-out seeds (1000..1004) is a separate, not-yet-built tool.
+HELD-OUT LAW: seeds 1000..1004 must never be exposed to a dev/build process -- this script is
+parameterized and CI-tested only against DEV seeds or a mocked env (tests/
+test_capture_gate0_baseline_miniwob.py's _FakeEnv), never against the real paid manifest through a
+real MiniWoB env. In `--mode paid_gate0`, the task utterance/page text is deliberately NOT printed
+to stdout (screenshots are still popped open locally for David to look at and act on -- that is the
+whole point of the rig -- but nothing about their content is echoed to a log). Seed cross-
+contamination is refused mechanically: the seeds-file content must match
+`eval.score_gate0.MODES[<mode>]`'s exact pinned list, so a dev seed file can never satisfy
+`--mode paid_gate0` and vice versa.
+
+After a real paid_gate0 capture succeeds, `eval/fixtures/gate0_paid_source_pins.json`'s
+`artifact_sha256.miniwob_human` (currently the placeholder
+`PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`) must be frozen from the produced
+`human_metrics.json` -- same recipe as this report's dev-mode freeze (§8 of
+reports/2026-07-21-gate0-readiness-final-v2.md): `sha256sum` the real file and paste the hex digest
+in as a separate, reviewed follow-up. Do NOT freeze a placeholder ahead of the real artifact existing.
 
 One cold attempt per task (the exam law -- see DAVID_BASELINES.md "Re-run rule"): this script
 refuses to overwrite an existing canonical `human_metrics.json` unless `--allow-retake "<reason>"`
@@ -64,18 +89,33 @@ from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 ARM = "miniwob"
-MODE = "readiness_dev"
-REAL_OUT = os.path.normpath(str(ROOT / "runs" / "gate0_human_baseline" / "miniwob"))
+DEFAULT_MODE = "readiness_dev"
 GAME = "miniwob_click_checkboxes"
 # Same modality the paid agent uses: it also never touches a mouse, it emits a structured
 # click/type/key call after receiving screenshot pixels (world_mcp.MiniWobSession.call()). Recorded
 # so a future scorer/verdict-writer can see this from the artifact alone, not just doc prose.
 CAPTURE_MODALITY = "screenshot_relay_typed_action"
 
+# Per-mode defaults. paid_gate0's real_out is the EXACT path
+# eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names -- keep in sync if
+# that fixture ever moves. Both live under the repo-wide gitignored runs/ (never committed).
+MODE_CONFIG = {
+    "readiness_dev": {
+        "seeds_file": ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json",
+        "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_human_baseline" / "miniwob")),
+    },
+    "paid_gate0": {
+        "seeds_file": ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json",
+        "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_paid_human_baseline" / "miniwob")),
+    },
+}
+# Backward-compatible alias: existing tests/tooling reference the DEV real path as a module constant.
+REAL_OUT = MODE_CONFIG[DEFAULT_MODE]["real_out"]
 
-def _under_real_path(out: str) -> bool:
+
+def _under_real_path(out: str, real_out: str = REAL_OUT) -> bool:
     norm = os.path.normpath(os.path.abspath(out))
-    real = os.path.normpath(os.path.abspath(REAL_OUT))
+    real = os.path.normpath(os.path.abspath(real_out))
     return norm == real or norm.startswith(real + os.sep)
 
 
@@ -142,20 +182,45 @@ def _prompt_action(prompt: Callable[[str], str]) -> tuple[str, dict]:
 
 def run(args, prompt: Callable[[str], str] = input,
         opener: Callable[[str], None] = _default_opener) -> int:
-    if args.test and _under_real_path(args.out):
-        print(f"--test refuses to write under the real baseline path {REAL_OUT!r}; "
+    mode = getattr(args, "mode", None) or DEFAULT_MODE
+    if mode not in MODE_CONFIG:
+        print(f"refusing: unknown --mode {mode!r} (must be one of {sorted(MODE_CONFIG)}).",
+              file=sys.stderr)
+        return 2
+    real_out = MODE_CONFIG[mode]["real_out"]
+    if args.out is None:
+        args.out = real_out
+    if args.seeds_file is None:
+        args.seeds_file = str(MODE_CONFIG[mode]["seeds_file"])
+
+    # Held-out law, defense in depth: paid_gate0 is the held-out-seed replay (1000..1004) -- a
+    # scripted stand-in must never be able to produce it. Require an explicit, un-default-able
+    # acknowledgement that a real human is at the keyboard, on top of the TTY check below (which
+    # only fires for the real canonical path -- this fires for EVERY paid_gate0 invocation,
+    # canonical path or not, since the sensitive part is running the held-out seeds at all, not
+    # just where the artifact lands).
+    if mode == "paid_gate0" and not getattr(args, "i_am_human", False):
+        print("refusing: --mode paid_gate0 requires --i-am-human -- this captures the held-out-seed "
+              "(1000..1004) human replay; a scripted invocation must never be able to produce this "
+              "artifact. Pass --i-am-human only when a real human is about to play these 5 episodes "
+              "interactively, AFTER the paid agent's Arm W attempt is already banked.",
+              file=sys.stderr)
+        return 2
+
+    if args.test and _under_real_path(args.out, real_out):
+        print(f"--test refuses to write under the real baseline path {real_out!r}; "
               "pass a scratch --out.", file=sys.stderr)
         return 2
-    if not args.test and not _under_real_path(args.out):
+    if not args.test and not _under_real_path(args.out, real_out):
         print(f"warning: --out {args.out!r} is outside the canonical real baseline path "
-              f"{REAL_OUT!r} (fine for a manual dry run; DAVID_BASELINES.md uses the default).",
+              f"{real_out!r} (fine for a manual dry run; DAVID_BASELINES.md uses the default).",
               file=sys.stderr)
     # Defense in depth against the prompt-injection seam (fairness review Minor 1): `run()`'s
     # `prompt` param has no way to prove a live human is answering it. A scripted `prompt` callable
     # writing to the REAL baseline path with no attached TTY is exactly what a hostile/accidental
     # non-interactive invocation looks like -- refuse it. --test mode is exempt (it can never reach
     # the real path anyway, and the test suite's canned-answer seam intentionally has no TTY).
-    if not args.test and _under_real_path(args.out) and not sys.stdin.isatty():
+    if not args.test and _under_real_path(args.out, real_out) and not sys.stdin.isatty():
         print("refusing: real baseline capture requires an interactive TTY (stdin is not a tty) -- "
               "this guards against a scripted `prompt` answering for a human and silently writing "
               "to the real baseline path. Use --test for automated/dry runs.", file=sys.stderr)
@@ -182,11 +247,12 @@ def run(args, prompt: Callable[[str], str] = input,
         retake_reason = allow_retake
 
     from eval.score_gate0 import MODES, _miniwob_success
-    _seed_path, expected_seeds = MODES[MODE]
+    _seed_path, expected_seeds = MODES[mode]
     seeds_on_disk = json.loads(Path(args.seeds_file).read_text(encoding="utf-8"))
     if seeds_on_disk != expected_seeds:
-        print(f"refusing: {args.seeds_file} does not match the frozen DEV seed manifest "
-              f"{expected_seeds} (got {seeds_on_disk}).", file=sys.stderr)
+        print(f"refusing: {args.seeds_file} does not match the frozen {mode!r} seed manifest "
+              "(seed cross-contamination guard -- a dev seed file can never satisfy --mode "
+              f"paid_gate0 and vice versa; got {seeds_on_disk}).", file=sys.stderr)
         return 2
 
     os.makedirs(args.out, exist_ok=True)
@@ -218,9 +284,19 @@ def run(args, prompt: Callable[[str], str] = input,
                                     seeds_file=args.seeds_file, seed=None)
     sess = world_mcp.MiniWobSession(sess_args)
 
-    print(f'Task (from the environment): "{sess.mw.utterance}"')
-    print(f"5 fresh DEV episodes, seeds {expected_seeds}. Every screenshot is saved to {args.out}/ "
-          "and popped open for you.")
+    # HELD-OUT LAW: never print task/page text for the held-out seeds -- David still gets the exact
+    # pixels via the popped-open screenshot (the point of the rig), but nothing about their content
+    # is echoed to stdout/logs. readiness_dev keeps the plain utterance print (DEV seeds are not
+    # sensitive; this is unchanged from before --mode existed).
+    if mode == "paid_gate0":
+        print("Task (from the environment): [suppressed in --mode paid_gate0 -- look at the "
+              "popped-open screenshot for the real instructions]")
+        print(f"5 fresh HELD-OUT episodes. Every screenshot is saved to {args.out}/ and popped "
+              "open for you.")
+    else:
+        print(f'Task (from the environment): "{sess.mw.utterance}"')
+        print(f"5 fresh DEV episodes, seeds {expected_seeds}. Every screenshot is saved to {args.out}/ "
+              "and popped open for you.")
     print("The timer starts on your FIRST action. Type 'quit' at any prompt to abort.")
 
     first_action_perf: float | None = None
@@ -270,7 +346,7 @@ def run(args, prompt: Callable[[str], str] = input,
         "schema_version": 1,
         "arm": ARM,
         "role": "human",
-        "mode": MODE,
+        "mode": mode,
         "wall_clock_s": round(wall_clock_s, 3),
         "primitive_actions": action_count,
         "success": success,
@@ -304,9 +380,20 @@ def run(args, prompt: Callable[[str], str] = input,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", default=REAL_OUT)
-    ap.add_argument("--seeds-file", default=str(ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json"))
+    ap.add_argument("--mode", choices=sorted(MODE_CONFIG), default=DEFAULT_MODE,
+                     help="readiness_dev (DEV seeds 0-4, the default) or paid_gate0 (the HELD-OUT "
+                          "seeds 1000-1004 -- the paid gate's actual MiniWoB human denominator; "
+                          "requires --i-am-human, and is only sanctioned AFTER Arm W's paid attempt "
+                          "is banked).")
+    ap.add_argument("--out", default=None,
+                     help="defaults to the canonical real path for --mode (see module docstring).")
+    ap.add_argument("--seeds-file", default=None,
+                     help="defaults to the frozen seed manifest for --mode.")
     ap.add_argument("--player", default="David")
+    ap.add_argument("--i-am-human", action="store_true", dest="i_am_human",
+                     help="required for --mode paid_gate0 -- explicit, non-default acknowledgement "
+                          "that a real human is about to replay the held-out seeds. A scripted "
+                          "invocation cannot satisfy this by accident.")
     ap.add_argument("--allow-retake", metavar="REASON", default=None,
                      help="required to overwrite an existing canonical human_metrics.json -- state "
                           "why this is a legitimate re-take (a botched capture), not a rerun to "
