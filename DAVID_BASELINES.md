@@ -12,8 +12,10 @@ the rig, not the captured numbers.
 > hard-pin `"mode": "readiness_dev"` (Red always; MiniWoB against seeds `0..4`, never
 > CLI-overridable). The design doc (W0 section) is explicit: DEV-seed human runs are a readiness
 > estimate only -- the formal human-relative `<=2.0x` score for the paid Gate 0 attempt uses a
-> **separate, not-yet-built** human replay against the held-out paid seeds (`1000..1004` for
-> MiniWoB; the prereg's Arm W paid-oracle seeds). Do not point `gate0_paid_source_pins.json`'s
+> **separate** human replay against the held-out paid seeds (`1000..1004` for MiniWoB; the prereg's
+> Arm W paid-oracle seeds), run AFTER the agent's paid Arm-W attempt is banked, via
+> `tools/capture_gate0_baseline_miniwob.py --mode paid_gate0 --i-am-human` (see the launch checklist
+> in `reports/2026-07-21-gate0-readiness-final-v2.md` §6 step 4). Do not point `gate0_paid_source_pins.json`'s
 > `miniwob_human`/`red_human` at this rig's output -- `eval.score_gate0._verify_sources` will refuse
 > a mode mismatch, but don't rely on that as the only line of defense.
 
