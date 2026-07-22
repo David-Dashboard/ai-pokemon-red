@@ -268,9 +268,25 @@ cannot be read off a Codex JSONL stream; it must come from the account's own usa
    (`runs/gate0_live_breaker/combined_credit_ledger.json`) carries Arm R's consumed total into Arm
    W's budget check automatically — do not pass `-ResetCombinedLedger` for Arm W.
    "If Arm R alone reaches the combined ceiling, do not launch Arm W."
-4. Score with `eval/score_gate0.py score_manifest()` against the real `runs/gate0_paid/<arm>`
-   artifacts once both arms are banked. Bank the printed verdict — no informal rerun regardless of
-   outcome.
+4. **Only after Arm W's attempt is banked** (verdict printed, receipt saved — never before, and
+   never an informal rerun): David replays the held-out MiniWoB seeds
+   `eval/score_gate0.py::MODES["paid_gate0"]` pins (never enumerated here — see the frozen
+   manifest) via
+   `docker run -it --rm -v "$PWD/tools:/app/tools" -v "$PWD/eval:/app/eval" -v "$PWD/runs:/app/runs" --entrypoint python miniwob-mcp-world -m tools.capture_gate0_baseline_miniwob --mode paid_gate0 --i-am-human`
+   (same container/mount shape as the DEV rig — see `DAVID_BASELINES.md`), producing
+   `runs/gate0_paid_human_baseline/miniwob/human_metrics.json`. This did not exist before this PR —
+   `tools/capture_gate0_baseline_miniwob.py` was structurally hard-pinned to DEV mode only
+   (David-Dashboard/ai-pokemon-red#127 review comment); it now takes `--mode paid_gate0` and
+   refuses to run it without `--i-am-human` or against the wrong seed manifest.
+   Then **freeze** `eval/fixtures/gate0_paid_source_pins.json`'s `artifact_sha256.miniwob_human`
+   (currently the placeholder `PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`)
+   from the real produced artifact — same recipe as this report's §8 dev-mode freeze
+   (`sha256sum` the file, paste the hex digest in as its own small, reviewed commit). Do not skip
+   this: `eval.score_gate0._verify_sources()` cannot validate `miniwob_human` while the pin is a
+   placeholder, so scoring the MiniWoB arm dead-ends at `INSUFFICIENT_SOURCE` until it is frozen.
+5. Score with `eval/score_gate0.py score_manifest()` against the real `runs/gate0_paid/<arm>`
+   artifacts once both arms are banked **and** the `miniwob_human` pin above is frozen. Bank the
+   printed verdict — no informal rerun regardless of outcome.
 
 ---
 
@@ -359,3 +375,45 @@ run against this branch's own worktree at `61abba7` plus this report — tail:
 ```
 
 (See §8 for the re-run after the human-baseline pin freeze: `1386 passed, 16 skipped in 51.47s`.)
+
+---
+
+## 10. Addendum (same PR, same-day): held-out-seed MiniWoB replay tool built; checklist gap closed
+
+Closes the one gap David's pre-signature review (PR #127, comment above) flagged with **REVISE**:
+`paid_gate0`'s `miniwob_human` source pin can never be satisfied because no tool existed that could
+produce the held-out-seed (1000..1004) human replay, and §6's launch checklist jumped straight from
+"bank Arm W" to "score" with no mention of that gap.
+
+- `tools/capture_gate0_baseline_miniwob.py` now takes `--mode {readiness_dev,paid_gate0}` (default
+  `readiness_dev`, fully backward compatible — the DEV rig's existing behavior, CLI shape, and
+  artifact schema are unchanged). `--mode paid_gate0` points the rig at the frozen held-out seed
+  manifest `eval.score_gate0.MODES["paid_gate0"]` pins and writes to
+  `runs/gate0_paid_human_baseline/miniwob/` — the exact path
+  `eval/fixtures/gate0_paid_source_pins.json`'s `artifact_paths.miniwob_human` already names.
+- Safety, mirroring the existing dev-mode guards: `--mode paid_gate0` refuses to run without an
+  explicit `--i-am-human` flag (a scripted invocation can never satisfy this by accident, on top of
+  the pre-existing TTY guard); refuses if the seeds-file content doesn't exactly match the
+  mode-pinned manifest in either direction (a DEV seeds file can't satisfy `paid_gate0` and a paid
+  seeds file can't satisfy `readiness_dev` — no cross-contamination); and never prints the task
+  utterance/page text to stdout in paid mode (the popped-open screenshot is still shown to David —
+  that is the whole point of the rig — but nothing about held-out task content is echoed to a log).
+- **Held-out law honored while building this**: this session tested `--mode paid_gate0` only
+  against the same `_FakeEnv` mock the DEV-mode tests already used (never a real MiniWoB env,
+  never real held-out task content) — see `tests/test_capture_gate0_baseline_miniwob.py`'s new
+  paid-mode tests (10 added). The seed *numbers* 1000-1004 are not sensitive (already committed in
+  `eval/fixtures/gate0_miniwob_paid_seeds.json`); what must never leak into a dev/build process is
+  the actual rendered environment content for those seeds, which the fake env cannot produce.
+- §6's launch checklist now has an explicit step 4 between "Arm W banked" and "score": David runs
+  `... -m tools.capture_gate0_baseline_miniwob --mode paid_gate0 --i-am-human` post-Arm-W, then
+  **freezes** `gate0_paid_source_pins.json`'s `miniwob_human` `artifact_sha256` from the real
+  produced artifact (same recipe as §8's dev-mode freeze) as its own small, reviewed follow-up
+  commit, then scores. The pin is **NOT** frozen in this change — it stays the placeholder
+  `PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built` until the real post-Arm-W
+  artifact exists; freezing it now would be fabrication.
+- Full suite green (`UV_PROJECT_ENVIRONMENT=.venv-win-heldout UV_NATIVE_TLS=true uv run --frozen
+  pytest -q`):
+  ```
+  1396 passed, 16 skipped in 53.29s
+  ```
+  (1386 + 10 new paid-mode tests, identical baseline pass count — no existing check was weakened.)
