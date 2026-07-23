@@ -19,7 +19,8 @@ probes banked; `docs/handoff-2026-07-23`; $0, no model call.)_
    `--dangerously-bypass-approvals-and-sandbox`, no brain change, no pinned-file edit).
 2. **PROVEN AT $0 vs THE ONE PAID TURN:** proven — response shapes byte-exact vs the committed 0.144.3
    `generate-json-schema` dump; request-side method-names + param-fields grounded against committed schemas
-   (mutation-tested: tests go red on client OR schema drift); `initialize()` declares
+   (drift-detection tests go red on client OR schema drift — confirmed by an adversarial hand-mutation pass,
+   not a standing mutation-testing framework); `initialize()` declares
    `capabilities.experimentalApi` + `mcpServerOpenaiFormElicitation` (the FATAL catch — `item/tool/
    requestUserInput` is EXPERIMENTAL and gated, so without opting in the prompt is never even delivered);
    JSONL/`jsonrpc`-omitted framing; the 4 integrator-failure modes (hapi#287, plugin-cc#258, codex#18268,
@@ -42,8 +43,9 @@ probes banked; `docs/handoff-2026-07-23`; $0, no model call.)_
 6. **SAFETY:** no model call, no paid run, no bypass flag, no brain/contract/tool-schema edit, no
    hash-pinned Gate-0 file touched; all worktree-isolated; every "done" backed by a merged commit + CI.
 **⇒ NEXT (David):** decide the Gate-0 fork — recommended (c): spend ONE bounded paid turn to run the
-app-server client against a live Docker-MCP call and confirm end-to-end. Independent of that: exam-v1 freeze
-(#129) and the async-seam ADR (#141) remain open for your ruling.
+app-server client against a live Docker-MCP call and confirm end-to-end. Independent of that: the exam-v1
+freeze (#129, PR still open) and the async-seam ADR (#141 merged as an explicitly-DRAFT doc,
+`reports/2026-07-23-adr-async-seam-DRAFT.md` — the ruling itself is still pending) remain for your decision.
 
 **=>=> PRIOR (2026-07-21) - GATE 0 LAUNCH-READY PENDING DAVID'S SIGNATURE + QUOTA CHECK; $0. =>=>**
 1. **POSITION VS NORTH STAR:** does not move overall/proof (still no paid run) — closes out
