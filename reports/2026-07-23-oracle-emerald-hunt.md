@@ -33,7 +33,7 @@ left `0x02037364` unchanged; pressing `down` once then changed `0x02037364` by +
 `0x02037360` unchanged. Reproduced in two different maps (truck interior and Littleroot outside).
 
 ## Verified: map identity (mapGroup, mapNum)
-Same struct neighborhood as the verified x/y (offsets -0x08/-0x24 from `x`), stable across **every**
+Same struct neighborhood as the verified x/y (offsets -0x08/-0x24 from `y`, i.e. -0x04/-0x20 from `x`), stable across **every**
 one of 12 independent EWRAM snapshots incl. a deliberate 3rd bedroom revisit added specifically to
 catch drift:
 
