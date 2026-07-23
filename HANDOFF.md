@@ -7,30 +7,34 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-23 wave 2 (app-server path VALIDATED LIVE to the handshake boundary; F4/A2 falsified;
-paid harness merged; `docs/handoff-2026-07-23-wave2`; $0 — the one paid turn is blocked on David's approval.)_
+_Last updated: 2026-07-23 wave 2 (M1 app-server unblock CONFIRMED end-to-end — PASS on a real paid turn,
+banked #154; F4/A2 falsified; paid harness merged; `docs/handoff-m1-pass`. The Gate-0 arms are now unblocked.)_
 
-**=>=> NEWEST (2026-07-23 · wave 2) - M1 APP-SERVER PATH VALIDATED LIVE TO THE HANDSHAKE BOUNDARY; one paid turn from full M1 proof (blocked on David's approval). =>=>**
+**=>=> NEWEST (2026-07-23 · wave 2) - M1 APP-SERVER UNBLOCK CONFIRMED END-TO-END (PASS, real paid turn); the Gate-0 arms are now unblocked. =>=>**
 1. **POSITION VS NORTH STAR:** proof score UNCHANGED (the one paid turn is not yet run), but M1 is further
    de-risked: the `codex app-server` unblock path is now **validated LIVE against the real codex-cli 0.144.3
    binary** at $0. A handshake smoke (`initialize` with `capabilities{experimentalApi,mcpServerOpenaiFormElicitation}`
    → `thread/start(approvalsReviewer:"user")`) SUCCEEDS end-to-end, and the client's JSONL / `jsonrpc`-omitted
    framing — previously only README-sourced — is **confirmed against the real binary**. The only unconfirmed
-   step is the tool-call + approval round-trip itself, which is exactly what the one blocked paid turn tests.
+   step was the tool-call + approval round-trip itself — now CONFIRMED PASS by the one bounded paid turn (§3).
 2. **M1 PAID HARNESS (PR #151, merged):** `tools/gate0_appserver_launch.py` drives the merged app-server
    client end-to-end (same path for --dry-run / --handshake-only / real), against `tools/gate0_stub_mcp_server.py`
    (one trivial `ping` tool, no Docker — the daemon is down; the stub reproduces the world-agnostic #15824
    approval path). `LiveCreditGuard` imports the pinned breaker+rate UNMODIFIED. $0 dry-run passes; live $0
    handshake passes. Runbook: `reports/2026-07-23-gate0-appserver-launch-runbook.md`.
-3. **THE ONE PAID TURN IS BLOCKED BY THE HARNESS PERMISSION CLASSIFIER** (Claude Code auto-mode), independent
-   of David's authorization. Per safety-law 9 it was SURFACED, not routed around. To run it: David approves the
-   action (or runs the command in the runbook) — `--mcp stub --model gpt-5.6-sol --codex-home <isolated,
-   auth-seeded> --credit-rate-pin <pin> --turn-timeout-s 45 --tool-name ping --prompt "Call the ping tool
-   once"`. Then the orchestrator scores the raw transcript (approval fires → client `accept` → `ping`→`pong`
-   = PASS). NOTE (launcher review): the credit cap is INERT on the app-server transport (its converter only
-   parses exec-shaped `{"type":"token_count"}`; app-server is JSON-RPC) → the enforced spend bound is
-   `--turn-timeout-s` (45s), and `score_turn` was hardened so a completed-with-error can't false-PASS (residual:
-   a real cancel may nest `isError` under `item.result` — verify on turn 1, extend `_item_has_error` if so).
+3. **PAID TURN RAN (David: "go") → M1 CONFIRMED, PASS — banked PR #154** (report + raw transcript as
+   append-only evidence). The classifier initially BLOCKED it (surfaced per safety-law 9, not routed around);
+   David then allowed it. The raw transcript shows the full round-trip: Sol calls `ping` on `gate0_stub` → the
+   approval prompt FIRES (`mcpServer/elicitation/request`, `codex_approval_kind:"mcp_tool_call"`) → the client
+   answers `{action:"accept"}` → the tool call COMPLETES (`status:"completed"`, `error:null`, result `"pong"`)
+   → `turn/completed error:null`. So `codex app-server` delivers the approval that `codex exec` fatally
+   EOF-declines (#15824/#16685) and the MCP call COMPLETES — **the M1 blocker is SOLVED end-to-end.** Scored
+   from the raw transcript, not the harness boolean (which agreed). Spend ~$0.08 (22364 tok, one turn). The 1st
+   attempt died at `initialize` on an isolated-empty `CODEX_HOME` (no auth = infra death, $0) → law-6 relaunch;
+   the PASS used `--codex-home` = real `~/.codex`. FOLLOW-UPS: the credit cap is INERT on this transport (the
+   real usage shape is `thread/tokenUsage/updated` — B1a to make the cap live), so the spend bound was
+   `--turn-timeout-s` (45s); and isolate the codex-home's MCP servers (the run pulled in the user's own
+   `node_repl`, which failed harmlessly).
 4. **F4 KEYSTONE (A2) — FALSIFIED, banked (PR #152 merged; code PR #150 closed):** the pre-registered
    whole-frame fingerprint re-bind (`TileFunctionMap.fp_match` at the un-tuned `_DEFAULT_TOL=8`) is a **NO-GO,
    killer forced** — it produces confident-wrong MERGEs across distinct maps in BOTH seeds; seed 3 breaches the
@@ -41,10 +45,12 @@ paid harness merged; `docs/handoff-2026-07-23-wave2`; $0 — the one paid turn i
 5. **ALSO MERGED:** PR #149 — app-server client hardening (ground `pick_approve_label` options/label +
    `ThreadStartParams`; `questions`-missing now fails loud).
 6. **SAFETY:** no pinned Gate-0 file, brain, `core/contracts.py`, tool schema, or held-out game touched; all
-   worktree-isolated; the paid turn was NOT run (blocked + surfaced). The $0 handshake used the real
-   `~/.codex` auth read-only; `seed_codex_auth()` now copies (never mutates) `auth.json` into an isolated home.
-**⇒ NEXT (David):** approve/run the ONE bounded paid turn (runbook command) → full end-to-end M1 confirmation.
-Independent of that: exam-v1 freeze (#129, open PR) and the async-seam ADR (#141, merged DRAFT) ruling.
+   worktree-isolated; the one paid turn (David's "go") ran once for ~$0.08 subscription and is banked (#154).
+   The read/write to `~/.codex` was codex's own session log (append-only), never a config mutation.
+**⇒ NEXT (David):** the actual Gate-0 **Red + MiniWoB arms** over the now-unblocked app-server path (the
+campaign's proof floor) — needs Docker back up (the game worlds need it) + the Gate-0 pre-reg/signature reworked
+from the exec launcher to app-server. Independent of that: exam-v1 freeze (#129, open PR) and the async-seam
+ADR (#141, merged DRAFT) ruling.
 
 **=>=> PRIOR (2026-07-23) - M1 GATE-0 BLOCKER SOLVED AT $0 (pending the one paid turn); main GREEN. =>=>**
 1. **POSITION VS NORTH STAR:** proof score UNCHANGED (still no paid run), but the M1 blocker moved from
