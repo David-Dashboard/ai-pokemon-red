@@ -13,6 +13,18 @@ UNAVAILABLE. The stub MCP path is therefore this build's PRIMARY path, not a fal
 "Why the stub proves the same thing" below. Docker remains supported (generic, parameterized) for
 whenever the daemon is back up.
 
+**2026-07-23 adversarial-review fix pass (same day, PR #151), still additive-only, still no
+pinned-file edits:** hardened `score_turn` against a false-PASS on a `status:"completed"` +
+`error`/`isError` item (a cancel-with-error must score cancelled, not completed) and tightened its
+tool-match fallback; a real turn now fails closed without `--credit-rate-pin`; the credit cap's
+inertness on the app-server transport (B1) is now stated plainly here and in both wrapper scripts'
+headers instead of silently assumed away, with `--turn-timeout-s` lowered to 45s as the bound
+actually enforced; an isolated `codex-home` now gets its `auth.json` seeded from the real
+`~/.codex` (N3); both wrapper scripts' `codex login status` preflight no longer trips Windows
+PowerShell 5.1's native-command stderr handling (PS-5.1); `-IUnderstandThisSpendsMoney`'s truth is
+now asserted, not just its Mandatory-ness (N1). See "B1", "N3", and "PS 5.1 fix" call-outs below for
+the exact mechanics; 9 new tests added to `tests/test_gate0_appserver_launch.py` (19 -> 28).
+
 ## Files this session added
 
 | File | What it is |
@@ -223,6 +235,20 @@ spent.** Preflight checks: codex resolves + version parses; neither `OPENAI_API_
 `CODEX_API_KEY` is set; `codex login status` proves ChatGPT auth. Expected cost: **$0** (local
 process handshake only).
 
+**PS 5.1 fix (this session):** the `login status` preflight used `& codex login status 2>&1`,
+which under Windows PowerShell 5.1 with `$ErrorActionPreference='Stop'` promotes any stderr line
+from a native command to a terminating `NativeCommandError` regardless of exit code -- this threw
+before the login text was ever inspected, on PS 5.1 specifically (pwsh 7 does not have this
+behavior). Reworked to use `System.Diagnostics.Process` redirection instead (the same pattern
+`tools/run_gate0_codex.ps1`'s own `Invoke-RedirectedProcess` already uses), which behaves
+identically under `powershell.exe` 5.1 and `pwsh` 7.
+
+**N3 auth seam:** an isolated `-OutputDir\codex-home` has no `auth.json` of its own and will fail
+to authenticate. `tools/gate0_appserver_launch.py` now seeds one automatically (copy, never move,
+never mutate the source or `~/.codex/config.toml`) from `--codex-auth-source` (default
+`~/.codex/auth.json`) whenever the isolated home lacks one. Both wrapper scripts expose
+`-CodexHome` and `-CodexAuthSource` pass-throughs if the orchestrator needs to point elsewhere.
+
 ### (b) The one bounded paid turn -- `tools/gate0_appserver_paid_turn.ps1`
 ```powershell
 pwsh tools/gate0_appserver_paid_turn.ps1 -Model gpt-5.6-sol `
@@ -233,15 +259,33 @@ pwsh tools/gate0_appserver_paid_turn.ps1 -Model gpt-5.6-sol `
 (Docker variant, only once the daemon is back up, documented in the script's own header comment.)
 
 Requires a human-signed `-CreditRatePin` (fail-closed, same contract as
-`tools/gate0_codex_credit_rate.py`'s `REQUIRED_RATE_FIELDS`) and the explicit
-`-IUnderstandThisSpendsMoney` switch. Default `-CreditCap 10` normalized credits (far under the
-pinned 250 combined ceiling); `-StallTimeoutS` may only tighten the pinned 300s backstop.
+`tools/gate0_codex_credit_rate.py`'s `REQUIRED_RATE_FIELDS`, and enforced again by
+`tools/gate0_appserver_launch.py` itself: it now refuses to run a real turn at all without one) and
+the explicit `-IUnderstandThisSpendsMoney` switch (the script now asserts the switch's value is
+true, not just that it was Mandatory -- a mandatory `[switch]` can still be passed `:$false`).
+Default `-CreditCap 10` normalized credits; `-StallTimeoutS` may only tighten the pinned 300s
+backstop; `-TurnTimeoutS` (new, default 45s) may only tighten its own pinned backstop.
+
+**B1 -- honesty about the credit cap on this transport (this session's finding, not fixed by
+guessing):** `-CreditCap` is currently **INERT** when driving `codex app-server`.
+`tools/gate0_codex_credit_rate.py::codex_event_to_credit_event` only recognizes the exec-shaped
+`{"type": "token_count", ...}` event; `codex app-server` sends JSON-RPC 2.0 notifications instead,
+and no committed schema or fixture for a usage/token-count notification exists in this repo
+(`tests/fixtures/gate0_appserver/` has no such shape) -- so `LiveCreditGuard` never sees anything
+it can price, and the cap can never trip on real spend. **The bound actually enforced today is
+`-TurnTimeoutS`** (lowered default 45s, was 120s): the launcher walks away from codex (closes the
+client, best-effort `taskkill /PID <pid> /T /F`) once that many seconds pass with no terminal turn
+notification, independent of `-CreditCap`. **TODO:** once a real paid turn (or
+`codex app-server generate-json-schema`) reveals the actual usage-notification shape, add an
+ADDITIVE app-server usage shim feeding the same `LiveCreditGuard`/breaker -- do not guess the shape
+before then. `-CreditRatePin` stays mandatory regardless (so a rate is ready the moment the shim
+lands, and the script's contract never quietly drops to "no rate needed").
 
 **Expected token cost:** one turn whose entire task is "call one trivial no-argument MCP tool
 once, then stop" -- the smallest possible non-trivial turn (prompt + one tool call + turn-end
 summary). Expect on the order of a few hundred to low thousands of tokens, a small fraction of the
-credit cap at any plausible per-token price -- **an estimate, not a guarantee; the credit cap is
-the actual enforced backstop, not this number.**
+credit cap at any plausible per-token price -- **an estimate, not a guarantee; per B1 above,
+`-TurnTimeoutS`, not `-CreditCap`, is the actual enforced backstop today.**
 
 **Pass/fail verdict definition** (`verdict.json`'s `mcp_tool_call_completed` field):
 - **PASS (M1 confirmed):** `mcp_tool_call_completed: true` -- app-server delivered the approval

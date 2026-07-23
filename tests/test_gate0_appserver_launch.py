@@ -18,6 +18,7 @@ from tools.gate0_appserver_launch import (
     main,
     run_one_tool_call_turn,
     score_turn,
+    seed_codex_auth,
 )
 
 
@@ -100,6 +101,33 @@ def test_credit_rate_pin_rejected_outside_a_real_turn(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# B2: a real turn (not --dry-run, not --handshake-only) must refuse to launch without a
+# --credit-rate-pin -- --credit-cap is otherwise unenforceable (LiveCreditGuard's zero-credit
+# passthrough), so this is the fail-closed backstop.
+# ---------------------------------------------------------------------------
+
+def test_real_turn_without_credit_rate_pin_is_refused(tmp_path):
+    with pytest.raises(SystemExit):
+        main(["--model", "gpt-5.6-sol", "--out-dir", str(tmp_path / "out")])
+
+
+def test_handshake_only_does_not_require_a_credit_rate_pin(tmp_path, monkeypatch):
+    # --handshake-only never sends turn/start, so it must NOT be caught by the real-turn
+    # fail-closed check above. Patch resolve_codex_path to blow up with a distinct sentinel the
+    # moment main() tries to actually resolve codex -- proves validation was passed WITHOUT
+    # spawning any real process (this file's own $0/CI-safe discipline).
+    sentinel = RuntimeError("sentinel: reached real-mode codex resolution")
+
+    def _boom():
+        raise sentinel
+
+    monkeypatch.setattr("tools.gate0_appserver_launch.resolve_codex_path", _boom)
+    with pytest.raises(RuntimeError) as excinfo:
+        main(["--handshake-only", "--model", "gpt-5.6-sol", "--out-dir", str(tmp_path / "out")])
+    assert excinfo.value is sentinel
+
+
+# ---------------------------------------------------------------------------
 # score_turn: the pure scoring function, exercised against synthetic notification shapes.
 # ---------------------------------------------------------------------------
 
@@ -132,6 +160,59 @@ def test_score_turn_turn_failed_without_a_completed_item_counts_as_cancelled():
     result = score_turn(client, tool_name="ping")
     assert result["mcp_tool_call_completed"] is False
     assert result["cancelled"] is True
+
+
+# ---------------------------------------------------------------------------
+# S1 hardening: a terminal item carrying a non-empty error/isError must never score as completed,
+# regardless of what `status` says (the exec bug this harness distinguishes is a cancel-WITH-error).
+# ---------------------------------------------------------------------------
+
+def test_score_turn_completed_status_with_is_error_true_is_not_completed():
+    client = _client_with_notifications([
+        {"method": "item/completed", "params": {"item": {
+            "id": "a", "tool": "ping", "status": "completed", "isError": True,
+            "error": "user cancelled MCP tool call"}}},
+        {"method": "turn/completed", "params": {}},
+    ])
+    result = score_turn(client, tool_name="ping")
+    assert result["mcp_tool_call_completed"] is False
+    assert result["cancelled"] is True
+
+
+def test_score_turn_completed_status_with_nonempty_error_string_is_not_completed():
+    client = _client_with_notifications([
+        {"method": "item/completed", "params": {"item": {
+            "id": "a", "tool": "ping", "status": "completed", "error": "boom"}}},
+        {"method": "turn/completed", "params": {}},
+    ])
+    result = score_turn(client, tool_name="ping")
+    assert result["mcp_tool_call_completed"] is False
+    assert result["cancelled"] is True
+
+
+def test_score_turn_genuine_completed_with_result_scores_true():
+    client = _client_with_notifications([
+        {"method": "item/completed", "params": {"item": {
+            "id": "a", "tool": "ping", "status": "completed",
+            "result": {"content": [{"type": "text", "text": "pong"}]}}}},
+        {"method": "turn/completed", "params": {}},
+    ])
+    result = score_turn(client, tool_name="ping")
+    assert result["mcp_tool_call_completed"] is True
+    assert result["cancelled"] is False
+
+
+def test_score_turn_tool_match_fallback_never_selects_a_non_target_tool_item():
+    # A same-shaped OTHER tool's completed item must not be picked as the target just because its
+    # `type` string happens to contain "tool" -- the explicit `tool` field is authoritative.
+    client = _client_with_notifications([
+        {"method": "item/completed", "params": {"item": {
+            "id": "a", "tool": "other", "type": "mcp_tool_call", "status": "completed"}}},
+        {"method": "turn/failed", "params": {}},
+    ])
+    result = score_turn(client, tool_name="ping")
+    assert result["mcp_tool_call_completed"] is False
+    assert (result["target_item"] or {}).get("id") != "a"
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +280,49 @@ def test_live_credit_guard_trips_with_a_rate_pin_over_the_cap():
     guard.join(timeout=5.0)
     assert guard.result["tripped"] is True
     assert tripped["called"] is True
+
+
+# ---------------------------------------------------------------------------
+# N3: seed_codex_auth -- pure filesystem helper, never spawns anything.
+# ---------------------------------------------------------------------------
+
+def test_seed_codex_auth_copies_from_source_when_dest_missing(tmp_path):
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    source = tmp_path / "real-codex-home" / "auth.json"
+    source.parent.mkdir()
+    source.write_text('{"token": "fixture-not-real"}', encoding="utf-8")
+
+    note = seed_codex_auth(codex_home, str(source))
+
+    assert (codex_home / "auth.json").read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+    assert "seeded" in note
+    # The source is never mutated/moved.
+    assert source.is_file()
+
+
+def test_seed_codex_auth_leaves_an_existing_dest_alone(tmp_path):
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "auth.json").write_text("original", encoding="utf-8")
+    source = tmp_path / "source-auth.json"
+    source.write_text("different", encoding="utf-8")
+
+    note = seed_codex_auth(codex_home, str(source))
+
+    assert (codex_home / "auth.json").read_text(encoding="utf-8") == "original"
+    assert note is None
+
+
+def test_seed_codex_auth_reports_missing_source_without_raising(tmp_path):
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    missing_source = tmp_path / "nowhere" / "auth.json"
+
+    note = seed_codex_auth(codex_home, str(missing_source))
+
+    assert not (codex_home / "auth.json").exists()
+    assert "not found" in note
 
 
 # ---------------------------------------------------------------------------

@@ -22,14 +22,15 @@
 #     never an API key -- a key in the environment is refused, matching the pinned launcher's own
 #     `throw` for this exact condition).
 #   - `codex login status` proves ChatGPT auth (not an API key).
-#   - Uses an ISOLATED `CODEX_HOME` (this script's own `-OutputDir\codex-home`), NEVER the user's
-#     real `~/.codex` -- tools/gate0_appserver_launch.py sets/restores the `CODEX_HOME` env var
-#     around the child process; nothing here or there mutates `~/.codex/config.toml`. The user's
-#     real `~/.codex/auth.json` credential is still what authenticates (Codex auth is observed
-#     through whichever CODEX_HOME points at it -- an isolated CODEX_HOME with no `auth.json` of
-#     its own will FAIL to authenticate; if that happens, the orchestrator's own real CODEX_HOME
-#     already has `~/.codex/auth.json` from a prior `codex login`, so copy/point at that, never
-#     paste a token in cleartext here).
+#   - Uses an ISOLATED `CODEX_HOME` (this script's own `-OutputDir\codex-home`, or `-CodexHome` if
+#     given), NEVER the user's real `~/.codex` -- tools/gate0_appserver_launch.py sets/restores the
+#     `CODEX_HOME` env var around the child process; nothing here or there mutates
+#     `~/.codex/config.toml`. The user's real `~/.codex/auth.json` credential is still what
+#     authenticates (Codex auth is observed through whichever CODEX_HOME points at it -- an
+#     isolated CODEX_HOME with no `auth.json` of its own will FAIL to authenticate). N3 fix: the
+#     launcher itself now COPIES `-CodexAuthSource` (default `~/.codex/auth.json`) into the
+#     isolated home when it lacks one -- never pastes a token in cleartext, never mutates the
+#     source file or `~/.codex/config.toml`.
 #
 # Usage:
 #   pwsh tools/gate0_appserver_handshake_smoke.ps1 -Model gpt-5.6-sol -OutputDir runs/gate0_appserver_smoke
@@ -42,6 +43,13 @@ param(
 
     [Parameter(Mandatory = $true)]
     [string]$OutputDir,
+
+    # N3: isolated CODEX_HOME override (default <OutputDir>\codex-home, set by the launcher).
+    [string]$CodexHome = '',
+
+    # N3: where to copy auth.json FROM when the isolated CodexHome lacks one (default
+    # ~/.codex/auth.json inside tools/gate0_appserver_launch.py). Never the destination.
+    [string]$CodexAuthSource = '',
 
     [string]$PythonExe = 'python'
 )
@@ -67,7 +75,28 @@ Write-Output "codex version: $versionText"
 if ($env:OPENAI_API_KEY -or $env:CODEX_API_KEY) {
     throw 'OPENAI_API_KEY or CODEX_API_KEY is set; Gate 0 requires ChatGPT subscription authentication, not an API key.'
 }
-$loginText = ((& $ResolvedCodex[0].Source login status 2>&1) | Out-String).Trim()
+# PS-5.1 fix: `& codex login status 2>&1` under Windows PowerShell 5.1 with
+# $ErrorActionPreference='Stop' promotes ANY stderr line from a native command to a terminating
+# NativeCommandError, even on exit code 0 -- this threw before the login-status text was ever
+# inspected. .NET Process redirection (same pattern tools/run_gate0_codex.ps1's own
+# Invoke-RedirectedProcess uses) sidesteps PowerShell's native-command stderr handling entirely, so
+# it behaves identically under powershell.exe 5.1 and pwsh 7.
+$loginStartInfo = [Diagnostics.ProcessStartInfo]::new()
+$loginStartInfo.FileName = $ResolvedCodex[0].Source
+$loginStartInfo.Arguments = 'login status'
+$loginStartInfo.UseShellExecute = $false
+$loginStartInfo.RedirectStandardOutput = $true
+$loginStartInfo.RedirectStandardError = $true
+$loginStartInfo.CreateNoWindow = $true
+$loginProcess = [Diagnostics.Process]::new()
+$loginProcess.StartInfo = $loginStartInfo
+[void]$loginProcess.Start()
+$loginStdOutTask = $loginProcess.StandardOutput.ReadToEndAsync()
+$loginStdErrTask = $loginProcess.StandardError.ReadToEndAsync()
+$loginProcess.WaitForExit()
+$loginText = (([string]$loginStdOutTask.GetAwaiter().GetResult() + "`n" +
+    [string]$loginStdErrTask.GetAwaiter().GetResult())).Trim()
+$loginProcess.Dispose()
 if ($loginText -notmatch '(?i)\bchatgpt\b' -or $loginText -match '(?i)\bapi(?:[ -]?key)?\b') {
     throw 'Codex login status did not prove ChatGPT subscription authentication.'
 }
@@ -75,11 +104,16 @@ Write-Output 'codex login status: ChatGPT subscription auth confirmed.'
 
 Write-Output ''
 Write-Output '=== Spawning REAL codex app-server for a HANDSHAKE-ONLY smoke (no turn, no spend) ==='
-& $PythonExe -m tools.gate0_appserver_launch `
-    --handshake-only `
-    --mcp stub `
-    --model $Model `
-    --out-dir $OutputDir
+$pyArgs = @(
+    '-m', 'tools.gate0_appserver_launch',
+    '--handshake-only',
+    '--mcp', 'stub',
+    '--model', $Model,
+    '--out-dir', $OutputDir
+)
+if ($CodexHome) { $pyArgs += @('--codex-home', $CodexHome) }
+if ($CodexAuthSource) { $pyArgs += @('--codex-auth-source', $CodexAuthSource) }
+& $PythonExe @pyArgs
 $exitCode = $LASTEXITCODE
 Write-Output ''
 Write-Output "verdict.json / transcript.jsonl / audit.jsonl written under: $OutputDir"

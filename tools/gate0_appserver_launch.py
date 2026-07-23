@@ -46,6 +46,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -246,17 +247,41 @@ def _extract_thread_id(thread_start_result: dict) -> str:
     raise RuntimeError(f"could not find a thread id in thread/start result: {thread_start_result!r}")
 
 
+def _item_has_error(item: dict) -> bool:
+    """A terminal item can report `status:"completed"` and STILL carry a truthy `error`/`isError`
+    -- the exact "cancel-with-error" shape (openai/codex#16685) this harness exists to tell apart
+    from a genuine completion. Any non-empty `error` (string or otherwise truthy) or `isError:true`
+    disqualifies the item, regardless of what `status` says."""
+    if item.get("isError"):
+        return True
+    error = item.get("error")
+    if isinstance(error, str):
+        return bool(error.strip())
+    return bool(error)
+
+
 def score_turn(client: ObservingGate0Client, tool_name: str | None = None) -> dict:
     item_notes = [n for n in client.notifications if n.get("method") == "item/completed"]
     turn_end = next((n for n in client.notifications if n.get("method") in DEFAULT_TURN_END_METHODS), None)
     target = None
     for note in item_notes:
         item = (note.get("params") or {}).get("item") or {}
-        if tool_name is None or item.get("tool") == tool_name or "tool" in str(item.get("type", "")).lower():
+        item_tool = item.get("tool")
+        if tool_name is None:
+            matches = True
+        elif item_tool is not None:
+            # An explicit tool name on the item is authoritative -- never overridden by the
+            # type-based fallback below, so a same-shaped OTHER tool call's item can never be
+            # mistaken for the target tool's outcome.
+            matches = item_tool == tool_name
+        else:
+            matches = "tool" in str(item.get("type", "")).lower()
+        if matches:
             target = item
     status = str((target or {}).get("status", "")).lower()
-    completed = target is not None and status in COMPLETED_STATUSES
-    cancelled = target is not None and status in CANCELLED_STATUSES
+    has_error = target is not None and _item_has_error(target)
+    completed = target is not None and status in COMPLETED_STATUSES and not has_error
+    cancelled = target is not None and (status in CANCELLED_STATUSES or has_error)
     if target is None and turn_end is not None and turn_end.get("method") != "turn/completed":
         cancelled = True
     return {
@@ -296,6 +321,24 @@ def run_one_tool_call_turn(client: ObservingGate0Client, *, cwd: str, prompt: st
 # backstop -- flagged in the runbook as a known gap vs the pinned launcher's Job-Object guarantee.
 # ---------------------------------------------------------------------------------------------
 
+def seed_codex_auth(codex_home: Path, auth_source: str | None) -> str | None:
+    """N3 auth seam: an isolated CODEX_HOME with no `auth.json` of its own never authenticates
+    (see reports/2026-07-23-gate0-appserver-launch-runbook.md's auth section) -- codex reads
+    whatever CODEX_HOME points at. If the isolated home already has an auth.json, leave it alone.
+    Otherwise COPY (never move, never symlink, never touch the source) the real credential in from
+    `auth_source` (default ~/.codex/auth.json). Returns a one-line note for the verdict/transcript;
+    never raises -- a missing source is a real (and clearly reported) precondition failure, not a
+    crash, since --handshake-only/--dry-run callers may not need auth at all."""
+    dest = codex_home / "auth.json"
+    if dest.exists():
+        return None
+    source = Path(auth_source) if auth_source else (Path.home() / ".codex" / "auth.json")
+    if source.is_file():
+        shutil.copyfile(source, dest)
+        return f"seeded auth.json into isolated codex-home from {source}"
+    return f"no auth.json seeded (source not found: {source}); a real handshake will fail to authenticate"
+
+
 def kill_process_tree(pid: int) -> None:
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
@@ -306,6 +349,16 @@ def kill_process_tree(pid: int) -> None:
             pass
 
 
+# KNOWN GAP, stated plainly (not fabricated around): tools/gate0_codex_credit_rate.py's
+# `codex_event_to_credit_event` only recognizes the exec-shaped `{"type": "token_count", ...}` (or
+# `{"msg": {"type": "token_count", ...}}`) event. `codex app-server` speaks JSON-RPC 2.0
+# notifications instead (no committed schema/fixture for a usage or token-count notification
+# exists in this repo as of this build -- see tests/fixtures/gate0_appserver/), so `LiveCreditGuard`
+# below never sees a message `_to_credit_event` can price: --credit-cap is INERT on this transport
+# today. The bound that is actually enforced for a real turn is --turn-timeout-s (see
+# DEFAULT_TURN_END_METHODS wait below and the default at the CLI). TODO: once a real paid turn (or
+# `codex app-server generate-json-schema`) reveals the actual usage-notification shape, add an
+# ADDITIVE app-server usage shim here feeding this same guard -- do not guess the shape now.
 class LiveCreditGuard:
     def __init__(self, limit: float, stall_timeout_s: float, rate_pin: dict | None, on_trip):
         self._queue: "queue.Queue[object]" = queue.Queue()
@@ -442,6 +495,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--codex-home", default=None,
                     help="real mode only: isolated CODEX_HOME (never the user's real ~/.codex). "
                          "Defaults to <out-dir>/codex-home.")
+    p.add_argument("--codex-auth-source", default=None,
+                    help="real mode only: auth.json to seed into the isolated codex-home when it "
+                         "has none of its own (default ~/.codex/auth.json). Read-only: the source "
+                         "file and ~/.codex/config.toml are never modified.")
     p.add_argument("--tool-name", default="ping")
     p.add_argument("--prompt", default=None)
     p.add_argument("--credit-cap", type=float, default=10.0,
@@ -451,8 +508,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="a validated rate-pin JSON (tools/gate0_codex_credit_rate.py contract); "
                          "required to convert real token usage into real credits.")
     p.add_argument("--stall-timeout-s", type=float, default=float(STALL_TIMEOUT_S))
-    p.add_argument("--turn-timeout-s", type=float, default=120.0,
-                    help="real mode only: how long to wait for a terminal turn notification.")
+    p.add_argument("--turn-timeout-s", type=float, default=45.0,
+                    help="real mode only: how long to wait for a terminal turn notification. "
+                         "Lowered default (was 120s): on the app-server transport --credit-cap is "
+                         "currently INERT (see LiveCreditGuard), so this timeout is the actual "
+                         "enforced spend bound for a real turn, not just a UX nicety.")
     p.add_argument("--mcp-server-name", default=None)
     p.add_argument("--stub-mcp-script", default=None)
     p.add_argument("--docker-image", default=None)
@@ -475,6 +535,12 @@ def main(argv: list[str] | None = None) -> int:
                      "never loosen it.")
     if args.credit_rate_pin and (args.dry_run or args.handshake_only):
         parser.error("--credit-rate-pin is only meaningful for a real, turn-running launch.")
+    if not args.dry_run and not args.handshake_only and not args.credit_rate_pin:
+        # Fail-closed (B2): --credit-cap is otherwise UNENFORCEABLE for a real turn (see
+        # LiveCreditGuard's zero-credit passthrough without a pin) -- refuse to spend rather than
+        # run un-priced.
+        parser.error("--credit-rate-pin is required for a real paid turn; refusing to launch "
+                     "un-priced (pass --dry-run or --handshake-only if no spend is intended).")
 
     out_dir = Path(args.out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
@@ -529,6 +595,9 @@ def main(argv: list[str] | None = None) -> int:
         codex_path = args.codex_path or resolve_codex_path()
         codex_home = args.codex_home or str(out_dir / "codex-home")
         Path(codex_home).mkdir(parents=True, exist_ok=True)
+        auth_note = seed_codex_auth(Path(codex_home), args.codex_auth_source)
+        if auth_note:
+            notes.append(auth_note)
         mcp_command, mcp_args, mcp_cwd, enabled_tools = _resolve_mcp_server(args)
         overrides = build_overrides(
             model=args.model, mcp_server_name=args.mcp_server_name, mcp_command=mcp_command,

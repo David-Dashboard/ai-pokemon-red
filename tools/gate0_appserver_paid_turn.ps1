@@ -23,31 +23,41 @@
 #
 # CREDIT CAP AND KILL CONDITIONS:
 #   -CreditCap (normalized credits, default 10 -- far under the pinned 250 combined Gate-0 ceiling)
-#   is enforced by tools/gate0_appserver_launch.py's LiveCreditGuard, which IMPORTS (never edits)
+#   is WIRED THROUGH tools/gate0_appserver_launch.py's LiveCreditGuard, which IMPORTS (never edits)
 #   tools/gate0_credit_breaker.run_breaker exactly as tools/run_gate0_codex.ps1's own paid path
-#   does. On trip (BreakerTripped or MalformedCreditStream -- fail-closed, not fail-open) the
-#   launcher calls `client.close()` (closes the app-server's stdin, sends terminate()) AND a
-#   best-effort `taskkill /PID <pid> /T /F`.
+#   does -- BUT (B1, stated plainly, not glossed over): -CreditCap IS CURRENTLY INERT ON THIS
+#   TRANSPORT. `gate0_codex_credit_rate.codex_event_to_credit_event` only recognizes the
+#   exec-shaped `{"type": "token_count", ...}` event; `codex app-server` sends JSON-RPC 2.0
+#   notifications instead, and no committed schema/fixture for a usage/token-count notification
+#   exists in this repo as of this build. LiveCreditGuard therefore never sees a priceable event
+#   here, so the cap can never trip on real spend. TODO: once a real paid turn (or
+#   `codex app-server generate-json-schema`) reveals the actual usage-notification shape, add an
+#   ADDITIVE app-server usage shim feeding this same guard.
+#   THE BOUND THAT IS ACTUALLY ENFORCED for this turn is -TurnTimeoutS (default 45s, may only be
+#   tightened, passed straight through to --turn-timeout-s) -- codex is walked away from (client
+#   closed, best-effort `taskkill /PID <pid> /T /F`) once that many seconds pass without a terminal
+#   turn notification, regardless of what -CreditCap says.
 #   KNOWN GAP vs the pinned launcher: this Python-side kill is NOT wrapped in a Windows kill-on-
 #   close Job Object (tools/run_gate0_codex.ps1's Invoke-BreakerSupervisedExec has one; this script
 #   does not reimplement it here to avoid duplicating that safety-critical mechanism unreviewed).
-#   A `codex app-server` descendant that detaches before the trip fires could in principle survive
-#   the kill. Mitigation: `-StallTimeoutS` (default 300s, may only be tightened) bounds how long a
-#   stalled/silent stream can run before this counts as a malformed-stream kill signal, and the ONE
-#   turn's prompt only ever asks for a single trivial tool call, so a runaway process is already
-#   unlikely; the orchestrator should still watch the process list during the run and manually
-#   `taskkill /T /F` the codex.exe PID printed to stdout if anything looks wrong.
-#   -CreditRatePin: REQUIRED (fail-closed, same contract as tools/gate0_codex_credit_rate.py) --
-#   a human-authored JSON naming `model`, `rate_source` (prose citing where the $/token numbers
-#   came from), `credits_per_usd`, `usd_per_input_token`, `usd_per_cached_input_token`,
-#   `usd_per_output_token`. This script REFUSES to run without one; there is no default rate.
+#   A `codex app-server` descendant that detaches before the timeout fires could in principle
+#   survive the kill; the orchestrator should still watch the process list during the run and
+#   manually `taskkill /T /F` the codex.exe PID printed to stdout if anything looks wrong.
+#   -CreditRatePin: still REQUIRED (fail-closed, same contract as tools/gate0_codex_credit_rate.py,
+#   and enforced again by tools/gate0_appserver_launch.py itself for any real turn) -- a
+#   human-authored JSON naming `model`, `rate_source` (prose citing where the $/token numbers came
+#   from), `credits_per_usd`, `usd_per_input_token`, `usd_per_cached_input_token`,
+#   `usd_per_output_token`. This script REFUSES to run without one; there is no default rate. Given
+#   the B1 gap above, the pin does not yet buy a live-enforced cap on this transport -- it is kept
+#   mandatory anyway so a future usage shim (once added) has a rate ready, and so this script's
+#   contract never silently degrades to "no rate needed."
 #
 # EXPECTED TOKEN COST: this is ONE turn whose ENTIRE task is "call one trivial no-argument MCP
 # tool once, then stop" -- the smallest possible non-trivial turn. Expect on the order of a few
 # hundred to a couple thousand tokens total (prompt + one tool call + the model's own turn-end
 # reasoning/summary), i.e. a small fraction of the 10-credit -CreditCap default at any plausible
-# 2026-era per-token price. This is an ASSUMPTION (no real turn has been run to confirm it) -- the
-# credit cap, not this estimate, is the actual enforced backstop.
+# 2026-era per-token price. This is an ASSUMPTION (no real turn has been run to confirm it) -- per
+# B1 above, -TurnTimeoutS (not -CreditCap) is the actual enforced backstop today.
 #
 # BLANK-AGENT / ONE-ATTEMPT / ORACLE-OFF-THE-WIRE LAWS (safety-invariants skill, applies in spirit
 # here too): this is a single Codex app-server turn, not a Pokemon-Red brain run, so there is no
@@ -95,6 +105,9 @@ param(
 
     [double]$CreditCap = 10.0,
     [double]$StallTimeoutS = 300,
+    # B1: the bound actually enforced today (see header comment) -- default matches
+    # tools/gate0_appserver_launch.py's own lowered default; may only be tightened, never loosened.
+    [double]$TurnTimeoutS = 45,
     [string]$ToolName = 'ping',
     [ValidateSet('stub', 'docker')]
     [string]$Mcp = 'stub',
@@ -102,6 +115,10 @@ param(
     [string[]]$DockerMount = @(),
     [string[]]$DockerExtraArg = @(),
     [string[]]$DockerTool = @(),
+    # N3: isolated CODEX_HOME override / auth-seed source (default <OutputDir>\codex-home and
+    # ~/.codex/auth.json respectively, both applied inside tools/gate0_appserver_launch.py).
+    [string]$CodexHome = '',
+    [string]$CodexAuthSource = '',
     [string]$PythonExe = 'python'
 )
 
@@ -117,18 +134,27 @@ if (-not (Test-Path -LiteralPath $CreditRatePin -PathType Leaf)) {
 if ($StallTimeoutS -gt 300) {
     throw '-StallTimeoutS may only tighten the pre-registered 300s backstop, never loosen it.'
 }
+if ($TurnTimeoutS -gt 45) {
+    throw '-TurnTimeoutS may only tighten the pre-registered 45s backstop, never loosen it (B1: this is the actually-enforced spend bound while -CreditCap is inert on the app-server transport).'
+}
 if ($env:OPENAI_API_KEY -or $env:CODEX_API_KEY) {
     throw 'OPENAI_API_KEY or CODEX_API_KEY is set; Gate 0 requires ChatGPT subscription authentication.'
 }
 if ($Mcp -eq 'docker' -and -not $DockerImage) {
     throw '-Mcp docker requires -DockerImage.'
 }
+# N1: a mandatory [switch] can still be passed explicitly as :$false -- assert its truth, don't
+# just trust that Mandatory-ness alone forced an affirmative answer.
+if (-not $IUnderstandThisSpendsMoney) {
+    throw '-IUnderstandThisSpendsMoney must be true to run a real paid turn.'
+}
 
 Write-Output '=== Gate 0 app-server ONE BOUNDED PAID TURN ==='
 Write-Output "Model: $Model"
 Write-Output "MCP target: $Mcp $(if ($Mcp -eq 'docker') { "(image: $DockerImage)" } else { '(local stub, tools/gate0_stub_mcp_server.py)' })"
-Write-Output "Credit cap: $CreditCap normalized credits (rate pin: $CreditRatePin)"
+Write-Output "Credit cap: $CreditCap normalized credits (rate pin: $CreditRatePin) -- NOTE: inert on this transport, see header (B1)."
 Write-Output "Stall timeout: $StallTimeoutS s"
+Write-Output "Turn timeout: $TurnTimeoutS s (the actually-enforced spend bound today, see header (B1))"
 Write-Output "Output dir: $OutputDir"
 Write-Output ''
 
@@ -140,8 +166,11 @@ $pyArgs = @(
     '--tool-name', $ToolName,
     '--credit-cap', $CreditCap,
     '--credit-rate-pin', $CreditRatePin,
-    '--stall-timeout-s', $StallTimeoutS
+    '--stall-timeout-s', $StallTimeoutS,
+    '--turn-timeout-s', $TurnTimeoutS
 )
+if ($CodexHome) { $pyArgs += @('--codex-home', $CodexHome) }
+if ($CodexAuthSource) { $pyArgs += @('--codex-auth-source', $CodexAuthSource) }
 if ($Mcp -eq 'docker') {
     $pyArgs += @('--docker-image', $DockerImage)
     foreach ($m in $DockerMount) { $pyArgs += @('--docker-mount', $m) }
