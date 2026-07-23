@@ -132,12 +132,27 @@ def test_permissions_field_name_matches_ground_truth_params_schema():
 
 def test_tool_user_input_questions_and_id_field_names_match_ground_truth_params_schema():
     # build_tool_user_input_response reads params["questions"] and each question["id"] -- confirm
-    # both are the REAL field names and that "id" is required on ToolRequestUserInputQuestion.
+    # both are the REAL field names, that "questions" is required on ToolRequestUserInputParams
+    # (justifying the raise in build_tool_user_input_response, not a silent {"answers": {}}), and
+    # that "id" is required on ToolRequestUserInputQuestion.
     schema = _load_schema("ToolRequestUserInputParams.json")
     assert "questions" in schema["properties"]
+    assert "questions" in schema["required"]
     question_schema = schema["definitions"]["ToolRequestUserInputQuestion"]
     assert "id" in question_schema["properties"]
     assert "id" in question_schema["required"]
+
+
+def test_pick_approve_label_options_and_label_field_names_match_ground_truth_schema():
+    # pick_approve_label reads question["options"] and option["label"] -- confirm both are the REAL
+    # field names on ToolRequestUserInputQuestion/ToolRequestUserInputOption (not just hand-matched
+    # to the mock), so a future codex rename of either fails HERE instead of silently degrading
+    # every question to FALLBACK_ANSWER via pick_approve_label's own "no options offered" branch.
+    schema = _load_schema("ToolRequestUserInputParams.json")
+    question_schema = schema["definitions"]["ToolRequestUserInputQuestion"]
+    assert "options" in question_schema["properties"]
+    option_schema = schema["definitions"]["ToolRequestUserInputOption"]
+    assert "label" in option_schema["properties"]
 
 
 def test_permissions_response_raises_on_missing_permissions_field_instead_of_deny_all():
@@ -151,6 +166,15 @@ def test_permissions_response_raises_on_missing_permissions_field_instead_of_den
 def test_tool_user_input_response_raises_on_question_missing_id_instead_of_bare_keyerror():
     with pytest.raises(ValueError):
         build_tool_user_input_response({"questions": [{"header": "h", "question": "q"}]})
+
+
+def test_tool_user_input_response_raises_on_missing_questions_field_instead_of_empty_answers():
+    # A missing `questions` key is a protocol violation (required per the schema test above) --
+    # must raise, not silently return {"answers": {}} (indistinguishable from "zero questions were
+    # asked", which would mask a codex schema rename of the field, asymmetric with how
+    # build_permissions_response already treats a missing `permissions` key).
+    with pytest.raises(ValueError):
+        build_tool_user_input_response({})
 
 
 def test_initialize_declares_experimental_and_form_elicitation_capabilities():
@@ -461,6 +485,35 @@ def test_initialize_then_start_thread_never_auto_sends_turn_start():
     thread_start_message = next(message for message in sent if message.get("method") == "thread/start")
     assert thread_start_message["params"]["approvalsReviewer"] == "user"
     assert thread_start_message["params"]["cwd"] == "/workspace"
+
+
+def test_start_thread_fields_match_ground_truth_thread_start_params_schema():
+    # start_thread sends {"cwd": ..., "approvalsReviewer": "user", ...} -- confirm both are the REAL
+    # ThreadStartParams field names and that "user" is a real ApprovalsReviewer enum value (not just
+    # hand-matched to the mock), so a future codex rename/removal of either fails HERE instead of
+    # silently mis-routing approvals to the wrong reviewer at the paid turn. ThreadStartParams.json
+    # (committed) was, before this test, never loaded by any test in this file.
+    schema = _load_schema("ThreadStartParams.json")
+    assert "cwd" in schema["properties"]
+    assert "approvalsReviewer" in schema["properties"]
+    allowed_reviewers = schema["definitions"]["ApprovalsReviewer"]["enum"]
+    assert "user" in allowed_reviewers
+
+    sent = []
+
+    def fake_send(message):
+        sent.append(message)
+        if message.get("method") == "thread/start":
+            client.handle_message({"id": message["id"], "result": {"thread": {"id": "thr1"}}})
+
+    client = Gate0AppServerClient(send=fake_send)
+    client.start_thread(cwd="/workspace")
+
+    thread_start_message = next(message for message in sent if message.get("method") == "thread/start")
+    params = thread_start_message["params"]
+    _assert_keys_allowed(params, schema)
+    assert params["cwd"] == "/workspace"
+    assert params["approvalsReviewer"] == "user"
 
 
 def test_build_turn_start_request_is_pure_and_never_auto_sent():

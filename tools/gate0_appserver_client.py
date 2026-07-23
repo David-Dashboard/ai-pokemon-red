@@ -97,8 +97,14 @@ def build_tool_user_input_response(params: dict, keywords=APPROVE_KEYWORDS,
     `params.get("autoResolutionMs")` anywhere -- PR #27256 established that field is
     contract-plumbing only (no built-in auto-accept timer), so this client always answers
     immediately and actively, never by waiting one out."""
+    if "questions" not in params:
+        # ToolRequestUserInputParams.questions is required (schema-confirmed) -- silently
+        # returning {"answers": {}} here would look identical to "zero questions were asked" for
+        # what may be a real, non-empty request: a protocol violation must fail loud, not degrade
+        # quietly (asymmetric with the permissions/id ValueError guards below/above otherwise).
+        raise ValueError("ToolRequestUserInputParams missing required 'questions' field")
     answers = {}
-    for question in params.get("questions", []):
+    for question in params["questions"]:
         if "id" not in question:
             # ToolRequestUserInputQuestion.id is required (schema-confirmed) -- a question missing
             # it is a protocol violation, not something to paper over with an empty/KeyError.
