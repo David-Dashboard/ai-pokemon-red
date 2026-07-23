@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "kind": "gate0_appserver_launch_verdict",
+  "mode": "real_turn",
+  "mcp": "stub",
+  "mcp_tool_call_completed": true,
+  "cancelled": false,
+  "normalized_credits": 0.0,
+  "credit_breaker_tripped": false,
+  "turns": 1,
+  "transcript_path": "runs\\gate0_appserver_paid2\\transcript.jsonl",
+  "audit_log_path": "runs\\gate0_appserver_paid2\\audit.jsonl",
+  "notes": [
+    "initialize() -> {'userAgent': 'gate0_appserver_client/0.144.3 (Windows 10.0.26200; x86_64) unknown (gate0_appserver_client; 0.1.0)', 'codexHome': 'C:\\\\Users\\\\Succe\\\\.codex', 'platformFamily': 'windows', 'platformOs': 'windows'}",
+    "thread/start() -> {'thread': {'id': '019f90f2-2ca4-7531-a0fe-d65fc3e6797c', 'extra': None, 'sessionId': '019f90f2-2ca4-7531-a0fe-d65fc3e6797c', 'forkedFromId': None, 'parentThreadId': None, 'preview': '', 'ephemeral': False, 'historyMode': 'legacy', 'modelProvider': 'openai', 'createdAt': 1784843218, 'updatedAt': 1784843218, 'recencyAt': 1784843218, 'status': {'type': 'idle'}, 'path': 'C:\\\\Users\\\\Succe\\\\.codex\\\\sessions\\\\2026\\\\07\\\\23\\\\rollout-2026-07-23T23-46-58-019f90f2-2ca4-7531-a0fe-d65fc3e6797c.jsonl', 'cwd': 'E:\\\\AI_Personas\\\\10_pokemon_and_chess_and_office\\\\ai-pokemon-red-paid\\\\runs\\\\gate0_appserver_paid2\\\\runs\\\\gate0_appserver_paid2', 'cliVersion': '0.144.3', 'source': 'vscode', 'threadSource': None, 'agentNickname': None, 'agentRole': None, 'gitInfo': None, 'name': None, 'turns': []}, 'model': 'gpt-5.6-sol', 'modelProvider': 'openai', 'serviceTier': 'default', 'cwd': 'E:\\\\AI_Personas\\\\10_pokemon_and_chess_and_office\\\\ai-pokemon-red-paid\\\\runs\\\\gate0_appserver_paid2\\\\runs\\\\gate0_appserver_paid2', 'runtimeWorkspaceRoots': ['E:\\\\AI_Personas\\\\10_pokemon_and_chess_and_office\\\\ai-pokemon-red-paid\\\\runs\\\\gate0_appserver_paid2\\\\runs\\\\gate0_appserver_paid2'], 'instructionSources': ['C:\\\\Users\\\\Succe\\\\.codex\\\\AGENTS.md'], 'approvalPolicy': 'never', 'approvalsReviewer': 'user', 'sandbox': {'type': 'readOnly', 'networkAccess': False}, 'activePermissionProfile': None, 'reasoningEffort': 'low', 'multiAgentMode': 'explicitRequestOnly'}"
+  ]
+}
