@@ -9,7 +9,8 @@ into an explicit INSUFFICIENT_DATA verdict instead of a crash) and the `python -
 <oracle.jsonl>` CLI wrapper.
 
 See reports/2026-07-23-exam-scorers.md for which EX0n task each scorer covers and
-reports/2026-07-22-graduation-exam-v1-definition.md for the task definitions themselves.
+reports/2026-07-22-graduation-exam-v1-definition.md (PR #129 -- v1-DRAFT, NOT frozen; task bars
+are pending David's freeze of that PR) for the task definitions themselves.
 """
 from __future__ import annotations
 

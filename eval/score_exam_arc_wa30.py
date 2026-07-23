@@ -1,6 +1,7 @@
 """Fail-closed OFFLINE oracle scorer for graduation-exam v1 EX09 -- ARC-AGI-3 `wa30`: reach level 3.
 
-Task (reports/2026-07-22-graduation-exam-v1-definition.md EX09): no instruction beyond the game's
+Task (reports/2026-07-22-graduation-exam-v1-definition.md EX09, PR #129 -- v1-DRAFT, NOT frozen;
+task bars here are pending David's freeze of that PR): no instruction beyond the game's
 own on-screen signal -- one level past the banked skill-compilation rung-1 result (2/9 levels).
 End state: `levels_completed` from the oracle-only `arcagi3` session log
 (`world_mcp.py::ArcAgi3Session._log_oracle`, never on the wire) reaches 3.

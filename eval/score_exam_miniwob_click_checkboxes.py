@@ -1,7 +1,8 @@
 """Fail-closed OFFLINE oracle scorer for graduation-exam v1 EX08 -- MiniWoB `click-checkboxes`,
 exam-own seeds.
 
-Task (reports/2026-07-22-graduation-exam-v1-definition.md EX08): the on-screen checkbox-selection
+Task (reports/2026-07-22-graduation-exam-v1-definition.md EX08, PR #129 -- v1-DRAFT, NOT frozen;
+task bars here are pending David's freeze of that PR): the on-screen checkbox-selection
 utterance -- same task TYPE Gate 0 uses, but on a fresh, exam-only seed block (5000-5004), distinct
 from Gate 0's dev block (0-4, `eval/fixtures/gate0_miniwob_dev_seeds.json`) and paid held-out block
 (1000-1004, `eval/fixtures/gate0_miniwob_paid_seeds.json`) -- never overlapping, same quarantine

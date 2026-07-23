@@ -1,6 +1,7 @@
 """Fail-closed OFFLINE oracle scorer for graduation-exam v1 EX07 -- MiniWoB `focus-text`.
 
-Task (reports/2026-07-22-graduation-exam-v1-definition.md EX07): the on-screen `focus-text`
+Task (reports/2026-07-22-graduation-exam-v1-definition.md EX07, PR #129 -- v1-DRAFT, NOT frozen;
+task bars here are pending David's freeze of that PR): the on-screen `focus-text`
 utterance (a form field to fill and submit). End state: `reward == 1.0` on N fresh episodes,
 oracle-side only -- mirrors `eval/score_gate0.py::_miniwob_success` via the shared predicate in
 `eval/_exam_miniwob_common.py` (same refuse-on-malformed shape, not re-derived here).

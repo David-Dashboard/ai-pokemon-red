@@ -1,7 +1,8 @@
 """STUB scorer for graduation-exam v1 EX03 -- Emerald: reach Oldale Town.
 
 ORACLE_PENDING: `emerald_gba`'s registry `watch` is `{}` -- no GBA world has an oracle wired yet
-(`world_mcp.py:187-191`). Per reports/2026-07-22-graduation-exam-v1-definition.md EX03: "A GBA
+(`world_mcp.py:187-191`). Per reports/2026-07-22-graduation-exam-v1-definition.md EX03 (PR #129 --
+v1-DRAFT, NOT frozen; task bars here are pending David's freeze of that PR): "A GBA
 memory-map oracle hunt is required readiness work, mirroring Red's `memory_map.py`." A GBA Emerald
 oracle-hunt session is running separately (worktree `ai-pokemon-red-oracle-emerald`, as of
 2026-07-23) -- this scorer intentionally does not race ahead of that hunt's own report.

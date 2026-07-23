@@ -3,7 +3,8 @@
 ORACLE_PENDING: no stage/level-counter RAM address is known for `kirby_dreamland` yet. The only
 oracle currently wired for this world is `hp` (0xD086, `world_mcp.py` GAMES["kirby_dreamland"]
 ["watch"], `world_mcp.py:220`) -- a plain 0-5 HP int, not a stage counter. Per
-reports/2026-07-22-graduation-exam-v1-definition.md EX02: "the stage-counter address is not yet
+reports/2026-07-22-graduation-exam-v1-definition.md EX02 (PR #129 -- v1-DRAFT, NOT frozen; task
+bars here are pending David's freeze of that PR): "the stage-counter address is not yet
 identified; a $0 RAM hunt (same discipline that found hp@0xD086) is readiness work before freeze."
 
 Do NOT fabricate an address here. This scorer refuses UNCONDITIONALLY -- it takes no oracle rows

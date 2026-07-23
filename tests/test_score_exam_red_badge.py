@@ -10,15 +10,20 @@ _REPO_ROOT = Path(scorer.__file__).resolve().parents[1]
 
 
 def _rows(success=True):
+    # index0: fresh. index1: starter obtained (party 0->1). index2: gym battle (in_battle==2).
+    # index3: battle ends. index4-6 (success only): badge bit flips and stays set -- both
+    # corroborating preconditions (party 0->1, then in_battle==2) land BEFORE the badge flip.
     rows = [{"watch": {"x": 3, "y": 7, "map": 38, "party": 0, "badges": 0, "in_battle": 0,
-                       "party_hp_hi": 0, "party_hp_lo": 0}}]
+                       "party_hp_hi": 0, "party_hp_lo": 0}},
+            {"watch": {"x": 5, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 20}},
+            {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 2,
+                       "party_hp_hi": 0, "party_hp_lo": 20}},
+            {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 20}}]
     if not success:
         return rows
-    rows += [{"watch": {"x": 5, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 0,
-                        "party_hp_hi": 0, "party_hp_lo": 20}},
-             {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
-                        "party_hp_hi": 0, "party_hp_lo": 20}}]
-    rows += [{"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
+    rows += [{"watch": {"x": 6, "y": 5, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
                         "party_hp_hi": 0, "party_hp_lo": 20}}
              for _ in range(3)]
     return rows
@@ -40,6 +45,76 @@ def test_never_earned_fails():
     ok, failures = _red_badge_success(_rows(False))
     assert not ok
     assert failures == ["red_badge_never_earned"]
+
+
+def test_repro_badge_flip_without_any_battle_is_refused():
+    # PR #139 review REVISE finding 1, repro (a): the verifier reproduced a false PASS on a trace
+    # where `badges` flips 0->1 while `in_battle` never once reaches 2 anywhere -- no gym/trainer
+    # battle evidence at all. Must now refuse, not PASS.
+    rows = [{"watch": {"x": 3, "y": 7, "map": 38, "party": 0, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 0}},
+            {"watch": {"x": 5, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 20}},
+            {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 20}}]
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_no_battle_after_party_acquisition"]
+
+
+def test_repro_badge_flip_with_party_always_zero_is_refused():
+    # PR #139 review REVISE finding 1, repro (b): the verifier reproduced a false PASS on a trace
+    # where `badges` flips 0->1 while `party` stays 0 for the ENTIRE trace -- physically impossible
+    # (a Gym battle cannot be won, let alone entered, with an empty party). Must now refuse.
+    rows = [{"watch": {"x": 3, "y": 7, "map": 38, "party": 0, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 0}},
+            {"watch": {"x": 5, "y": 4, "map": 40, "party": 0, "badges": 0, "in_battle": 2,
+                       "party_hp_hi": 0, "party_hp_lo": 0}},
+            {"watch": {"x": 6, "y": 4, "map": 40, "party": 0, "badges": 1, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 0}}]
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_no_party_0_to_1"]
+
+
+def test_badge_flip_before_battle_is_refused():
+    # The badge bit flipping BEFORE the qualifying battle row (rather than never having a battle at
+    # all) must also be refused -- ordering matters, not just presence of a battle somewhere.
+    rows = [{"watch": {"x": 3, "y": 7, "map": 38, "party": 0, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 0}},
+            {"watch": {"x": 5, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 20}},
+            {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 20}},
+            {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 2,
+                       "party_hp_hi": 0, "party_hp_lo": 20}}]
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_flip_not_after_battle"]
+
+
+def test_party_transition_not_exactly_zero_to_one_refused():
+    rows = _rows()
+    rows[1]["watch"]["party"] = 2
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_party_transition_not_exactly_0_to_1"]
+
+
+def test_bool_party_value_is_not_accepted_as_int():
+    rows = _rows()
+    rows[1]["watch"]["party"] = True
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_missing_or_invalid_oracle_field"]
+
+
+def test_bool_in_battle_value_is_not_accepted_as_int():
+    rows = _rows()
+    rows[2]["watch"]["in_battle"] = True
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_missing_or_invalid_oracle_field"]
 
 
 def test_not_fresh_start_party_nonzero_refused():

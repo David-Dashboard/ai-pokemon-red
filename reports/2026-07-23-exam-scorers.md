@@ -1,11 +1,16 @@
 # Graduation-exam v1 — scorers, readiness index (2026-07-23)
 
 Status: **$0, offline, no paid run.** Builds one fail-closed OFFLINE oracle scorer per
-graduation-exam v1 task (`reports/2026-07-22-graduation-exam-v1-definition.md`) that has a
-WORKING oracle today, mirroring `eval/score_gate0.py`'s fail-closed pattern (refuse on
-malformed/missing input, never a guessed PASS). Every scorer is fixture-tested with SYNTHETIC
-traces only — no ROM, no held-out/reserve-title content, CI-safe. This does not run, launch, or
-pre-register any paid attempt; that's a separate, later step per `gate-methodology`.
+graduation-exam v1 task — task definitions per **DRAFT exam v1** (`reports/2026-07-22-graduation-
+exam-v1-definition.md`, PR #129, still OPEN — the doc's own status line: "v1-DRAFT, NOT FROZEN...
+Freeze requires David's sign-off") — that has a WORKING oracle today, mirroring
+`eval/score_gate0.py`'s fail-closed pattern (refuse on malformed/missing input, never a guessed
+PASS). Every scorer is fixture-tested with SYNTHETIC traces only — no ROM, no held-out/
+reserve-title content, CI-safe. This does not run, launch, or pre-register any paid attempt;
+that's a separate, later step per `gate-methodology`. **These scorers finalize once David freezes
+PR #129** — today's numbers (EX01 badge bit, EX08 seed block, EX02-05 gaps, EX06/EX10 reserve
+picks) match the draft as written, but a title/quota/seed change in that review would need a
+matching update here before anything is frozen for real.
 
 ## Scorable now (real oracle wired today)
 
@@ -43,9 +48,32 @@ CONTENT committed ahead of the exam's own one attempt, which the held-out law (t
 LAW: "no held-out/reserve-title content in scorers/fixtures") forbids. These two tasks stay
 completely untouched pending David's title sign-off and the exam's own attempt.
 
+## PR #139 review fixes (adversarial review REVISE, addressed 2026-07-23)
+
+1. **False-PASS hole in `score_exam_red_badge.py`.** The original predicate PASSed on a bare
+   `badges` bit-0 flip with no corroboration — the reviewer reproduced a false PASS on (a) a badge
+   flip with `in_battle` never reaching `2` anywhere, and (b) a badge flip with `party` staying `0`
+   for the entire trace (physically impossible). Fixed by mirroring `score_gate0.py::_red_success`'s
+   full corroboration chain, not just its corrupt-row filter: the flip must now be preceded by an
+   exact `party` 0->1 transition (a starter exists) AND a real battle (`in_battle == 2`, at or after
+   the starter exists) strictly before the badge bit flips. Both repro traces are now pinned
+   regression tests (`test_repro_badge_flip_without_any_battle_is_refused`,
+   `test_repro_badge_flip_with_party_always_zero_is_refused` in
+   `tests/test_score_exam_red_badge.py`) that must REFUSE.
+2. **Frozen-citation wording.** Every file cited `reports/2026-07-22-graduation-exam-v1-definition.md`
+   without flagging that it's PR #129, still OPEN and explicitly not frozen. Fixed by adding a
+   "(PR #129 -- v1-DRAFT, NOT frozen; task bars pending David's freeze of that PR)" qualifier to
+   every citation (all 4 real scorers, all 4 stubs, both shared helper modules, `eval/README.md`,
+   and this report's own status line above).
+
 ## Suite
 
 Full repo suite green after this change (2026-07-23):
 ```
 1441 passed, 16 skipped in 55.56s
+```
+
+Full repo suite green after the PR #139 review fixes above (2026-07-23):
+```
+1447 passed, 16 skipped in 54.78s
 ```

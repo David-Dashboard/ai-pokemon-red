@@ -4,7 +4,8 @@ ORACLE_PENDING: the only candidate progress byte, `0x022C8090`
 (reports/2026-07-04-mkds-continuous-time-build-plan.md), is explicitly UNVERIFIED --
 reports/2026-07-13-mkds-ab-verdict.md states this byte "was not present in either run's
 oracle.jsonl... do not claim checkpoint/lap progress from RAM for this run." Per
-reports/2026-07-22-graduation-exam-v1-definition.md EX05: "Verifying (or replacing) this oracle is
+reports/2026-07-22-graduation-exam-v1-definition.md EX05 (PR #129 -- v1-DRAFT, NOT frozen; task
+bars here are pending David's freeze of that PR): "Verifying (or replacing) this oracle is
 a hard precondition, not optional polish." An MKDS oracle-hunt session is running separately
 (worktree `ai-pokemon-red-oracle-mkds`, as of 2026-07-23) -- this scorer intentionally does not
 race ahead of that hunt's own report.

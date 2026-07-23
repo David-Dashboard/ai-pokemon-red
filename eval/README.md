@@ -25,7 +25,8 @@ investigation probes live in [`_archive/`](_archive/) (kept for the record, not 
 - `label_frames` — interactive hand-label tool (entities/regions/modes).
 - `snapshot_labels` — freeze the hand-label dataset into a versioned snapshot.
 
-## Graduation-exam v1 scorers (reports/2026-07-22-graduation-exam-v1-definition.md)
+## Graduation-exam v1 scorers (reports/2026-07-22-graduation-exam-v1-definition.md, **PR #129 —
+v1-DRAFT, NOT yet frozen**; task bars below finalize once David freezes that PR)
 Scorable-now tasks (working oracle today) — `score_exam_red_badge` (EX01) ·
 `score_exam_miniwob_focus_text` (EX07) · `score_exam_miniwob_click_checkboxes` (EX08) ·
 `score_exam_arc_wa30` (EX09). ORACLE_PENDING stubs (no address yet — refuse, never fabricate) —

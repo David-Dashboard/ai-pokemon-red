@@ -8,7 +8,8 @@ one algorithm without copy-pasting it, instead of each hardcoding Gate 0's `clic
 constant. `eval/score_gate0.py` itself is Gate-0-frozen machinery (gate-methodology: "reused
 byte-for-byte") and is NOT imported or modified here.
 
-See reports/2026-07-22-graduation-exam-v1-definition.md EX07/EX08 for the task definitions.
+See reports/2026-07-22-graduation-exam-v1-definition.md EX07/EX08 (PR #129 -- v1-DRAFT, NOT
+frozen; task bars are pending David's freeze of that PR) for the task definitions.
 """
 from __future__ import annotations
 

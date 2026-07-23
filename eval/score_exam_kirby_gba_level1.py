@@ -2,7 +2,8 @@
 
 ORACLE_PENDING: `kirby_gba`'s registry `watch` is `{}` -- same gap as `emerald_gba`, no GBA world
 has an oracle wired yet (`world_mcp.py:182-186`). Per
-reports/2026-07-22-graduation-exam-v1-definition.md EX04: "Same gap as EX03 -- kirby_gba also has
+reports/2026-07-22-graduation-exam-v1-definition.md EX04 (PR #129 -- v1-DRAFT, NOT frozen; task
+bars here are pending David's freeze of that PR): "Same gap as EX03 -- kirby_gba also has
 watch: {}; needs its own oracle hunt."
 
 Do NOT fabricate a level-complete/door-transition address here. This scorer refuses
