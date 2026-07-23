@@ -1,0 +1,155 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import eval.score_exam_red_badge as scorer
+from eval.score_exam_red_badge import _red_badge_success
+
+_REPO_ROOT = Path(scorer.__file__).resolve().parents[1]
+
+
+def _rows(success=True):
+    rows = [{"watch": {"x": 3, "y": 7, "map": 38, "party": 0, "badges": 0, "in_battle": 0,
+                       "party_hp_hi": 0, "party_hp_lo": 0}}]
+    if not success:
+        return rows
+    rows += [{"watch": {"x": 5, "y": 4, "map": 40, "party": 1, "badges": 0, "in_battle": 0,
+                        "party_hp_hi": 0, "party_hp_lo": 20}},
+             {"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
+                        "party_hp_hi": 0, "party_hp_lo": 20}}]
+    rows += [{"watch": {"x": 6, "y": 4, "map": 40, "party": 1, "badges": 1, "in_battle": 0,
+                        "party_hp_hi": 0, "party_hp_lo": 20}}
+             for _ in range(3)]
+    return rows
+
+
+def test_synthetic_fresh_start_to_first_badge_passes():
+    ok, failures = _red_badge_success(_rows())
+    assert ok, failures
+    assert failures == []
+
+
+def test_score_wraps_pass():
+    result = scorer.score(_rows())
+    assert result["overall"] == "PASS"
+    assert result["task_id"] == "EX01"
+
+
+def test_never_earned_fails():
+    ok, failures = _red_badge_success(_rows(False))
+    assert not ok
+    assert failures == ["red_badge_never_earned"]
+
+
+def test_not_fresh_start_party_nonzero_refused():
+    rows = _rows()
+    rows[0]["watch"]["party"] = 1
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_not_fresh_start"]
+
+
+def test_not_fresh_start_badge_already_set_refused():
+    rows = _rows()
+    rows[0]["watch"]["badges"] = 1
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_not_fresh_start"]
+
+
+def test_missing_badges_field_is_hard_refusal():
+    rows = _rows()
+    del rows[2]["watch"]["badges"]
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_missing_or_invalid_oracle_field"]
+
+
+def test_bool_badges_value_is_not_accepted_as_int():
+    # JSON `true` decodes to Python bool and `True == 1`, so a naive int check would treat a bool
+    # badges byte as a legitimate bit-0 set. Must be refused, not silently coerced.
+    rows = _rows()
+    rows[2]["watch"]["badges"] = True
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_missing_or_invalid_oracle_field"]
+
+
+def test_out_of_range_badges_byte_is_refused():
+    rows = _rows()
+    rows[2]["watch"]["badges"] = 300
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_missing_or_invalid_oracle_field"]
+
+
+def test_badge_bit_reverting_after_set_fails():
+    rows = _rows()
+    rows[-1]["watch"]["badges"] = 0
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert "red_badge_bit_reverted_after_set" in failures
+
+
+def test_single_corrupted_glitch_row_does_not_block_a_real_completion():
+    # Same PyBoy polling-sampler glitch signature score_gate0.py documents: every watched field
+    # simultaneously 0 for one tick, sandwiched between otherwise-consistent rows.
+    rows = _rows()
+    rows.insert(2, {"watch": {"x": 0, "y": 0, "map": 0, "party": 0, "badges": 0, "in_battle": 0,
+                              "party_hp_hi": 0, "party_hp_lo": 0}})
+    ok, failures = _red_badge_success(rows)
+    assert ok, failures
+
+
+def test_no_watch_rows_at_all_is_refused():
+    ok, failures = _red_badge_success([{"not_watch": {}}])
+    assert not ok
+    assert failures == ["red_badge_no_watch_rows"]
+
+
+def test_empty_rows_is_refused():
+    ok, failures = _red_badge_success([])
+    assert not ok
+    assert failures == ["red_badge_no_watch_rows"]
+
+
+def test_missing_oracle_file_is_fail_closed_none(tmp_path):
+    from eval._exam_common import load_oracle_jsonl
+    assert load_oracle_jsonl(tmp_path / "nope.jsonl") is None
+
+
+def test_malformed_json_line_is_fail_closed_none(tmp_path):
+    from eval._exam_common import load_oracle_jsonl
+    bad = tmp_path / "oracle.jsonl"
+    bad.write_text("{not json}\n", encoding="utf-8")
+    assert load_oracle_jsonl(bad) is None
+
+
+def test_cli_end_to_end_pass_via_oracle_file(tmp_path):
+    from eval._exam_common import load_oracle_jsonl
+    oracle = tmp_path / "oracle.jsonl"
+    oracle.write_text("\n".join(json.dumps({"watch": row["watch"]}) for row in _rows()), encoding="utf-8")
+    rows = load_oracle_jsonl(oracle)
+    assert rows is not None
+    result = scorer.score(rows)
+    assert result["overall"] == "PASS"
+
+
+def test_cli_subprocess_pass_exits_zero(tmp_path):
+    oracle = tmp_path / "oracle.jsonl"
+    oracle.write_text("\n".join(json.dumps({"watch": row["watch"]}) for row in _rows()), encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-m", "eval.score_exam_red_badge", str(oracle)],
+                          cwd=str(_REPO_ROOT), capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["overall"] == "PASS"
+
+
+def test_cli_subprocess_missing_file_exits_nonzero(tmp_path):
+    missing = tmp_path / "nope.jsonl"
+    proc = subprocess.run([sys.executable, "-m", "eval.score_exam_red_badge", str(missing)],
+                          cwd=str(_REPO_ROOT), capture_output=True, text=True)
+    assert proc.returncode == 1
+    payload = json.loads(proc.stdout)
+    assert payload["overall"] == "INSUFFICIENT_DATA"

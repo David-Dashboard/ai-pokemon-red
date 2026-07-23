@@ -25,6 +25,15 @@ investigation probes live in [`_archive/`](_archive/) (kept for the record, not 
 - `label_frames` — interactive hand-label tool (entities/regions/modes).
 - `snapshot_labels` — freeze the hand-label dataset into a versioned snapshot.
 
+## Graduation-exam v1 scorers (reports/2026-07-22-graduation-exam-v1-definition.md)
+Scorable-now tasks (working oracle today) — `score_exam_red_badge` (EX01) ·
+`score_exam_miniwob_focus_text` (EX07) · `score_exam_miniwob_click_checkboxes` (EX08) ·
+`score_exam_arc_wa30` (EX09). ORACLE_PENDING stubs (no address yet — refuse, never fabricate) —
+`score_exam_kirby_stage3` (EX02) · `score_exam_emerald_oldale` (EX03) ·
+`score_exam_kirby_gba_level1` (EX04) · `score_exam_mkds_lap` (EX05). Index:
+reports/2026-07-23-exam-scorers.md. Shared plumbing (imported, not run directly): `_exam_common`
+(fail-closed jsonl loader + CLI wrapper), `_exam_miniwob_common` (the EX07/EX08 success predicate).
+
 ## Support modules (imported by the above — not run directly)
 `dataset_split` (DEV/held-out split) · `probe_phantom_move` · `probe_pose_drift` ·
 `vizdoom_flow_ceiling` (3D flow proxies) · `_modality_probe_run` · `report_run` (per-run report scaffold).
