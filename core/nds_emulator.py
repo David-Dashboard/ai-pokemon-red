@@ -1,9 +1,13 @@
 """Thin py-desmume wrapper for NDS worlds — the ONLY core module that imports DeSmuME.
 
 Satisfies the same `Emulator` Protocol as `PyBoyEmulator` in gb_emulator.py so the
-perception plugin is drop-in reusable. NDS adds two extras beyond the GB surface:
+perception plugin is drop-in reusable. NDS adds extras beyond the GB surface:
   - `touch(x, y)`  — stylus-down at screen coordinates
   - `touch_release()` — lift the stylus
+  - `touch_drag(x1, y1, x2, y2, frames)` — stylus-drag between two points over N ticks, built
+    entirely out of touch()/touch_release() (no new emulator call). Exposed as an MCP tool only
+    behind NDS_TOUCH_DRAG=1 (world_mcp.py) — off by default, does not alter the frozen NDS tool
+    surface (`_NDS_ACTION_TOOLS`/`assert_action_tools_fresh`).
 
 Screen layout: DeSmuME stacks both NDS screens into one 384×256 RGBX buffer (top 0–191,
 bottom 192–383). `screen_ndarray()` returns the full (384, 256, 3) array by default;
@@ -140,3 +144,25 @@ class DeSmuMEEmulator:
     def touch_release(self) -> None:
         """Lift the stylus."""
         self._emu.input.touch_release()
+
+    def touch_drag(self, x1: int, y1: int, x2: int, y2: int, frames: int = 8) -> None:
+        """Stylus-drag from (x1, y1) to (x2, y2) over `frames` ticks, one tick per interpolated
+        point. Reuses touch()/touch_release() verbatim -- touch_set_pos moves a HELD point, it does
+        not lift it, so a drag is just repeated touch() calls without an intervening release.
+
+        Fills the gap flagged (not patched) during the 4-ROM NDS probe: `touch()` only ever set a
+        static point, with no drag/gesture helper for a continuous stylus motion
+        (runs/nds3d_probe/FINDINGS.md:216-219 -- Spirit Tracks rail-drawing, RE:DS item drag/combine
+        and aiming both need this). `frames` is the caller's coarse speed/smoothness knob; frames=1
+        drags straight to the end point in one tick.
+        """
+        frames = max(1, frames)
+        self.touch(x1, y1)
+        self.tick(1)
+        for i in range(1, frames + 1):
+            t = i / frames
+            x = round(x1 + (x2 - x1) * t)
+            y = round(y1 + (y2 - y1) * t)
+            self.touch(x, y)
+            self.tick(1)
+        self.touch_release()

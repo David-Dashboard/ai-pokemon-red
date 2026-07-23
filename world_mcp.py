@@ -870,6 +870,40 @@ _TOUCH_TARGET_TOOL = {
                     "required": ["id"]},
 }
 
+# --- NDS touch-drag helper (capability-map A6 "continuous action" gap; runs/nds3d_probe/FINDINGS.md:
+# 216-219 flagged, not patched, during the 4-ROM probe: touch() only ever sets a static stylus point,
+# no drag/gesture helper for a held-and-moved stylus — Spirit Tracks rail-drawing and RE:DS item
+# drag/combine both need it). Handled entirely in World.call() (like define_skill/run_skill), NOT
+# routed through NDSPerceptionPlugin/Gateway — so `_NDS_ACTION_TOOLS`/`assert_action_tools_fresh`'s
+# frozen exact-equality invariant (touch/touch_target's own tool set) is untouched either way.
+# Gated behind NDS_TOUCH_DRAG=1, a SEPARATE flag from NDS_SKILLS/KIRBY_SKILLS (one flag per feature,
+# same arm-isolation discipline) — off by default, nds world only.
+_TOUCH_DRAG_TOOL = {
+    "name": "touch_drag",
+    "description": ("Drag the NDS stylus from (x1,y1) to (x2,y2) over `frames` frames: stylus-down "
+                    "at the start point, linear interpolation to the end point (one tick per "
+                    "intermediate point), then stylus-up. Use for a continuous gesture a plain "
+                    "touch(x,y) can't express (e.g. rail-drawing, drag-to-combine, an aim-drag). "
+                    "Coordinates are bottom-screen pixels: x 0–255, y 0–191."),
+    "inputSchema": {"type": "object",
+                    "properties": {"x1": {"type": "integer", "minimum": 0, "maximum": 255},
+                                   "y1": {"type": "integer", "minimum": 0, "maximum": 191},
+                                   "x2": {"type": "integer", "minimum": 0, "maximum": 255},
+                                   "y2": {"type": "integer", "minimum": 0, "maximum": 191},
+                                   "frames": {"type": "integer", "minimum": 1, "maximum": 120}},
+                    "required": ["x1", "y1", "x2", "y2"]},
+}
+
+# nds ONLY (mirrors _NDS_SKILLS_WORLDS's one-world-per-flag scoping).
+_NDS_TOUCH_DRAG_WORLDS = frozenset({"nds"})
+
+
+def _nds_touch_drag_enabled() -> bool:
+    """Arm isolation, identical shape to _nds_skills_enabled: NDS_TOUCH_DRAG is its OWN env var,
+    checked independently of NDS_SKILLS/KIRBY_SKILLS/ARC_SKILLS. Opt-in, default OFF — unset or
+    anything other than exactly "1" leaves the brain unable to even see the touch_drag tool."""
+    return os.environ.get("NDS_TOUCH_DRAG") == "1"
+
 # Pre-built per-world action-tool lists (no touch on GB/GBA; touch/touch_target + NDS buttons on NDS).
 _GB_ACTION_TOOLS = _make_press_tools(_GB_BUTTONS)
 _NDS_ACTION_TOOLS = [*_make_press_tools(_nds_emu_mod.BUTTONS), _TOUCH_TOOL, _TOUCH_TARGET_TOOL]
@@ -904,6 +938,11 @@ def _static_tools(game: str) -> list[dict]:
     # what enforces that direction).
     if game in _NDS_SKILLS_WORLDS and _nds_skills_enabled():
         nav = [*nav, *_NDS_SKILL_TOOLS]
+    # nds ONLY, gated behind NDS_TOUCH_DRAG=1 — added to `nav`, never to `_NDS_ACTION_TOOLS`, so
+    # assert_action_tools_fresh's frozen exact-equality check (touch/touch_target's own tool set)
+    # never has to know this flag exists, same as the skill tools immediately above.
+    if game in _NDS_TOUCH_DRAG_WORLDS and _nds_touch_drag_enabled():
+        nav = [*nav, _TOUCH_DRAG_TOOL]
     if game in _NDS_WORLDS:
         return [*nav, *_NDS_ACTION_TOOLS]
     if game in _GBA_WORLDS:
@@ -1038,6 +1077,13 @@ class World:
         # simultaneously populate the same skills dict.
         self.nds_skills_world = args.game in _NDS_SKILLS_WORLDS
         self._nds_skills_enabled = self.nds_skills_world and _nds_skills_enabled()
+
+        # NDS touch-drag helper (capability-map A6, mirrors the NDS_SKILLS block immediately above:
+        # same per-flag/per-init discipline — NDS_TOUCH_DRAG is read ONCE at construction, not per
+        # call. tools/list already hides touch_drag when off or off-world; this is defense-in-depth
+        # against a stale client / hand-rolled request calling it anyway.
+        self.nds_touch_drag_world = args.game in _NDS_TOUCH_DRAG_WORLDS
+        self._nds_touch_drag_enabled = self.nds_touch_drag_world and _nds_touch_drag_enabled()
 
     def tools(self) -> list[dict]:
         action = [{"name": s.name, "description": s.description, "inputSchema": s.schema}
@@ -1764,6 +1810,44 @@ class World:
         # — mirrors Kirby's own trailing-observe-after-log ordering, RESIDUAL #1's discipline).
         return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
 
+    # -- NDS touch-drag helper (capability-map A6, nds ONLY, gated by NDS_TOUCH_DRAG) -----------------
+    def _touch_drag(self, args: dict) -> list[dict]:
+        """Drag the NDS stylus from (x1,y1) to (x2,y2) over `frames` ticks. Thin validate-then-call
+        wrapper around `DeSmuMEEmulator.touch_drag` (core/nds_emulator.py), which itself is built
+        entirely out of touch()/touch_release() — no new emulator call beyond linear interpolation
+        + per-step ticking. Only ever reached when NDS_TOUCH_DRAG=1 (call()'s dispatch gate)."""
+        try:
+            x1 = int(args["x1"]); y1 = int(args["y1"])
+            x2 = int(args["x2"]); y2 = int(args["y2"])
+        except (KeyError, TypeError, ValueError):
+            return [{"type": "text", "text": "touch_drag needs integer x1, y1, x2, y2."}]
+        try:
+            frames = int(args.get("frames", 8))
+        except (TypeError, ValueError):
+            return [{"type": "text", "text": "touch_drag: frames must be an integer."}]
+        if not (0 <= x1 <= 255 and 0 <= x2 <= 255 and 0 <= y1 <= 191 and 0 <= y2 <= 191):
+            return [{"type": "text",
+                     "text": f"touch_drag: coords out of range; x in [0,255], y in [0,191] "
+                             f"(got ({x1},{y1})->({x2},{y2}))."}]
+        if not (1 <= frames <= 120):
+            return [{"type": "text", "text": f"touch_drag: frames must be in [1,120]; got {frames}."}]
+        emu = self.plugin.emu
+        if not (hasattr(emu, "touch_drag") or (hasattr(emu, "touch") and hasattr(emu, "touch_release"))):
+            return [{"type": "text", "text": "touch_drag: emulator does not support touch input."}]
+        if hasattr(emu, "touch_drag"):
+            emu.touch_drag(x1, y1, x2, y2, frames=frames)
+        else:   # defensive fallback: compose from touch()/touch_release() directly, same algorithm
+            emu.touch(x1, y1)
+            emu.tick(1)
+            for i in range(1, frames + 1):
+                t = i / frames
+                emu.touch(round(x1 + (x2 - x1) * t), round(y1 + (y2 - y1) * t))
+                emu.tick(1)
+            emu.touch_release()
+        self._track_frame()   # keep _frame_hist fresh (read_region/whats_changed parity, if ever mixed)
+        head = f"[touch_drag ({x1},{y1})->({x2},{y2}) over {frames} frame(s) -> ok]"
+        return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
+
     # -- Entity-gate v4 structured claims (doc §"Barrier 1", kirby_dreamland ONLY, gated by KIRBY_CLAIMS) --
     # Each handler validates at TOOL time (malformed/short args are rejected here and NEVER written —
     # doc: "malformed is HARD-ZERO by construction") and, on success, appends exactly one record to
@@ -1947,6 +2031,15 @@ class World:
             else:
                 self.decisions += 1   # one LLM decision buys up to _NDS_SKILL_MAX_WORLD_FRAMES frames
                 body = self._run_nds_skill(args)
+        elif name == "touch_drag":
+            if not self._nds_touch_drag_enabled:
+                body = [{"type": "text",
+                         "text": "touch_drag error: touch_drag is disabled for this session (set "
+                                 "NDS_TOUCH_DRAG=1 in the environment to enable, on nds only — see "
+                                 "runs/nds3d_probe/FINDINGS.md:216-219)."}]
+            else:
+                self.decisions += 1
+                body = self._touch_drag(args)
         elif name == "define_skill":
             if not self._kirby_skills_enabled:
                 body = [{"type": "text",
