@@ -266,6 +266,45 @@ def test_scene_cut_without_a_fade_goes_lost_then_reanchors_fresh():
     assert mem.data["edges"] == {}                                            # and no phantom door edge
 
 
+def test_lost_recovery_onto_a_known_place_rebinds_instead_of_minting():
+    # F4 keystone fix: the recovery path now fingerprints the settled arrival frame and checks it
+    # against every place's stored fingerprint (captured at first stable visit) BEFORE minting. Two
+    # frames of the identical, unchanged scene A (the "lost" frozen frame, then A again unchanged) is
+    # an exact fingerprint match to place 0's stored fp -- so this must re-bind, not mint a duplicate.
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    a = _scene(1)
+    per.perceive(a, mem, {"last_action": None})                              # place 0, fp captured
+    per.perceive(_scroll(a, dy_tiles=1), mem, {"last_action": "down+down"})   # place 0, cursor -> (0,1)
+    m = mem.data
+    assert (0, 1) in m["places"][0]                                         # a cell to prove "restored" later
+
+    per.perceive(_scene(9), mem, {"last_action": "down+down"})               # unrelated scene cut -> LOST
+    per.perceive(a, mem, {"last_action": "up", "frames_advanced": 5})        # cut back toward A -> still LOST
+    s = per.perceive(a, mem, {"last_action": "up", "frames_advanced": 5})    # A again, unchanged -> SETTLES
+
+    assert s.pose.get("lost") is None
+    assert s.pose["area"] == 0                          # RE-BOUND to the existing place 0, no new mint
+    assert s.spatial_memory["places_known"] == 1        # no phantom second place
+    assert (0, 1) in m["places"][0]                     # place 0's accumulated map is intact (restored)
+
+
+def test_lost_recovery_onto_an_unseen_scene_still_mints_fresh():
+    # The fail-safe: a settled scene that does NOT match any stored place fingerprint must still mint,
+    # exactly as before the F4 fix -- an ambiguous/unseen scene is never guessed onto a known place.
+    per, mem = OverworldPerceiver(), PerceptMemory()
+    a = _scene(1)
+    per.perceive(a, mem, {"last_action": None})                              # place 0, fp captured
+    per.perceive(_scroll(a, dy_tiles=1), mem, {"last_action": "down+down"})   # place 0, cursor -> (0,1)
+
+    b = _scene(2)                                                            # unrelated, never-seen scene
+    per.perceive(b, mem, {"last_action": "down+down"})                       # scene cut -> LOST
+    s = per.perceive(b, mem, {"last_action": "up", "frames_advanced": 5})     # B again, unchanged -> settles
+
+    assert s.pose.get("lost") is None
+    assert s.pose["area"] == 1                          # fresh mint, NOT re-bound to place 0
+    assert s.spatial_memory["places_known"] == 2
+
+
 def test_detect_mode_separates_overworld_menu_dialog_battle():
     from games.pokemon_red.perceiver import detect_mode
     blank = lambda: np.full((144, 160, 3), 60, dtype=np.uint8)  # dark scene, no UI panel

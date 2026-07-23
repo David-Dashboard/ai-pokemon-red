@@ -297,6 +297,9 @@ class OverworldPerceiver:
         m.setdefault("steps", 0)
         m.setdefault("resync", False)
         m.setdefault("tilemap", TileFunctionMap())   # online behaviour-labelled appearance->function map
+        m.setdefault("place_fp", {})       # place_id -> whole-frame fingerprint at first stable visit
+                                            # (F4 keystone: lets a pose-lost recovery re-bind to an
+                                            # already-known place instead of always minting a fresh one)
         # pose_confidence: "full" (dead-reckoning trusted) or "unknown" (a scene-change was seen that we
         # could not attribute to one commanded step -- e.g. a cutscene auto-walk). While unknown, no
         # walls/visited cells/edges are written (the Oak's-lab corruption: a cutscene-spiked residual
@@ -394,19 +397,30 @@ class OverworldPerceiver:
 
         if was_unknown:
             # RECOVERY: pose was lost and this step actually MEASURED a settled residual on real
-            # emulator progress (`still_lost` above is False) -- re-anchor ONCE, deliberately, to a
-            # FRESH place at (0,0), rather than guessing which known place/cell we're back at. Transit
-            # (and thus any edge write) now needs a live fade + a single commanded direction, so a
-            # residual spike can no longer mint a place whose stale edge a later scene change could
-            # teleport pose through.
-            m["place"] = m["next_place"]
-            m["next_place"] += 1
-            m["places"][m["place"]] = {}
+            # emulator progress (`still_lost` above is False). Before minting a duplicate, check whether
+            # this settled scene is one we've already anchored (the F4 keystone fix, `perception-
+            # primitives`): fingerprint the arrival frame and compare -- at the SAME fixed tolerance
+            # `core.tilemap` already uses, no per-place tuning -- against every place's stored
+            # fingerprint. Exactly one match => re-bind to that place (its accumulated cells/edges are
+            # simply still there, keyed by place id); zero or >=2 matches => mint fresh as before (the
+            # fail-safe: an ambiguous or genuinely unseen scene must never guess). Transit (and thus any
+            # edge write) still needs a live fade + a single commanded direction, so a residual spike
+            # alone can never mint/rebind a place whose stale edge a later scene change could teleport
+            # pose through.
+            fp = TileFunctionMap.fingerprint(frame) if frame is not None else None
+            matches = [pid for pid, stored in m["place_fp"].items()
+                       if fp is not None and TileFunctionMap.fp_match(fp, stored)]
+            if len(matches) == 1:
+                m["place"] = matches[0]                # re-bind: reuse the known place's own cells
+            else:
+                m["place"] = m["next_place"]
+                m["next_place"] += 1
+                m["places"][m["place"]] = {}
             m["cursor"] = (0, 0)
             m["pose_confidence"] = "full"
             cells = m["places"][m["place"]]
             x, y = m["cursor"]
-            # Fall through to the normal move/blocked handling below, now on the fresh place/anchor.
+            # Fall through to the normal move/blocked handling below, now on the re-bound/fresh anchor.
 
         cell = cells.setdefault((x, y), {"visited": True, "walls": set()})
         cell["visited"] = True
@@ -460,6 +474,14 @@ class OverworldPerceiver:
                 cell["walls"].discard(_BACK[direction])
                 outcome = "moved"
                 _observe_faced_tile(m["tilemap"], prev, direction, "walkable")
+
+        # Capture ONE fingerprint per place at its first stable visit -- covers place 0's initial frame,
+        # a fresh/reused destination right after `_transit`, and a fresh/re-bound anchor right after the
+        # recovery branch above -- all three are "pose confidently settled at m['place']" moments.
+        # `setdefault` means an already-known place's reference fingerprint is never overwritten (no
+        # drift toward whatever the scene looks like on a later revisit).
+        if frame is not None:
+            m["place_fp"].setdefault(m["place"], TileFunctionMap.fingerprint(frame))
 
         # Motion-saliency (free NPC/ROI prior): when the camera was STATIC this step — we didn't
         # scroll (a blocked move or an A-press, |best-shift| < half a tile) — two consecutive frames

@@ -147,3 +147,32 @@ def test_module_is_numpy_only_no_torch_or_pil():
     text = open(src, encoding="utf-8").read()
     assert "import torch" not in text
     assert "import PIL" not in text and "from PIL" not in text
+
+
+# -- fp_match (F4 keystone: whole-frame place re-identification) ---------------
+# Reuses the exact tolerant compare `_matches` uses internally (intensity gate + gradient Hamming),
+# exposed for a caller comparing two ad-hoc fingerprints directly rather than building a tally.
+
+def _noisy_frame(seed: int):
+    """A textured, frame-sized (not tile-sized) array -- shape is irrelevant to `fingerprint`."""
+    return np.random.RandomState(seed).randint(0, 200, size=(144, 160), dtype=np.uint16).astype(np.uint8)
+
+
+def test_fp_match_identical_frames_match():
+    frame = _noisy_frame(1)
+    fp = TileFunctionMap.fingerprint(frame)
+    assert TileFunctionMap.fp_match(fp, fp)
+
+
+def test_fp_match_unrelated_scenes_do_not_match_at_default_tolerance():
+    fa = TileFunctionMap.fingerprint(_noisy_frame(1))
+    fb = TileFunctionMap.fingerprint(_noisy_frame(2))
+    assert not TileFunctionMap.fp_match(fa, fb)          # no tol= override -> the shipped _DEFAULT_TOL
+
+
+def test_fp_match_survives_small_noise_perturbation():
+    a = _noisy_frame(1)
+    noisy = np.clip(a.astype(np.int16) + np.random.RandomState(7).randint(-3, 4, size=a.shape),
+                     0, 255).astype(np.uint8)
+    fa, fn = TileFunctionMap.fingerprint(a), TileFunctionMap.fingerprint(noisy)
+    assert TileFunctionMap.fp_match(fa, fn)

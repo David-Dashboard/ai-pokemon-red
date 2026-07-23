@@ -109,6 +109,19 @@ class TileFunctionMap:
         return (inten << _GRAD_BITS) | grad
 
     @staticmethod
+    def fp_match(fp_a: int, fp_b: int, *, tol: int = _DEFAULT_TOL) -> bool:
+        """True iff two fingerprints (tile OR whole-frame; `fingerprint` accepts either) are the same
+        appearance at a fixed tolerance: brightness within ±`_INTEN_TOL` AND gradient Hamming ≤ `tol`.
+        The same tolerant compare `_matches` uses internally against a tally, exposed here for a caller
+        that wants to compare two ad-hoc fingerprints directly rather than build a `TileFunctionMap`
+        (e.g. whole-frame place re-identification: 'have I settled on this exact scene before')."""
+        if fp_a == fp_b:
+            return True
+        ia, ga = _split(fp_a)
+        ib, gb = _split(fp_b)
+        return abs(ia - ib) <= _INTEN_TOL and _hamming(ga, gb) <= tol
+
+    @staticmethod
     def is_flat(fp: int) -> bool:
         """True if the tile is near-uniform / low-texture (gradient carries < `_FLAT_GRAD_BITS` bits) —
         a flat appearance that genuinely can't be trusted to predict function (could be floor or wall)."""
