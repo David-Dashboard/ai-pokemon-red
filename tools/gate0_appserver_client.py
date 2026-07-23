@@ -19,12 +19,14 @@ schema dump (codex-cli 0.144.3, `codex app-server generate-json-schema`) -- none
 a `jsonrpc` field, and none of `codex app-server --help`'s transport docs mention Content-Length
 framing (that's LSP, not this). This is NOT guessed.
 
-Response shapes below are copied verbatim from that same schema dump (ServerRequest.json,
+Request AND response shapes below are copied verbatim from that same schema dump (ServerRequest.json,
 ToolRequestUserInputParams/Response.json, McpServerElicitationRequestParams/Response.json,
 PermissionsRequestApprovalParams/Response.json, CommandExecutionRequestApprovalParams/
-Response.json, FileChangeRequestApprovalParams/Response.json -- the Response ones are committed
-under tests/fixtures/gate0_appserver/ for tests/test_gate0_appserver_client.py to check against),
-not from memory.
+Response.json, FileChangeRequestApprovalParams/Response.json, InitializeParams.json,
+ThreadStartParams.json, JSONRPCRequest.json, JSONRPCResponse.json -- ALL of these are committed
+under tests/fixtures/gate0_appserver/ for tests/test_gate0_appserver_client.py to check against, so
+the `_HANDLERS` method names and the param field names this client reads are grounded against the
+same ground truth as the responses, not hand-matched to the mock), not from memory.
 """
 from __future__ import annotations
 
@@ -47,6 +49,15 @@ FALLBACK_ANSWER = "Approve"
 
 # PermissionGrantScope enum (PermissionsRequestApprovalResponse.json definitions).
 PERMISSION_GRANT_SCOPES = ("turn", "session")
+
+# InitializeCapabilities (v1/InitializeParams.json, definitions.InitializeCapabilities), both plain
+# booleans, both default false server-side. `item/tool/requestUserInput` is marked EXPERIMENTAL in
+# ServerRequest.json and gated by `experimentalApi`; `openai/form` elicitation mode
+# (McpServerElicitationRequestParams.json) is gated by `mcpServerOpenaiFormElicitation`. Without
+# declaring both true here, app-server never sends the requests this client exists to answer --
+# committed as tests/fixtures/gate0_appserver/InitializeParams.json, asserted in
+# test_initialize_declares_experimental_and_form_elicitation_capabilities.
+INITIALIZE_CAPABILITIES = {"experimentalApi": True, "mcpServerOpenaiFormElicitation": True}
 
 
 def resolve_codex_path() -> str:
@@ -88,6 +99,10 @@ def build_tool_user_input_response(params: dict, keywords=APPROVE_KEYWORDS,
     immediately and actively, never by waiting one out."""
     answers = {}
     for question in params.get("questions", []):
+        if "id" not in question:
+            # ToolRequestUserInputQuestion.id is required (schema-confirmed) -- a question missing
+            # it is a protocol violation, not something to paper over with an empty/KeyError.
+            raise ValueError(f"ToolRequestUserInputQuestion missing required 'id' field: {question!r}")
         answers[question["id"]] = {"answers": [pick_approve_label(question, keywords, fallback)]}
     return {"answers": answers}
 
@@ -102,7 +117,12 @@ def build_permissions_response(params: dict, scope: str = "session") -> dict:
     grant -- not `--dangerously-bypass-approvals-and-sandbox`. Configurable per call/instance."""
     if scope not in PERMISSION_GRANT_SCOPES:
         raise ValueError(f"invalid permission grant scope: {scope!r}")
-    return {"permissions": params.get("permissions", {}), "scope": scope}
+    if "permissions" not in params:
+        # PermissionsRequestApprovalParams.permissions is required (schema-confirmed) -- silently
+        # echoing {} here would grant an empty RequestPermissionProfile (deny-all) for what may be
+        # a real, non-empty request: a protocol violation must fail loud, not degrade to deny-all.
+        raise ValueError("PermissionsRequestApprovalParams missing required 'permissions' field")
+    return {"permissions": params["permissions"], "scope": scope}
 
 
 def build_command_execution_response() -> dict:
@@ -244,7 +264,11 @@ class Gate0AppServerClient:
         params = message.get("params") or {}
         handler = _HANDLERS.get(method)
         if handler is None:
-            return  # Not one of the request types this prototype answers; left unresolved.
+            # Left unresolved (not one of the request types this prototype answers), but LOGGED --
+            # a paid-turn method-name mismatch/drift must be visible in the transcript, not a
+            # silent no-op indistinguishable from "nothing happened".
+            self._log(event="unhandled_server_request", method=method, request_id=request_id)
+            return
         self._log(event="server_request", method=method, request_id=request_id,
                    thread_id=params.get("threadId"), turn_id=params.get("turnId"),
                    item_id=params.get("itemId"))
@@ -296,6 +320,7 @@ class Gate0AppServerClient:
                     client_version: str = "0.1.0") -> dict:
         result = self.send_request("initialize", {
             "clientInfo": {"name": client_name, "version": client_version},
+            "capabilities": dict(INITIALIZE_CAPABILITIES),
         })
         self.send_notification("initialized")
         return result

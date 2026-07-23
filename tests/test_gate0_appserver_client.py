@@ -18,7 +18,9 @@ import pytest
 from tools.gate0_appserver_client import (
     DEFAULT_CODEX_PATH,
     FALLBACK_ANSWER,
+    INITIALIZE_CAPABILITIES,
     Gate0AppServerClient,
+    _HANDLERS,
     build_command_execution_response,
     build_elicitation_response,
     build_file_change_response,
@@ -62,6 +64,11 @@ def _assert_keys_allowed(instance, schema):
     assert not extra, f"unexpected keys {extra} not declared in {schema['title']} properties {allowed}"
 
 
+def _server_request_methods(schema):
+    """Every real request-method string declared as a `ServerRequest.json` `oneOf` branch."""
+    return {branch["properties"]["method"]["enum"][0] for branch in schema["oneOf"]}
+
+
 # ---------------------------------------------------------------------------
 # Framing: newline-delimited JSON (JSONL), no "jsonrpc" field on the wire.
 # ---------------------------------------------------------------------------
@@ -97,6 +104,87 @@ def test_resolve_codex_path_defaults_and_honors_env_override(monkeypatch):
     assert resolve_codex_path() == DEFAULT_CODEX_PATH
     monkeypatch.setenv("GATE0_CODEX_PATH", "/custom/path/codex")
     assert resolve_codex_path() == "/custom/path/codex"
+
+
+# ---------------------------------------------------------------------------
+# Request-side grounding: de-circularize against the committed *Params.json ground truth (not just
+# the response side). A wrong/renamed method or field name must fail HERE, at $0, not silently
+# no-op or deny-all at the paid turn.
+# ---------------------------------------------------------------------------
+
+def test_all_handler_methods_are_real_server_request_branches():
+    schema = _load_schema("ServerRequest.json")
+    real_methods = _server_request_methods(schema)
+    for method in _HANDLERS:
+        assert method in real_methods, (
+            f"_HANDLERS method {method!r} is not a real ServerRequest.json branch "
+            f"(real methods: {sorted(real_methods)})")
+
+
+def test_permissions_field_name_matches_ground_truth_params_schema():
+    # build_permissions_response reads params["permissions"] -- confirm that's the REAL field name
+    # (not hand-matched to the mock) and that it's required (so an absent key is a protocol
+    # violation, justifying the raise in build_permissions_response, not a normal "empty" case).
+    schema = _load_schema("PermissionsRequestApprovalParams.json")
+    assert "permissions" in schema["properties"]
+    assert "permissions" in schema["required"]
+
+
+def test_tool_user_input_questions_and_id_field_names_match_ground_truth_params_schema():
+    # build_tool_user_input_response reads params["questions"] and each question["id"] -- confirm
+    # both are the REAL field names and that "id" is required on ToolRequestUserInputQuestion.
+    schema = _load_schema("ToolRequestUserInputParams.json")
+    assert "questions" in schema["properties"]
+    question_schema = schema["definitions"]["ToolRequestUserInputQuestion"]
+    assert "id" in question_schema["properties"]
+    assert "id" in question_schema["required"]
+
+
+def test_permissions_response_raises_on_missing_permissions_field_instead_of_deny_all():
+    # A missing `permissions` key is a protocol violation (the field is required per the schema
+    # test above) -- must raise, not silently echo {} (an empty GrantedPermissionProfile = deny-all,
+    # masking the exact bug this client exists to fix).
+    with pytest.raises(ValueError):
+        build_permissions_response({})
+
+
+def test_tool_user_input_response_raises_on_question_missing_id_instead_of_bare_keyerror():
+    with pytest.raises(ValueError):
+        build_tool_user_input_response({"questions": [{"header": "h", "question": "q"}]})
+
+
+def test_initialize_declares_experimental_and_form_elicitation_capabilities():
+    # Blocker: item/tool/requestUserInput is EXPERIMENTAL (ServerRequest.json) and gated by
+    # InitializeCapabilities.experimentalApi (default false); openai/form elicitations are gated by
+    # mcpServerOpenaiFormElicitation. Confirm both are the REAL field names (v1/InitializeParams.json)
+    # and that initialize() actually sends them set true.
+    schema = _load_schema("InitializeParams.json")
+    capabilities_schema = schema["definitions"]["InitializeCapabilities"]
+    assert "experimentalApi" in capabilities_schema["properties"]
+    assert "mcpServerOpenaiFormElicitation" in capabilities_schema["properties"]
+    assert INITIALIZE_CAPABILITIES == {"experimentalApi": True, "mcpServerOpenaiFormElicitation": True}
+
+    sent = []
+
+    def fake_send(message):
+        sent.append(message)
+        if message.get("method") == "initialize":
+            client.handle_message({"id": message["id"], "result": {
+                "codexHome": "/home/.codex", "platformFamily": "windows",
+                "platformOs": "windows", "userAgent": "codex-cli/0.144.3",
+            }})
+
+    client = Gate0AppServerClient(send=fake_send)
+    client.initialize()
+
+    initialize_message = next(m for m in sent if m.get("method") == "initialize")
+    params = initialize_message["params"]
+    _assert_required_keys_present(params, schema)
+    _assert_keys_allowed(params, schema)
+    capabilities = params["capabilities"]
+    _assert_keys_allowed(capabilities, capabilities_schema)
+    assert capabilities["experimentalApi"] is True
+    assert capabilities["mcpServerOpenaiFormElicitation"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +352,13 @@ def test_elicitation_routes_to_the_originating_request_id_not_a_decoy():
     assert responses["real-id"]["result"] == {"action": "accept"}
     assert set(responses) == {"decoy-id", "real-id"}
 
+    # Response schemas carry no threadId, so the only way to prove the decoy/real threadIds were
+    # actually kept apart (not just asserted-and-ignored) is the audit trail, which logs threadId
+    # per originating request id -- assert it maps each id back to its OWN threadId, not the other's.
+    server_request_entries = {entry["request_id"]: entry["thread_id"]
+                               for entry in client.audit if entry["event"] == "server_request"}
+    assert server_request_entries == {"decoy-id": "thr_decoy", "real-id": "thr_real"}
+
 
 # ---------------------------------------------------------------------------
 # Handler robustness for item/commandExecution/requestApproval and item/fileChange/requestApproval.
@@ -286,11 +381,15 @@ def test_command_execution_and_file_change_requests_are_answered_and_routed():
     assert responses[2] == {"decision": "accept"}
 
 
-def test_unhandled_server_request_method_is_left_unresolved_not_crashed():
+def test_unhandled_server_request_method_is_left_unresolved_but_logged_not_silent():
+    # A method-name mismatch/drift (wrong/renamed method) must be visible in the audit trail, not a
+    # silent no-op indistinguishable from "nothing happened" at the paid turn.
     sent = []
     client = Gate0AppServerClient(send=sent.append)
     client.handle_message({"id": 1, "method": "attestation/generate", "params": {}})
     assert sent == []
+    assert client.audit == [{"event": "unhandled_server_request", "method": "attestation/generate",
+                              "request_id": 1}]
 
 
 # ---------------------------------------------------------------------------
