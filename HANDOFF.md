@@ -7,10 +7,47 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-21 (Gate 0 final readiness stamp v2 + signature package, supersedes PR #124;
-`docs/gate0-readiness-final-v2`; $0, no model call.)_
+_Last updated: 2026-07-23 (M1-unblock `codex app-server` client merged + main un-bricked + 3 verified
+probes banked; `docs/handoff-2026-07-23`; $0, no model call.)_
 
-**=>=> NEWEST (2026-07-21) - GATE 0 LAUNCH-READY PENDING DAVID'S SIGNATURE + QUOTA CHECK; $0. =>=>**
+**=>=> NEWEST (2026-07-23) - M1 GATE-0 BLOCKER SOLVED AT $0 (pending the one paid turn); main GREEN. =>=>**
+1. **POSITION VS NORTH STAR:** proof score UNCHANGED (still no paid run), but the M1 blocker moved from
+   "blocked by an upstream codex bug" to "one paid turn away." The upstream headless `codex exec` MCP-cancel
+   bug (#16685/#15824: exec EOF-declines the app-tool approval → "user cancelled MCP tool call") now has a
+   MERGED, adversarially-verified $0 fix: `tools/gate0_appserver_client.py` (PR #147, main=`eea732a`) — a
+   JSON-RPC client for `codex app-server` that ANSWERS the same approval prompt with `accept` (no
+   `--dangerously-bypass-approvals-and-sandbox`, no brain change, no pinned-file edit).
+2. **PROVEN AT $0 vs THE ONE PAID TURN:** proven — response shapes byte-exact vs the committed 0.144.3
+   `generate-json-schema` dump; request-side method-names + param-fields grounded against committed schemas
+   (drift-detection tests go red on client OR schema drift — confirmed by an adversarial hand-mutation pass,
+   not a standing mutation-testing framework); `initialize()` declares
+   `capabilities.experimentalApi` + `mcpServerOpenaiFormElicitation` (the FATAL catch — `item/tool/
+   requestUserInput` is EXPERIMENTAL and gated, so without opting in the prompt is never even delivered);
+   JSONL/`jsonrpc`-omitted framing; the 4 integrator-failure modes (hapi#287, plugin-cc#258, codex#18268,
+   PR#27256). Tests mock-only, $0, CI-green (`1474 passed`). STILL NEEDS THE ONE PAID TURN (David's call):
+   a real `codex app-server` turn completing a Docker-MCP call — to confirm capability-declaration is
+   *sufficient* for delivery, form-mode `content`, and the approve-label heuristic vs real option labels.
+   Report: `reports/2026-07-23-gate0-appserver-client-prototype.md`.
+3. **GATE-0 FORK RECOMMENDATION:** of David's four forks (pause / claude-p brain / prototype app-server
+   unblock / sandbox-bypass), the app-server client is now BUILT + verified, so fork (c) is the cheapest/
+   safest path to M1 — no brain change (Constancy preserved), no sandbox disabling. Next action is a single
+   bounded paid turn on the ChatGPT/Codex pool; nothing else blocks it. Optional pre-turn hardening nits are
+   on a background-task chip (approve-label/ThreadStart grounding, questions-missing fail-loud) — none blocks.
+4. **ALSO THIS SESSION ($0):** main had been RED across every commit (two Windows-Job-Object breaker tests
+   ran on the Linux CI runner under `@requires_powershell`, which only checks pwsh EXISTS) → fixed by a new
+   `@requires_windows_powershell` guard (PR #146); main is GREEN again. Three verified probes merged: Kirby
+   oracle #143 (GBA world-index `0x02006014`), Emerald oracle #144 (x/y + map_group/map_num, live-verified
+   vs the real ROM), F8/F9 labeling backfill #145 (+34 Cave Noire OCR). All adversarially reviewed pre-merge.
+5. **ENTITY LANE:** still SUSPENDED (David 2026-07-13). The v5 bar redesign was already banked #106/#109;
+   not re-derived. Real next step if resumed = Cave Noire multi-route source-status probe (never run).
+6. **SAFETY:** no model call, no paid run, no bypass flag, no brain/contract/tool-schema edit, no
+   hash-pinned Gate-0 file touched; all worktree-isolated; every "done" backed by a merged commit + CI.
+**⇒ NEXT (David):** decide the Gate-0 fork — recommended (c): spend ONE bounded paid turn to run the
+app-server client against a live Docker-MCP call and confirm end-to-end. Independent of that: the exam-v1
+freeze (#129, PR still open) and the async-seam ADR (#141 merged as an explicitly-DRAFT doc,
+`reports/2026-07-23-adr-async-seam-DRAFT.md` — the ruling itself is still pending) remain for your decision.
+
+**=>=> PRIOR (2026-07-21) - GATE 0 LAUNCH-READY PENDING DAVID'S SIGNATURE + QUOTA CHECK; $0. =>=>**
 1. **POSITION VS NORTH STAR:** does not move overall/proof (still no paid run) — closes out
    readiness: `reports/2026-07-21-gate0-readiness-final-v2.md` re-runs the checker against the fresh
    `red-v4`/`miniwob-v3` receipts on current `main` (`61abba7`, PR #125 merged) and **proves the gate
