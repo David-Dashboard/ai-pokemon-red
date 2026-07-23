@@ -33,8 +33,9 @@ paid harness merged; `docs/handoff-2026-07-23-wave2`; $0 — the one paid turn i
    a real cancel may nest `isError` under `item.result` — verify on turn 1, extend `_item_has_error` if so).
 4. **F4 KEYSTONE (A2) — FALSIFIED, banked (PR #152 merged; code PR #150 closed):** the pre-registered
    whole-frame fingerprint re-bind (`TileFunctionMap.fp_match` at the un-tuned `_DEFAULT_TOL=8`) is a **NO-GO,
-   killer forced** — it produces confident-wrong MERGEs across distinct maps in both seeds (homogeneity
-   0.982→0.903, below the 0.95 floor). Pixels-only whole-frame perceptual hashing cannot discriminate GB maps
+   killer forced** — it produces confident-wrong MERGEs across distinct maps in BOTH seeds; seed 3 breaches the
+   homogeneity floor (0.982→0.903 < 0.95) and seed 7 breaches completeness (0.583 < 0.7, its homogeneity
+   holding at 0.993). Pixels-only whole-frame perceptual hashing cannot discriminate GB maps
    within one tileset without per-place tuning / `map_id` — that route to A2 is closed. Code NOT merged (it
    regresses the perceiver); branch `feat/f4-keystone-fingerprint` retained for reproducibility.
 5. **ALSO MERGED:** PR #149 — app-server client hardening (ground `pick_approve_label` options/label +
