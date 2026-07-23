@@ -2,8 +2,10 @@
 
 **Date:** 2026-07-23 · **Lane:** F7 (capability-map A3) · **Cost:** $0, offline, no paid run.
 **Verdict:** heading recovery is **PLAUSIBLE but NOT demonstrated**; the banked frames are
-**inadequate** for the accuracy measurement, and one **spacing-independent structural risk is
-confirmed**. Do not build/wire anything. Next step is a free consecutive-frame capture (below).
+**inadequate** for the accuracy measurement. A quantitative horizon-roll estimate on these frames
+does **NOT** hold up under scrutiny (retracted below — region-choice-dependent, sign-unstable); the
+expansion/zoom-flow model mismatch is the load-bearing structural risk. Do not build/wire anything;
+next step is a free consecutive-frame capture (below).
 
 ## What A3 asks / what I probed
 Capability map (A3, `reports/2026-07-05-northstar-capability-map.md:73-74`): a minimap-agnostic
@@ -34,23 +36,24 @@ MID=default-equiv 67-125, LOWER=kart 110-168) + the scaled multi-band vote.
   MID −16 "right", UPPER +41 "left", LOWER −60 "right"); the multi-band vote is **3/10 None** and
   sign-incoherent. No single `dx` describes the frame — the NCC surface is nearly flat.
 - **Confound:** at 12-frame spacing, forward motion (~33%/frame, `FINDINGS.md:329`) far exceeds
-  the band's usable shift, so this incoherence is partly sparsity, not purely model mismatch —
-  which is exactly why it is inconclusive rather than a clean falsification.
+  the band's usable shift, so this incoherence is partly sparsity, not a clean falsification.
 
-## Confirmed structural risk (spacing-independent)
-Per-frame horizon tilt (row of max vertical gradient, upper viewport) over the accel pass:
-**−7.9° → −3.4° → +0.4° → +2.8° → −9.08°** — the horizon **rolls ~±9°** within one straight
-segment. `yaw_band_flow` collapses a fixed-row band to a column-mean profile, which assumes the
-horizon is a horizontal line; a ±9° roll smears that profile independent of frame spacing.
-MKDS is a **high-angle chase-cam** (see the frames), not a first-person horizon world: forward
-translation adds an **expansion/zoom flow** (left half streams left, right half streams right) on
-top of yaw + roll. A 1D single-horizontal-translation model is a **genuine model mismatch** here,
-not merely a tuning gap. (The "screen-locked kart pins NCC to 0" hypothesis was NOT supported —
-the kart banks with the cam; static-frac in MID band = 0.0.)
+## Horizon-roll claim: retracted (region-choice-dependent, sign-unstable)
+An earlier pass claimed a **confirmed ±9° horizon roll** from a single "row of max vertical
+gradient per column, upper viewport" linear fit — that does **not** survive scrutiny. Per-column
+horizon-row picks scatter **std 20–34px** (residual std 17–34px after the fit), landing on
+grandstand roofline/banners/crowd texture/the "LAP" HUD, not one horizon edge. The angle is **not
+robust to region choice** (one pair: −9.4° full-width vs +7.6° right-HUD-dropped vs −17.6°
+central-only) and **flips sign** on another pair when LAP-HUD columns drop (−5.2° → +22.2°). A
+true roll is stable under those variations; this is a slope fit through track/grandstand/HUD noise.
+**Retracted: horizon-roll on these frames is not a reliable heading signal.** The structural risk
+that *does* hold is the expansion/zoom-flow mismatch measured above (UPPER/MID/LOWER disagree in
+sign on the same pair) — needs no horizon measurement, and is the load-bearing part. ("Screen-locked
+kart pins NCC to 0" was NOT supported — kart banks with the cam; static-frac in MID band = 0.0.)
 
 ## Recommendation
-1. **Do not build or wire a heading primitive now**, and do not climb the Realizer Ladder — there
-   is no measured failed bar yet (banked data can't produce one).
+1. **Do not build or wire a heading primitive now** — no measured failed bar yet (banked data
+   can't produce one); do not climb the Realizer Ladder.
 2. **Reroute the "cheapest probe":** the honest cheap next step is a **free consecutive-frame
    capture** from `mkds_race_start.state` with a scripted L/R steer and the commanded-turn logged
    as ground truth — the same instrumented-replay pattern `score_a3_precheck.py` already uses for
