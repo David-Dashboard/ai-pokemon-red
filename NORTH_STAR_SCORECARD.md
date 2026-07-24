@@ -1,6 +1,9 @@
-# North Star scorecard - 2026-07-14
+# North Star scorecard - 2026-07-25
 
-This is the first rubric-backed baseline. It is not a claimed change from an earlier score.
+This reflects the 2026-07-24 re-score (proof 8/100 -> 18/100) as first proposed, further corrected
+on 2026-07-25 after an adversarial fact-check found the Constancy and Cheap bumps overstated (see
+the paired verdict report, `reports/2026-07-24-gate0-paired-verdict.md` §3/§4, revised). The doc now
+IS a claimed change from an earlier score, not a first baseline.
 
 ## Scores
 
@@ -18,8 +21,8 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
     Codex's JSONL stream has no per-model-decision observable
     (`reports/2026-07-21-gate0-wake-grounding.md`), so Gate 0's scorer now grounds Cheap on
     cost-per-task instead and reports wakes informationally, never gating.
-- **Actual evidence / proof: 18/100** (was 8/100 — re-scored 2026-07-24, see note below). Four
-  North Star claims, 25 points each:
+- **Actual evidence / proof: 14/100** (was 8/100 — re-scored 2026-07-24, corrected 2026-07-25, see
+  note below). Four North Star claims, 25 points each:
   - **Capability: 5/25** (was 3/25). **2026-07-24 update:** the FIRST completed, frozen-predicate-
     scored, two-arm paid Gate 0 attempt now exists (`reports/2026-07-24-gate0-paired-verdict.md`,
     `reports/2026-07-24-gate0-armR-verdict.md`, PR #161) — both `_red_success`/`_miniwob_success`
@@ -28,40 +31,59 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
     actions but missed the anti-false-victory tail (a measurement-shaped miss, task likely actually
     done); MiniWoB solved 4/5 held-out seeds at reward 1.0 with one genuine partial (0.667). Isolated
     banked successes (MiniWoB click-button 5/5) still stand as separate, smaller evidence.
-  - **Constancy: 7/25** (was 1/25). **2026-07-24 update:** `tools/check_gate0_codex.py::compare_constancy`
-    ran, for the first time ever, against real Red + MiniWoB peer receipts from the same banked
-    attempt — clean, zero mismatches across all 9 `CONSTANCY_FIELDS` (executable hash, model, auth
-    method, config transport, brain-config hash, etc. — see the paired verdict §3). This is direct,
-    first-ever proof that one fixed brain/launch identity drove two structurally different world
-    classes (GB emulator, browser DOM) in a single attempt. The bump is bounded deliberately: this
-    proves identity constancy, not behavioral/performance equivalence — the two arms' actual task
-    outcomes still differ and both FAILed their predicates, so this is not evidence of equal
-    competence across worlds, only of an unmodified shared brain.
+  - **Constancy: 4/25** (was 1/25). **2026-07-24 update, corrected 2026-07-25:**
+    `tools/check_gate0_codex.py::compare_constancy` ran, for the first time ever, against real Red +
+    MiniWoB peer receipts from the same banked attempt — clean, zero mismatches across all 9
+    `CONSTANCY_FIELDS`. An adversarial fact-check on 2026-07-25 found the initial +6 bump (to 7/25)
+    overclaimed what this establishes — full diagnosis in the paired verdict report §3 (revised). 4
+    of the 9 matching fields are hardcoded string literals that cannot differ between any two
+    receipts this launcher emits; `brain_config_sha256` cannot differ given the same launcher build
+    + `--model`; `codex_path` matching is guaranteed by same-machine execution. That leaves roughly
+    three genuinely independent facts (`codex_version`, `codex_executable_sha256`, and
+    `planned_model` — itself the operator-supplied `--model` argument, not an observed model
+    identity), not nine, and the two arms ran ~7h40m apart with no observability into that gap. This
+    is a **launch-configuration consistency check, substantially tautological by construction**, not
+    a measurement of brain sameness — worth a modest bump (a check this tautological cannot
+    reasonably be worth more than ~5/25), landing at 4/25 (+3, not +6). It still rules out Codex-CLI
+    auto-update drift and a model-flag change across that gap, and does not speak to
+    behavioral/performance equivalence — both arms still FAILed their predicates, by different
+    mechanisms.
   - **Generality: 2/25 — unchanged.** GB/GBA/NDS/browser/ARC probes show breadth, but much of it is
     exploratory, bridged, or below human-grade completion. **2026-07-24 evidence note (no score
     change):** the same paired attempt drove two of the most different world classes in the probe
     set (GB emulator vs. browser DOM) through one harness end to end, but both arms scored below the
     frozen bar, so per this report's own instruction not to inflate, the number stays put — only the
     evidence base is larger.
-  - **Cheap: 4/25** (was 2/25). **2026-07-24 update:** a real two-arm paid attempt landed combined
-    `$1.4455`/`36.14` credits, ~5x under the `$7.00`/`175`-credit PASS bar, nowhere near the 250-credit
-    hard breaker (`reports/2026-07-24-gate0-paired-verdict.md` §2c) — genuine evidence the cost
-    mechanism holds under a real spend, not just a dry run. Bump kept small: the pinned proof
-    artifact for the live breaker itself (`live_breaker_dry_run_trip.json`) is missing for this
-    specific attempt (only a differently-shaped, apparently-incomplete `combined_credit_ledger.json`
-    exists at that path — see the paired verdict §4), so "a live spend breaker, proven, for this run"
-    is not fully closed at the artifact level. Held-out skill compilation remains unproven, unchanged.
-- **Overall: 27/100** (was 19/100). `ceil(0.15 * engineering + 0.85 * proof)` =
-  `ceil(0.15 * 76 + 0.85 * 18)` = `ceil(26.7)` = `27`. The 85% proof weight prevents engineering
+  - **Cheap: 3/25** (was 2/25). **2026-07-24 update, corrected 2026-07-25:** a real two-arm paid
+    attempt landed combined `$1.4455`/`36.14` credits, ~5x under the `$7.00`/`175`-credit PASS bar,
+    nowhere near the 250-credit hard breaker (`reports/2026-07-24-gate0-paired-verdict.md` §2c) —
+    this particular run was cheap. An adversarial fact-check on 2026-07-25 found the original +2
+    bump (to 4/25) overclaimed what this shows: it is **not** "genuine evidence the cost mechanism
+    holds under a real spend" — the breaker never fired, and its proof artifact
+    (`live_breaker_dry_run_trip.json`) is absent; the only file at that path is a 2026-07-22 dry-run
+    ledger reading `consumed_normalized_credits: 0` that doesn't describe this attempt. Cut to a
+    smaller +1 instead, because: (1) **the frozen scorer never evaluated Cheap** —
+    `score_gate0.py`'s Cheap block is gated on `source` failures being empty, and `source` was
+    non-empty this attempt, so the number is a hand computation, not a scorer verdict (paired verdict
+    §2c/§4); (2) the figures come from `agent_metrics.json`, whose integrity pins are still
+    `PENDING_NOT_YET_CAPTURED_paid_attempt_not_run` — unpinned, launcher-self-reported, never
+    hash-verified; (3) this run's cheapness is partly *caused by* its failure mode — Red declared
+    victory and stopped acting, so `$0.4159` partly reflects a prematurely-terminated run, not
+    efficient task completion. Held-out skill compilation remains unproven, unchanged.
+- **Overall: 24/100** (was 19/100). `ceil(0.15 * engineering + 0.85 * proof)` =
+  `ceil(0.15 * 76 + 0.85 * 14)` = `ceil(23.3)` = `24`. The 85% proof weight prevents engineering
   activity from masquerading as North Star progress.
 
-  **Re-score provenance (2026-07-24):** these deltas were proposed by the session that banked the
-  first paired Gate 0 verdict (`reports/2026-07-24-gate0-paired-verdict.md`), per that task's own
-  instruction to re-score honestly rather than leave stale "no controlled run has ever completed"
-  language in place, while explicitly not inflating Capability/Generality past FAIL. The rubric is
-  inherently judgment-based — **David should sanity-check these specific point deltas** (proposed:
-  Capability +2, Constancy +6, Generality +0, Cheap +2) against his own read of the evidence; nothing
-  here should be treated as a mechanically-derived or final number.
+  **Re-score provenance (2026-07-24, corrected 2026-07-25):** these deltas were proposed by the
+  session that banked the first paired Gate 0 verdict (`reports/2026-07-24-gate0-paired-verdict.md`),
+  per that task's own instruction to re-score honestly rather than leave stale "no controlled run has
+  ever completed" language in place, while explicitly not inflating Capability/Generality past FAIL.
+  An adversarial fact-check on 2026-07-25 found the Constancy and Cheap bumps overclaimed (see those
+  entries above, and the paired verdict report §3/§4, revised) and corrected them: Constancy +6 -> +3
+  (7/25 -> 4/25), Cheap +2 -> +1 (4/25 -> 3/25). Capability and Generality deltas were unaffected. The
+  rubric is inherently judgment-based — **David should sanity-check these specific point deltas**
+  (current: Capability +2, Constancy +3, Generality +0, Cheap +1) against his own read of the
+  evidence; nothing here should be treated as a mechanically-derived or final number.
 
 The free handshakes and R0/W0/C0 scorer add **zero proof points**. This slice buys readiness and
 interpretability, not capability evidence.

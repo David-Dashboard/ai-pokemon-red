@@ -17,7 +17,7 @@ the Arm W subset committed under `reports/2026-07-24-gate0-paired-verdict/` (see
 |---|---|
 | **Capability** | **FAIL** — both arms fail their frozen predicates |
 | **Generality** | **FAIL** — Gate 0's generality claim requires both arms to pass; they didn't |
-| **Cheap** | **PASS** — combined `$1.4455` / `36.14` credits vs the `$7.00`/`175`-credit bar (see §2c) |
+| **Cheap** | **PASS (component computation vs documented caps — NOT a frozen-scorer verdict; see §2c/§4)** — combined `$1.4455` / `36.14` credits vs the `$7.00`/`175`-credit bar |
 | **NO_LEAK** | **clean, both arms** (re-verified below) |
 | **Constancy (between-arms identity check)** | **clean — first time this check has ever run** (see §3) |
 | **`score_gate0.py score_manifest()` end-to-end verdict** | **`CONSTANCY_BREACH`** — but for reasons unrelated to the between-arms check; see §4 for why this is a pin-freeze/fixture-lifecycle artifact, not a real identity divergence |
@@ -70,9 +70,15 @@ actions / 295.594s / `$1.02958` (25.7395 credits).
 Red: `$0.41589` / `10.397275` credits (cap `$5.00`/`125`). MiniWoB: `$1.02958` / `25.7395` credits
 (cap `$2.00`/`50`). Combined: `$1.44547` / `36.136775` credits vs the combined PASS bar
 `$7.00`/`175` and the hard breaker `250`. Both individually and combined, comfortably under —
-neither soft cap nor the hard breaker came close to tripping. This is a genuine, re-verified PASS
-on the Cheap axis alone; it does not offset the Capability/Generality FAILs (Gate 0's axes are
-independent, not averaged).
+neither soft cap nor the hard breaker came close to tripping.
+
+**This is a hand computation against documented caps, not a frozen-scorer verdict** — see §4 for
+why `score_manifest()` never actually reaches the Cheap block on this manifest, and for the
+integrity caveats on the `agent_metrics.json` figures themselves. It does not offset the
+Capability/Generality FAILs (Gate 0's axes are independent, not averaged), and — because Red's low
+cost partly reflects the brain stopping early once it believed the task done (§2a, §7) rather than
+completing it — cheapness on a run that failed its own capability predicate is weaker evidence than
+a cheap *successful* run would be.
 
 ## 3. The between-arms Constancy check — run for the first time this project has ever run it
 
@@ -109,34 +115,65 @@ Field-by-field (all MATCH):
 
 ### What this proves, precisely
 
-The **same Codex executable** (byte-identical, by hash), running the **same model**
-(`gpt-5.6-sol`), authenticated the **same way** (ChatGPT subscription, not an API key), configured
-via the **same transport discipline** (explicit CLI overrides, not fresh-project trust), and
-launched from the **same brain-config content** (byte-identical developer-instructions/system
-prompt, by hash — `brain_config_sha256` is deliberately arm-independent, so this hash matching is
-exactly the "one fixed brain" claim at the byte level) drove two structurally different worlds: a
-Game Boy emulator (Pokémon Red, `gb-mcp-world`) and a browser DOM environment (MiniWoB
-`click-checkboxes`, `miniwob-world`). Only the world and its tool surface changed between arms —
-everything CONSTANCY_FIELDS tracks about the brain/launch identity held fixed.
+Both arms were launched from a **byte-identical Codex CLI binary** (same executable hash), by the
+**same launcher build** (`tools/gate0_appserver_arm.py`), **requesting the same model identifier**
+(`planned_model: gpt-5.6-sol`), with the **same auth mode** (ChatGPT subscription, not an API key)
+and **byte-identical brain-config content** (`brain_config_sha256` matches by hash — see below for
+why that match is less informative than it looks). Only the world and its tool surface changed
+between arms.
+
+**Launch-side identity is pinned; the served model is NOT independently observed.** Every field
+this check compares describes what was requested and launched, not what actually executed on the
+far side of the ChatGPT-subscription connection.
 
 ### What this does NOT prove
 
 - **Not behavioral or performance equivalence.** Identical identity does not imply identical
   competence — Capability FAILed on both arms, by different mechanisms (§5). Constancy-of-identity
   and Capability are separate axes; this check speaks only to the former.
-- **Not full-pin equality.** `CONSTANCY_FIELDS` is a deliberate 9-field subset of the 20 `PIN_FIELDS`
-  — it excludes `task_sha256`, `mcp_servers_observed`, `mcp_tools_observed`, `world_image_tag`,
-  `world_image_id`, `host_code_sha256`, `image_code_sha256`, `config_sha256`,
-  `codex_mcp_list_sha256`, `tool_schema_sha256`, `arm` by design, because those fields are
-  *supposed* to differ per-arm (different task, different tool allowlist, different world image) or
-  are launch-invocation-dependent. This check is scoped correctly to "same brain," not "identical
-  receipts."
+- **Most of the 9-field match is structurally guaranteed, not independently informative.** 4 of
+  the 9 `CONSTANCY_FIELDS` — `readiness`, `paid_execution_enabled`, `auth_method`,
+  `critical_config_transport` — are **hardcoded string literals** inside
+  `tools/gate0_appserver_arm.py::build_handshake_receipt` (verified by direct inspection of that
+  function): they cannot differ between any two receipts this launcher emits, regardless of arm,
+  model, or anything else, so they carry zero information. `brain_config_sha256` cannot differ
+  either, given the same launcher build invoked with the same `--model`/config arguments — it
+  hashes the same input content both times by construction. `codex_path` matching is guaranteed by
+  both arms running on the same machine against the same install. That leaves `codex_version`,
+  `codex_executable_sha256`, and `planned_model` as the genuinely independent facts this check
+  establishes.
+- **`planned_model` is an input, not an observation.** It is literally the operator-supplied
+  `--model` CLI argument passed into the launcher, not a measurement of which model actually served
+  the turns. A grep of both arms' `transcript.jsonl` confirms zero model-identifying fields present
+  in either — the brain is an external hosted model reached through a `gpt-5.6-sol` alias, and
+  nothing in the receipt or the transcript independently confirms what answered on the other end of
+  that alias.
+- **The two arms ran ~7h40m apart** (Red handshake 2026-07-24 15:58 local, MiniWoB 23:39 local), so
+  any server-side routing or checkpoint change within that window is unobservable to this check — it
+  can only speak to the moment each handshake was captured, not to continuity in between.
+- **Not full-pin equality, and the exclusion rationale is not uniform.** `CONSTANCY_FIELDS` is a
+  deliberate 9-field subset of the 20 `PIN_FIELDS` — it excludes `task_sha256`,
+  `mcp_servers_observed`, `mcp_tools_observed`, `world_image_tag`, `world_image_id`,
+  `host_code_sha256`, `image_code_sha256`, `config_sha256`, `codex_mcp_list_sha256`,
+  `tool_schema_sha256`, `arm`. Most are excluded because they are *supposed* to differ per-arm
+  (different task, different tool allowlist, different world image) — but that rationale does
+  **not** hold for all eleven: `mcp_servers_observed`, `host_code_sha256`, and `image_code_sha256`
+  are in fact **identical across arms** in this attempt, not merely excluded as "expected to
+  differ." The reason is a pre-existing launcher quirk: the code-hashing step hardcodes the same
+  two world-module paths, `/app/world_mcp.py` and `/app/core/miniwob_world.py`, for **both** arms
+  regardless of which world is actually running (verified at `tools/gate0_appserver_arm.py`
+  ~lines 374/986-987) — so Red's `host_code_sha256`/`image_code_sha256` are not pinned to Red's own
+  GB world code at all; Red's receipt carries MiniWoB's world-module hash alongside its own. Flagged
+  here as a pre-existing launcher quirk, out of scope for this report, worth a follow-up fix.
 - **Not a statement about the frozen expected-pins fixtures.** See §4 — the end-to-end scorer's
   `CONSTANCY_BREACH` verdict comes from a *different* check (receipt-vs-frozen-pin, not
   receipt-vs-peer) and is not evidence against the result in this section.
 
-This is the **headline new evidence** of this report: direct, first-ever proof that one fixed brain
-identity drove two different world classes in the same banked attempt.
+**What this legitimately licenses:** the check rules out Codex-CLI auto-update drift and a
+model-flag change across the ~7.7-hour gap between arms, and confirms one launcher build/brain-config
+identity spanned two structurally different world classes at the moments each handshake was taken.
+Call it what it is — this is **a launch-configuration consistency check, substantially tautological
+by construction, not a measurement of brain sameness.**
 
 ## 4. The frozen end-to-end scorer — how far `score_manifest()` gets
 
@@ -208,11 +245,24 @@ irrelevant to what it reads; nothing was written into `runs/`.
 }
 ```
 
-`score()`'s failure-category precedence puts `constancy` failures ahead of `source`/`capability`/
-`cheap`, so `overall` reads `CONSTANCY_BREACH` even though (by the direct check in §3) the two arms'
-brain identity is provably clean. **Do not read this line as contradicting §3** — it is a different
-check with an overloaded name. Mechanical trace of every failure below, none fabricated or
-smoothed over:
+**On `"cheap": []` above — this means NOT EVALUATED, not PASSED.** `failures["source"]` is
+non-empty, so the entire Cheap block (`eval/score_gate0.py:331`) was skipped — `"cheap": []` above
+means NOT EVALUATED, not passed. `leak`/`constancy` populate BEFORE that guard (line 305) and are
+genuine, which is why the NO_LEAK claim stands while the Cheap one does not.
+
+The Cheap PASS stated in §1/§2c is therefore a **hand computation**, not a scorer verdict: computed
+directly from `agent_metrics.json` against the documented `$`/credit caps, over artifacts whose own
+pinned integrity hashes (`gate0_paid_source_pins.json`'s `artifact_sha256.red_agent`/
+`miniwob_agent`, see the `source` failures below) are still the placeholder
+`"PENDING_NOT_YET_CAPTURED_paid_attempt_not_run"` — i.e. `agent_metrics.json`'s figures are
+launcher-self-reported and have never been independently hash-verified against a frozen pin.
+
+`score()`'s failure-category precedence puts `leak` -> `constancy` -> `infra` -> `source` ->
+`capability` -> `cheap`, so `failures["constancy"]` being non-empty short-circuits the verdict to
+`CONSTANCY_BREACH` before `source`/`capability`/`cheap` are even in play for the `overall` label —
+even though (by the direct check in §3) the two arms' brain identity is provably clean. **Do not
+read this line as contradicting §3** — it is a different check with an overloaded name. Mechanical
+trace of every failure below, none fabricated or smoothed over:
 
 **The `constancy` failures (6 entries, 3 per arm) are `_expected_failures()` inside `audit()`** —
 receipt-vs-*frozen-pin-fixture* comparisons (`eval/fixtures/gate0_expected_pins_red.json` /
@@ -355,6 +405,11 @@ Arm W cap alone.
   well have worked (cost came in far under the hard cap regardless), but the pinned proof file
   (`live_breaker_dry_run_trip.json`) is not present to independently confirm it armed and held for
   this run.
+- **Post-hoc predicate-loosening is METHODOLOGICALLY FORBIDDEN, not a design option.**
+  Retroactively loosening the frozen predicates (`_red_success`, `_miniwob_success`) to convert
+  either of §2's two misses into a pass, after having seen the result, is exactly what
+  pre-registration exists to prevent. Both misses are real and mechanically diagnosed (§7). This is
+  a non-negotiable bound on any vNext attempt — it is not offered as one of the candidates in §10.
 
 ## 9. What David must do next
 
@@ -388,10 +443,8 @@ Arm W cap alone.
 - **(b) Bank as-is** and treat this paired attempt as the honest proof-floor baseline for Gate 0 —
   the first real evidence that the harness itself works end-to-end across two world classes, even
   though capability is unproven.
-- **(c) Explicitly mark as METHODOLOGICALLY FORBIDDEN** any post-hoc loosening of the frozen
-  predicates (`_red_success`, `_miniwob_success`) to retroactively convert either of these two
-  results into a pass. Both misses are real, mechanically diagnosed above; loosening the bar after
-  seeing the result is exactly the thing pre-registration exists to prevent.
 
-None of (a)/(b)/(c) is selected by this report — they are listed for David to choose from, per the
-gate-methodology rule that escalation-picking is never delegated to the report author.
+Neither (a) nor (b) is selected by this report — they are listed for David to choose from, per the
+gate-methodology rule that escalation-picking is never delegated to the report author. A third
+option — loosening the frozen predicates themselves to convert a miss into a pass — is not offered
+as a candidate here at all: see §8, it is a standing methodological prohibition, not a menu item.
