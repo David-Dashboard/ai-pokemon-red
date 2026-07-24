@@ -315,33 +315,36 @@ def _token_usage_updated(*, cached, input_, output, reasoning, total_tokens, las
     }
 
 
-# First real update: only the aggregate totalTokens=11162 is on record from the capture; the
-# per-field breakdown here is self-consistent filler (documented above), not a captured number.
-_GT_EVENT_1 = _token_usage_updated(cached=5000, input_=11000, output=162, reasoning=50,
+# Both events below are copied VERBATIM from the real captured transcript (PR #156 review fixture-
+# provenance fix): reports/2026-07-23-gate0-appserver-m1-confirmation/transcript.jsonl line 27
+# (event 1, the FIRST thread/tokenUsage/updated) and line 31 (event 2, the SECOND/final one) --
+# not self-consistent filler. `last` on line 27 equals `total` (it is the first update); `last` on
+# line 31 is the real per-field delta the capture recorded, and independently reproduces
+# total_2 - total_1 exactly per field (cached 9984-0=9984, input 21980-10782=11198,
+# output 384-380=4, reasoning 309-309=0, totalTokens 22364-11162=11202) -- confirming `total` is
+# cumulative and `last` is the genuine per-update delta, not a coincidence of this fixture.
+_GT_EVENT_1 = _token_usage_updated(cached=0, input_=10782, output=380, reasoning=309,
                                     total_tokens=11162)
-# Second/final real update: reproduces the EXACT captured numbers (cachedInputTokens=9984,
-# inputTokens=21980, totalTokens=22364), with `last` set to the exact per-field delta from event 1
-# so its totalTokens (11202) matches the ground truth's stated per-update delta precisely.
-_GT_EVENT_2 = _token_usage_updated(cached=9984, input_=21980, output=384, reasoning=120,
+_GT_EVENT_2 = _token_usage_updated(cached=9984, input_=21980, output=384, reasoning=309,
                                     total_tokens=22364,
-                                    last={"cachedInputTokens": 4984, "inputTokens": 10980,
-                                          "outputTokens": 222, "reasoningOutputTokens": 70,
+                                    last={"cachedInputTokens": 9984, "inputTokens": 11198,
+                                          "outputTokens": 4, "reasoningOutputTokens": 0,
                                           "totalTokens": 11202})
 
 
 def test_app_server_usage_tracker_first_update_deltas_from_zero():
     tracker = AppServerUsageTracker()
     delta = tracker.delta_for(_GT_EVENT_1["params"]["tokenUsage"]["total"])
-    assert delta == {"input_tokens": 11000, "cached_input_tokens": 5000, "output_tokens": 162,
-                      "reasoning_output_tokens": 50}
+    assert delta == {"input_tokens": 10782, "cached_input_tokens": 0, "output_tokens": 380,
+                      "reasoning_output_tokens": 309}
 
 
 def test_app_server_usage_tracker_second_update_deltas_against_the_first():
     tracker = AppServerUsageTracker()
     tracker.delta_for(_GT_EVENT_1["params"]["tokenUsage"]["total"])
     delta = tracker.delta_for(_GT_EVENT_2["params"]["tokenUsage"]["total"])
-    assert delta == {"input_tokens": 10980, "cached_input_tokens": 4984, "output_tokens": 222,
-                      "reasoning_output_tokens": 70}
+    assert delta == {"input_tokens": 11198, "cached_input_tokens": 9984, "output_tokens": 4,
+                      "reasoning_output_tokens": 0}
     # Matches the ground truth's captured per-update totalTokens delta exactly (22364-11162=11202).
     assert delta["input_tokens"] + delta["output_tokens"] == 11202
 
@@ -356,23 +359,22 @@ def test_app_server_usage_tracker_duplicate_total_yields_zero_delta_never_double
                           "reasoning_output_tokens": 0}
 
 
-def test_app_server_usage_tracker_out_of_order_regression_clamps_to_zero_not_negative():
+def test_app_server_usage_tracker_strictly_regressed_total_raises_not_clamped():
+    # PR #156 review fix: a STRICTLY REGRESSED total (any field going DOWN vs. the last-seen
+    # baseline) is a stream fault, not a duplicate -- the tracker must fail loud (raise), never
+    # silently clamp to a zero delta and continue as if nothing happened.
     tracker = AppServerUsageTracker()
     tracker.delta_for(_GT_EVENT_2["params"]["tokenUsage"]["total"])
-    # A regressed total (smaller than the last-seen one) must never produce a negative delta, and
-    # must not corrupt the baseline for the NEXT legitimate update.
-    regressed = tracker.delta_for(_GT_EVENT_1["params"]["tokenUsage"]["total"])
-    assert all(v == 0 for v in regressed.values())
-    next_delta = tracker.delta_for(_GT_EVENT_2["params"]["tokenUsage"]["total"])
-    assert all(v == 0 for v in next_delta.values())  # baseline is still event 2's total
+    with pytest.raises(ValueError, match="app_server_token_usage_regressed"):
+        tracker.delta_for(_GT_EVENT_1["params"]["tokenUsage"]["total"])
 
 
 def test_app_server_usage_notification_to_credit_event_prices_the_delta():
     tracker = AppServerUsageTracker()
     event = app_server_usage_notification_to_credit_event(_GT_EVENT_1, _RATE_PIN, tracker)
-    # uncached_input=11000-5000=6000, cached=5000, output=162:
-    # 6000*0.0001 + 5000*0.00001 + 162*0.0001 = 0.6 + 0.05 + 0.0162 = 0.6662
-    assert event["normalized_credits"] == pytest.approx(0.6662)
+    # uncached_input=10782-0=10782, cached=0, output=380:
+    # 10782*0.0001 + 0*0.00001 + 380*0.0001 = 1.0782 + 0 + 0.038 = 1.1162
+    assert event["normalized_credits"] == pytest.approx(1.1162)
 
 
 def test_app_server_usage_notification_missing_tokenusage_fails_closed():
@@ -390,10 +392,10 @@ def test_app_server_usage_notification_missing_tokenusage_fails_closed():
 
 def test_single_app_server_notification_below_cap_does_not_trip():
     tripped = {"called": False}
-    guard = LiveCreditGuard(limit=1.0, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
+    guard = LiveCreditGuard(limit=1.2, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
                              on_trip=lambda exc: tripped.__setitem__("called", True))
     guard.start()
-    guard.observe(_GT_EVENT_1)  # ~0.6662 credits, under the 1.0 cap
+    guard.observe(_GT_EVENT_1)  # 1.1162 credits, under the 1.2 cap
     guard.finish()
     guard.join(timeout=5.0)
     assert guard.result["tripped"] is False
@@ -402,11 +404,14 @@ def test_single_app_server_notification_below_cap_does_not_trip():
 
 def test_app_server_notification_sequence_trips_the_breaker_at_the_cap():
     tripped = {"called": False}
-    guard = LiveCreditGuard(limit=1.0, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
+    guard = LiveCreditGuard(limit=1.2, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
                              on_trip=lambda exc: tripped.__setitem__("called", True))
     guard.start()
-    guard.observe(_GT_EVENT_1)  # ~0.6662 cumulative
-    guard.observe(_GT_EVENT_2)  # + ~0.67164 -> ~1.33784, crosses the 1.0 cap
+    guard.observe(_GT_EVENT_1)  # 1.1162 cumulative, under the 1.2 cap
+    # event 2 delta: uncached_input=11198-9984=1214, cached=9984, output=4:
+    # 1214*0.0001 + 9984*0.00001 + 4*0.0001 = 0.1214 + 0.09984 + 0.0004 = 0.22164
+    # cumulative 1.1162 + 0.22164 = 1.33784, crosses the 1.2 cap.
+    guard.observe(_GT_EVENT_2)
     guard.finish()
     guard.join(timeout=5.0)
     assert guard.result["tripped"] is True
@@ -419,10 +424,10 @@ def test_app_server_notification_sequence_trips_the_breaker_at_the_cap():
 
 def test_app_server_notification_duplicate_delivery_does_not_double_count_toward_the_cap():
     # The same GT_EVENT_1 total observed TWICE (a retried/duplicated notification) must price the
-    # second delivery at zero credits, not double-charge -- 2x the real credits (~1.33) would
-    # exceed the 1.0 cap, but the duplicate alone must not trip it.
+    # second delivery at zero credits, not double-charge -- 2x the real credits (~2.23) would
+    # exceed the 1.2 cap, but the duplicate alone must not trip it.
     tripped = {"called": False}
-    guard = LiveCreditGuard(limit=1.0, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
+    guard = LiveCreditGuard(limit=1.2, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
                              on_trip=lambda exc: tripped.__setitem__("called", True))
     guard.start()
     guard.observe(_GT_EVENT_1)
@@ -430,20 +435,20 @@ def test_app_server_notification_duplicate_delivery_does_not_double_count_toward
     guard.finish()
     guard.join(timeout=5.0)
     assert guard.result["tripped"] is False
-    assert guard.result["final_total_normalized_credits"] == pytest.approx(0.6662)
+    assert guard.result["final_total_normalized_credits"] == pytest.approx(1.1162)
 
 
 def test_exec_shaped_path_still_works_alongside_app_server_notifications():
     # Mixed stream: an app-server usage notification AND an exec-shaped token_count event in the
     # same guard run must both be priced and accumulate together -- the exec path must not break.
     tripped = {"called": False}
-    guard = LiveCreditGuard(limit=1.0, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
+    guard = LiveCreditGuard(limit=1.4, stall_timeout_s=2.0, rate_pin=_RATE_PIN,
                              on_trip=lambda exc: tripped.__setitem__("called", True))
     guard.start()
-    guard.observe(_GT_EVENT_1)  # ~0.6662
+    guard.observe(_GT_EVENT_1)  # 1.1162, under the 1.4 cap
     guard.observe({"type": "token_count", "info": {"last_token_usage": {
         "input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 4000,
-        "reasoning_output_tokens": 0}}})  # 4000*0.0001=0.4 -> cumulative ~1.0662, crosses the cap
+        "reasoning_output_tokens": 0}}})  # 4000*0.0001=0.4 -> cumulative 1.5162, crosses the cap
     guard.finish()
     guard.join(timeout=5.0)
     assert guard.result["tripped"] is True

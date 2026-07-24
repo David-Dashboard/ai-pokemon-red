@@ -1,0 +1,29 @@
+{
+  "_comment": "TEMPLATE ONLY -- not a real signature. Mirrors eval/fixtures/gate0_signature.example.json's shape for the APP-SERVER launch surface (tools/gate0_appserver_arm.py replacing tools/run_gate0_codex.ps1's -PaidExec path). IMPORTANT DIFFERENCE FROM THE ORIGINAL: tools/gate0_appserver_arm.py does NOT itself implement a Confirm-PaidExecSignature-equivalent mechanical gate that reads this file -- it refuses to launch un-priced only via --credit-rate-pin (tools/gate0_codex_credit_rate.py::load_credit_rate_pin), exactly like tools/gate0_appserver_launch.py already does. This file is prepared as the SAME kind of human-authored authorization record David reviews/signs before a real launch (frozen_commit + the 20 PIN_FIELDS-adjacent launch-time hashes + the credit-rate pin), but its consumption is currently a MANUAL orchestrator discipline, not code-enforced the way the .ps1's signature check is. Flagged explicitly in reports/2026-07-24-gate0-prereg-amendment-appserver.md as a known gap versus the original mechanism -- a future PR could wire an equivalent Confirm-PaidExecSignature check into tools/gate0_appserver_arm.py if that mechanical enforcement is wanted.",
+  "schema_version": 1,
+  "frozen_commit": "REPLACE_WITH_git_rev-parse_HEAD_AT_SIGNATURE_TIME",
+  "arm": "REPLACE_WITH_red_or_miniwob",
+  "planned_model": "gpt-5.6-sol",
+  "signed_by": "REPLACE_WITH_signer_name",
+  "signed_at": "REPLACE_WITH_ISO8601_signature_timestamp",
+  "expected_config_sha256": "PENDING_RECOMPUTE_AT_LAUNCH -- this launch's freshly computed handshake-receipt.json:config_sha256 (tools/gate0_appserver_arm.py::render_full_config_toml output, hashed at signature time)",
+  "expected_codex_mcp_list_sha256": "PENDING_RECOMPUTE_AT_LAUNCH -- this launch's freshly computed handshake-receipt.json:codex_mcp_list_sha256 (tools/gate0_appserver_arm.py::codex_mcp_list_json output, hashed at signature time)",
+  "_comment_launcher_hash": "The launcher whose identity this pins is the NEW arm runner, tools/gate0_appserver_arm.py -- NOT tools/run_gate0_codex.ps1 (that file is unedited and unrelated to this launch surface). Same canonical git-blob-at-HEAD contract as the original (git -C <repo> diff --quiet HEAD -- tools/gate0_appserver_arm.py && git -C <repo> cat-file blob HEAD:tools/gate0_appserver_arm.py | sha256sum).",
+  "expected_launcher_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_appserver_arm.py",
+  "_comment_safety_critical_hashes": "Same four safety-critical files as the original signature template -- tools/gate0_appserver_arm.py IMPORTS these unmodified (never edits them); pinning their hashes here still guards against a dirty/tampered working tree at launch time, exactly as the original mechanism intends.",
+  "expected_credit_breaker_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_credit_breaker.py",
+  "expected_credit_accountant_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_credit_accountant.py",
+  "expected_credit_rate_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_codex_credit_rate.py",
+  "_comment_appserver_launch_sha256": "ADDITIONAL pin versus the original template -- tools/gate0_appserver_launch.py (the M1-proven client wiring tools/gate0_appserver_arm.py imports: ObservingGate0Client, LiveCreditGuard, AppServerUsageTracker, build_overrides, ...) is just as safety-relevant on this transport as the four files above.",
+  "expected_appserver_launch_sha256": "REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_appserver_launch.py",
+  "credit_rate_pin": {
+    "_comment": "Identical contract to the original template (PR #118 checklist 4a) -- tools/gate0_codex_credit_rate.py::load_credit_rate_pin refuses an empty rate_source or a model mismatch, unchanged by transport.",
+    "model": "gpt-5.6-sol",
+    "rate_source": "REPLACE_WITH_a_citation_for_these_numbers_not_a_guess",
+    "credits_per_usd": 0,
+    "usd_per_input_token": 0,
+    "usd_per_cached_input_token": 0,
+    "usd_per_output_token": 0
+  },
+  "notes": "REPLACE_WITH_any_signature-time_context_worth_recording"
+}
