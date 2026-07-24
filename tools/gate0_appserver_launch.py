@@ -63,6 +63,7 @@ from tools.gate0_codex_credit_rate import (
     CreditRateNotPinned,
     codex_event_to_credit_event,
     load_credit_rate_pin,
+    token_usage_delta_to_credits,
 )
 from tools.gate0_credit_breaker import (
     STALL_TIMEOUT_S,
@@ -349,16 +350,94 @@ def kill_process_tree(pid: int) -> None:
             pass
 
 
-# KNOWN GAP, stated plainly (not fabricated around): tools/gate0_codex_credit_rate.py's
-# `codex_event_to_credit_event` only recognizes the exec-shaped `{"type": "token_count", ...}` (or
-# `{"msg": {"type": "token_count", ...}}`) event. `codex app-server` speaks JSON-RPC 2.0
-# notifications instead (no committed schema/fixture for a usage or token-count notification
-# exists in this repo as of this build -- see tests/fixtures/gate0_appserver/), so `LiveCreditGuard`
-# below never sees a message `_to_credit_event` can price: --credit-cap is INERT on this transport
-# today. The bound that is actually enforced for a real turn is --turn-timeout-s (see
-# DEFAULT_TURN_END_METHODS wait below and the default at the CLI). TODO: once a real paid turn (or
-# `codex app-server generate-json-schema`) reveals the actual usage-notification shape, add an
-# ADDITIVE app-server usage shim here feeding this same guard -- do not guess the shape now.
+# B1a follow-up fix (this build): tools/gate0_codex_credit_rate.py's `codex_event_to_credit_event`
+# only recognizes the exec-shaped `{"type": "token_count", ...}` (or `{"msg": {"type":
+# "token_count", ...}}`) event -- `codex app-server` speaks JSON-RPC 2.0 notifications instead, so
+# `LiveCreditGuard` used to never see a message `_to_credit_event` could price and --credit-cap was
+# INERT on this transport. GROUND TRUTH captured from a real paid app-server turn (2026-07-23):
+#   {"method": "thread/tokenUsage/updated", "params": {"threadId": ..., "turnId": ...,
+#    "tokenUsage": {"last": {...}, "total": {...}, "modelContextWindow": N}}}
+# `total` is CUMULATIVE for the whole run (confirmed empirically: the run's two updates had
+# total.totalTokens 11162 then 22364, and the SECOND event's last.totalTokens == 11202 == the
+# diff of the two totals) -- the exact same cumulative/delta relationship
+# tools/gate0_codex_credit_rate.py's own docstring already documents for exec's
+# total_token_usage/last_token_usage pair. `AppServerUsageTracker` below diffs successive `total`
+# snapshots (never trusts `last` blindly -- a duplicate or out-of-order notification must not
+# double-count or go negative) and feeds the resulting per-field DELTA through the SAME pinned
+# `token_usage_delta_to_credits()` the exec path uses -- no separate arithmetic, no reimplemented
+# rate. `codex_event_to_credit_event` (exec path) keeps working unchanged for exec-shaped events.
+_APP_SERVER_TOKEN_FIELD_MAP = {
+    # snake_case (tools/gate0_codex_credit_rate.TOKEN_FIELDS) -> app-server's camelCase field name.
+    "input_tokens": "inputTokens",
+    "cached_input_tokens": "cachedInputTokens",
+    "output_tokens": "outputTokens",
+    "reasoning_output_tokens": "reasoningOutputTokens",
+}
+
+
+def _app_server_total_to_snake(total: dict) -> dict:
+    """Convert one `tokenUsage.total` object (app-server camelCase) into the TOKEN_FIELDS-shaped
+    snake_case dict `token_usage_delta_to_credits()` consumes. Fail closed (raise ValueError) on a
+    missing/non-numeric/negative field -- never silently treat it as zero, which would under-count
+    real cumulative spend."""
+    result = {}
+    for snake_field, camel_field in _APP_SERVER_TOKEN_FIELD_MAP.items():
+        value = total.get(camel_field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise ValueError(f"invalid_app_server_token_field:{camel_field}")
+        result[snake_field] = value
+    return result
+
+
+class AppServerUsageTracker:
+    """Tracks the last-seen CUMULATIVE `tokenUsage.total` across a run's `thread/tokenUsage/
+    updated` notifications and turns each new notification into a per-field POSITIVE delta.
+    Diffing against the last-seen total (rather than trusting each notification's `last` in
+    isolation) is what makes the accounting monotonic/idempotent-safe: a duplicate notification
+    (the exact same `total` again) yields an all-zero delta -- it is never re-priced -- and a
+    regressed/out-of-order total (a bug, not a real accounting event) is clamped to a zero delta
+    per field instead of going negative and silently refunding already-charged credits. A
+    regressed total also never becomes the new baseline, so it cannot corrupt the NEXT legitimate
+    update's delta either."""
+
+    def __init__(self) -> None:
+        self._last_total: dict | None = None
+
+    def delta_for(self, total: dict) -> dict:
+        current = _app_server_total_to_snake(total)
+        if self._last_total is None:
+            delta = dict(current)
+        else:
+            delta = {field: max(0, current[field] - self._last_total[field]) for field in current}
+        if self._last_total is None or all(current[f] >= self._last_total[f] for f in current):
+            self._last_total = current
+        return delta
+
+
+def app_server_usage_notification_to_credit_event(raw_message: dict, rate_pin: dict,
+                                                    tracker: "AppServerUsageTracker") -> dict:
+    """Normalize one `thread/tokenUsage/updated` JSON-RPC notification into the same
+    `{"normalized_credits": N}` shape tools/gate0_credit_breaker.py::run_breaker consumes -- the
+    app-server-shaped sibling of `codex_event_to_credit_event` (exec). Reuses
+    `token_usage_delta_to_credits()` unmodified for the USD/credit arithmetic; this function's only
+    job is turning the notification's cumulative `total` into the delta that function expects.
+    Fails closed (raises ValueError, same contract as the exec path) on a malformed notification --
+    never silently prices it as zero."""
+    params = raw_message.get("params")
+    if not isinstance(params, dict):
+        raise ValueError("token_usage_updated_missing_params")
+    token_usage = params.get("tokenUsage")
+    if not isinstance(token_usage, dict):
+        raise ValueError("token_usage_updated_missing_tokenUsage")
+    total = token_usage.get("total")
+    if not isinstance(total, dict):
+        raise ValueError("token_usage_updated_missing_total")
+    delta = tracker.delta_for(total)
+    credits = token_usage_delta_to_credits(delta, rate_pin)
+    return {"normalized_credits": credits, "raw_type": "thread/tokenUsage/updated",
+            "delta_token_usage": delta}
+
+
 class LiveCreditGuard:
     def __init__(self, limit: float, stall_timeout_s: float, rate_pin: dict | None, on_trip):
         self._queue: "queue.Queue[object]" = queue.Queue()
@@ -367,6 +446,7 @@ class LiveCreditGuard:
         self._stall_timeout_s = stall_timeout_s
         self._on_trip = on_trip
         self.result: dict = {}
+        self._appserver_usage_tracker = AppServerUsageTracker()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self) -> None:
@@ -396,6 +476,9 @@ class LiveCreditGuard:
             # event -- dropping it would silence the stall clock).
             return {"normalized_credits": 0.0}
         try:
+            if isinstance(raw_message, dict) and raw_message.get("method") == "thread/tokenUsage/updated":
+                return app_server_usage_notification_to_credit_event(
+                    raw_message, self._rate_pin, self._appserver_usage_tracker)
             return codex_event_to_credit_event(raw_message, self._rate_pin)
         except ValueError as exc:
             raise MalformedCreditStream(f"credit_conversion_failed:{exc}") from exc
@@ -510,9 +593,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--stall-timeout-s", type=float, default=float(STALL_TIMEOUT_S))
     p.add_argument("--turn-timeout-s", type=float, default=45.0,
                     help="real mode only: how long to wait for a terminal turn notification. "
-                         "Lowered default (was 120s): on the app-server transport --credit-cap is "
-                         "currently INERT (see LiveCreditGuard), so this timeout is the actual "
-                         "enforced spend bound for a real turn, not just a UX nicety.")
+                         "--credit-cap is now live on the app-server transport too (see "
+                         "LiveCreditGuard/AppServerUsageTracker), but this timeout remains a "
+                         "SEPARATE, independent backstop -- not just a UX nicety.")
     p.add_argument("--mcp-server-name", default=None)
     p.add_argument("--stub-mcp-script", default=None)
     p.add_argument("--docker-image", default=None)
