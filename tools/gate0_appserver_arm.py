@@ -265,14 +265,14 @@ def build_docker_mcp_args(arm: str, image_id: str, world_dir: Path,
         return ["run", "-i", "--rm", "--network", "none",
                 "--mount", f"type=bind,source={roms},target=/app/roms,readonly",
                 "--mount", f"type=bind,source={state},target=/app/red_start.state,readonly",
-                "--mount", f"type=bind,source={world_dir},target=/app/world",
+                "--mount", f"type=bind,source={world_dir.resolve()},target=/app/world",
                 image_id, "--game", "pokemon_red", "--init-state", "/app/red_start.state",
                 "--out", "/app/world", "--keep-frames"]
     if arm == "miniwob":
         seeds = repo_root / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json"
         return ["run", "-i", "--rm", "--network", "none",
                 "--mount", f"type=bind,source={seeds},target=/app/seeds.json,readonly",
-                "--mount", f"type=bind,source={world_dir},target=/app/world",
+                "--mount", f"type=bind,source={world_dir.resolve()},target=/app/world",
                 image_id, "--game", "miniwob_click_checkboxes", "--seeds-file", "/app/seeds.json",
                 "--out", "/app/world"]
     raise ValueError(f"unknown arm: {arm!r}")

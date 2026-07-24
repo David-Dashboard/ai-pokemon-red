@@ -495,6 +495,21 @@ def test_build_docker_mcp_args_rejects_unknown_arm(tmp_path):
                                repo_root=tmp_path)
 
 
+def test_build_docker_mcp_args_world_mount_source_is_absolute_for_a_relative_world_dir():
+    # Regression (2026-07-24): docker on Windows rejects a relative bind-mount source
+    # ("runs\\gate0_paid\\red\\world ... is not a valid Windows path"). A relative --out-dir
+    # yields a relative world_dir; the /app/world mount source MUST be resolved to absolute.
+    import os
+    from pathlib import Path
+    rel_world = Path("runs/gate0_paid/red/world")
+    assert not rel_world.is_absolute()
+    for arm in ("red", "miniwob"):
+        args = build_docker_mcp_args(arm, ARM_IMAGE_IDS[arm], rel_world, repo_root=Path("."))
+        world_mount = next(a for a in args if "target=/app/world" in a)
+        src = world_mount.split("source=", 1)[1].rsplit(",target=", 1)[0]
+        assert os.path.isabs(src), f"{arm}: world mount source not absolute: {src!r}"
+
+
 # ---------------------------------------------------------------------------
 # CLI validation.
 # ---------------------------------------------------------------------------
