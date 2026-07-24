@@ -7,10 +7,106 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-23 wave 2 (M1 app-server unblock CONFIRMED end-to-end — PASS on a real paid turn,
+_Last updated: 2026-07-25 (FIRST PAIRED Gate-0 attempt banked — both arms ran to completion over the
+codex app-server path; both frozen predicates FAIL; Constancy checked clean for the first time
+(tautological-by-construction); scorecard re-scored 19 -> 24/100, proposed for David's sanity-check.)_
+
+**=>=> NEWEST (2026-07-25) - FIRST PAIRED GATE-0 ATTEMPT BANKED: BOTH ARMS RAN; CAPABILITY/GENERALITY FAIL; SCORECARD 19->24/100 (PROPOSED). =>=>**
+1. **DONE — both Gate-0 arms ran to completion over the codex app-server path, the first controlled
+   Gate-0 attempt that has ever completed.** One attempt per arm, banked as-is, spent, per the
+   gate-methodology one-attempt rule. `reports/2026-07-24-gate0-armR-verdict.md` (PR #161) and
+   `reports/2026-07-24-gate0-paired-verdict.md` (PR #164, corrected same-day after adversarial
+   fact-check) are the authoritative banked record — this block restates, does not supersede, them.
+2. **DONE — Arm R (Pokémon Red):** got the starter (party 0->1 at oracle row 333), fought and
+   survived the rival battle (`in_battle==2` for 43 contiguous rows, HP 19->1, never 0, exited
+   alive), **127.75s / 142 primitive actions vs the human baseline's 233.288s / 271 — beat the
+   human on both axes.** `$0.41589` / 10.397 credits. Frozen predicate re-run verbatim:
+   `_red_success = (False, ['red_no_sustained_battle_exit'])` — the brain declared victory in its
+   final message ("Obtained Charmander from Professor Oak and defeated Gary...") and stopped acting,
+   leaving only 4 post-battle oracle rows where the predicate requires 10 consecutive `in_battle==0`
+   rows plus >=2 distinct post-exit `(x,y)` positions. Almost certainly accomplished in-game;
+   UNPROVEN by the frozen measurement.
+3. **DONE — Arm W (MiniWoB click-checkboxes, held-out seeds 1000-1004):** all 5 episodes played,
+   exactly one terminal each, `abandoned==False` throughout, **4/5 at reward 1.0**; seed 1001 at
+   0.6667 — a genuine partial, a different failure mode from Red's premature-stop. 97 actions /
+   295.594s, `$1.02958` / 25.7395 credits. Frozen predicate:
+   `_miniwob_success = (False, ['miniwob_episode_1_terminal_not_success'])`.
+4. **DONE — frozen scorer run verbatim:** `score_manifest()` returns `"overall": "CONSTANCY_BREACH",
+   "readiness": "NO_GO"` (6 constancy `pin_mismatch` failures + 20 source failures, incl.
+   `source_unreadable:miniwob_human`, `"cheap": []`). Precedence short-circuits at constancy before
+   source/capability/cheap are reached — **do not read this as INSUFFICIENT_DATA**; that is what a
+   fixed pin-chain would return, not this run. NO_LEAK is clean on both arms (`leak` populates
+   before the `source` guard, so this claim is real and independent of the breach). `"cheap": []`
+   means NOT EVALUATED, not passed — the Cheap block is gated on `source` failures being empty.
+   Combined `$1.4455` / 36.14 credits vs the documented `$7.00`/175-credit bar is a **hand
+   computation** over `agent_metrics.json`, whose integrity pins are still the placeholder
+   `PENDING_NOT_YET_CAPTURED_paid_attempt_not_run` — labeled as such, not a scorer PASS.
+5. **DONE — the between-arms Constancy check ran for the first time ever:**
+   `compare_constancy(red, miniwob) -> []`, zero mismatches across all 9 `CONSTANCY_FIELDS`. Stated
+   honestly, not oversold: 4 of the 9 fields are hardcoded literals in `build_handshake_receipt`
+   (zero information); `brain_config_sha256` cannot differ given the same launcher build;
+   `planned_model` is the operator-supplied `--model` flag, not an observation of what actually
+   served the turns (zero model-identifying fields in either transcript); the arms ran ~7h40m apart.
+   This is a **launch-configuration consistency check, substantially tautological by construction**
+   — it rules out Codex-CLI auto-update drift and a model-flag change across that gap, and does
+   confirm one launcher/brain-config identity spanned two structurally different world classes (GB
+   emulator + browser). It is NOT a measurement of brain sameness.
+6. **DONE — scorecard re-scored 19 -> 24/100** (`NORTH_STAR_SCORECARD.md`; proof axis 8->14/100:
+   Capability 3->5, Constancy 1->4, Generality 2/25 unchanged, Cheap 2->3), explicitly flagged in
+   the doc as proposed for David's sanity-check, not a mechanically-final number.
+7. **DONE — infra that made the run possible, all merged this session:** PR #158 (absolute world
+   Docker mount), PR #159 (codex stderr drain — fixed a latent pipe deadlock, added
+   `codex.stderr.log` which then pinpointed every subsequent failure, plus a 120s handshake timeout
+   and `tool_timeout_sec`/`startup_timeout_sec`=90 for the lazy PyBoy boot), PR #160 (absolute
+   `CODEX_HOME` + cwd), PR #163 (expected-pins resolution + reproducible seam-check provenance +
+   cwd-anchor fix + spent-run scorability). Docker Desktop was also repaired autonomously (wedged on
+   `EnableDockerAI` Inference-manager + Secrets-Engine stale `AF_UNIX` sockets -> disabled the AI
+   feature + renamed the stale socket dirs aside; pinned world images survived with their exact
+   frozen IDs). Arm R took 4 launches; the first 3 died at $0 during setup, before any tool call or
+   token (law-6-legal relaunches).
+8. **PENDING / NOT DONE — MiniWoB paid-seed human baseline (HARD BLOCKER):**
+   `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` does not exist (pin =
+   `PENDING_NOT_YET_CAPTURED_...`). Until David runs
+   `uv run --frozen python tools/capture_gate0_baseline_miniwob.py --mode paid_gate0 --i-am-human`
+   (~5 min, seeds 1000-1004, deliberately held out until after the agent ran), `_verify_sources`
+   fails and MiniWoB's <=2x-human bars are UNCOMPUTABLE no matter how well anything plays. No future
+   Gate-0 attempt can produce a clean verdict without it.
+9. **PENDING / NOT DONE — v2 pre-registration (PR #162) is NO-GO, not authorized.** Draft, review
+   comment posted. Four run-killers: `task_sha256` lives in four fixtures (the scorer reads the
+   non-appserver pair); the `expected_pins_sha256` cascade in `gate0_paid_source_pins.json` +
+   `gate0_readiness_dev_source_pins.json`; the missing human baseline (item 8); and the drafted
+   brief tells the agent to hold still while `_red_success` requires movement (>=2 distinct
+   post-exit tiles) — plus an unanalyzed `red_map_changed_during_battle_exit_span` condition. Even a
+   perfect Red cannot PASS Gate 0 while seed 1001's genuine 0.667 stands. A v2.1 needs the baseline
+   captured first, the pin chain corrected + dry-run proven, and a rewritten brief.
+10. **PENDING / NOT DONE — governance decision for David:** whether to repoint
+    `gate0_paid_source_pins.json`'s `expected_pins` at the `.appserver` fixtures — until then the
+    launcher's inline audit reads clean while `score_gate0.py` still breaches. Also still open,
+    unchanged: #129 (exam v1), #138 (NDS touch-drag, deferred).
+11. **SAFETY:** no brain / `core/contracts.py` / tool-schema / held-out-game edit; no frozen
+    predicate or bar loosened (explicitly refused, see `reports/2026-07-24-gate0-paired-verdict.md`
+    §8); all worktree-isolated; total paid spend this session ≈`$1.45` + `$0.08` (the earlier M1
+    ping) on subscription.
+12. **LEARNINGS:** three overclaims this session — constancy strength, "Cheap PASS", and an
+    INSUFFICIENT_DATA verdict string — were caught by adversarial review BEFORE entering the
+    permanent record (`reports/2026-07-24-gate0-paired-verdict.md`, corrected same-day). Always
+    quote the frozen scorer verbatim and label hand-computations as such.
+
+**⇒ NEXT (David, priority order):** (1) **HARD BLOCKER** — capture the MiniWoB paid-seed human
+baseline (item 8) before any future Gate-0 verdict can be clean; (2) v2 is NOT authorized as drafted
+(item 9) — needs the baseline first, the pin chain corrected + dry-run proven, and a rewritten
+brief; (3) decide whether to repoint `gate0_paid_source_pins.json` at the `.appserver` fixtures
+(item 10); (4) sanity-check the proposed scorecard deltas (item 6); still open, unchanged: #129
+(exam v1), #138 (NDS touch-drag).
+**Paid ledger today (2026-07-25): $0 — this wrap-up was docs/analysis only. The combined Gate-0
+paired-attempt spend (`$1.4455`: `$0.41589` Red + `$1.02958` MiniWoB) plus the earlier M1
+confirmation ping (`$0.08`) were spent 2026-07-23/2026-07-24 on subscription, already banked in
+PR #154/#161/#164; not re-spent today.**
+
+_Prior update: 2026-07-23 wave 2 (M1 app-server unblock CONFIRMED end-to-end — PASS on a real paid turn,
 banked #154; F4/A2 falsified; paid harness merged; `docs/handoff-m1-pass`. The Gate-0 arms are now unblocked.)_
 
-**=>=> NEWEST (2026-07-23 · wave 2) - M1 APP-SERVER UNBLOCK CONFIRMED END-TO-END (PASS, real paid turn); the Gate-0 arms are now unblocked. =>=>**
+**=>=> PRIOR (2026-07-23 · wave 2) - M1 APP-SERVER UNBLOCK CONFIRMED END-TO-END (PASS, real paid turn); the Gate-0 arms are now unblocked. =>=>**
 1. **POSITION VS NORTH STAR:** proof score UNCHANGED (the one paid turn is not yet run), but M1 is further
    de-risked: the `codex app-server` unblock path is now **validated LIVE against the real codex-cli 0.144.3
    binary** at $0. A handshake smoke (`initialize` with `capabilities{experimentalApi,mcpServerOpenaiFormElicitation}`
