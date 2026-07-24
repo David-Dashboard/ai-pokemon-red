@@ -250,6 +250,14 @@ def render_world_config_toml(server: str, mcp_command: str, mcp_args: list, mcp_
         "enabled = true",
         f"enabled_tools = [{tools_toml}]",
         'default_tools_approval_mode = "auto"',
+        # app-server-necessary addition (unlike the exec path): gate0_world is a lazy-boot MCP
+        # server -- the FIRST real tool call inside the paid turn boots PyBoy+ROM (~30-40s) before
+        # it can respond. codex's per-call/startup default is null (unmeasured server default);
+        # 90s is confirmed-real config (codex-cli 0.144.3 `mcp_servers.<name>.tool_timeout_sec`/
+        # `startup_timeout_sec`, empirically checked via `codex mcp get --json`, not guessed) and
+        # covers the boot with margin without touching any other pinned field.
+        "tool_timeout_sec = 90",
+        "startup_timeout_sec = 90",
     ]
     return "\r\n".join(lines) + "\n"
 

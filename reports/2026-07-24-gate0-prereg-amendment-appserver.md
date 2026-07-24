@@ -93,6 +93,14 @@ attempt — manual discipline, bounded by David's standing authorization + the 2
    Flagged loudly here per this build's own instruction; closing this gap (an equivalent
    `Confirm-PaidExecSignature` check inside the Python launcher) is a candidate follow-up, not done
    in this build.
+6. **App-server-necessary config addition (not a loosening): generous MCP timeouts.** The exec path
+   never needed this, but `codex app-server` enforces its own per-tool-call/startup timeout
+   (`null`/unmeasured server default unless set), and `gate0_world` is lazy-boot: the first real
+   tool call inside the paid turn boots PyBoy+ROM (~30-40s) before it can respond. `PR #159` adds
+   `tool_timeout_sec = 90` / `startup_timeout_sec = 90` to `render_world_config_toml`'s
+   `[mcp_servers.gate0_world]` block — confirmed-real config keys (codex-cli 0.144.3, empirically
+   checked via `codex mcp get --json` against a scratch `CODEX_HOME`, not guessed), covering the
+   boot with margin without touching any other pinned field.
 
 ## What is IDENTICAL (verified, not assumed)
 
