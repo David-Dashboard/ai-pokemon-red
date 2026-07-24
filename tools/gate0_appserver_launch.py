@@ -393,12 +393,18 @@ class AppServerUsageTracker:
     """Tracks the last-seen CUMULATIVE `tokenUsage.total` across a run's `thread/tokenUsage/
     updated` notifications and turns each new notification into a per-field POSITIVE delta.
     Diffing against the last-seen total (rather than trusting each notification's `last` in
-    isolation) is what makes the accounting monotonic/idempotent-safe: a duplicate notification
-    (the exact same `total` again) yields an all-zero delta -- it is never re-priced -- and a
-    regressed/out-of-order total (a bug, not a real accounting event) is clamped to a zero delta
-    per field instead of going negative and silently refunding already-charged credits. A
-    regressed total also never becomes the new baseline, so it cannot corrupt the NEXT legitimate
-    update's delta either."""
+    isolation) is what makes the accounting idempotent-safe: a duplicate notification (the exact
+    same `total` again) yields an all-zero delta -- it is never re-priced, and never raises.
+
+    PR #156 review fix (fold-in, this build): a STRICTLY REGRESSED total (any field going DOWN
+    versus the last-seen baseline) is NOT a duplicate and NOT a real accounting event -- it is a
+    stream fault the accountant can no longer vouch for. Per the breaker's own kill contract
+    (tools/gate0_credit_breaker.py's MalformedCreditStream), this now FAILS LOUD (raises
+    ValueError, which `app_server_usage_notification_to_credit_event`'s caller -- LiveCreditGuard.
+    _to_credit_event -- already wraps into MalformedCreditStream, killing the child) instead of
+    silently clamping the delta to zero and continuing as if nothing happened. Clamping was the
+    fail-open bug: it would have silently priced a regressed/corrupted stream at zero rather than
+    refusing to trust it."""
 
     def __init__(self) -> None:
         self._last_total: dict | None = None
@@ -406,11 +412,17 @@ class AppServerUsageTracker:
     def delta_for(self, total: dict) -> dict:
         current = _app_server_total_to_snake(total)
         if self._last_total is None:
-            delta = dict(current)
-        else:
-            delta = {field: max(0, current[field] - self._last_total[field]) for field in current}
-        if self._last_total is None or all(current[f] >= self._last_total[f] for f in current):
             self._last_total = current
+            return dict(current)
+        if current == self._last_total:
+            # Exact duplicate notification (the same cumulative total observed again): never
+            # re-priced, never raises, baseline unchanged (it already IS this total).
+            return {field: 0 for field in current}
+        if any(current[field] < self._last_total[field] for field in current):
+            raise ValueError(
+                f"app_server_token_usage_regressed:current={current!r}:baseline={self._last_total!r}")
+        delta = {field: current[field] - self._last_total[field] for field in current}
+        self._last_total = current
         return delta
 
 
