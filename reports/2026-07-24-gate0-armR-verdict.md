@@ -93,11 +93,19 @@ Equally important, equally honest — this run is not a wash:
   tool-allowlist or protocol violation; the app-server transcript adapter held.
 - **The app-server launch path worked end-to-end**, real turn, real approval RPC, real result — the
   thing PRs #147/#151/#158–#160 built toward.
-- **Cross-check on the predicate itself:** the human baseline for this exact task
-  (`runs/gate0_human_baseline/red/human_metrics.json`, `success: true`) was independently reconstructed
-  by replaying David's archived attempt through this same `_red_success` and finding the first
-  passing prefix — i.e. a real human trace *does* satisfy this predicate, including its 10-row exit
-  tail. The bar is achievable; this run's miss is not an artifact of an impossible predicate.
+- **Cross-check on the predicate itself — the bar is achievable.** A real human trace *does* satisfy
+  this predicate, including its 10-row exit tail.
+  *Provenance, stated precisely (added after adversarial fact-check):* the human's **oracle trace is
+  not present in this repository** — this checkout carries only
+  `runs/gate0_human_baseline/red/human_metrics.json` (`success: true`), whose `reconstruction_method`
+  field records a 2026-07-21 replay through `_red_success`. That record alone would be a *citation*,
+  not a fresh result. It was therefore **independently re-run during this report's fact-check**
+  against the human oracle traces located in the sibling `ai-pokemon-red-prereg` checkout: both the
+  completed trace (1651 rows) and the archived attempt-1 trace (1043 rows) return `(True, [])`, with
+  the first passing prefix at row 940 (1-indexed) — exactly matching `human_metrics.json`'s
+  `completion_row_index: 939` (0-indexed).
+  So: **verified fact**, but sourced from a sibling checkout, not reproducible from this repo alone.
+  This run's miss is therefore not an artifact of an impossible predicate.
 
 ## 4. Mechanical diagnosis of the miss
 
