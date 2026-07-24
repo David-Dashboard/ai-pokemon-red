@@ -15,6 +15,34 @@ built and refuses to run un-priced, but was never invoked by this build/test ses
 orchestrator runs it.
 
 =====================================================================================================
+THIS MODULE'S OWN AUDIT IS NOT THE GATE 0 VERDICT (added 2026-07-25, adversarial review of PR #163)
+=====================================================================================================
+
+`_run_real()` writes its own `run-receipt.json:audit_overall`, scored by calling the frozen
+`tools/check_gate0_codex.py::audit()` against `resolve_expected_pins()`'s output -- which reads
+THIS module's own `eval/fixtures/gate0_expected_pins_{red,miniwob}.appserver.json` fixtures. That
+is the ONLY consumer of the `.appserver.json` fixtures anywhere in this repo.
+
+The actual Gate 0 scorer, `eval/score_gate0.py` (frozen, never edited by this module), does NOT
+read those fixtures. It resolves `expected_pins` from `eval/fixtures/gate0_paid_source_pins.json`'s
+own pre-registered `audit_paths.<arm>.expected_pins`, which points at the EXEC-path fixtures --
+`eval/fixtures/gate0_expected_pins_{red,miniwob}.json`, no ".appserver" suffix -- not the ones this
+module resolves against. Those exec fixtures still hold the literal
+`CONSTRAINT:launch-invocation-dependent-recompute-at-signature` marker for config_sha256/
+codex_mcp_list_sha256 (an app-server receipt can never equal that string) and a tool_schema_sha256
+computed for the exec path's PowerShell `ConvertTo-Json -Compress` serialization, not this
+launcher's `json.dumps(tools) + "\n"` bytes.
+
+**Consequence: merging this PR does NOT unblock the paid Gate 0 verdict.** After this PR,
+`run-receipt.json:audit_overall` for a real Arm R app-server run reads clean (`constancy_failures ==
+[]`), but `eval/score_gate0.py` run against the SAME artifacts still returns `CONSTANCY_BREACH`/
+`NO_GO` -- pinned to the exec fixtures via `gate0_paid_source_pins.json`, unaffected by anything in
+this file. Repointing `gate0_paid_source_pins.json`'s `audit_paths.<arm>.expected_pins` at the
+`.appserver.json` fixtures (so the app-server transport's own real pins become the pre-registered
+source of truth) is a SEPARATE governance decision for David -- not made, and not implied, by this
+build. See the PR body for the same caveat.
+
+=====================================================================================================
 THE TRANSCRIPT ADAPTER DECISION (flagged loudly, per the build-spec's "honesty > green" instruction)
 =====================================================================================================
 
@@ -468,6 +496,138 @@ def build_handshake_receipt(*, arm: str, model: str, codex_version: str, codex_p
 
 
 # ---------------------------------------------------------------------------------------------
+# Expected-pins resolution -- closes the app-server expected-pins gap: the first real Gate 0 Arm R
+# app-server run reported a CONSTANCY_BREACH from `check_gate0_codex.audit()` for exactly the two
+# fields eval/fixtures/gate0_expected_pins_{red,miniwob}.appserver.json mark
+# `CONSTRAINT:launch-invocation-dependent-recompute-at-signature` (config_sha256,
+# codex_mcp_list_sha256): they embed the launch OutputDir's absolute mount paths, so no single
+# static fixture value can ever equal a real receipt's value -- `_expected_failures()` (frozen,
+# never edited) would report `pin_mismatch:*` for these two fields on EVERY real run, forever.
+#
+# tools/check_gate0_codex.py is off-limits (frozen) and, on inspection, was never actually fixed
+# for this on the exec path either: the exec path's OWN frozen fixture documents the identical
+# CONSTRAINT marker for these two fields with the identical "recompute at signature" recipe
+# (eval/fixtures/gate0_expected_pins_red.json:_source_config_sha256), and
+# reports/2026-07-21-gate0-readiness-final-v2.md Sec.3 shows a REAL exec-path receipt hitting this
+# EXACT SAME `pin_mismatch:config_sha256`/`pin_mismatch:codex_mcp_list_sha256` when audited against
+# the raw static fixture -- masked only because that receipt had no real transcript (leak_failures
+# forced `overall=NO_LEAK` before constancy_failures could surface as the verdict). No exec-path
+# code ever taught check_gate0_codex.py to treat the CONSTRAINT marker as anything but a literal
+# string to compare against -- so this fix does not either. The resolution below happens one layer
+# ABOVE check_gate0_codex.py, in this launcher, exactly where the exec path's own signature
+# mechanism (eval/fixtures/gate0_signature.json's `expected_config_sha256`: "this launch's freshly
+# computed handshake-receipt.json:config_sha256") was always meant to operate -- but done in code,
+# automatically, at $0, since this launcher already renders config.toml/codex-mcp-list.json and
+# builds the receipt entirely BEFORE the real paid turn spawns (see _run_real).
+# ---------------------------------------------------------------------------------------------
+
+LAUNCH_INVOCATION_DEPENDENT_MARKER = "CONSTRAINT:launch-invocation-dependent-recompute-at-signature"
+LAUNCH_INVOCATION_DEPENDENT_FIELDS = ("config_sha256", "codex_mcp_list_sha256")
+
+
+def resolve_expected_pins(base_expected: dict, *, config_sha256: str, codex_mcp_list_sha256: str) -> dict:
+    """Substitutes the two launch-invocation-dependent PIN_FIELDS in `base_expected` (the committed
+    eval/fixtures/gate0_expected_pins_{arm}.appserver.json, which holds
+    LAUNCH_INVOCATION_DEPENDENT_MARKER for both by documented design -- see the block comment
+    above) with THIS run's own real values, so tools/check_gate0_codex.py::_expected_failures()
+    compares against a real hash instead of a placeholder it can never match.
+
+    HONEST STATEMENT OF WHAT THIS DOES AND DOES NOT PROVE (rewritten 2026-07-25, adversarial
+    review of PR #163 correction 2 -- the previous version of this docstring argued the
+    substituted values are "model-independent" as if that made the resulting comparison
+    informative; it does not, and that was a non-sequitur):
+
+    config_sha256/codex_mcp_list_sha256 are LAUNCH-INVOCATION-DEPENDENT -- they embed this run's
+    absolute out-dir mount paths, so no single static fixture value can ever equal a real receipt's
+    value (see the block comment above). Because of that, there is no way to pin them statically,
+    and the only value this function CAN compare the post-turn receipt against is the SAME run's
+    own pre-turn receipt value for those two fields. That makes the resulting
+    `_expected_failures()` check for exactly these two fields a TAUTOLOGY (X compared against X):
+    it can never catch a real config/mcp-list drift by itself. It is not a "did this run start from
+    the right config" proof for these two fields -- it never was, and this rewrite does not pretend
+    otherwise.
+
+    THIS IS NOT A REGRESSION. Before this fix, the fixture held the literal marker string
+    "CONSTRAINT:launch-invocation-dependent-recompute-at-signature" verbatim as the expected value,
+    so `_expected_failures()` compared a real hash against that literal string and ALWAYS failed --
+    on every real run, forever, regardless of whether the config actually drifted. An always-fail
+    check and an always-pass (tautological) check both carry the same zero bits of information
+    about whether THIS run's config matches what was intended: neither one is capable of catching a
+    real drift. Swapping "always wrong" for "always right" on these two fields is a usability fix
+    (an honest run no longer reports a false CONSTANCY_BREACH), not a loss of any real coverage that
+    existed before.
+
+    WHAT STILL ACTUALLY GUARDS config/mcp-list/tool-schema integrity, independent of this
+    substitution: (1) tools/check_gate0_codex.py::_artifact_failures (frozen, never edited) --
+    re-hashes the on-disk config.toml/codex-mcp-list.json/mcp-tools.json against the receipt inside
+    audit() itself, catching any drift between what the receipt CLAIMS and what is actually on disk
+    at audit time; (2) verify_launch_signature_unchanged() (below) -- a narrower, fail-fast
+    duplicate of that same re-hash, run immediately after the turn, before this substitution ever
+    runs; (3) the 18 other real, independently-frozen PIN_FIELDS in `base_expected`, untouched by
+    this function: brain_config_sha256 (covers approval_policy/sandbox_mode/web_search/features/
+    history/developer_instructions -- i.e. the BRAIN half of config.toml), task_sha256, world_image_id
+    (+world_image_tag), the mcp_servers_observed/mcp_tools_observed inventory, codex_executable_sha256,
+    host_code_sha256/image_code_sha256 (host/image code parity), and now a REAL, re-derived
+    tool_schema_sha256 (see the block comment above and the fixtures' own `_tool_schema_sha256_note`)
+    -- none of these are tautological; each is a real, independently-sourced pinned value a genuine
+    drift can still trip.
+
+    WHAT IS NOW UNGUARDED as a direct consequence: the WORLD half of
+    render_world_config_toml()/build_docker_mcp_args() that is not covered by any OTHER pin above --
+    specifically `default_tools_approval_mode`, `tool_timeout_sec`/`startup_timeout_sec`,
+    `required`/`enabled`, the presence of `--network none`, the `readonly` flag on the ROM/state
+    mounts, and the exact `--out`/`--init-state` arguments. A change to any of those fields changes
+    config_sha256 (so it WOULD have been caught by the frozen exec-path recipe's discipline of
+    hand-verifying a real recompute against a static pin), but because config_sha256 is now compared
+    tautologically against itself for the app-server path, none of those specific fields has an
+    independent pin catching drift in them today. Closing that gap (a real, field-level pin on the
+    world half of config.toml, analogous to brain_config_sha256) is future work, not done here.
+
+    Every other PIN_FIELD in `base_expected` (the 18 real, independently-frozen constants: model,
+    world_image_id, tool_schema_sha256, etc.) is returned untouched -- this function only ever
+    touches the two documented CONSTRAINT fields, and refuses (fail loud, not a silent overwrite)
+    if either does not already hold that exact marker, so a future edit that accidentally puts a
+    real hash in the fixture is caught immediately rather than silently disabled."""
+    for field in LAUNCH_INVOCATION_DEPENDENT_FIELDS:
+        if base_expected.get(field) != LAUNCH_INVOCATION_DEPENDENT_MARKER:
+            raise ValueError(
+                f"resolve_expected_pins: base_expected[{field!r}] is not the documented "
+                f"{LAUNCH_INVOCATION_DEPENDENT_MARKER!r} marker (got {base_expected.get(field)!r}) "
+                "-- refusing to silently overwrite what looks like an already-real pinned value.")
+    resolved = dict(base_expected)
+    resolved["config_sha256"] = config_sha256
+    resolved["codex_mcp_list_sha256"] = codex_mcp_list_sha256
+    return resolved
+
+
+def verify_launch_signature_unchanged(receipt: dict, out_dir: Path) -> None:
+    """Fails loud (SystemExit), before resolve_expected_pins()/audit() ever run, if config.toml or
+    codex-mcp-list.json on disk no longer hash to what `receipt` recorded when it was built --
+    entirely BEFORE the real codex app-server turn spawned (_run_real builds and writes the receipt
+    before calling run_gate0_arm_turn()). A mismatch here means one of these files was touched
+    DURING the turn (codex app-server itself, a stray process, a bug) between render and run --
+    this is the concrete "proving nothing changed between render and run" check
+    resolve_expected_pins()'s substitution depends on for its own honesty.
+
+    tools/check_gate0_codex.py::_artifact_failures (frozen, never edited) performs the identical
+    re-hash-and-compare independently, inside audit() itself, and would also catch this as
+    `artifact_hash_mismatch:config_sha256`/`codex_mcp_list_sha256` -- this is a narrower, arm-level,
+    fail-fast duplicate with an immediate, named error, not a replacement for that frozen check."""
+    checks = {
+        "config_sha256": out_dir / "launch" / ".codex" / "config.toml",
+        "codex_mcp_list_sha256": out_dir / "codex-mcp-list.json",
+    }
+    for field, path in checks.items():
+        observed = _sha256_file(path)
+        expected = receipt.get(field)
+        if observed != expected:
+            raise SystemExit(
+                f"launch signature mismatch: {path} changed between render (pre-turn receipt "
+                f"recorded {expected}) and now ({observed}) -- refusing to resolve expected pins "
+                "against a drifted/tampered launch artifact.")
+
+
+# ---------------------------------------------------------------------------------------------
 # THE TRANSCRIPT ADAPTER (see module docstring for the full decision writeup).
 # ---------------------------------------------------------------------------------------------
 
@@ -829,6 +989,13 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     if real_run and not args.credit_rate_pin:
         parser.error("--credit-rate-pin is required for a real paid launch; refusing to launch "
                      "un-priced (pass --dry-run or --seam-check if no spend is intended).")
+    # 2026-07-25 fix (adversarial review of PR #163, correction 4): out_dir used to stay whatever
+    # string argparse handed back, so build_docker_mcp_args' `world_dir.resolve()` (world_dir is
+    # derived from out_dir) resolved against the PROCESS'S CURRENT cwd -- the same launch spec run
+    # from a different cwd would silently render a DIFFERENT config.toml (different absolute mount
+    # source), the exact bug class the exec path's Confirm-PaidExecSignature guards against and this
+    # launcher did not. Force it absolute once, here, before any other code reads args.out_dir.
+    args.out_dir = str(Path(args.out_dir).resolve())
 
 
 def _default_human_metrics_path(arm: str) -> Path:
@@ -864,6 +1031,19 @@ def _run_seam_check(args: argparse.Namespace, out_dir: Path) -> dict:
             observed_names = [t.get("name") for t in tools]
             result["checks"]["tools_list_matches_allowlist"] = {
                 "ok": observed_names == TOOLS[arm], "observed": observed_names}
+            # 2026-07-25 fix (adversarial review of PR #163, correction 1): this used to only
+            # report tool NAMES inline and never write an artifact or compute a hash, so the
+            # eval/fixtures/gate0_expected_pins_{red,miniwob}.appserver.json provenance notes'
+            # claim of a reproducible tool_schema_sha256 recipe via `--seam-check
+            # --with-tools-list` was NOT actually true of this code -- confirmed by the one
+            # committed seam_check.json (runs/gate0_seam_check/red/seam_check.json) having no
+            # tools-list section and no miniwob sibling. Write mcp-tools.json with the EXACT same
+            # serialization _run_real writes for a real launch (json.dumps(tools) + "\n") and
+            # record its sha256 here, so the recipe those notes describe is now real and
+            # independently re-derivable for both arms.
+            tools_path = out_dir / "mcp-tools.json"
+            tools_path.write_text(json.dumps(tools) + "\n", encoding="utf-8", newline="\n")
+            result["tool_schema_sha256"] = _sha256_file(tools_path)
         except RuntimeError as exc:
             result["checks"]["tools_list_matches_allowlist"] = {"ok": False, "error": str(exc)}
     result["ok"] = all(check.get("ok") for check in result["checks"].values())
@@ -960,6 +1140,83 @@ def resolve_isolated_codex_home(explicit: str | None, out_dir: Path) -> str:
     relative home (e.g. out_dir/'codex-home') resolves against out_dir again and 'does not exist'
     -> codex exits -> initialize times out (observed 2026-07-24). Absolutize the derived home."""
     return explicit or str((out_dir / "codex-home").resolve())
+
+
+def _finalize_real_run(*, receipt: dict, receipt_path: Path, transcript_path: Path, out_dir: Path,
+                        arm: str, wall_clock_s: float, credits_result: dict, rate_pin: dict,
+                        watcher: SoftCapWatcher, auth_note: str, model: str,
+                        human_path: Path) -> dict:
+    """Post-turn scoring + artifact-writing, factored out of _run_real so the ordering fix below is
+    independently testable without a real codex/docker launch.
+
+    2026-07-25 fix (adversarial review of PR #163, correction 5): verify_launch_signature_unchanged()
+    used to run BEFORE agent_metrics.json/run-receipt.json were written and raised SystemExit
+    straight through on a mismatch. A real paid turn that had already spent money would abort right
+    there with NO metrics ever written -- and refuse_if_already_completed (keyed in part on
+    transcript.raw_appserver.jsonl, already on disk since the start of the turn) would then refuse
+    any retry into the same out-dir, leaving a spent run permanently unscorable. Now: catch the
+    mismatch, skip resolving expected pins against a drifted/tampered config (that would be
+    dishonest -- see verify_launch_signature_unchanged's own docstring for what it proves), still
+    write agent_metrics.json/run-receipt.json (honestly marked LAUNCH_SIGNATURE_MISMATCH), THEN
+    re-raise so the process still exits non-zero and nothing is silently reported as fine."""
+    signature_mismatch: SystemExit | None = None
+    try:
+        verify_launch_signature_unchanged(receipt, out_dir)
+    except SystemExit as exc:
+        signature_mismatch = exc
+
+    if signature_mismatch is None:
+        # Close the app-server expected-pins gap (see the block comment above
+        # resolve_expected_pins): resolve the two launch-invocation-dependent PIN_FIELDS from
+        # THIS run's own pre-turn receipt values before calling the frozen audit() against a
+        # static fixture that can never match them -- only once the signature check above has
+        # proven the on-disk config/mcp-list still match what the receipt recorded pre-turn.
+        base_expected = json.loads(
+            (REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json")
+            .read_text(encoding="utf-8"))
+        resolved_expected = resolve_expected_pins(
+            base_expected, config_sha256=receipt["config_sha256"],
+            codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+        resolved_expected_path = out_dir / "expected-pins.resolved.json"
+        _write_json(resolved_expected_path, resolved_expected)
+        audit_result = audit(transcript_path, receipt_path, resolved_expected_path, out_dir, arm)
+    else:
+        audit_result = {"overall": "LAUNCH_SIGNATURE_MISMATCH", "primitive_action_events": 0}
+
+    normalized_credits = (credits_result.get("final_total_normalized_credits")
+                          if credits_result.get("final_total_normalized_credits") is not None
+                          else credits_result.get("credits_at_trip", 0.0)) or 0.0
+    cost_usd = normalized_credits / rate_pin["credits_per_usd"] if rate_pin["credits_per_usd"] else 0.0
+
+    agent_metrics = build_agent_metrics(
+        arm=arm, mode="paid_gate0", wall_clock_s=wall_clock_s,
+        primitive_actions=audit_result["primitive_action_events"], cost_usd=cost_usd,
+        normalized_credits=normalized_credits, human_metrics_path=human_path)
+    _write_json(out_dir / "agent_metrics.json", agent_metrics)
+    wake_boundary_path = REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json"
+    ensure_wake_boundary_artifact(wake_boundary_path)
+
+    run_receipt = {
+        "schema_version": 1, "kind": "gate0_appserver_arm_run_receipt", "arm": arm,
+        "model": model, "credit_breaker_tripped": bool(credits_result.get("tripped", False)),
+        "soft_cap_warned": watcher.warned, "soft_cap_warned_at": watcher.warned_at,
+        "wall_clock_s": wall_clock_s, "auth_note": auth_note,
+        "audit_overall": audit_result["overall"],
+        # All launch-time hashes in one place (build-spec deliverable 1): config/mcp-list hashes
+        # and the docker-inspected image id are ALSO in handshake-receipt.json (the scorer-pinned
+        # artifact); launcher_sha256 (this runner's OWN canonical git-blob-at-HEAD hash, same
+        # contract as world_mcp.py::code_sha256/Get-CanonicalCodeSha256) is unique to this receipt.
+        "launcher_sha256": git_blob_sha256(REPO_ROOT, "tools/gate0_appserver_arm.py"),
+        "config_sha256": receipt["config_sha256"],
+        "codex_mcp_list_sha256": receipt["codex_mcp_list_sha256"],
+        "world_image_id": receipt["world_image_id"],
+    }
+    _write_json(out_dir / "run-receipt.json", run_receipt)
+    print(json.dumps(run_receipt, sort_keys=True))
+
+    if signature_mismatch is not None:
+        raise signature_mismatch
+    return {"agent_metrics": agent_metrics, "run_receipt": run_receipt}
 
 
 def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
@@ -1091,44 +1348,14 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
     adapted = adapt_app_server_notifications_to_exec_shape(client.notifications)
     write_jsonl(transcript_path, adapted)
 
-    audit_result = audit(transcript_path, receipt_path,
-                          REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json",
-                          out_dir, arm)
-
-    credits_result = guard.result or {}
-    normalized_credits = (credits_result.get("final_total_normalized_credits")
-                          if credits_result.get("final_total_normalized_credits") is not None
-                          else credits_result.get("credits_at_trip", 0.0)) or 0.0
-    cost_usd = normalized_credits / rate_pin["credits_per_usd"] if rate_pin["credits_per_usd"] else 0.0
-
     human_path = (Path(args.human_metrics_path) if args.human_metrics_path
                   else _default_human_metrics_path(arm))
-    agent_metrics = build_agent_metrics(
-        arm=arm, mode="paid_gate0", wall_clock_s=wall_clock_s,
-        primitive_actions=audit_result["primitive_action_events"], cost_usd=cost_usd,
-        normalized_credits=normalized_credits, human_metrics_path=human_path)
-    _write_json(out_dir / "agent_metrics.json", agent_metrics)
-    wake_boundary_path = REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json"
-    ensure_wake_boundary_artifact(wake_boundary_path)
-
-    run_receipt = {
-        "schema_version": 1, "kind": "gate0_appserver_arm_run_receipt", "arm": arm,
-        "model": args.model, "credit_breaker_tripped": bool(credits_result.get("tripped", False)),
-        "soft_cap_warned": watcher.warned, "soft_cap_warned_at": watcher.warned_at,
-        "wall_clock_s": wall_clock_s, "auth_note": auth_note,
-        "audit_overall": audit_result["overall"],
-        # All launch-time hashes in one place (build-spec deliverable 1): config/mcp-list hashes
-        # and the docker-inspected image id are ALSO in handshake-receipt.json (the scorer-pinned
-        # artifact); launcher_sha256 (this runner's OWN canonical git-blob-at-HEAD hash, same
-        # contract as world_mcp.py::code_sha256/Get-CanonicalCodeSha256) is unique to this receipt.
-        "launcher_sha256": git_blob_sha256(REPO_ROOT, "tools/gate0_appserver_arm.py"),
-        "config_sha256": receipt["config_sha256"],
-        "codex_mcp_list_sha256": receipt["codex_mcp_list_sha256"],
-        "world_image_id": receipt["world_image_id"],
-    }
-    _write_json(out_dir / "run-receipt.json", run_receipt)
-    print(json.dumps(run_receipt, sort_keys=True))
-    return {"receipt": receipt, "agent_metrics": agent_metrics, "run_receipt": run_receipt}
+    finalized = _finalize_real_run(
+        receipt=receipt, receipt_path=receipt_path, transcript_path=transcript_path,
+        out_dir=out_dir, arm=arm, wall_clock_s=wall_clock_s, credits_result=(guard.result or {}),
+        rate_pin=rate_pin, watcher=watcher, auth_note=auth_note, model=args.model,
+        human_path=human_path)
+    return {"receipt": receipt, **finalized}
 
 
 def main(argv: list[str] | None = None) -> int:
