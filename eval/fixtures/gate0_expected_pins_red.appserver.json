@@ -1,0 +1,33 @@
+{
+  "_comment": "Gate 0 APP-SERVER launch-surface amendment (reports/2026-07-24-gate0-prereg-amendment-appserver.md) -- the app-server-transport sibling of the FROZEN eval/fixtures/gate0_expected_pins_red.json (that file is unedited; this is a NEW, separately named fixture, never overwriting it). Consumed the SAME way: tools/check_gate0_codex.py::audit()'s expected_pins argument (schema_version 2, all PIN_FIELDS present), for a run launched by tools/gate0_appserver_arm.py instead of tools/run_gate0_codex.ps1.",
+  "_what_changed_vs_the_frozen_exec_based_pin": "ONLY the launch SURFACE (exec -> app-server transport, tools/run_gate0_codex.ps1 -> tools/gate0_appserver_arm.py) and the approval MECHANISM (codex exec's stdin-EOF auto-decline -> codex app-server's answerable RPC, answered `accept` by tools/gate0_appserver_client.py). Neither is a PIN_FIELD in this file's own vocabulary -- the launcher's own identity is tracked separately, in eval/fixtures/gate0_signature.appserver.json's `expected_launcher_sha256` (a NEW field on that OTHER fixture, not on this one). Every field below is UNCHANGED from the frozen exec-based pin -- VERIFIED during this build (not assumed): (a) codex_path/codex_executable_sha256/codex_version are unaffected by which SUBCOMMAND (`exec` vs `app-server`) is invoked -- same binary; (b) brain_config_sha256 was independently recomputed by tools/gate0_appserver_arm.py::render_brain_config_toml() for model=gpt-5.6-sol + the SAME developer_instructions string and hash-compared byte-for-byte against this exact value (ab7e54c1...) -- MATCH; (c) task_sha256 was likewise recomputed by tools/gate0_appserver_arm.py::task_text_for('red') and hash-compared against this exact value (306751c3...) -- MATCH; (d) world_image_tag/world_image_id/host_code_sha256/image_code_sha256/mcp_servers_observed/mcp_tools_observed/critical_config_transport/auth_method/paid_execution_enabled/readiness are all structural/image constants, unaffected by transport.",
+  "_paid_execution_enabled_note": "Stays `false` -- this field's OWN documented contract (see the frozen pin's _source_paid_execution_enabled) is 'the launcher contains no `codex exec` path', i.e. structural, not 'did this run spend money'. tools/gate0_appserver_arm.py invokes `codex app-server`, never `codex exec` -- the field's literal meaning still holds for this transport.",
+  "_config_sha256_and_codex_mcp_list_sha256_note": "Left as the SAME launch-invocation-dependent placeholder as the frozen pin (never a real value here either) -- these two fields depend on the launch OutputDir's absolute paths and the frozen world image ID (now baked into the mount args), so they cannot be a single fixed value even with a fixed commit. PENDING: to be recomputed by the orchestrator at actual launch time from tools/gate0_appserver_arm.py's own render_full_config_toml()/codex_mcp_list_json() output, exactly as the exec-based pin already documents for its own recompute recipe.",
+  "schema_version": 2,
+  "arm": "red",
+  "readiness": "NO_GO_INSUFFICIENT_WAKES",
+  "paid_execution_enabled": false,
+  "auth_method": "chatgpt",
+  "planned_model": "gpt-5.6-sol",
+  "codex_version": "codex-cli 0.144.3",
+  "codex_path": "C:\\Users\\Succe\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+  "codex_executable_sha256": "e5dcc9f9b08102c58596af85345f689a69fd53a87d8d408bdc0fcdaf99fcf6e3",
+  "critical_config_transport": "explicit_cli_overrides",
+  "mcp_servers_observed": ["gate0_world"],
+  "mcp_tools_observed": ["observe", "explore", "goto", "remember", "press_button", "press_sequence", "wait"],
+  "brain_config_sha256": "ab7e54c1785f5d8be4352bbe0f85edb37cda68cf56df2128d61df025c1041fc3",
+  "task_sha256": "306751c34627f6d5c6a8c94ac2f714e358f0dcbc5867866c273e434de7f4b7c4",
+  "config_sha256": "CONSTRAINT:launch-invocation-dependent-recompute-at-signature",
+  "codex_mcp_list_sha256": "CONSTRAINT:launch-invocation-dependent-recompute-at-signature",
+  "tool_schema_sha256": "e55bb8193f0c3ecb531519db2b93a3a597dbd97d9cb42468e63334c1ae7ffa71",
+  "world_image_tag": "gb-mcp-world",
+  "world_image_id": "sha256:5bfabc7513ce037ed077e955fd34445ef564a7b51037bd7fdddeef0cdb900d00",
+  "host_code_sha256": {
+    "/app/world_mcp.py": "967866ab5ddcfcef17747aab1d83070a95a32c2cb05bc0b6252defce7b519fc9",
+    "/app/core/miniwob_world.py": "f98b0dc9846bff0fceb96c8f77eee8b4261b9db894abd793a8d7b1145a23ce54"
+  },
+  "image_code_sha256": {
+    "/app/world_mcp.py": "967866ab5ddcfcef17747aab1d83070a95a32c2cb05bc0b6252defce7b519fc9",
+    "/app/core/miniwob_world.py": "f98b0dc9846bff0fceb96c8f77eee8b4261b9db894abd793a8d7b1145a23ce54"
+  }
+}
