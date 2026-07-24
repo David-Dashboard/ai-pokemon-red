@@ -955,6 +955,13 @@ def _run_dry_run(args: argparse.Namespace, out_dir: Path) -> dict:
     return {"verdict": verdict, "agent_metrics": agent_metrics, "wake_boundary": wake_boundary}
 
 
+def resolve_isolated_codex_home(explicit: str | None, out_dir: Path) -> str:
+    """CODEX_HOME handed to the codex child MUST be absolute: the child runs with cwd=out_dir, so a
+    relative home (e.g. out_dir/'codex-home') resolves against out_dir again and 'does not exist'
+    -> codex exits -> initialize times out (observed 2026-07-24). Absolutize the derived home."""
+    return explicit or str((out_dir / "codex-home").resolve())
+
+
 def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
     """Builds and wires the real launch path end to end. NEVER INVOKED BY THIS BUILD'S OWN TESTS
     OR $0 SESSION -- the orchestrator runs this. Left fully implemented (not a stub) per the
@@ -964,7 +971,7 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
 
     docker_path = resolve_docker_path()
     codex_path = args.codex_path or resolve_codex_path()
-    codex_home = args.codex_home or str(out_dir / "codex-home")
+    codex_home = resolve_isolated_codex_home(args.codex_home, out_dir)
     Path(codex_home).mkdir(parents=True, exist_ok=True)
     auth_note = seed_codex_auth(Path(codex_home), args.codex_auth_source)
 
@@ -1059,7 +1066,7 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
     try:
         client = ObservingGate0Client(codex_path=codex_path, extra_args=[a for o in overrides
                                                                           for a in ("-c", o)],
-                                       cwd=str(out_dir), transcript_path=raw_transcript_path,
+                                       cwd=str(out_dir.resolve()), transcript_path=raw_transcript_path,
                                        credit_observer=_combined_observer,
                                        audit_log_path=audit_log_path,
                                        stderr_log_path=out_dir / "codex.stderr.log")
@@ -1067,7 +1074,7 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
         client.connect()
         state["pid"] = client._transport.proc.pid
         try:
-            run_gate0_arm_turn(client, cwd=str(out_dir), task_text=task_text,
+            run_gate0_arm_turn(client, cwd=str(out_dir.resolve()), task_text=task_text,
                                wall_clock_s=args.wall_clock_s,
                                handshake_timeout=REAL_RUN_HANDSHAKE_TIMEOUT_S)
         finally:
