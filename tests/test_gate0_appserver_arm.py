@@ -21,6 +21,7 @@ from tools.gate0_appserver_arm import (
     adapt_app_server_notifications_to_exec_shape,
     build_agent_metrics,
     build_docker_mcp_args,
+    resolve_isolated_codex_home,
     ensure_wake_boundary_artifact,
     main,
     refuse_if_already_completed,
@@ -520,6 +521,21 @@ def test_build_docker_mcp_args_world_mount_source_is_absolute_for_a_relative_wor
         world_mount = next(a for a in args if "target=/app/world" in a)
         src = world_mount.split("source=", 1)[1].rsplit(",target=", 1)[0]
         assert os.path.isabs(src), f"{arm}: world mount source not absolute: {src!r}"
+
+
+def test_resolve_isolated_codex_home_is_absolute_for_a_relative_out_dir():
+    # Regression (2026-07-24): the codex child runs with cwd=out_dir, so a relative CODEX_HOME
+    # (out_dir/'codex-home') resolves against out_dir again -> "does not exist" -> codex exits ->
+    # initialize times out. The derived home MUST be absolute.
+    import os
+    from pathlib import Path
+    rel_out = Path("runs/gate0_paid/red")
+    assert not rel_out.is_absolute()
+    home = resolve_isolated_codex_home(None, rel_out)
+    assert os.path.isabs(home), f"derived codex_home not absolute: {home!r}"
+    assert home.replace("\\", "/").endswith("runs/gate0_paid/red/codex-home")
+    # An explicit path is honored verbatim (caller's responsibility to pass absolute).
+    assert resolve_isolated_codex_home("C:/x/home", rel_out) == "C:/x/home"
 
 
 # ---------------------------------------------------------------------------
