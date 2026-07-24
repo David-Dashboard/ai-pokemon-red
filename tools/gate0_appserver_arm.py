@@ -468,6 +468,96 @@ def build_handshake_receipt(*, arm: str, model: str, codex_version: str, codex_p
 
 
 # ---------------------------------------------------------------------------------------------
+# Expected-pins resolution -- closes the app-server expected-pins gap: the first real Gate 0 Arm R
+# app-server run reported a CONSTANCY_BREACH from `check_gate0_codex.audit()` for exactly the two
+# fields eval/fixtures/gate0_expected_pins_{red,miniwob}.appserver.json mark
+# `CONSTRAINT:launch-invocation-dependent-recompute-at-signature` (config_sha256,
+# codex_mcp_list_sha256): they embed the launch OutputDir's absolute mount paths, so no single
+# static fixture value can ever equal a real receipt's value -- `_expected_failures()` (frozen,
+# never edited) would report `pin_mismatch:*` for these two fields on EVERY real run, forever.
+#
+# tools/check_gate0_codex.py is off-limits (frozen) and, on inspection, was never actually fixed
+# for this on the exec path either: the exec path's OWN frozen fixture documents the identical
+# CONSTRAINT marker for these two fields with the identical "recompute at signature" recipe
+# (eval/fixtures/gate0_expected_pins_red.json:_source_config_sha256), and
+# reports/2026-07-21-gate0-readiness-final-v2.md Sec.3 shows a REAL exec-path receipt hitting this
+# EXACT SAME `pin_mismatch:config_sha256`/`pin_mismatch:codex_mcp_list_sha256` when audited against
+# the raw static fixture -- masked only because that receipt had no real transcript (leak_failures
+# forced `overall=NO_LEAK` before constancy_failures could surface as the verdict). No exec-path
+# code ever taught check_gate0_codex.py to treat the CONSTRAINT marker as anything but a literal
+# string to compare against -- so this fix does not either. The resolution below happens one layer
+# ABOVE check_gate0_codex.py, in this launcher, exactly where the exec path's own signature
+# mechanism (eval/fixtures/gate0_signature.json's `expected_config_sha256`: "this launch's freshly
+# computed handshake-receipt.json:config_sha256") was always meant to operate -- but done in code,
+# automatically, at $0, since this launcher already renders config.toml/codex-mcp-list.json and
+# builds the receipt entirely BEFORE the real paid turn spawns (see _run_real).
+# ---------------------------------------------------------------------------------------------
+
+LAUNCH_INVOCATION_DEPENDENT_MARKER = "CONSTRAINT:launch-invocation-dependent-recompute-at-signature"
+LAUNCH_INVOCATION_DEPENDENT_FIELDS = ("config_sha256", "codex_mcp_list_sha256")
+
+
+def resolve_expected_pins(base_expected: dict, *, config_sha256: str, codex_mcp_list_sha256: str) -> dict:
+    """Substitutes the two launch-invocation-dependent PIN_FIELDS in `base_expected` (the committed
+    eval/fixtures/gate0_expected_pins_{arm}.appserver.json, which holds
+    LAUNCH_INVOCATION_DEPENDENT_MARKER for both by documented design -- see the block comment
+    above) with THIS run's own real values, so tools/check_gate0_codex.py::_expected_failures()
+    compares against a real hash instead of a placeholder it can never match.
+
+    NOT vacuous / not self-fulfilling: the caller (_run_real) passes `config_sha256`/
+    `codex_mcp_list_sha256` straight from the handshake receipt it already built -- and that
+    receipt is built entirely BEFORE run_gate0_arm_turn() spawns the real paid turn. These values
+    are therefore a pure function of the LAUNCH SPEC (model, out-dir, arm, pinned image id) via
+    render_full_config_toml()/codex_mcp_list_json(), never of anything the paid model said or did;
+    substituting them here cannot launder a paid run's own output into looking "expected".
+    verify_launch_signature_unchanged() (below) is the actual "did anything change between render
+    and run" proof this substitution's honesty depends on -- see its own docstring.
+
+    Every other PIN_FIELD in `base_expected` (the 18 real, independently-frozen constants: model,
+    world_image_id, tool_schema_sha256, etc.) is returned untouched -- this function only ever
+    touches the two documented CONSTRAINT fields, and refuses (fail loud, not a silent overwrite)
+    if either does not already hold that exact marker, so a future edit that accidentally puts a
+    real hash in the fixture is caught immediately rather than silently disabled."""
+    for field in LAUNCH_INVOCATION_DEPENDENT_FIELDS:
+        if base_expected.get(field) != LAUNCH_INVOCATION_DEPENDENT_MARKER:
+            raise ValueError(
+                f"resolve_expected_pins: base_expected[{field!r}] is not the documented "
+                f"{LAUNCH_INVOCATION_DEPENDENT_MARKER!r} marker (got {base_expected.get(field)!r}) "
+                "-- refusing to silently overwrite what looks like an already-real pinned value.")
+    resolved = dict(base_expected)
+    resolved["config_sha256"] = config_sha256
+    resolved["codex_mcp_list_sha256"] = codex_mcp_list_sha256
+    return resolved
+
+
+def verify_launch_signature_unchanged(receipt: dict, out_dir: Path) -> None:
+    """Fails loud (SystemExit), before resolve_expected_pins()/audit() ever run, if config.toml or
+    codex-mcp-list.json on disk no longer hash to what `receipt` recorded when it was built --
+    entirely BEFORE the real codex app-server turn spawned (_run_real builds and writes the receipt
+    before calling run_gate0_arm_turn()). A mismatch here means one of these files was touched
+    DURING the turn (codex app-server itself, a stray process, a bug) between render and run --
+    this is the concrete "proving nothing changed between render and run" check
+    resolve_expected_pins()'s substitution depends on for its own honesty.
+
+    tools/check_gate0_codex.py::_artifact_failures (frozen, never edited) performs the identical
+    re-hash-and-compare independently, inside audit() itself, and would also catch this as
+    `artifact_hash_mismatch:config_sha256`/`codex_mcp_list_sha256` -- this is a narrower, arm-level,
+    fail-fast duplicate with an immediate, named error, not a replacement for that frozen check."""
+    checks = {
+        "config_sha256": out_dir / "launch" / ".codex" / "config.toml",
+        "codex_mcp_list_sha256": out_dir / "codex-mcp-list.json",
+    }
+    for field, path in checks.items():
+        observed = _sha256_file(path)
+        expected = receipt.get(field)
+        if observed != expected:
+            raise SystemExit(
+                f"launch signature mismatch: {path} changed between render (pre-turn receipt "
+                f"recorded {expected}) and now ({observed}) -- refusing to resolve expected pins "
+                "against a drifted/tampered launch artifact.")
+
+
+# ---------------------------------------------------------------------------------------------
 # THE TRANSCRIPT ADAPTER (see module docstring for the full decision writeup).
 # ---------------------------------------------------------------------------------------------
 
@@ -1091,9 +1181,21 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
     adapted = adapt_app_server_notifications_to_exec_shape(client.notifications)
     write_jsonl(transcript_path, adapted)
 
-    audit_result = audit(transcript_path, receipt_path,
-                          REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json",
-                          out_dir, arm)
+    # Close the app-server expected-pins gap (see the block comment above resolve_expected_pins):
+    # fail loud first if the launch artifacts drifted during the turn, then resolve the two
+    # launch-invocation-dependent PIN_FIELDS from THIS run's own pre-turn receipt values before
+    # ever calling the frozen audit() against a static fixture that can never match them.
+    verify_launch_signature_unchanged(receipt, out_dir)
+    base_expected = json.loads(
+        (REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json")
+        .read_text(encoding="utf-8"))
+    resolved_expected = resolve_expected_pins(
+        base_expected, config_sha256=receipt["config_sha256"],
+        codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    resolved_expected_path = out_dir / "expected-pins.resolved.json"
+    _write_json(resolved_expected_path, resolved_expected)
+
+    audit_result = audit(transcript_path, receipt_path, resolved_expected_path, out_dir, arm)
 
     credits_result = guard.result or {}
     normalized_credits = (credits_result.get("final_total_normalized_credits")

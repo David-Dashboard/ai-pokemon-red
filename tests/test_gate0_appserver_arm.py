@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 
+import tools.check_gate0_codex as checker
 from tools.check_gate0_codex import TOOLS
 from tools.gate0_credit_breaker import LIMIT_NORMALIZED_CREDITS
 import tools.gate0_appserver_arm as arm_mod
@@ -16,12 +17,14 @@ from tools.gate0_appserver_arm import (
     ARM_IMAGE_IDS,
     ARM_SOFT_CREDIT_CAPS,
     HARD_CREDIT_CAP,
+    LAUNCH_INVOCATION_DEPENDENT_MARKER,
     MultiCallStubAppServerPeer,
     SoftCapWatcher,
     adapt_app_server_notifications_to_exec_shape,
     build_agent_metrics,
     build_docker_mcp_args,
     resolve_isolated_codex_home,
+    resolve_expected_pins,
     ensure_wake_boundary_artifact,
     main,
     refuse_if_already_completed,
@@ -30,6 +33,7 @@ from tools.gate0_appserver_arm import (
     render_world_config_toml,
     run_gate0_arm_turn,
     task_text_for,
+    verify_launch_signature_unchanged,
 )
 from tools.gate0_appserver_launch import ObservingGate0Client
 
@@ -733,3 +737,162 @@ def test_docker_image_inspect_id_fails_closed_on_nonzero_exit(monkeypatch):
                                                           returncode=1))
     with pytest.raises(RuntimeError):
         arm_mod.docker_image_inspect_id("docker", "some-tag")
+
+
+# ---------------------------------------------------------------------------
+# Expected-pins resolution -- closes the app-server expected-pins gap: the first real Gate 0 Arm R
+# app-server run reported a BENIGN CONSTANCY_BREACH (pin_mismatch on config_sha256/
+# codex_mcp_list_sha256/tool_schema_sha256) because check_gate0_codex.audit() was handed the raw,
+# static .appserver.json fixture -- whose two launch-invocation-dependent fields hold a literal
+# CONSTRAINT marker string a real receipt can never equal -- directly as `expected_pins`.
+# ---------------------------------------------------------------------------
+
+def _load_real_appserver_fixture(arm):
+    path = arm_mod.REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_resolve_expected_pins_substitutes_only_the_two_launch_dependent_fields():
+    base = {
+        "schema_version": 2, "planned_model": "gpt-5.6-sol",
+        "config_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER,
+        "codex_mcp_list_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER,
+        "tool_schema_sha256": "a" * 64,
+    }
+    resolved = resolve_expected_pins(base, config_sha256="b" * 64, codex_mcp_list_sha256="c" * 64)
+    assert resolved["config_sha256"] == "b" * 64
+    assert resolved["codex_mcp_list_sha256"] == "c" * 64
+    assert resolved["tool_schema_sha256"] == "a" * 64  # untouched
+    assert resolved["planned_model"] == "gpt-5.6-sol"  # untouched
+    assert base["config_sha256"] == LAUNCH_INVOCATION_DEPENDENT_MARKER  # base dict not mutated
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolve_expected_pins_works_against_the_real_committed_fixture(arm):
+    base = _load_real_appserver_fixture(arm)
+    resolved = resolve_expected_pins(base, config_sha256="d" * 64, codex_mcp_list_sha256="e" * 64)
+    assert resolved["config_sha256"] == "d" * 64
+    assert resolved["codex_mcp_list_sha256"] == "e" * 64
+    # every other PIN_FIELD is the real, committed, independently-frozen value -- untouched:
+    for field in checker.PIN_FIELDS:
+        if field in ("config_sha256", "codex_mcp_list_sha256"):
+            continue
+        assert resolved[field] == base[field]
+
+
+@pytest.mark.parametrize("field", ["config_sha256", "codex_mcp_list_sha256"])
+def test_resolve_expected_pins_refuses_to_overwrite_an_already_real_value(field):
+    # Defensive: if a future edit ever puts a real hash in the fixture instead of the documented
+    # marker, this must fail loud, not silently stop checking that field.
+    base = {"config_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER,
+            "codex_mcp_list_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER}
+    base[field] = "f" * 64
+    with pytest.raises(ValueError, match="not the documented"):
+        resolve_expected_pins(base, config_sha256="b" * 64, codex_mcp_list_sha256="c" * 64)
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolved_real_fixture_produces_zero_pin_mismatches_for_a_matching_receipt(arm):
+    """THE decisive POSITIVE proof: a receipt whose fields genuinely match the real, committed
+    .appserver.json fixture (post-resolution for the two launch-dependent fields) audits clean
+    against check_gate0_codex._expected_failures -- the exact check that produced the false
+    CONSTANCY_BREACH on the real, completed Arm R app-server run before this fix."""
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    resolved = resolve_expected_pins(base, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    assert checker._expected_failures(receipt, resolved) == []
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolved_real_fixture_still_catches_a_genuinely_wrong_tool_inventory(arm):
+    """THE decisive NEGATIVE proof (build-spec requirement 4): a genuinely different
+    tool_schema_sha256 -- representing a real, different tool inventory, exactly the kind of drift
+    this pin exists to catch -- MUST still produce pin_mismatch:tool_schema_sha256 against the
+    fixed, real fixture. Proves the fix (re-deriving tool_schema_sha256 for the app-server's own
+    serialization) did not make the check vacuous."""
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt["tool_schema_sha256"] = "9" * 64  # genuinely wrong -- a different tool inventory
+    resolved = resolve_expected_pins(base, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    assert checker._expected_failures(receipt, resolved) == ["pin_mismatch:tool_schema_sha256"]
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolved_real_fixture_still_catches_a_genuinely_wrong_model(arm):
+    # A second, independent negative case (not just tool_schema_sha256): any of the 18
+    # non-launch-dependent PIN_FIELDS still catches real drift too.
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt["planned_model"] = "gpt-wrong-model"
+    resolved = resolve_expected_pins(base, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    assert checker._expected_failures(receipt, resolved) == ["pin_mismatch:planned_model"]
+
+
+def test_full_audit_via_resolved_expected_pins_reports_zero_pin_mismatch(tmp_path):
+    """Integration proof: resolve_expected_pins() plumbed through the real, unmodified
+    check_gate0_codex.audit() end to end reports zero pin_mismatch:* constancy failures -- the
+    exact three fields (config_sha256, codex_mcp_list_sha256, tool_schema_sha256) the real
+    completed Arm R app-server run's first audit incorrectly flagged."""
+    out_dir = tmp_path / "out"
+    receipt_path, _ = _fixture_for_audit(out_dir, arm="red")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+
+    base_expected = dict(receipt)  # stand-in for the 18 real, independently-frozen pins
+    base_expected["config_sha256"] = LAUNCH_INVOCATION_DEPENDENT_MARKER
+    base_expected["codex_mcp_list_sha256"] = LAUNCH_INVOCATION_DEPENDENT_MARKER
+    resolved = resolve_expected_pins(base_expected, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    resolved_path = out_dir / "expected-pins.resolved.json"
+    resolved_path.write_text(json.dumps(resolved), encoding="utf-8")
+
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")  # no real transcript needed for this proof
+    from tools.check_gate0_codex import audit as check_audit
+    result = check_audit(transcript_path, receipt_path, resolved_path, out_dir, "red")
+    pin_mismatches = [f for f in result["constancy_failures"] if f.startswith("pin_mismatch:")]
+    assert pin_mismatches == []
+    verify_launch_signature_unchanged(receipt, out_dir)  # must not raise -- artifacts untouched
+
+
+def test_verify_launch_signature_unchanged_passes_when_artifacts_match_the_receipt(tmp_path):
+    import hashlib
+    (tmp_path / "launch" / ".codex").mkdir(parents=True)
+    (tmp_path / "launch" / ".codex" / "config.toml").write_text("config", encoding="utf-8")
+    (tmp_path / "codex-mcp-list.json").write_text("[]", encoding="utf-8")
+    receipt = {
+        "config_sha256": hashlib.sha256(b"config").hexdigest(),
+        "codex_mcp_list_sha256": hashlib.sha256(b"[]").hexdigest(),
+    }
+    verify_launch_signature_unchanged(receipt, tmp_path)  # must not raise
+
+
+def test_verify_launch_signature_unchanged_fails_loud_when_config_drifted(tmp_path):
+    (tmp_path / "launch" / ".codex").mkdir(parents=True)
+    (tmp_path / "launch" / ".codex" / "config.toml").write_text("config", encoding="utf-8")
+    (tmp_path / "codex-mcp-list.json").write_text("[]", encoding="utf-8")
+    receipt = {"config_sha256": "0" * 64, "codex_mcp_list_sha256": "0" * 64}  # stale/wrong
+    with pytest.raises(SystemExit, match="launch signature mismatch"):
+        verify_launch_signature_unchanged(receipt, tmp_path)
+
+
+def test_verify_launch_signature_unchanged_fails_loud_when_mcp_list_drifted(tmp_path):
+    import hashlib
+    (tmp_path / "launch" / ".codex").mkdir(parents=True)
+    (tmp_path / "launch" / ".codex" / "config.toml").write_text("config", encoding="utf-8")
+    (tmp_path / "codex-mcp-list.json").write_text("[]", encoding="utf-8")
+    receipt = {"config_sha256": hashlib.sha256(b"config").hexdigest(),
+               "codex_mcp_list_sha256": "0" * 64}  # stale/wrong
+    with pytest.raises(SystemExit, match="launch signature mismatch"):
+        verify_launch_signature_unchanged(receipt, tmp_path)
