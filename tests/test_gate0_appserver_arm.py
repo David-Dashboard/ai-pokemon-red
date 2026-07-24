@@ -115,6 +115,24 @@ def test_refuse_if_already_completed_is_a_noop_when_out_dir_is_fresh(tmp_path):
     refuse_if_already_completed(tmp_path / "fresh")  # must not raise
 
 
+def test_one_attempt_guard_catches_a_crashed_after_spending_run_with_no_agent_metrics(tmp_path):
+    # PR #157 review SHOULD-fix: a run that SPENDS then CRASHES mid-turn never writes
+    # agent_metrics.json (only written at the very end of a successful run) -- simulate exactly
+    # that: only transcript.raw_appserver.jsonl exists (written from the FIRST message onward,
+    # long before agent_metrics.json would ever be written). A second launch into the same
+    # out-dir must still be refused, or it would silently re-spend.
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "transcript.raw_appserver.jsonl").write_text(
+        '{"direction": "client_to_server", "message": {"id": 1, "method": "initialize"}}\n',
+        encoding="utf-8")
+    assert not (out_dir / "agent_metrics.json").exists()  # the exact hole the review found
+    with pytest.raises(SystemExit, match="one-attempt guard"):
+        main(["--arm", "red", "--out-dir", str(out_dir), "--dry-run"])
+    with pytest.raises(SystemExit, match="one-attempt guard"):
+        refuse_if_already_completed(out_dir)
+
+
 def test_seam_check_is_exempt_from_the_one_attempt_guard(tmp_path, monkeypatch):
     # --seam-check never writes agent_metrics.json, so re-running it in the same dir (e.g. as a
     # repeated preflight probe) must not trip the completed-run guard.
@@ -225,6 +243,113 @@ def test_adapter_malformed_usage_never_fabricates_a_usage_dict():
     ]
     events = adapt_app_server_notifications_to_exec_shape(notifications)
     assert events == [{"type": "turn.completed"}]  # no "usage" key
+
+
+def test_adapter_usermessage_and_agentmessage_and_reasoning_never_leak():
+    # Unit-level companion to the decisive real-transcript test below: userMessage is dropped
+    # (no item.* line at all), agentMessage/reasoning translate/pass through to exactly the
+    # audit() skip-list strings.
+    notifications = [
+        {"method": "item/started", "params": {"item": {"type": "userMessage", "id": "u0"}}},
+        {"method": "item/completed", "params": {"item": {"type": "userMessage", "id": "u0"}}},
+        {"method": "item/started", "params": {"item": {"type": "reasoning", "id": "r0"}}},
+        {"method": "item/completed", "params": {"item": {"type": "reasoning", "id": "r0"}}},
+        {"method": "item/started", "params": {"item": {"type": "agentMessage", "id": "a0"}}},
+        {"method": "item/completed", "params": {"item": {"type": "agentMessage", "id": "a0"}}},
+    ]
+    events = adapt_app_server_notifications_to_exec_shape(notifications)
+    types = [e["item"]["type"] for e in events]
+    assert types == ["reasoning", "agent_message"]  # userMessage: no line emitted at all
+
+
+def _fixture_for_audit(out_dir, arm="red"):
+    """Minimal self-consistent receipt/expected-pins/artifacts_dir pair -- same style as
+    tools.gate0_appserver_arm._run_dry_run's own fixture -- purely so audit() has a valid
+    artifacts_dir/receipt to check leak_failures against. Constancy/accounting are NOT under
+    test by the caller of this helper; only leak_failures is."""
+    enabled_tools = TOOLS[arm]
+    (out_dir / "launch" / ".codex").mkdir(parents=True, exist_ok=True)
+    fake_codex = out_dir / "codex.exe"
+    fake_codex.write_bytes(b"fixture-codex")
+    brain_text = arm_mod.render_brain_config_toml("gpt-5.6-sol", arm_mod.DEVELOPER_INSTRUCTION)
+    (out_dir / "brain-config.toml").write_text(brain_text, encoding="utf-8", newline="\n")
+    task_text = arm_mod.task_text_for(arm)
+    (out_dir / "launch" / "TASK.md").write_text(task_text, encoding="utf-8", newline="\n")
+    world_text = arm_mod.render_world_config_toml(arm_mod.SERVER_NAME, "docker", ["run", "x"],
+                                                   "/repo", enabled_tools)
+    config_text = arm_mod.render_full_config_toml(brain_text, world_text)
+    (out_dir / "launch" / ".codex" / "config.toml").write_text(config_text, encoding="utf-8",
+                                                                newline="\n")
+    (out_dir / "codex-mcp-list.json").write_text(json.dumps([{"name": arm_mod.SERVER_NAME}]) + "\n",
+                                                  encoding="utf-8", newline="\n")
+    (out_dir / "mcp-tools.json").write_text(
+        json.dumps([{"name": t} for t in enabled_tools]) + "\n", encoding="utf-8", newline="\n")
+
+    def _sha(path):
+        import hashlib
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    receipt = arm_mod.build_handshake_receipt(
+        arm=arm, model="gpt-5.6-sol", codex_version="codex-cli 0.0.0-test",
+        codex_path=str(fake_codex), codex_executable_sha256=_sha(fake_codex),
+        mcp_tools_observed=enabled_tools, brain_config_sha256=_sha(out_dir / "brain-config.toml"),
+        task_sha256=_sha(out_dir / "launch" / "TASK.md"),
+        config_sha256=_sha(out_dir / "launch" / ".codex" / "config.toml"),
+        codex_mcp_list_sha256=_sha(out_dir / "codex-mcp-list.json"),
+        tool_schema_sha256=_sha(out_dir / "mcp-tools.json"),
+        host_code_sha256={"/app/world_mcp.py": "0" * 64, "/app/core/miniwob_world.py": "1" * 64},
+        image_code_sha256={"/app/world_mcp.py": "0" * 64, "/app/core/miniwob_world.py": "1" * 64})
+    receipt_path = out_dir / "handshake-receipt.json"
+    expected_path = out_dir / "expected-pins.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    expected_path.write_text(json.dumps(receipt), encoding="utf-8")
+    return receipt_path, expected_path
+
+
+def test_adapter_over_the_real_m1_transcript_produces_zero_leak_failures(tmp_path):
+    """THE DECISIVE REGRESSION TEST (PR #157 adversarial review, 2026-07-24 BLOCKING fix): runs
+    the adapter over the REAL, committed capture
+    (reports/2026-07-23-gate0-appserver-m1-confirmation/transcript.jsonl) -- not a hand-built
+    fixture -- with the mcpToolCall's server/tool patched from the M1 stub's gate0_stub/ping to a
+    Gate-0-allowlisted gate0_world/observe pair (the real capture is correct MECHANISM evidence
+    but off-allowlist for Gate 0 itself), replayed through the exact same ObservingGate0Client
+    classification logic that would run in production, then fed through the FROZEN, unmodified
+    check_gate0_codex.audit(). Before the 2026-07-24 fix this asserted leak_failures == [] and
+    FAILED (userMessage/agentMessage both flagged forbidden_item) -- proving the bug was real, not
+    theoretical."""
+    real_path = (arm_mod.REPO_ROOT / "reports" / "2026-07-23-gate0-appserver-m1-confirmation"
+                 / "transcript.jsonl")
+    client = ObservingGate0Client(send=lambda message: None)
+    for line in real_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        if entry.get("direction") != "server_to_client":
+            continue
+        message = entry["message"]
+        params = message.get("params")
+        item = params.get("item") if isinstance(params, dict) else None
+        if isinstance(item, dict) and item.get("tool") == "ping":
+            item["tool"] = "observe"
+            item["server"] = "gate0_world"
+        client.handle_message(message)
+
+    adapted = adapt_app_server_notifications_to_exec_shape(client.notifications)
+    # Sanity: the real capture really does contain the four item types this fix concerns itself
+    # with -- if this ever stops being true the test below would pass for the wrong reason.
+    raw_types = {n.get("params", {}).get("item", {}).get("type")
+                 for n in client.notifications if n.get("method") == "item/completed"}
+    assert raw_types == {"userMessage", "reasoning", "mcpToolCall", "agentMessage"}
+
+    transcript_path = tmp_path / "transcript.jsonl"
+    from tools.gate0_appserver_arm import write_jsonl
+    write_jsonl(transcript_path, adapted)
+    receipt_path, expected_path = _fixture_for_audit(tmp_path, arm="red")
+
+    from tools.check_gate0_codex import audit as check_audit
+    result = check_audit(transcript_path, receipt_path, expected_path, tmp_path, "red")
+    assert result["leak_failures"] == []
+    assert result["primitive_action_events"] == 1  # the one real, now-allowlisted mcpToolCall
 
 
 # ---------------------------------------------------------------------------

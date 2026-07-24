@@ -28,8 +28,9 @@ JSON-RPC notifications: `{"method": "item/completed", "params": {"item": {"type"
 {"total": {...camelCase...}}}}`.
 
 `adapt_app_server_notifications_to_exec_shape()` below is a REAL ADAPTER (not a raw-dump fallback),
-built because a faithful mapping IS possible for the two event kinds this build has concrete,
-captured evidence for:
+built because a faithful mapping IS possible for every event kind this build has concrete, captured
+evidence for -- INCLUDING a 2026-07-24 fix (adversarial review of PR #157) that closed a real
+false-`NO_LEAK` bug this section originally missed:
 
   * `item/completed` with `item.type == "mcpToolCall"` -> `item.completed` with the item's `type`
     renamed to `mcp_tool_call` -- CONFIRMED (byte-for-byte) against the real captured transcript
@@ -37,6 +38,20 @@ captured evidence for:
     "tool": "ping", "type": "mcpToolCall"`. The `server`/`tool` field NAMES already match what
     `check_gate0_codex._mcp_identity()` reads (`item.get("server")`/`item.get("tool")`) -- no
     renaming needed there, only the `type` value.
+  * `item/completed` with `item.type == "agentMessage"` -> renamed to `agent_message` --
+    CONFIRMED both sides: the app-server spelling is captured verbatim at
+    reports/2026-07-23-gate0-appserver-m1-confirmation/transcript.jsonl lines 29-30, and the
+    exec-side TARGET spelling (`agent_message`) is independently captured in a REAL `codex exec
+    --json` transcript, reports/2026-07-22-gate0-paid-exec-noop-diagnosis.md lines 22-25.
+  * `item/completed` with `item.type == "reasoning"` needs no rename at all -- the app-server
+    capture (same transcript, lines 18-19) already spells it identically to `audit()`'s skip-list
+    string.
+  * `item/completed` with `item.type == "userMessage"` (the prompt echo, transcript lines 16-17)
+    is DROPPED entirely -- no `item.*` line is emitted for it. This is CONFIRMED, not a guess:
+    the real exec-shaped target transcript (reports/2026-07-22-gate0-paid-exec-noop-diagnosis.md)
+    has NO user-message item of any spelling, so translating this one under ANY name would be a
+    structural false-positive leak on every real, fully-compliant run -- proven empirically during
+    PR #157's adversarial review (see "2026-07-24 fix" below).
   * `thread/tokenUsage/updated` -> tracked (via `_app_server_total_to_snake`, REUSED from
     tools/gate0_appserver_launch.py, not reimplemented) and, at `turn/completed`, folded into ONE
     `turn.completed.usage` line carrying the four TOKEN_FIELDS from the LATEST cumulative `total` --
@@ -45,7 +60,7 @@ captured evidence for:
     `turn/failed`/`turn/aborted` -> `turn.failed` (closest honest exec-vocabulary bucket for "the
     turn did not complete"; `check_gate0_codex.py` treats both as `run_failures` regardless of the
     precise sub-reason).
-  * `item/started` (an in-progress `mcpToolCall`) is DELIBERATELY DROPPED, never translated:
+  * `item/started` (an in-progress item of any type) is DELIBERATELY DROPPED, never translated:
     `audit()` counts every `item.*` line generically by `item.type`, with no started-vs-completed
     distinction -- forwarding BOTH would double-count `primitive_action_events` for the same real
     tool call. Only the terminal `item/completed` becomes one exec-shaped line.
@@ -56,25 +71,33 @@ captured evidence for:
     leak -- they are protocol/approval plumbing, not the thing `audit()`'s no-leak check exists to
     police.
 
-THE HONESTLY-FLAGGED GAP: for any OTHER `item/completed` item type (most importantly the model's own
-reasoning traces and its final natural-language message -- both are certain to occur during a real,
-many-decision Red/MiniWoB turn), this repo has **no committed app-server Item/ThreadItem schema
-dump** (only the four approval/elicitation/permission schemas + JSONRPCRequest/Response +
-Initialize/ThreadStart are committed under tests/fixtures/gate0_appserver/ -- confirmed by listing
-that directory; there is no `Item.json`/`ThreadItem.json`). The ONE piece of concrete evidence this
-build has for any item-type spelling is `"mcpToolCall"` (quoted above). Guessing that Codex's
-app-server names its reasoning/message items `"reasoning"`/`"agentMessage"` (a plausible but
-UNVERIFIED camelCase-convention guess) and silently mapping them to `audit()`'s exact skip-list
-strings (`"reasoning"`, `"agent_message"`) would be exactly the kind of fabricated-mapping the
-build-spec says never to do ("do NOT fake events; honesty > green"). This adapter therefore passes
-any non-`mcpToolCall` item's `type` field through **verbatim, unmapped** -- `audit()` will then, on
-its own frozen and unmodified logic, either skip it (only if the raw wire string happens to
-literally equal `"reasoning"` or `"agent_message"`) or flag it `forbidden_item` (a NO_LEAK failure)
-otherwise. This is a deliberate FAIL-CLOSED choice, not a bug: a real, fully-compliant Red/MiniWoB
-turn may score `NO_LEAK` purely because its legitimate reasoning/message items don't happen to match
-audit()'s hardcoded snake_case strings. **This is the single loudest flag in this build** -- see the
-pre-reg amendment report for the recommended resolution (one additional $0-or-cheap observation of a
-real item's `type` field before the first paid arm launch).
+**2026-07-24 fix (adversarial review of PR #157 found this BLOCKING, proven empirically, not by
+inspection):** running the ORIGINAL version of this adapter (which renamed ONLY `mcpToolCall`,
+passing `userMessage`/`agentMessage`/`reasoning` through unmapped) over the real, committed M1
+transcript and feeding the result through the frozen, unmodified `audit()` produced
+`overall=NO_LEAK`, `leak_failures=['forbidden_item:...:userMessage',
+'forbidden_item:...:agentMessage']` -- i.e. the adapter's own "honestly-flagged gap" below was NOT
+merely a theoretical risk, it was a GUARANTEED failure on every real turn, confirmed against real
+data. The fix above (confirmed `agentMessage`/`reasoning` handling + confirmed `userMessage` drop)
+closes it; see `test_adapter_over_the_real_m1_transcript_produces_zero_leak_failures` (runs this
+adapter over the actual committed transcript file, not a hand-built fixture, and asserts
+`leak_failures == []` against the unmodified `audit()`) for the regression proof.
+
+THE HONESTLY-FLAGGED GAP (now narrower than before the 2026-07-24 fix): for any item type OTHER
+than the four now-confirmed ones above (`mcpToolCall`, `agentMessage`, `reasoning`, `userMessage`),
+this repo still has **no committed app-server Item/ThreadItem schema dump** (only the four
+approval/elicitation/permission schemas + JSONRPCRequest/Response + Initialize/ThreadStart are
+committed under tests/fixtures/gate0_appserver/ -- confirmed by listing that directory; there is no
+`Item.json`/`ThreadItem.json`). Guessing at any FURTHER item-type spelling (e.g. a shell/web/file
+item, which would indicate a genuine leak, or some other content item this build has not observed)
+would be exactly the kind of fabricated-mapping the build-spec says never to do ("do NOT fake
+events; honesty > green"). This adapter therefore passes any type outside the four confirmed ones
+through **verbatim, unmapped** -- `audit()` will then, on its own frozen and unmodified logic,
+either skip it (only if the raw wire string happens to literally equal `"reasoning"` or
+`"agent_message"` -- already covered above) or flag it `forbidden_item` otherwise. This remains a
+deliberate FAIL-CLOSED choice for the genuinely unknown case, not a bug -- but the four item types
+actually observed in the one real captured turn this build has evidence for are now all correctly
+handled, closing the practical, guaranteed-to-fire gap the review found.
 
 Both the ADAPTED (exec-shaped, what the frozen scorer reads) and the RAW (untouched app-server wire,
 full fidelity) streams are written -- nothing is lost. `transcript.jsonl` (the pinned scorer path,
@@ -435,6 +458,23 @@ def build_handshake_receipt(*, arm: str, model: str, codex_version: str, codex_p
 # THE TRANSCRIPT ADAPTER (see module docstring for the full decision writeup).
 # ---------------------------------------------------------------------------------------------
 
+# CONFIRMED renames -- both sides of evidence, not a guess: the app-server SPELLING is captured
+# verbatim in reports/2026-07-23-gate0-appserver-m1-confirmation/transcript.jsonl (mcpToolCall:
+# lines 20/26; agentMessage: lines 29/30), and the exec-side TARGET spelling is independently
+# captured in reports/2026-07-22-gate0-paid-exec-noop-diagnosis.md (a REAL `codex exec --json`
+# transcript, lines 22-25): its item types are exactly `agent_message`/`mcp_tool_call` -- and
+# critically, NO user-message item of any spelling at all. "reasoning" needs no entry here: the
+# app-server capture (lines 18/19) already spells it identically to audit()'s skip-list string.
+_CONFIRMED_ITEM_TYPE_RENAMES = {"mcpToolCall": "mcp_tool_call", "agentMessage": "agent_message"}
+# `userMessage` (app-server transcript lines 16/17) is the PROMPT ECHO -- the exec-shaped target
+# vocabulary has no user-message item at all (confirmed above), so translating it under ANY
+# spelling would be a structural false-positive leak on every real, fully-compliant run. DROPPED
+# entirely: unlike a genuinely-unknown type (passed through unmapped, left to audit()'s own
+# fail-closed judgment), this one is CONFIRMED to have no exec-shape counterpart, so no item.*
+# line is emitted for it at all -- this is a targeted omission, not a guess.
+_DROPPED_ITEM_TYPES = frozenset({"userMessage"})
+
+
 def adapt_app_server_notifications_to_exec_shape(notifications: list[dict]) -> list[dict]:
     events: list[dict] = []
     latest_valid_usage: dict | None = None
@@ -446,12 +486,15 @@ def adapt_app_server_notifications_to_exec_shape(notifications: list[dict]) -> l
             item = params.get("item")
             if not isinstance(item, dict):
                 continue
+            raw_type = item.get("type")
+            if raw_type in _DROPPED_ITEM_TYPES:
+                continue  # confirmed no exec-shape counterpart -- see the constants above.
             adapted_item = dict(item)
-            if adapted_item.get("type") == "mcpToolCall":
-                # CONFIRMED rename (real captured evidence -- see module docstring).
-                adapted_item["type"] = "mcp_tool_call"
-            # else: pass the raw, unmapped type through verbatim -- deliberate, see module
-            # docstring's "honestly-flagged gap".
+            if raw_type in _CONFIRMED_ITEM_TYPE_RENAMES:
+                adapted_item["type"] = _CONFIRMED_ITEM_TYPE_RENAMES[raw_type]
+            # else: pass the raw, unmapped type through verbatim -- includes "reasoning" (already
+            # matches, no rename needed) and any genuinely unconfirmed type (deliberate fail-closed
+            # default, see module docstring's "honestly-flagged gap").
             events.append({"type": "item.completed", "item": adapted_item})
         elif method == "thread/tokenUsage/updated":
             total = (params.get("tokenUsage") or {}).get("total")
@@ -701,11 +744,23 @@ def ensure_wake_boundary_artifact(path: Path) -> dict:
 
 
 def refuse_if_already_completed(out_dir: Path) -> None:
-    """One-attempt guard: refuse if this out-dir already holds a completed arm attempt."""
-    marker = out_dir / "agent_metrics.json"
-    if marker.exists():
-        raise SystemExit(f"one-attempt guard: {marker} already exists -- this out-dir already "
-                          "holds a completed Gate 0 arm attempt; refusing a second run.")
+    """One-attempt guard: refuse if this out-dir already holds ANY evidence of a prior attempt.
+
+    2026-07-24 fix (adversarial review of PR #157 found this a SHOULD-fix hole): keying this
+    guard on `agent_metrics.json` alone left a real gap -- that file is written only at the very
+    END of a successful run, so a run that SPENDS then CRASHES mid-turn (real money already
+    gone) leaves no marker at all, and a second launch into the same out-dir would silently
+    re-spend. `transcript.raw_appserver.jsonl` is written far earlier -- the FIRST message
+    `ObservingGate0Client._log_transcript` sees, before any real turn/tool-call spend has even
+    begun -- so keying on its mere existence catches a crashed-after-spending attempt that
+    `agent_metrics.json` alone would miss. Kept in addition to (not instead of) checking
+    `agent_metrics.json`, since a --dry-run attempt's own transcript.raw_appserver.jsonl should
+    equally refuse a second --dry-run into the same directory."""
+    for marker in (out_dir / "transcript.raw_appserver.jsonl", out_dir / "agent_metrics.json"):
+        if marker.exists():
+            raise SystemExit(f"one-attempt guard: {marker} already exists -- this out-dir "
+                              "already holds evidence of a prior Gate 0 arm attempt; refusing a "
+                              "second run.")
 
 
 # ---------------------------------------------------------------------------------------------

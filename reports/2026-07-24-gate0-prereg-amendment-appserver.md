@@ -14,6 +14,49 @@ attempts over this new app-server launch surface, once built and reviewed. **Thi
 performed no paid run** — build + $0-test only, per this task's own scope; the orchestrator runs
 the paid attempts.
 
+## Adversarial review of PR #157 — one BLOCKING fix, one SHOULD-fix (2026-07-24)
+
+Both fixed on this branch before merge; suite re-verified green (counts below).
+
+**BLOCKING — the adapter false-`NO_LEAK`'d every real run.** Proven empirically, not by
+inspection: running the original adapter (which renamed only `mcpToolCall`, leaving
+`userMessage`/`agentMessage`/`reasoning` unmapped) over the real, committed M1 transcript and
+feeding the result through the frozen `audit()` produced `overall=NO_LEAK`,
+`leak_failures=['forbidden_item:...:userMessage', 'forbidden_item:...:agentMessage']`. Root cause:
+`audit()`'s skip-list (`tools/check_gate0_codex.py:249`) accepts only
+`{reasoning, agent_message, mcp_tool_call}`, and the real app-server capture
+(`reports/2026-07-23-gate0-appserver-m1-confirmation/transcript.jsonl` lines 16-30) emits FOUR item
+types — `userMessage`, `reasoning`, `mcpToolCall`, `agentMessage` — not just the one this build had
+originally confirmed. **Fix**, grounded against a second piece of real evidence
+(`reports/2026-07-22-gate0-paid-exec-noop-diagnosis.md`, a REAL `codex exec --json` capture whose
+item types are exactly `agent_message`/`mcp_tool_call` and — critically — **no user-message item at
+all**): added the confirmed rename `agentMessage -> agent_message`; `userMessage` is now DROPPED
+entirely (no `item.*` line emitted for it — it is the prompt echo, and the exec-shaped target
+vocabulary has no counterpart for it at all, so translating it under any name is a guaranteed
+false-positive leak); `reasoning` needed no change (already spelled identically to the skip-list).
+The genuinely-unknown-type fail-closed default is unchanged and still correct.
+**The decisive proof** is `test_adapter_over_the_real_m1_transcript_produces_zero_leak_failures` —
+replays the real, committed transcript (not a hand-built fixture) through
+`ObservingGate0Client`/the adapter/the frozen `audit()` and asserts `leak_failures == []`; before
+the fix this assertion failed with exactly the two `forbidden_item` entries quoted above.
+
+**SHOULD — one-attempt guard hole.** `refuse_if_already_completed` keyed solely on
+`agent_metrics.json`, which is written only at the very END of a successful run. A run that
+**spends real credits then crashes mid-turn** leaves no marker at all, so a second launch into the
+same `--out-dir` would silently re-spend. Fixed: the guard now ALSO refuses if
+`transcript.raw_appserver.jsonl` exists — that file is written from the very FIRST message
+`ObservingGate0Client` observes, long before any real turn/tool-call spend begins, so it catches a
+crashed-after-spending attempt `agent_metrics.json` alone would miss. Both markers are checked (not
+one replacing the other). New test:
+`test_one_attempt_guard_catches_a_crashed_after_spending_run_with_no_agent_metrics` — builds an
+out-dir containing only `transcript.raw_appserver.jsonl` (explicitly asserts `agent_metrics.json`
+does NOT exist, reproducing the exact hole) and confirms a second launch is still refused.
+
+**Not changed, per the coordinator's explicit call:** wake-scorability (confirmed
+`eval/score_gate0.py` never reads `audit()`'s `overall` field, so the adapter's leak-vocabulary fix
+has no bearing on wake accounting either way); the signature-gate deviation (accepted for this
+attempt — manual discipline, bounded by David's standing authorization + the 250-credit breaker).
+
 ## What changes
 
 1. **Launch surface: `codex exec --json` (piped stdin, `tools/run_gate0_codex.ps1`) ->
@@ -182,17 +225,18 @@ merged to `main`, and asked two review nits from that PR be folded into this one
 - `eval/fixtures/gate0_signature.appserver.json` — a prepared (unsigned) template, pointing
   `expected_launcher_sha256` at the new runner and adding one field the original template didn't
   need: `expected_appserver_launch_sha256` (the reused M1 client-wiring module).
-- `tests/test_gate0_appserver_arm.py` — 46 new mock-only, CI-safe tests (dry-run artifact-set
-  shape, transcript-adapter fidelity, per-arm soft-cap warnings + the hard 250 ceiling wired
-  together exactly as `_run_real` combines them, one-attempt guard, TOML-rendering byte-exact
-  regression pins, CLI validation, seam-check with a monkeypatched docker probe never a real
-  container).
+- `tests/test_gate0_appserver_arm.py` — 49 mock-only, CI-safe tests (dry-run artifact-set shape,
+  transcript-adapter fidelity — including the decisive real-transcript regression test, see
+  "Adversarial review" above — per-arm soft-cap warnings + the hard 250 ceiling wired together
+  exactly as `_run_real` combines them, one-attempt guard including the crashed-after-spending
+  hole, TOML-rendering byte-exact regression pins, CLI validation, seam-check with a
+  monkeypatched docker probe never a real container).
 - Two small fixes to `tools/gate0_appserver_launch.py`/its tests, folded in per orchestrator
   request after PR #156 merged to `main` (see "Fold-in fix" below) — `AppServerUsageTracker` now
   fails loud (raises) on a strictly regressed cumulative token total instead of silently clamping
   it to a zero delta, and the credit-tracker ground-truth test fixture now cites the real captured
   transcript line numbers instead of self-consistent filler.
-- Full suite: **1561 passed, 16 skipped** (1515 pre-existing + 46 new; zero regressions).
+- Full suite: **1564 passed, 16 skipped** (1515 pre-existing + 49 new; zero regressions).
 
 ## Orchestrator commands (none of these were run by this build)
 
@@ -240,8 +284,12 @@ python -m tools.gate0_appserver_arm --arm miniwob --model gpt-5.6-sol \
   with an explicit `_SUBPROCESS_TIMEOUT_S` backstop on every docker/codex probe call.
 
 **Assumed / not independently verified this build (flagged, not silently trusted):**
-- The app-server item-type spelling for anything other than `mcpToolCall` (the reasoning/
-  message-item gap above) — **the single loudest open flag in this build.**
+- The app-server item-type spelling for anything OTHER than the four now-confirmed types
+  (`mcpToolCall`, `agentMessage`, `reasoning`, `userMessage` — see "Adversarial review" above,
+  which closed the guaranteed-to-fire version of this gap). A genuinely novel item type (e.g. a
+  real shell/web/file leak, or some other content item this build has never observed) is still
+  passed through unmapped and left to `audit()`'s fail-closed judgment — narrower than before, but
+  still the remaining open flag in this build.
 - `config_sha256`/`codex_mcp_list_sha256` recompute parity between this launcher's Python renderer
   and the original `.ps1`'s here-strings for the WORLD config block specifically (the BRAIN config
   block's byte-parity IS verified, above; the world config block's CRLF/quoting convention is
