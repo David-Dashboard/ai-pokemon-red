@@ -181,6 +181,11 @@ ARM_SOFT_CREDIT_CAPS = {"red": 125, "miniwob": 50}
 HARD_CREDIT_CAP = LIMIT_NORMALIZED_CREDITS
 DEFAULT_WALL_CLOCK_S = 3600.0  # matches tools/run_gate0_codex.ps1's Invoke-BreakerSupervisedExec default
 TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
+# The shared Gate0AppServerClient.send_request default (30s) is fine for the mocked/dry-run peers
+# (instant), but a real `codex app-server` initialize/thread-start handshake can be slow-but-finite
+# (e.g. an auth refresh) -- measured normal response is 0.17-2.0s, so 120s is pure jitter margin,
+# not a real expected wait. Applied ONLY at _run_real's run_gate0_arm_turn call below.
+REAL_RUN_HANDSHAKE_TIMEOUT_S = 120.0
 
 
 def task_text_for(arm: str) -> str:
@@ -245,6 +250,14 @@ def render_world_config_toml(server: str, mcp_command: str, mcp_args: list, mcp_
         "enabled = true",
         f"enabled_tools = [{tools_toml}]",
         'default_tools_approval_mode = "auto"',
+        # app-server-necessary addition (unlike the exec path): gate0_world is a lazy-boot MCP
+        # server -- the FIRST real tool call inside the paid turn boots PyBoy+ROM (~30-40s) before
+        # it can respond. codex's per-call/startup default is null (unmeasured server default);
+        # 90s is confirmed-real config (codex-cli 0.144.3 `mcp_servers.<name>.tool_timeout_sec`/
+        # `startup_timeout_sec`, empirically checked via `codex mcp get --json`, not guessed) and
+        # covers the boot with margin without touching any other pinned field.
+        "tool_timeout_sec = 90",
+        "startup_timeout_sec = 90",
     ]
     return "\r\n".join(lines) + "\n"
 
@@ -671,9 +684,10 @@ class MultiCallStubAppServerPeer:
 # ---------------------------------------------------------------------------------------------
 
 def run_gate0_arm_turn(client: ObservingGate0Client, *, cwd: str, task_text: str,
-                       wall_clock_s: float) -> dict:
-    client.initialize()
-    thread_result = client.start_thread(cwd=cwd, approvals_reviewer="user")
+                       wall_clock_s: float, handshake_timeout: float = 30.0) -> dict:
+    client.initialize(timeout=handshake_timeout)
+    thread_result = client.start_thread(cwd=cwd, approvals_reviewer="user",
+                                         timeout=handshake_timeout)
     thread_id = _extract_thread_id(thread_result)
     turn_params = build_turn_start_request(thread_id, [{"type": "text", "text": task_text}])
     client.send_request("turn/start", turn_params)
@@ -1047,13 +1061,15 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
                                                                           for a in ("-c", o)],
                                        cwd=str(out_dir), transcript_path=raw_transcript_path,
                                        credit_observer=_combined_observer,
-                                       audit_log_path=audit_log_path)
+                                       audit_log_path=audit_log_path,
+                                       stderr_log_path=out_dir / "codex.stderr.log")
         state["client"] = client
         client.connect()
         state["pid"] = client._transport.proc.pid
         try:
             run_gate0_arm_turn(client, cwd=str(out_dir), task_text=task_text,
-                               wall_clock_s=args.wall_clock_s)
+                               wall_clock_s=args.wall_clock_s,
+                               handshake_timeout=REAL_RUN_HANDSHAKE_TIMEOUT_S)
         finally:
             guard.finish()
             guard.join(timeout=10.0)

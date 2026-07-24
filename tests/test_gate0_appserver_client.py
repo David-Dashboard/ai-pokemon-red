@@ -10,6 +10,7 @@ project dependency (checked pyproject.toml first), so schema checks below are st
 own fallback instruction.
 """
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -519,3 +520,121 @@ def test_start_thread_fields_match_ground_truth_thread_start_params_schema():
 def test_build_turn_start_request_is_pure_and_never_auto_sent():
     request = build_turn_start_request("thr1", [{"type": "text", "text": "hi"}])
     assert request == {"threadId": "thr1", "input": [{"type": "text", "text": "hi"}]}
+
+
+# ---------------------------------------------------------------------------
+# Deadlock repro (the diagnosis this fix is grounded in): `_StdioTransport` pipes the codex
+# child's stderr but, before this fix, nothing ever read it -- once the child fills the OS pipe
+# buffer, its own write() blocks and it stops servicing stdio entirely, indistinguishable from an
+# `initialize` hang. These spawn a REAL (stub) subprocess -- not the mock `send=` peer every other
+# test in this file uses -- specifically to exercise real OS pipes, since the bug only exists at
+# that level. The stub is a tiny python script named literally "app-server" (no extension) placed
+# in `cwd`: `_StdioTransport` always spawns `[codex_path, "app-server", "--listen", "stdio://",
+# *extra_args]`, so `codex_path=sys.executable` + `cwd=<dir containing "app-server">` reproduces
+# that EXACT production argv (python resolves a bare script argument relative to the child's own
+# cwd) instead of a hand-rolled substitute invocation.
+# ---------------------------------------------------------------------------
+
+_STUB_CODEX_SOURCE = """
+import json
+import sys
+
+def main():
+    written = 0
+    chunk = b"E" * 4096
+    while written < 200_000:
+        sys.stderr.buffer.write(chunk)
+        sys.stderr.buffer.flush()
+        written += len(chunk)
+    raw = sys.stdin.buffer.readline()
+    request = json.loads(raw.decode("utf-8"))
+    response = json.dumps({"id": request["id"], "result": {"ok": True}}) + "\\n"
+    sys.stdout.buffer.write(response.encode("utf-8"))
+    sys.stdout.buffer.flush()
+
+if __name__ == "__main__":
+    main()
+"""
+
+
+def _write_stub_codex(tmp_path: Path) -> Path:
+    stub_path = tmp_path / "app-server"
+    stub_path.write_text(_STUB_CODEX_SOURCE, encoding="utf-8")
+    return stub_path
+
+
+def test_stderr_flood_does_not_deadlock_client_stdout_and_jsonrpc_still_flows(tmp_path):
+    # The stub writes >100KB to stderr (comfortably over any normal OS pipe buffer, ~64KB)
+    # BEFORE ever reading stdin -- without a drain thread, that write blocks the child forever and
+    # this request would time out. With the fix, the background drain thread keeps the pipe empty
+    # so the child reaches stdin/stdout and the request completes well inside its timeout.
+    _write_stub_codex(tmp_path)
+    client = Gate0AppServerClient(codex_path=sys.executable, cwd=str(tmp_path))
+    client.connect()
+    try:
+        started = time.monotonic()
+        result = client.send_request("ping", {}, timeout=20.0)
+        elapsed = time.monotonic() - started
+    finally:
+        client.close()
+    assert result == {"ok": True}
+    # Comfortably under the 20s request timeout -- proves this returned promptly, not merely
+    # before the timeout fired.
+    assert elapsed < 15.0
+
+
+def test_drained_stderr_is_written_to_stderr_log_path(tmp_path):
+    _write_stub_codex(tmp_path)
+    log_path = tmp_path / "codex.stderr.log"
+    client = Gate0AppServerClient(codex_path=sys.executable, cwd=str(tmp_path),
+                                   stderr_log_path=log_path)
+    client.connect()
+    try:
+        client.send_request("ping", {}, timeout=20.0)
+    finally:
+        client.close()  # joins the stderr-drain thread -- the log should be complete after this
+    assert log_path.stat().st_size >= 200_000
+    assert log_path.read_bytes().count(b"E") >= 200_000
+
+
+# ---------------------------------------------------------------------------
+# FIX 2 insurance: initialize()/start_thread() forward an explicit timeout to send_request (the
+# arm's real-run call site gives these 120s vs. the shared 30s default -- see
+# tools/gate0_appserver_arm.py's REAL_RUN_HANDSHAKE_TIMEOUT_S). Default stays 30.0 so every other
+# caller/test in this file (which never passes timeout=) is unaffected.
+# ---------------------------------------------------------------------------
+
+def _fake_send_request_recording_timeouts(calls):
+    def fake_send_request(method, params, timeout=30.0):
+        calls.append((method, timeout))
+        if method == "initialize":
+            return {"codexHome": "/home/.codex", "platformFamily": "windows",
+                     "platformOs": "windows", "userAgent": "codex-cli/0.144.3"}
+        if method == "thread/start":
+            return {"thread": {"id": "thr1"}}
+        raise AssertionError(f"unexpected method {method!r}")
+    return fake_send_request
+
+
+def test_initialize_and_start_thread_forward_explicit_timeout_to_send_request(monkeypatch):
+    client = Gate0AppServerClient(send=lambda message: None)
+    calls = []
+    monkeypatch.setattr(client, "send_request", _fake_send_request_recording_timeouts(calls))
+
+    client.initialize(timeout=99.0)
+    client.start_thread(cwd="/workspace", timeout=77.0)
+
+    assert ("initialize", 99.0) in calls
+    assert ("thread/start", 77.0) in calls
+
+
+def test_initialize_and_start_thread_default_timeout_is_unchanged_at_30s(monkeypatch):
+    client = Gate0AppServerClient(send=lambda message: None)
+    calls = []
+    monkeypatch.setattr(client, "send_request", _fake_send_request_recording_timeouts(calls))
+
+    client.initialize()
+    client.start_thread(cwd="/workspace")
+
+    assert ("initialize", 30.0) in calls
+    assert ("thread/start", 30.0) in calls

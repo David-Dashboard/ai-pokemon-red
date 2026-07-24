@@ -467,6 +467,18 @@ def test_world_config_toml_and_full_config_are_crlf_internal_lf_terminal():
     assert full == brain + "\n" + text
 
 
+def test_world_config_toml_sets_generous_timeouts_for_the_lazy_boot_world_server():
+    # app-server-necessary addition (the exec path never needed this): gate0_world is lazy-boot --
+    # the first real MCP tool call inside the paid turn boots PyBoy+ROM (~30-40s). codex's
+    # per-call/startup default is otherwise null (unmeasured), so pin a generous, confirmed-real
+    # 90s margin (codex-cli 0.144.3 mcp_servers.<name>.tool_timeout_sec/startup_timeout_sec).
+    text = render_world_config_toml("gate0_world", "docker", ["run", "x"], "/repo", ["observe"])
+    # Exact CRLF-joined lines within the [mcp_servers.gate0_world] block (matches the file's own
+    # CRLF-internal/bare-LF-terminal join convention -- see the CRLF test above), not just any
+    # substring match.
+    assert "\r\ntool_timeout_sec = 90\r\nstartup_timeout_sec = 90\n" in text
+
+
 # ---------------------------------------------------------------------------
 # Docker MCP args -- per-arm mount/image shape (BY IMMUTABLE IMAGE ID).
 # ---------------------------------------------------------------------------
