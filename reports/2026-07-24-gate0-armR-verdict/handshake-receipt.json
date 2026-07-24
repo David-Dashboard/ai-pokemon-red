@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "arm": "red",
+  "readiness": "NO_GO_INSUFFICIENT_WAKES",
+  "paid_execution_enabled": false,
+  "auth_method": "chatgpt",
+  "planned_model": "gpt-5.6-sol",
+  "codex_version": "codex-cli 0.144.3",
+  "codex_path": "C:\\Users\\Succe\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+  "codex_executable_sha256": "e5dcc9f9b08102c58596af85345f689a69fd53a87d8d408bdc0fcdaf99fcf6e3",
+  "critical_config_transport": "explicit_cli_overrides",
+  "mcp_servers_observed": [
+    "gate0_world"
+  ],
+  "mcp_tools_observed": [
+    "observe",
+    "explore",
+    "goto",
+    "remember",
+    "press_button",
+    "press_sequence",
+    "wait"
+  ],
+  "brain_config_sha256": "ab7e54c1785f5d8be4352bbe0f85edb37cda68cf56df2128d61df025c1041fc3",
+  "task_sha256": "306751c34627f6d5c6a8c94ac2f714e358f0dcbc5867866c273e434de7f4b7c4",
+  "config_sha256": "00a370b2dcbad228eabb6be5fb72c5aa68861372495c30c3c6cca1986b8ed510",
+  "codex_mcp_list_sha256": "c175f407618554a2fb434c2fa0b2b5ce41e4b39a51ced50f2c67c2521bdf2f56",
+  "tool_schema_sha256": "102e4cb37c4b5412c149c706c5862f412934bee7d10c105478afa2db5c877c3e",
+  "world_image_tag": "gb-mcp-world",
+  "world_image_id": "sha256:5bfabc7513ce037ed077e955fd34445ef564a7b51037bd7fdddeef0cdb900d00",
+  "host_code_sha256": {
+    "/app/world_mcp.py": "967866ab5ddcfcef17747aab1d83070a95a32c2cb05bc0b6252defce7b519fc9",
+    "/app/core/miniwob_world.py": "f98b0dc9846bff0fceb96c8f77eee8b4261b9db894abd793a8d7b1145a23ce54"
+  },
+  "image_code_sha256": {
+    "/app/core/miniwob_world.py": "f98b0dc9846bff0fceb96c8f77eee8b4261b9db894abd793a8d7b1145a23ce54",
+    "/app/world_mcp.py": "967866ab5ddcfcef17747aab1d83070a95a32c2cb05bc0b6252defce7b519fc9"
+  }
+}
