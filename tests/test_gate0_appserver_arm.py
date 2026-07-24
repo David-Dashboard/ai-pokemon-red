@@ -585,6 +585,51 @@ def test_unknown_arm_is_rejected(tmp_path):
         main(["--arm", "chess", "--out-dir", str(tmp_path / "out"), "--dry-run"])
 
 
+def test_validate_args_forces_out_dir_absolute(tmp_path, monkeypatch):
+    # Regression (adversarial review of PR #163, correction 4): out_dir used to stay whatever
+    # relative string argparse handed back, so build_docker_mcp_args' `world_dir.resolve()`
+    # (world_dir is derived from out_dir) resolved against the PROCESS'S CURRENT cwd -- the same
+    # launch spec run from a different cwd would silently render a DIFFERENT config.toml (a
+    # different absolute mount source), the exact bug class the exec path's
+    # Confirm-PaidExecSignature caught and this path did not.
+    from pathlib import Path
+    monkeypatch.chdir(tmp_path)
+    parser = arm_mod.build_arg_parser()
+    args = parser.parse_args(["--arm", "red", "--out-dir", "relative_out", "--dry-run"])
+    assert not Path(args.out_dir).is_absolute()
+    arm_mod._validate_args(parser, args)
+    assert Path(args.out_dir).is_absolute()
+    assert Path(args.out_dir) == (tmp_path / "relative_out").resolve()
+
+
+def test_main_with_a_relative_out_dir_still_resolves_the_world_mount_absolutely(tmp_path, monkeypatch):
+    # End-to-end companion to the --validate-args unit test above: the concrete symptom
+    # correction 4 closes is build_docker_mcp_args' `world_dir.resolve()` (called from
+    # --seam-check --with-tools-list and _run_real) anchoring on the process cwd instead of the
+    # launch spec. Drive it through main() with a relative --out-dir and confirm the world mount
+    # source captured by the (mocked) docker call is absolute and correct regardless of cwd.
+    import os
+    from pathlib import Path
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                         lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    captured_mcp_args = {}
+
+    def _fake_tools_list(docker_path, mcp_args):
+        captured_mcp_args["value"] = mcp_args
+        return [{"name": t} for t in TOOLS["red"]]
+    monkeypatch.setattr(arm_mod, "docker_tools_list", _fake_tools_list)
+
+    exit_code = main(["--arm", "red", "--out-dir", "relative_out2", "--seam-check",
+                       "--with-tools-list"])
+    assert exit_code == 0
+    world_mount = next(a for a in captured_mcp_args["value"] if "target=/app/world" in a)
+    src = world_mount.split("source=", 1)[1].rsplit(",target=", 1)[0]
+    assert os.path.isabs(src)
+    assert Path(src) == (tmp_path / "relative_out2" / "world").resolve()
+
+
 # ---------------------------------------------------------------------------
 # agent_metrics.json builder -- human_* copy-vs-missing (the MiniWoB PENDING caveat).
 # ---------------------------------------------------------------------------
@@ -702,6 +747,49 @@ def test_seam_check_with_tools_list_uses_the_mocked_handshake_never_real_docker(
     assert exit_code == 0
     result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
     assert result["checks"]["tools_list_matches_allowlist"]["ok"] is True
+
+
+def test_seam_check_with_tools_list_writes_a_reproducible_mcp_tools_json_and_hash(tmp_path, monkeypatch):
+    # 2026-07-25 fix (adversarial review of PR #163, correction 1): --seam-check --with-tools-list
+    # used to only report tool NAMES inline and never write mcp-tools.json or compute any hash, so
+    # the .appserver.json fixtures' provenance notes describing a reproducible tool_schema_sha256
+    # recipe via this exact invocation were not actually true of this code. Now it must write
+    # mcp-tools.json with the SAME serialization _run_real uses (json.dumps(tools) + "\n") and
+    # record its sha256 in seam_check.json.
+    import hashlib
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                         lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    tools = [{"name": t} for t in TOOLS["red"]]
+    monkeypatch.setattr(arm_mod, "docker_tools_list", lambda docker_path, mcp_args: tools)
+
+    out_dir = tmp_path / "out"
+    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check",
+                       "--with-tools-list"])
+    assert exit_code == 0
+
+    mcp_tools_path = out_dir / "mcp-tools.json"
+    assert mcp_tools_path.is_file()
+    expected_bytes = json.dumps(tools) + "\n"
+    assert mcp_tools_path.read_text(encoding="utf-8") == expected_bytes
+    expected_sha = hashlib.sha256(expected_bytes.encode("utf-8")).hexdigest()
+
+    result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
+    assert result["tool_schema_sha256"] == expected_sha
+
+
+def test_seam_check_without_tools_list_writes_no_mcp_tools_json_or_hash(tmp_path, monkeypatch):
+    # Plain --seam-check (no --with-tools-list) must not claim a tool_schema_sha256 it never
+    # derived.
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                         lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    out_dir = tmp_path / "out"
+    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+    assert exit_code == 0
+    assert not (out_dir / "mcp-tools.json").exists()
+    result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
+    assert "tool_schema_sha256" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -896,3 +984,73 @@ def test_verify_launch_signature_unchanged_fails_loud_when_mcp_list_drifted(tmp_
                "codex_mcp_list_sha256": "0" * 64}  # stale/wrong
     with pytest.raises(SystemExit, match="launch signature mismatch"):
         verify_launch_signature_unchanged(receipt, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# _finalize_real_run -- the ordering fix (PR #163 adversarial review, correction 5): a launch-
+# signature mismatch must never leave a spent paid run with no agent_metrics.json/run-receipt.json
+# (which would make it both unscorable AND unretryable, since refuse_if_already_completed already
+# sees transcript.raw_appserver.jsonl on disk from the start of the turn).
+# ---------------------------------------------------------------------------
+
+def _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path, human_path):
+    return dict(receipt=receipt, receipt_path=receipt_path, transcript_path=transcript_path,
+                out_dir=out_dir, arm="red", wall_clock_s=12.0, credits_result={},
+                rate_pin=_RATE_PIN, watcher=SoftCapWatcher(soft_cap=100.0, rate_pin=None),
+                auth_note="test", model="gpt-5.6-sol", human_path=human_path)
+
+
+def test_finalize_real_run_writes_metrics_and_receipt_even_on_signature_mismatch(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")
+    receipt = {"config_sha256": "0" * 64, "codex_mcp_list_sha256": "0" * 64,
+               "world_image_id": "sha256:" + "a" * 64}
+    receipt_path = out_dir / "handshake-receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    def _boom(receipt, out_dir):
+        raise SystemExit("launch signature mismatch: fixture-injected drift")
+    monkeypatch.setattr(arm_mod, "verify_launch_signature_unchanged", _boom)
+
+    kwargs = _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path,
+                               tmp_path / "missing_human.json")
+    with pytest.raises(SystemExit, match="launch signature mismatch"):
+        arm_mod._finalize_real_run(**kwargs)
+
+    # The whole point of the fix: both artifacts exist despite the raised SystemExit.
+    assert (out_dir / "agent_metrics.json").is_file()
+    assert (out_dir / "run-receipt.json").is_file()
+    run_receipt = json.loads((out_dir / "run-receipt.json").read_text(encoding="utf-8"))
+    assert run_receipt["audit_overall"] == "LAUNCH_SIGNATURE_MISMATCH"
+    # No expected-pins resolution was attempted against the drifted/tampered config.
+    assert not (out_dir / "expected-pins.resolved.json").exists()
+
+
+def test_finalize_real_run_success_path_still_resolves_pins_and_scores(tmp_path, monkeypatch):
+    arm = "red"
+    base = _load_real_appserver_fixture(arm)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt_path = out_dir / "handshake-receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(arm_mod, "verify_launch_signature_unchanged", lambda receipt, out_dir: None)
+
+    kwargs = _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path,
+                               tmp_path / "missing_human.json")
+    result = arm_mod._finalize_real_run(**kwargs)
+
+    resolved = json.loads((out_dir / "expected-pins.resolved.json").read_text(encoding="utf-8"))
+    assert checker._expected_failures(receipt, resolved) == []
+    run_receipt = json.loads((out_dir / "run-receipt.json").read_text(encoding="utf-8"))
+    assert run_receipt["audit_overall"] != "LAUNCH_SIGNATURE_MISMATCH"
+    assert (out_dir / "agent_metrics.json").is_file()
+    assert result["run_receipt"] == run_receipt
