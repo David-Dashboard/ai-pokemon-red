@@ -166,15 +166,50 @@ _HANDLERS = {
 
 class _StdioTransport:
     """Owns the real `codex app-server` subprocess and the JSONL stdio read/write loop. Never
-    instantiated by the test suite (tests inject `send=` directly into Gate0AppServerClient)."""
+    instantiated by the test suite (tests inject `send=` directly into Gate0AppServerClient) --
+    except tests/test_gate0_appserver_client.py's stderr-drain tests, which DO spawn a real (stub)
+    child to prove the deadlock fix against actual OS pipes, not a mock.
 
-    def __init__(self, codex_path: str, extra_args=(), cwd: str | None = None):
+    codex's stderr is piped (stderr=subprocess.PIPE below) but codex is never told to be quiet on
+    it, and nothing upstream of this fix ever read it: once codex writes enough stderr to fill the
+    OS pipe buffer (~64KB, no reader draining it), codex's own write() call blocks and it stops
+    servicing stdio entirely -- indistinguishable from an `initialize` hang. `_drain_stderr` below
+    runs in a background daemon thread for the life of the subprocess so that pipe can never fill,
+    regardless of whether a log path was supplied."""
+
+    def __init__(self, codex_path: str, extra_args=(), cwd: str | None = None,
+                 stderr_log_path: str | Path | None = None):
         self.proc = subprocess.Popen(
             [codex_path, "app-server", "--listen", "stdio://", *extra_args],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             bufsize=0, cwd=cwd,
         )
         self._write_lock = threading.Lock()
+        self._stderr_log_path = Path(stderr_log_path) if stderr_log_path else None
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
+
+    def _drain_stderr(self) -> None:
+        # Runs for the whole subprocess lifetime. Tees verbatim to stderr_log_path if given (never
+        # parsed/echoed into the transcript/audit -- codex's own diagnostic output is untrusted
+        # content as far as this client's logs are concerned), but drains regardless of whether a
+        # path was given -- the draining itself, not the logging, is what prevents the deadlock.
+        log_file = None
+        if self._stderr_log_path is not None:
+            self._stderr_log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_file = open(self._stderr_log_path, "ab")
+        try:
+            for raw_line in iter(self.proc.stderr.readline, b""):
+                if log_file is not None:
+                    log_file.write(raw_line)
+                    log_file.flush()
+        finally:
+            if log_file is not None:
+                log_file.close()
+            try:
+                self.proc.stderr.close()
+            except OSError:
+                pass
 
     def send(self, message: dict) -> None:
         with self._write_lock:
@@ -193,6 +228,7 @@ class _StdioTransport:
         except OSError:
             pass
         self.proc.terminate()
+        self._stderr_thread.join(timeout=5.0)
 
 
 class Gate0AppServerClient:
@@ -206,7 +242,8 @@ class Gate0AppServerClient:
     def __init__(self, *, send=None, codex_path: str | None = None, extra_args=(),
                  cwd: str | None = None, permission_scope: str = "session",
                  approve_keywords=APPROVE_KEYWORDS, fallback_answer: str = FALLBACK_ANSWER,
-                 audit_log_path: str | Path | None = None):
+                 audit_log_path: str | Path | None = None,
+                 stderr_log_path: str | Path | None = None):
         if permission_scope not in PERMISSION_GRANT_SCOPES:
             raise ValueError(f"invalid permission grant scope: {permission_scope!r}")
         self._send = send
@@ -224,10 +261,12 @@ class Gate0AppServerClient:
         self._next_id = 1
         self.audit: list[dict] = []
         self._audit_log_path = Path(audit_log_path) if audit_log_path else None
+        self._stderr_log_path = Path(stderr_log_path) if stderr_log_path else None
 
     # -- lifecycle (real subprocess only; not exercised by the mock test suite) --
     def connect(self) -> None:
-        self._transport = _StdioTransport(self._codex_path, self._extra_args, self._cwd)
+        self._transport = _StdioTransport(self._codex_path, self._extra_args, self._cwd,
+                                           stderr_log_path=self._stderr_log_path)
         self._send = self._transport.send
         self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
         self._reader_thread.start()
@@ -323,17 +362,18 @@ class Gate0AppServerClient:
         self._send(message)
 
     def initialize(self, client_name: str = "gate0_appserver_client",
-                    client_version: str = "0.1.0") -> dict:
+                    client_version: str = "0.1.0", timeout: float = 30.0) -> dict:
         result = self.send_request("initialize", {
             "clientInfo": {"name": client_name, "version": client_version},
             "capabilities": dict(INITIALIZE_CAPABILITIES),
-        })
+        }, timeout=timeout)
         self.send_notification("initialized")
         return result
 
-    def start_thread(self, cwd: str, approvals_reviewer: str = "user", **extra_params) -> dict:
+    def start_thread(self, cwd: str, approvals_reviewer: str = "user", timeout: float = 30.0,
+                      **extra_params) -> dict:
         """`approvalsReviewer="user"` is deliberate (spike report): it routes approval requests to
         THIS client instead of an auto-resolving reviewer (`auto_review`/`guardian_subagent`),
         which is the entire point of writing this client."""
         params = {"cwd": cwd, "approvalsReviewer": approvals_reviewer, **extra_params}
-        return self.send_request("thread/start", params)
+        return self.send_request("thread/start", params, timeout=timeout)
