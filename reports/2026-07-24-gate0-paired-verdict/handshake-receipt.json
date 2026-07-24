@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "arm": "miniwob",
+  "readiness": "NO_GO_INSUFFICIENT_WAKES",
+  "paid_execution_enabled": false,
+  "auth_method": "chatgpt",
+  "planned_model": "gpt-5.6-sol",
+  "codex_version": "codex-cli 0.144.3",
+  "codex_path": "C:\\Users\\Succe\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+  "codex_executable_sha256": "e5dcc9f9b08102c58596af85345f689a69fd53a87d8d408bdc0fcdaf99fcf6e3",
+  "critical_config_transport": "explicit_cli_overrides",
+  "mcp_servers_observed": [
+    "gate0_world"
+  ],
+  "mcp_tools_observed": [
+    "observe",
+    "read_region",
+    "whats_changed",
+    "click",
+    "type_text",
+    "press_key",
+    "reset_episode"
+  ],
+  "brain_config_sha256": "ab7e54c1785f5d8be4352bbe0f85edb37cda68cf56df2128d61df025c1041fc3",
+  "task_sha256": "845638c874df2f2de2adaebdd1d6c9318c689a46d0032fa76a9393e1e47512d1",
+  "config_sha256": "1b5b892583600bf58f0ddbbd10681866fecc3d5c842ff4fb58419cbc4bb7c297",
+  "codex_mcp_list_sha256": "266164ca9fe2e0813678804dc4e508594a731df978f35990f5039c5d20df3113",
+  "tool_schema_sha256": "d3eb9d0fcd3c5e1a3571ded2aaea882aa41aa97a8793992616a0df6a5d3d1c17",
+  "world_image_tag": "miniwob-world",
+  "world_image_id": "sha256:8bb3358e1421dc97c72c07809fdef048f63d64bdfddb170c4d0188337fe6fd0f",
+  "host_code_sha256": {
+    "/app/world_mcp.py": "967866ab5ddcfcef17747aab1d83070a95a32c2cb05bc0b6252defce7b519fc9",
+    "/app/core/miniwob_world.py": "f98b0dc9846bff0fceb96c8f77eee8b4261b9db894abd793a8d7b1145a23ce54"
+  },
+  "image_code_sha256": {
+    "/app/core/miniwob_world.py": "f98b0dc9846bff0fceb96c8f77eee8b4261b9db894abd793a8d7b1145a23ce54",
+    "/app/world_mcp.py": "967866ab5ddcfcef17747aab1d83070a95a32c2cb05bc0b6252defce7b519fc9"
+  }
+}
