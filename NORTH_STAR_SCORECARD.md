@@ -1,6 +1,9 @@
-# North Star scorecard - 2026-07-14
+# North Star scorecard - 2026-07-25
 
-This is the first rubric-backed baseline. It is not a claimed change from an earlier score.
+This reflects the 2026-07-24 re-score (proof 8/100 -> 18/100) as first proposed, further corrected
+on 2026-07-25 after an adversarial fact-check found the Constancy and Cheap bumps overstated (see
+the paired verdict report, `reports/2026-07-24-gate0-paired-verdict.md` §3/§4, revised). The doc now
+IS a claimed change from an earlier score, not a first baseline.
 
 ## Scores
 
@@ -18,39 +21,95 @@ This is the first rubric-backed baseline. It is not a claimed change from an ear
     Codex's JSONL stream has no per-model-decision observable
     (`reports/2026-07-21-gate0-wake-grounding.md`), so Gate 0's scorer now grounds Cheap on
     cost-per-task instead and reports wakes informationally, never gating.
-- **Actual evidence / proof: 8/100.** Four North Star claims, 25 points each:
-  - **Capability: 3/25.** Isolated banked successes exist, including MiniWoB click-button 5/5, but no
-    controlled human-grade Red + MiniWoB Gate 0 verdict exists.
-  - **Constancy: 1/25.** Historical isolated runs reused the brain pattern across worlds, but there is no
-    frozen same-brain paired verdict that rules out configuration and bridge differences.
-  - **Generality: 2/25.** GB/GBA/NDS/browser/ARC probes show breadth, but much of it is exploratory,
-    bridged, or below human-grade completion.
-  - **Cheap: 2/25.** Cost ledgers and one skill A/B batching result exist, but held-out skill compilation
-    and a live spend breaker are not proven. For Gate 0 specifically, Cheap is grounded on cost-per-task
-    ($-cost caps + the live credit breaker); wakes-per-task is DEFERRED — no per-model-decision
-    observable exists in Codex's JSONL stream (`reports/2026-07-21-gate0-wake-grounding.md`) — and
-    re-enters scope per the capability-map tripwire (`reports/2026-07-05-northstar-capability-map.md`
-    §B3). This is a documented reduction of one of Cheap's two yardsticks for the first gate, not a
-    loosening of the cost bar.
-- **Overall: 19/100.** `ceil(0.15 * engineering + 0.85 * proof)` =
-  `ceil(0.15 * 76 + 0.85 * 8)` = `ceil(18.20)` = `19`. The 85% proof weight prevents engineering
+- **Actual evidence / proof: 14/100** (was 8/100 — re-scored 2026-07-24, corrected 2026-07-25, see
+  note below). Four North Star claims, 25 points each:
+  - **Capability: 5/25** (was 3/25). **2026-07-24 update:** the FIRST completed, frozen-predicate-
+    scored, two-arm paid Gate 0 attempt now exists (`reports/2026-07-24-gate0-paired-verdict.md`,
+    `reports/2026-07-24-gate0-armR-verdict.md`, PR #161) — both `_red_success`/`_miniwob_success`
+    re-verified `FAIL`. This moves the axis off "no controlled run has ever completed" (the prior
+    3/25 basis) without claiming capability is proven: Red beat the human baseline on wall-clock and
+    actions but missed the anti-false-victory tail (a measurement-shaped miss, task likely actually
+    done); MiniWoB solved 4/5 held-out seeds at reward 1.0 with one genuine partial (0.667). Isolated
+    banked successes (MiniWoB click-button 5/5) still stand as separate, smaller evidence.
+  - **Constancy: 4/25** (was 1/25). **2026-07-24 update, corrected 2026-07-25:**
+    `tools/check_gate0_codex.py::compare_constancy` ran, for the first time ever, against real Red +
+    MiniWoB peer receipts from the same banked attempt — clean, zero mismatches across all 9
+    `CONSTANCY_FIELDS`. An adversarial fact-check on 2026-07-25 found the initial +6 bump (to 7/25)
+    overclaimed what this establishes — full diagnosis in the paired verdict report §3 (revised). 4
+    of the 9 matching fields are hardcoded string literals that cannot differ between any two
+    receipts this launcher emits; `brain_config_sha256` cannot differ given the same launcher build
+    + `--model`; `codex_path` matching is guaranteed by same-machine execution. That leaves roughly
+    three genuinely independent facts (`codex_version`, `codex_executable_sha256`, and
+    `planned_model` — itself the operator-supplied `--model` argument, not an observed model
+    identity), not nine, and the two arms ran ~7h40m apart with no observability into that gap. This
+    is a **launch-configuration consistency check, substantially tautological by construction**, not
+    a measurement of brain sameness — worth a modest bump (a check this tautological cannot
+    reasonably be worth more than ~5/25), landing at 4/25 (+3, not +6). It still rules out Codex-CLI
+    auto-update drift and a model-flag change across that gap, and does not speak to
+    behavioral/performance equivalence — both arms still FAILed their predicates, by different
+    mechanisms.
+  - **Generality: 2/25 — unchanged.** GB/GBA/NDS/browser/ARC probes show breadth, but much of it is
+    exploratory, bridged, or below human-grade completion. **2026-07-24 evidence note (no score
+    change):** the same paired attempt drove two of the most different world classes in the probe
+    set (GB emulator vs. browser DOM) through one harness end to end, but both arms scored below the
+    frozen bar, so per this report's own instruction not to inflate, the number stays put — only the
+    evidence base is larger.
+  - **Cheap: 3/25** (was 2/25). **2026-07-24 update, corrected 2026-07-25:** a real two-arm paid
+    attempt landed combined `$1.4455`/`36.14` credits, ~5x under the `$7.00`/`175`-credit PASS bar,
+    nowhere near the 250-credit hard breaker (`reports/2026-07-24-gate0-paired-verdict.md` §2c) —
+    this particular run was cheap. An adversarial fact-check on 2026-07-25 found the original +2
+    bump (to 4/25) overclaimed what this shows: it is **not** "genuine evidence the cost mechanism
+    holds under a real spend" — the breaker never fired, and its proof artifact
+    (`live_breaker_dry_run_trip.json`) is absent; the only file at that path is a 2026-07-22 dry-run
+    ledger reading `consumed_normalized_credits: 0` that doesn't describe this attempt. Cut to a
+    smaller +1 instead, because: (1) **the frozen scorer never evaluated Cheap** —
+    `score_gate0.py`'s Cheap block is gated on `source` failures being empty, and `source` was
+    non-empty this attempt, so the number is a hand computation, not a scorer verdict (paired verdict
+    §2c/§4); (2) the figures come from `agent_metrics.json`, whose integrity pins are still
+    `PENDING_NOT_YET_CAPTURED_paid_attempt_not_run` — unpinned, launcher-self-reported, never
+    hash-verified; (3) this run's cheapness is partly *caused by* its failure mode — Red declared
+    victory and stopped acting, so `$0.4159` partly reflects a prematurely-terminated run, not
+    efficient task completion. Held-out skill compilation remains unproven, unchanged.
+- **Overall: 24/100** (was 19/100). `ceil(0.15 * engineering + 0.85 * proof)` =
+  `ceil(0.15 * 76 + 0.85 * 14)` = `ceil(23.3)` = `24`. The 85% proof weight prevents engineering
   activity from masquerading as North Star progress.
+
+  **Re-score provenance (2026-07-24, corrected 2026-07-25):** these deltas were proposed by the
+  session that banked the first paired Gate 0 verdict (`reports/2026-07-24-gate0-paired-verdict.md`),
+  per that task's own instruction to re-score honestly rather than leave stale "no controlled run has
+  ever completed" language in place, while explicitly not inflating Capability/Generality past FAIL.
+  An adversarial fact-check on 2026-07-25 found the Constancy and Cheap bumps overclaimed (see those
+  entries above, and the paired verdict report §3/§4, revised) and corrected them: Constancy +6 -> +3
+  (7/25 -> 4/25), Cheap +2 -> +1 (4/25 -> 3/25). Capability and Generality deltas were unaffected. The
+  rubric is inherently judgment-based — **David should sanity-check these specific point deltas**
+  (current: Capability +2, Constancy +3, Generality +0, Cheap +1) against his own read of the
+  evidence; nothing here should be treated as a mechanically-derived or final number.
 
 The free handshakes and R0/W0/C0 scorer add **zero proof points**. This slice buys readiness and
 interpretability, not capability evidence.
 
 ## Milestone and critical path
 
-- **Decisive milestone:** bank a controlled Gate 0 verdict with one fixed Codex brain on Red + MiniWoB.
-- **Current blocker:** signature-time and launch-time items only — C0 lacks an independently frozen
-  expected-pins JSON and a proven live-breaker dry-run TRIP receipt; R0/W0 lack human baselines and
-  append-safe DEV artifacts. (Exact wake accounting is no longer on this list: it is DEFERRED, not a
-  blocker — Gate 0's Cheap axis is grounded on cost-per-task instead, see the Cheap sub-score above.)
-  Current-head image/free-handshake parity now passes. All remaining items are required before a
-  frozen, reviewed pre-registration.
-- **Critical path:** free handshake -> R0/W0/C0 -> frozen reviewed pre-registration -> one Red run + one
-  MiniWoB run -> banked verdict.
-- **Current Gate 0 spend:** `$0.00`; no model call.
+- **Decisive milestone: DONE, verdict FAIL.** A controlled, banked, paired Gate 0 verdict with one
+  fixed Codex brain on Red + MiniWoB now exists (2026-07-24,
+  `reports/2026-07-24-gate0-paired-verdict.md`, PR #161) — both frozen predicates FAILed (§1/§2
+  there), Cheap PASSed, and the between-arms Constancy check ran clean for the first time. This
+  milestone is spent, banked as-is; it is not "not yet reached," it is "reached and did not clear
+  the capability bar."
+- **Current blocker (next milestone):** the paid-seed MiniWoB human baseline is still PENDING
+  (`gate0_paid_source_pins.json`'s `artifact_sha256.miniwob_human` placeholder) — required before
+  Arm W's `≤2×human` bars and the full frozen `score_manifest()` verdict are computable
+  (`reports/2026-07-24-gate0-paired-verdict.md` §9). Separately, `red_agent`/`miniwob_agent`/
+  `wake_boundary` artifact-hash pins need re-freezing against the now-real files, and the
+  `live_breaker` proof-artifact path is missing for this attempt — both fixture/pin maintenance,
+  same report §4/§9. A vNext capability attempt (fresh pre-registration required, task text is
+  hash-pinned) is undecided — David's call, candidates listed in the paired verdict §10.
+- **Critical path (next lap):** freeze the MiniWoB paid-seed human baseline -> re-freeze the
+  agent/wake-boundary/live-breaker pins -> full `score_manifest()` verdict computable -> David
+  decides on a vNext capability attempt (or bank as the proof-floor baseline).
+- **Current Gate 0 spend:** `$1.4455` combined (`$0.41589` Red + `$1.02958` MiniWoB), the first real
+  model spend against Gate 0 (2026-07-24) — see the paired verdict §2c. (Prior `$0.00`/"no model
+  call" line described the pre-paid-attempt state; that state is now superseded.)
 
 ## Historical usage manifest
 
