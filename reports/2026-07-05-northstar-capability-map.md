@@ -186,7 +186,7 @@ CONTEXT-BRIEFING's tripwire table still has ▶ (unbuilt) rows. Each is a small 
 | A2 named layer | nothing built; probe designed above | name→place probe (free) |
 | A3 complex perception | 3 NDS breaks banked; glyph R1 designed | glyph R1 build; MKDS |
 | A4 within-run memory | failure shape banked (longhaul); no mitigation | segmented pilot |
-| A5 conditional reflexes | batching PASS; loop half 0-for-3 | MKDS A/B + doom port |
+| A5 conditional reflexes | batching PASS; loop-half `stop_when` now fires (Kirby, NDS MKDS 2026-07-13) but only as bare elapsed-counters, not world-state-branching — corrected 2026-07-25, see **cheapness-skill-compilation** §5 | doom port with a world-state `stop_when` |
 | A6 continuous action | touch gap documented; nothing built | touch-drag helper (free) |
 
 **Process rule (already in force):** every gate pre-registration names which capability(ies) it

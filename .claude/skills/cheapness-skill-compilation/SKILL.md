@@ -127,15 +127,24 @@ macro turned "push this block toward that container" from N decisions into 1, mu
 sub-goals fit in the same `--max-turns` budget. **The capability lever and the cost lever are the same
 lever** (`skill-compilation-gate-pass.md`).
 
-**Honest bound you MUST carry forward (verdict "Honest bounds", 1st bullet):** all 15 skills were flat
-fixed-length step lists — `repeat_until`/`stop_when` never fired (0/15). **This PASS validates the
-BATCHING half only (N primitives per decision), NOT the conditional-loop half.** The loop half is
-untested in any paid run. The two named next ports (Kirby exposure-control macro `approach k / retreat
-k`; doom scan-and-center `repeat_until(turn_left, stop_when="mover_visible")`) both REQUIRE the loop
-construct — so each port's gate must explicitly require the loop half to fire. (The Kirby port has SINCE
-shipped and run `repeat_until` in a paid run (`runs/brain_kirby_v3_1`), but every loop there fired a bare
-`steps_elapsed` counter — the *conditional* (world-state-branching) half still has NOT passed a gate; see
-**diagnose-a-run**'s worked example.) One game, one attempt per arm, no variance estimate (accepted trade
+**Honest bound you MUST carry forward (verdict "Honest bounds", 1st bullet):** all 15 ARC rung-1
+skills were flat fixed-length step lists — `repeat_until`/`stop_when` never fired (0/15) in THAT run.
+**This PASS validates the BATCHING half only (N primitives per decision), NOT the conditional-loop
+half — on ARC.** The two named next ports (Kirby exposure-control macro `approach k / retreat k`;
+doom scan-and-center `repeat_until(turn_left, stop_when="mover_visible")`) both REQUIRE the loop
+construct — so each port's gate must explicitly require the loop half to fire.
+
+**Corrected 2026-07-25 — the loop half has since FIRED in two paid runs, but neither is the strict
+world-state-branching case, so the bound narrows rather than closes.** The Kirby port shipped and ran
+`repeat_until` in a paid run (`runs/brain_kirby_v3_1`); the NDS MKDS A/B (2026-07-13,
+`reports/2026-07-13-mkds-ab-verdict.md` §"Arm B conditional evidence") satisfied that build's own
+pre-registered conditional-half gate (`stop_when_fired=true` on 9 of 10 `run_skill` calls). In BOTH
+cases every firing was a bare elapsed counter — Kirby's `steps_elapsed`, NDS's `elapsed_frames(n)` —
+not a predicate that branches on world state. **The conditional (world-state-branching, e.g.
+`idle_settled`/`grid_changed_in_region`/`mover_visible`) half still has NOT passed a gate**; see
+**diagnose-a-run**'s worked example. Any new port's gate should still require the loop half to fire
+explicitly, and should prefer a world-state predicate over an elapsed-counter one if it wants to
+retire this narrower reading. One game, one attempt per arm, no variance estimate (accepted trade
 for cost + pre-registration cleanliness).
 
 ## 6. `define_skill` / `run_skill` — the mechanics a brain uses in a run
