@@ -134,25 +134,37 @@ half — on ARC.** The two named next ports (Kirby exposure-control macro `appro
 doom scan-and-center `repeat_until(turn_left, stop_when="mover_visible")`) both REQUIRE the loop
 construct — so each port's gate must explicitly require the loop half to fire.
 
-**Corrected 2026-07-25 — the loop half has since FIRED in two paid runs, but neither is the strict
-world-state-branching case, so the bound narrows rather than closes.** The Kirby port shipped and ran
-`repeat_until` in a paid run (`runs/brain_kirby_v3_1`); the NDS MKDS A/B (2026-07-13,
-`reports/2026-07-13-mkds-ab-verdict.md` §"Arm B conditional evidence") satisfied that build's own
-pre-registered conditional-half gate (`stop_when_fired=true` on 9 of 10 `run_skill` calls). In BOTH
-cases every firing was a bare elapsed counter — Kirby's `steps_elapsed`, NDS's `elapsed_frames(n)` —
-not a predicate that branches on world state. **The conditional (world-state-branching, e.g.
-`idle_settled`/`grid_changed_in_region`/`mover_visible`) half still has NOT passed a gate**; see
-**diagnose-a-run**'s worked example. Any new port's gate should still require the loop half to fire
-explicitly, and should prefer a world-state predicate over an elapsed-counter one if it wants to
-retire this narrower reading. One game, one attempt per arm, no variance estimate (accepted trade
-for cost + pre-registration cleanliness).
+**Corrected 2026-07-25 — read all three parts, not just the second:**
+1. **Batching half — validated.** Unchanged by anything below.
+2. **Loop CONSTRUCT firing — the OLD "never fired" claim is DEAD.** It has since fired in two paid
+   runs: Kirby (`steps_elapsed`, `runs/brain_kirby_v3_1`) and the NDS MKDS A/B (`elapsed_frames`, 9 of
+   10 `run_skill` calls, 2026-07-13, `reports/2026-07-13-mkds-ab-verdict.md` §"Arm B conditional
+   evidence"), clearing that build's own pre-registered conditional-half gate.
+3. **World-state-BRANCHING predicates — attempted TWICE, ZERO qualifying evidence, two different
+   failure modes.** Kirby's `region_changed` FIRED but DEGENERATELY, at iteration 1 — below the
+   `iterations>=2` bar, "a one-shot dressed as a loop" (**gate-methodology** `:115-119`; Kirby's
+   enemies walk toward the avatar, so the watched box triggers on the first press). NDS's
+   `idle_settled` NEVER FIRED — it burned to its `max_iters=8` ceiling without seeing 4 consecutive
+   under-threshold samples (`reports/2026-07-25-mkds-ab-v2-design.md` §5, `skills.jsonl` step 6
+   quoted verbatim). **No world-state-branching predicate has produced qualifying conditional evidence
+   in any paid run to date** — ARC 0/15 loop constructs at all, Kirby's one branching attempt
+   degenerate, NDS's one branching attempt never fired; see **diagnose-a-run**'s worked example and
+   `reports/2026-07-25-mkds-ab-v2-design.md` §5 for the full receipts.
+
+**Remedy for any new port's gate:** requiring the loop half to fire is not enough — require a
+QUALIFYING world-state-branching firing (`iterations>=2`, genuine screen-dependence). Do not default
+to a naive "box around a target" predicate (`region_changed`-style) against a target that moves
+toward the avatar — that is the exact degenerate failure above. Prefer `move_blocked`, a box AHEAD of
+the avatar's own heading, or gating on a STATIONARY target (**gate-methodology** `:119-122`). One
+game, one attempt per arm, no variance estimate (accepted trade for cost + pre-registration
+cleanliness).
 
 ## 6. `define_skill` / `run_skill` — the mechanics a brain uses in a run
 
 World-side seam tools (live next to `remember`/`observe` in `world_mcp.py`, NOT in `core/` brain code —
 **no brain edits, ever**, per the constancy law; see **safety-invariants** §7). Rung 1 shipped ONE
 executor: the `ArcAgi3Session` port (`...design.md` §3, §6); the Kirby port has since landed as a second
-per-world executor (its own `_define_skill`/`_run_skill` at `world_mcp.py:1018`/`:1155`, gated behind
+per-world executor (its own `_define_skill`/`_run_skill` at `world_mcp.py:1282`/`:1419`, gated behind
 `KIRBY_SKILLS=1`, exercised by `runs/brain_kirby_v3_1`) per the gate-first plan — never a multi-world generic one.
 
 - **`define_skill(name, steps, stop_when)`** — `steps` is a list of EXISTING world primitives (for ARC:
