@@ -30,10 +30,26 @@ session, all eyes-on and screenshot-verified:
   input sequence and watching it happen (`REPLAY_montage.png`) with an intact HUD throughout. This
   is deeper into Castle Lololo than any prior session got.
 
-**Where it stopped:** in the tower sub-area past the battlements (Kirby's in-room X saturates at
-21). The Lololo & Lalala boss was never reached, so no Stage-2 → Stage-3 transition was observed,
-so **the discriminating sample EX02 needs does not exist**. Same class of wall as PR #169 (Castle
-Lololo navigation), several rooms further in.
+- **★ Reached the end of Castle Lololo and the boss area.** Past the towers the game takes over:
+  Kirby rides a **warp star** right across a sky of clouds and mountains, crashes through the castle
+  wall and lands in the boss room, where the HUD's score row is replaced by a **boss health meter**
+  and an enemy pushes **blocks along horizontal tracks** — Lololo. Verified frame-by-frame
+  (`transition_zoom.png`): score row intact throughout the flight, Kirby controllable on arrival.
+
+**Where it stopped: the Lololo boss fight, at 1 HP.** The route arrives with hp=1, and the fight
+needs several inhale-a-block-and-spit-it-back cycles; 300 fight-biased randomised trials landed
+minor hits (best score gain 400) but never won. So no Stage-2 → Stage-3 transition was observed and
+**the discriminating sample EX02 needs still does not exist**. This is a much better place to be
+stuck than PR #169's (which never left the first corridor), and the remaining gap is one won boss
+fight.
+
+⚠ **Rig gotcha that cost hours: a savestate saved at the wrong moment yields a Kirby who cannot move
+horizontally.** In several boss-room states Kirby responded to jump (y changed) but `right` did
+nothing across 400+ frames and 4800 idle frames, with empty background tiles beside him — he simply
+never moved. The same point reached in **one continuous run, with no save/load in between, is fully
+controllable** (`(6,96) -> (148,96)` on a single 150-frame `right`). Savestate-chaining is still the
+right technique for sweeps, but **any "Kirby is stuck" conclusion must be re-tested continuously
+before it is believed.** Two dead ends in this session were this artifact, not the game.
 
 ## ★ The 8 survivors narrow to 5 (and a false alarm I raised and then withdrew)
 
@@ -178,11 +194,33 @@ them.** The falsifying test is unchanged and still unrun: reach Stage 3 and read
    Reproducible: `bruteforce.gen(7178, 900)` replayed from `u01.state` gets there — transition at
    f650, confirmed legitimate.
 6. From the battlements, `float-right` (alternate `8:a` and `14:right`) advances damage-free to the
-   tower sub-area, where progress stops at in-room X 21. The exit is very likely reached by **swimming vertically** to the
+   tower sub-area. **68 repetitions of that from `REPLAY.state`, then ~1000 idle frames, and the
+   game flies Kirby to the Lololo boss room on a warp star.** Run it continuously (see the gotcha
+   above) — `cont_boss2.state` is the banked, controllable boss-room arrival, at hp=1.
+7. Doors are now a lookup, not a search: `doorscan.py` finds them from the tilemap and `enter.py`
+   walks to one and enters it. Validated against a door already known to work (`D01.state`: reported
+   `dx=+24px`, entered first try) and against the water room, where it found both doors including
+   the unreachable one. The exit is very likely reached by **swimming vertically** to the
    door visible at the room's bottom-left, which the sweep's "walk N frames then act" model cannot
    express.
 5. Incidental but useful: **dying is a free full heal** (HP back to 6) at the cost of one life, and
    the respawn checkpoint is early enough that step 1 re-reaches the corridor end in ~10 seconds.
+
+## The one thing left: win the Lololo fight
+
+The hunt is now **one boss fight** from the Stage-3 sample. Concretely, for the next session:
+
+- Start from `cont_boss2.state` (banked boss-room arrival, controllable) or re-derive it with the
+  continuous route in step 6 above.
+- **Arrive with more than 1 HP.** The route loses HP crossing the battlements; a damage-free
+  crossing, or a health item, is worth more than a better fight policy.
+- The fight is **inhale the block Lololo pushes along a track, then spit it back at him** — Kirby
+  must be on the same track as the block. Random search will not find this reliably (300 trials
+  did not); it needs a policy that reads the block's position off the tilemap (Lololo and the
+  blocks are **background tiles, not sprites** — `get_sprite` shows only Kirby and the HUD).
+- Winning ends Castle Lololo. Read `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` on the other side: if
+  any reads `2`, it is a real stage counter and EX02's oracle is found; if they all stay `1`, they
+  are a past-Stage-1 latch and the hunt restarts on a different byte.
 
 ## Recommended next step (not taken here — needs David)
 
