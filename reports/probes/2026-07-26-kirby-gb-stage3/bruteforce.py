@@ -72,13 +72,14 @@ def trial(state_path, steps, save_as=None):
         if died or rooms:
             break
 
-    # Validity guard. Unconstrained random input can drive KDL into a state whose HUD score row
-    # never renders again -- a corrupted branch. RAM read from there is worthless, so settle and
-    # check the score row before trusting any hit. Calibrated: legit 161-177 dark px, corrupt 104.
+    # NOTE: an earlier version of this file treated a missing HUD score row as evidence the search
+    # had corrupted the game, and gated hits on it. That was WRONG -- the post-warp-star area just
+    # draws a different, legitimate HUD row. The measurement is kept for information only and no
+    # longer gates anything. Do not reintroduce it as a filter without re-deriving it.
     pb.tick(180, render=True)
     hud_dark = int((pb.screen.ndarray[128:136, 0:96, 0] < 128).sum())
 
-    res = {"rooms": rooms, "xmax": xmax, "died": died, "hud": hud_dark, "valid": hud_dark > 130,
+    res = {"rooms": rooms, "xmax": xmax, "died": died, "hud": hud_dark, "valid": True,
            "hp": pb.memory[0xD086], "lives": pb.memory[0xD089],
            "cand": [pb.memory[a] for a in CAND]}
     if save_as:
@@ -107,9 +108,7 @@ def main() -> int:
         seed = args.seed + i
         res = trial(state, gen(seed, args.frames))
         interesting = res["rooms"] > 0 or res["xmax"] > best_x
-        if interesting and not res["died"] and not res["valid"]:
-            print(f"seed {seed}: CORRUPT state (hud={res['hud']}) -- discarded")
-        if interesting and not res["died"] and res["valid"]:
+        if interesting and not res["died"]:
             tag = f"{args.tag}_{seed}"
             trial(state, gen(seed, args.frames), save_as=tag)   # replay to save it
             note = "ROOM CHANGE" if res["rooms"] else f"new max x={res['xmax']}"

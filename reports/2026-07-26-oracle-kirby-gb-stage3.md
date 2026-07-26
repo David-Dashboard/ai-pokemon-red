@@ -35,35 +35,52 @@ session, all eyes-on and screenshot-verified:
 so **the discriminating sample EX02 needs does not exist**. Same class of wall as PR #169 (Castle
 Lololo navigation), several rooms further in.
 
-## ⚠ The most important result: random search CORRUPTS the game, and nearly produced a false finding
+## ★ The 8 survivors narrow to 5 (and a false alarm I raised and then withdrew)
 
-When hand-planned routes stalled, I switched to `bruteforce.py` — randomised button sequences
-scored by the room-change detector. It did find real areas. It also drove the game into **corrupted
-states**, and those states produced a candidate-byte reading that looked like a discovery:
+**Result: `0xC057`, `0xC073`, `0xC07B` are ELIMINATED. They vary WITHIN Stage 2.**
 
-> In several brute-forced states `0xC057/0xC073/0xC07B` read `33/96/96` or `33/0/0` while
-> `0xD03B/0xD19F/0xD3A9/0xD3BA/0xD3CD` stayed `1` — i.e. the "8 lockstep survivors" appeared to
-> **split**, which would have narrowed PR #169's 8 candidates to 5.
+Measured across ordinary play (60 sampled intervals of `right`/`a` input, one continuous run in the
+post-battlements area, score constant at 44560, no stage change):
 
-**That finding is void.** Those states are corrupted: KDL's HUD score row (`Sc: NNNNN`) stops
-rendering permanently and never comes back. Verified by ticking 180 frames and re-checking — a
-legitimate state redraws it, these never do. Kirby is also frozen against input in some of them.
-In **every legitimate state**, all 8 candidates still read `1`.
+| Address | values observed within Stage 2 |
+|---|---|
+| `0xC057` | `1`, `32`, `33` |
+| `0xC073` | `0`, `1` |
+| `0xC07B` | `0`, `1` |
+| `0xD03B`, `0xD19F`, `0xD3A9`, `0xD3BA`, `0xD3CD` | `1` only |
 
-Calibrated detector (now a guard in `bruteforce.py`): count dark pixels in the screen band
-`y=128..136, x=0..96`. Legitimate states score **161-177**; corrupted ones score **104**. Threshold
-130.
+PR #169 recorded that all 8 "move in perfect lockstep across every sample gathered ... most likely
+several are mirrors of one value". That holds for the five `0xD0xx`/`0xD3xx` bytes but **not** for
+the three `0xC0xx` ones — the earlier hunt simply never sampled a state where they diverge. They
+are almost certainly sprite/scratch bytes in the `0xC0xx` block that happened to read `0`/`1` in
+the states sampled.
 
-Re-running the search from the tower frontier **with the guard on: 200 trials, every single
-room-change hit was corrupt, zero valid.** So the apparent "progress" past the battlements was
-entirely glitch, and the honest frontier is the battlements area.
+**The live candidate list for EX02 is therefore 5, not 8:**
+`0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD`. Those five still read `1` in every legitimate Stage-2
+state sampled this session, and still cannot be told apart from a "past Stage 1" latch.
 
-Two lessons worth carrying:
-1. **A search whose oracle is "did the screen change" will happily find glitches.** The room-change
-   detector was necessary but not sufficient; it needed a *validity* check next to it.
-2. This is the same shape as the Cave Noire `0xD389` and Emerald outdoor `map_num` errors — a
-   reading that looked clean under the conditions sampled. Here the wrong conditions were
-   *machine-generated*, which makes them easier to produce in bulk and easier to believe.
+### The false alarm, recorded because the reasoning error is the useful part
+
+I first saw the `0xC0xx` divergence in states reached by randomised search, noticed those states'
+HUD was missing its `Sc: NNNNN` row, concluded the search had driven the game into a **corrupted**
+state, declared the divergence void, and built a "validity guard" (dark-pixel count in the HUD score
+row: 161-177 "legit", 104 "corrupt"). I banked that in commit `da908f6`. **It was wrong.**
+
+What actually happens: the room transition plays KDL's **warp-star animation** (Kirby flies right
+across a scrolling sky on a star), and the area it lands in draws a **different, legitimate HUD
+row** — a Kirby-face icon and three small boxes in place of the score. Caught it by letting a state
+idle with *no input at all* and screenshotting the whole sequence: the "corruption" appeared
+spontaneously, on a state nothing was doing to it, which is not how input-induced corruption
+behaves. Kirby walks, enemies move, HP/lives/score stay sane throughout.
+
+Lessons, which are the opposite of the ones I first wrote down:
+1. **"The screen looks wrong" is not evidence of an invalid state.** I inferred corruption from one
+   unfamiliar HUD row and then built a detector that encoded the mistake, which made every
+   subsequent measurement agree with it. A guard built on an unverified assumption launders it into
+   apparent confirmation — 200 trials "confirmed" the wrong conclusion.
+2. The check that broke it was cheap and should have come first: **remove the suspected cause** (run
+   the state with no input) and see whether the effect persists.
+3. The `bruteforce.py` guard is now **off by default** and documented as unreliable.
 
 ## The correction to PR #169 (the substantive finding)
 
@@ -103,12 +120,12 @@ trajectory.
 
 ## The 8 survivors — status unchanged, plus extra falsification
 
-`0xC057, 0xC073, 0xC07B, 0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` read **`1` in every legitimate
-sample taken this session** — across ~40 driven bursts, several deaths + respawns, multiple
-confirmed room changes (corridor → water room, corridor upper floors → battlements), multi-floor
-climbing, >900 savestate-chained sweep trials and >900 randomised trials. That rules out "changes on
-room transition", "changes on floor change" and "changes on death/respawn". The only readings that
-ever differed came from corrupted states (see above) and are void.
+The five surviving bytes `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` read **`1` in every sample taken
+this session** — across ~40 driven bursts, several deaths + respawns, multiple confirmed room
+changes (corridor → water room, corridor upper floors → battlements → warp-star area),
+multi-floor climbing, >900 savestate-chained sweep trials and >900 randomised trials. That rules out
+"changes on room transition", "changes on floor change" and "changes on death/respawn". The other
+three (`0xC057/0xC073/0xC07B`) are eliminated — they vary within Stage 2 (see above).
 
 It does **not** discriminate the two live hypotheses (real incrementing stage index vs one-time
 past-Stage-1 latch), because both predict `1` everywhere inside Stage 2. **Do not wire any of
