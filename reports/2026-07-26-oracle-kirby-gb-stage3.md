@@ -25,10 +25,45 @@ session, all eyes-on and screenshot-verified:
   Kirby between floors (this is what `0xD052` tracks, see below).
 - Two deaths + respawns survived (lives 5 → 3 as displayed).
 
-**Where it stopped:** inside the water/moat room, unable to find its exit. The Lololo & Lalala boss
-was never reached, so no Stage-2 → Stage-3 transition was observed, so **the discriminating sample
-EX02 needs does not exist**. This is the same class of wall PR #169 hit (Castle Lololo navigation),
-one room further in.
+- **Reached a new, verified-legitimate area beyond the water room**: the castle **battlements /
+  tower exterior** (score 44560), via a proper door transition, confirmed by replaying the exact
+  input sequence and watching it happen (`REPLAY_montage.png`) with an intact HUD throughout. This
+  is deeper into Castle Lololo than any prior session got.
+
+**Where it stopped:** in the tower sub-area past the battlements (Kirby's in-room X saturates at
+21). The Lololo & Lalala boss was never reached, so no Stage-2 → Stage-3 transition was observed,
+so **the discriminating sample EX02 needs does not exist**. Same class of wall as PR #169 (Castle
+Lololo navigation), several rooms further in.
+
+## ⚠ The most important result: random search CORRUPTS the game, and nearly produced a false finding
+
+When hand-planned routes stalled, I switched to `bruteforce.py` — randomised button sequences
+scored by the room-change detector. It did find real areas. It also drove the game into **corrupted
+states**, and those states produced a candidate-byte reading that looked like a discovery:
+
+> In several brute-forced states `0xC057/0xC073/0xC07B` read `33/96/96` or `33/0/0` while
+> `0xD03B/0xD19F/0xD3A9/0xD3BA/0xD3CD` stayed `1` — i.e. the "8 lockstep survivors" appeared to
+> **split**, which would have narrowed PR #169's 8 candidates to 5.
+
+**That finding is void.** Those states are corrupted: KDL's HUD score row (`Sc: NNNNN`) stops
+rendering permanently and never comes back. Verified by ticking 180 frames and re-checking — a
+legitimate state redraws it, these never do. Kirby is also frozen against input in some of them.
+In **every legitimate state**, all 8 candidates still read `1`.
+
+Calibrated detector (now a guard in `bruteforce.py`): count dark pixels in the screen band
+`y=128..136, x=0..96`. Legitimate states score **161-177**; corrupted ones score **104**. Threshold
+130.
+
+Re-running the search from the tower frontier **with the guard on: 200 trials, every single
+room-change hit was corrupt, zero valid.** So the apparent "progress" past the battlements was
+entirely glitch, and the honest frontier is the battlements area.
+
+Two lessons worth carrying:
+1. **A search whose oracle is "did the screen change" will happily find glitches.** The room-change
+   detector was necessary but not sufficient; it needed a *validity* check next to it.
+2. This is the same shape as the Cave Noire `0xD389` and Emerald outdoor `map_num` errors — a
+   reading that looked clean under the conditions sampled. Here the wrong conditions were
+   *machine-generated*, which makes them easier to produce in bulk and easier to believe.
 
 ## The correction to PR #169 (the substantive finding)
 
@@ -68,10 +103,12 @@ trajectory.
 
 ## The 8 survivors — status unchanged, plus extra falsification
 
-`0xC057, 0xC073, 0xC07B, 0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` read **`1` in every single sample
-taken this session** — across ~24 driven bursts, 2 deaths + respawns, 2 confirmed room changes,
-multi-floor climbing, and >500 savestate-chained sweep trials. That is additional evidence they are
-stable within Stage 2, and it rules out "changes on room transition" and "changes on floor change".
+`0xC057, 0xC073, 0xC07B, 0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` read **`1` in every legitimate
+sample taken this session** — across ~40 driven bursts, several deaths + respawns, multiple
+confirmed room changes (corridor → water room, corridor upper floors → battlements), multi-floor
+climbing, >900 savestate-chained sweep trials and >900 randomised trials. That rules out "changes on
+room transition", "changes on floor change" and "changes on death/respawn". The only readings that
+ever differed came from corrupted states (see above) and are void.
 
 It does **not** discriminate the two live hypotheses (real incrementing stage index vs one-time
 past-Stage-1 latch), because both predict `1` everywhere inside Stage 2. **Do not wire any of
@@ -97,6 +134,15 @@ them.** The falsifying test is unchanged and still unrun: reach Stage 3 and read
   so trials cannot drift into each other.
 - **`findpos.py`** / **`roomid.py`** — the position-byte finder, and a room-id finder that
   **failed** (29 surviving bytes, all noise — recorded so nobody re-runs it).
+- **`bruteforce.py`** — randomised action search with the room detector as oracle **and the HUD
+  validity guard** described above. Deterministic (trial `i` = `seed+i`), so any hit replays
+  exactly. Use it to find candidate routes, then **always replay the winning seed through
+  `kdrive.py` and look at the montage** before believing the destination.
+- **`grid.py`** — renders a savestate at 5x with a labelled 16px grid so room geometry can be
+  *measured*. Eyeballing raw 160x144 frames is what made the first dozen navigation guesses wrong.
+- **`route.py`** — automates the death → respawn → autopilot → door approach back to the water room.
+  Works, but the corridor is not deterministic (enemies knock Kirby around), so it retries door
+  offsets and still fails some passes; rerun it rather than debugging it.
 
 ## Route knowledge, so the next session starts where this one ended
 
@@ -106,9 +152,16 @@ them.** The falsifying test is unchanged and still unrun: reach Stage 3 and read
 3. **The door cannot be reached by walking** — the `?` block stops Kirby, and every walk-then-`up`
    sweep found nothing. It needs a **jump over the block first**: `doorsweep.py`'s `hop_left_up`
    action at walk offset 52 lands the transition (verified, `1 ROOM CHANGE`).
-4. That puts Kirby in the water/moat room. **Its exit was not found**: 332 sweep trials from two
-   different in-room states, both directions, and four action patterns (`up`, `down`,
-   `hop_left_up`, `hop_right_up`, offsets 0-200) produced zero transitions. The exit is very likely reached by **swimming vertically** to the
+4. That puts Kirby in the water/moat room. Its exit resisted 332 directed sweep trials **and** 370
+   randomised ones; what does work is **hugging the ceiling** (alternate `up` and `up+right`), which
+   crosses the Gordo-infested column corridor taking **zero damage**. Kirby's in-room X saturates
+   at 7 there, and that is genuinely the end of it — the room is a dead end for this rig.
+5. The real way on is **not** through the water room. From the corridor's **upper floors** (float up
+   from the lower floor; `0xD052` counts the floor down 5→1) a door leads to the **battlements**.
+   Reproducible: `bruteforce.gen(7178, 900)` replayed from `u01.state` gets there — transition at
+   f650, confirmed legitimate.
+6. From the battlements, `float-right` (alternate `8:a` and `14:right`) advances damage-free to the
+   tower sub-area, where progress stops at in-room X 21. The exit is very likely reached by **swimming vertically** to the
    door visible at the room's bottom-left, which the sweep's "walk N frames then act" model cannot
    express.
 5. Incidental but useful: **dying is a free full heal** (HP back to 6) at the cost of one life, and
@@ -122,10 +175,11 @@ captured with `"ram": true`. A few minutes of human play through Lololo & Lalala
 Islands produces the Stage-3 sample directly, and the 8 survivors resolve to "counter" or "latch"
 by inspection.
 
-The alternative — continuing the scripted/eyes-on hunt — is the option this session tested, and the
-honest read is that it costs a lot per room and the water room is not obviously the last one. I do
-not recommend a third scripted attempt without the vertical-navigation gap in `doorsweep.py` being
-closed first.
+The alternative — continuing the scripted/eyes-on hunt — is what this session did, at length. The
+honest read: it works, it just costs a lot per room (each new sub-area took roughly 8-12 directed
+iterations to map and cross), the areas kept coming, and the automated fallback that would have
+sped it up turns out to corrupt the game. Castle Lololo's boss is still an unknown number of rooms
+away.
 
 ⚠ The paid-brain option (let the agent play it) would also produce a genuine brain-capability
 datapoint, but it needs a pre-registration first per gate-methodology, and the one existing datapoint
