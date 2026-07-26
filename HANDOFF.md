@@ -7,11 +7,163 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-25 (FIRST PAIRED Gate-0 attempt banked — both arms ran to completion over the
+_Last updated: 2026-07-25 (POST-GATE-0 LANE PHASE closed — 6 PRs merged, $0, docs-only; the exam is
+only 4/10 scorable; all 4 oracle hunts hit a play-capability wall, four different capability classes,
+measuring the rig not the brain; VizDoom flagged off-limits without David's sign-off.)_
+
+**=>=> NEWEST (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
+1. **DONE — 6 PRs merged this phase, all $0, docs-only, main now `561ea62`:** #166 (de-rot
+   `world-lanes-frontier` + 2 canon docs — `cheapness-skill-compilation/SKILL.md` and
+   `reports/2026-07-05-northstar-capability-map.md`), #167 (MKDS A/B v2 design, DRAFT/NOT
+   AUTHORIZED), #168 (MKDS lap oracle hunt v2, NOT FOUND), #169 (Kirby GB stage-counter oracle hunt,
+   PARTIAL/NOT-FOUND-FOR-EX02), #170 (GBA Emerald + Kirby exam-oracle hunts, both NOT FOUND), #171
+   (exam-oracle capability synthesis). No code, scorer, fixture, pinned-file, brain, `core/`,
+   tool-schema, or `world_mcp.py` edits at any point this phase.
+2. **THE HEADLINE — the graduation exam (PR #129, still OPEN/unmerged) is only 4/10 scorable
+   today.** Verified directly against `eval/score_exam_*.py` on `main`: 8 scorer files exist for the
+   10-task v1-DRAFT battery. **4 real, fail-closed scorers capable of returning PASS**: EX01
+   `red_badge`, EX07/EX08 `miniwob_focus_text`/`miniwob_click_checkboxes`, EX09 `arc_wa30`. **4
+   `ORACLE_PENDING` stubs whose `main()` always `return 1`, never PASS**: EX02 `kirby_stage3`, EX03
+   `emerald_oldale`, EX04 `kirby_gba_level1`, EX05 `mkds_lap` (verified verbatim from each stub's
+   docstring/failure-code — quotes in `reports/2026-07-25-exam-oracle-capability-synthesis.md` §1).
+   **2 tasks — EX06 (Metroid Prime Hunters, NDS) and EX10 (Marble Madness, GB) — have NO scorer file
+   at all**, blocked a stage earlier still: both are RESERVE/never-touched titles per the v1-DRAFT
+   doc (read from `origin/docs/exam-v1-definition`, NOT on `main`) and need a whole new-world-port
+   before an oracle hunt can even start.
+3. **The meta-finding, with its bound stated precisely.** All four 2026-07-25 oracle hunts hit a
+   PLAY-CAPABILITY wall before a RAM-hunting wall, across FOUR DISTINCT capability classes:
+   closed-loop driving control (MKDS — no fixed/open-loop policy survives more than ~100-250 frames
+   past turn 1 anywhere on the course; ~15,000 total frames of scripted+corrected driving across two
+   sessions never finished a lap); puzzle-solving (Kirby GB — Castle Lololo's block-push/door puzzle
+   blocked progress past the one Stage 1->2 transition ever reached); precise platforming (Kirby GBA
+   — a stationary hazard at score 2800 resisted ~10 varied jump/timing/crouch attempts, goal door
+   never reached); a scripted story gate (Emerald — a fixed NPC permanently blocks the only Route 101
+   exit, repeating identical dialogue regardless of approach, demanding the starter-Pokémon quest be
+   completed first). **⚠ BOUND, stated so it cannot be missed:** all four hunts were driven by
+   SCRIPTED policies or human-in-the-loop screenshot-stepping — a from-scratch Python driver (MKDS's
+   `drive_lap.py`/`step.py`), a simple autopilot plus hand-tuned bursts (Kirby GB's
+   `continue_stage2.py`/`nav_step.py`), or direct scripted sequences with eyes-on verification (Kirby
+   GBA's `gba_drive.py`, Emerald's manual routing). **None of the four ran the paid brain — $0 across
+   all four, no `claude -p`, no full-perception agent loop.** The one genuine brain datapoint in the
+   whole project (`runs/brain_kirby_longhaul/`: 316 turns, $42.98, 52.1 min, did not clear Kirby GB
+   Stage 1) bears on EX02 only, is one data point not a controlled comparison, and predates the
+   float-mechanic fix this session's Kirby GB hunt found. **"The brain cannot do these tasks" is
+   UNMEASURED for 3 of the 4 walls (MKDS, Kirby GBA, Emerald) — this block does NOT claim it, and
+   neither should anyone reading it.** The correct claim is about what this project's current
+   oracle-hunting RIG can reach, not (except partially) what the paid brain can do.
+4. **Consequence for PR #129 (David's pending exam freeze, still OPEN) — NOT decided, David's call.**
+   A task whose success state has never been reached by any means (not the oracle hunts, and for EX02
+   not even the one paid-brain attempt) cannot have a verified oracle, so freezing it as-is freezes an
+   unscoreable task — it can only ever emit `ORACLE_PENDING`, never PASS or FAIL_CAPABILITY, no matter
+   how well a future attempt plays. Per-task recommendation from
+   `reports/2026-07-25-exam-oracle-capability-synthesis.md` §4 (one option among four laid out
+   neutrally there — freeze as-is / re-scope / hold-out-pending-readiness / drop entirely):
+   - **EX02 (Kirby GB) and EX04 (Kirby GBA)** look one cheap $0 session from being reached (a
+     human-played session with RAM sampled live for EX02; a more patient platforming pass or a
+     save-state near the goal door for EX04) — hold these out of the freeze rather than re-scope down.
+   - **EX05 (MKDS)** needs a qualitatively different closed-loop, vision-guided driver, not just more
+     scripted attempts — re-scope now to a checkpoint-level milestone (the corroborated
+     `0x022C8094` byte) rather than hold the freeze open indefinitely.
+   - **EX03 (Emerald)** has two stacked blockers (a real in-game starter-Pokémon quest, AND an oracle
+     — outdoor `map_num` — now known unsafe, see item 10) — re-scope to the already-reached,
+     already-interior-stable Birch's Lab `(map_group, map_num) = (2, 13)` instead of Oldale.
+5. **⚠ VIZDOOM IS OFF-LIMITS — needs David's explicit sign-off before any further work.** Doom is on
+   the held-out list (`eval/dataset_split.py:30-36`, confirmed verbatim this session), this repo's
+   `CLAUDE.md` STOP condition is unqualified ("Never touch Crystalis/Zelda-LA/SML/F-1/Doom during
+   development"), no carve-out for the GATE-3D lane exists anywhere, and the lane already calibrated
+   on it (`core/yaw_flow.py:4-7` pins its P1 floors from `runs/vizdoom_precheck/`). Two prior sessions
+   independently routed around it on held-out grounds. Banked GATE-3D facts, so they aren't
+   re-derived: paid run **FAIL, K=4.074 vs bar 5.61**; free-ceiling test says the bar is reachable
+   (**K=7.333 at 8px tolerance**; even the ceiling fails at 25px, **K=3.433** — tolerance is the
+   lever); the lever is a **BRIEF edit** at `runs/brain_gate3d/CLAUDE.md:37` (the hunt-loop's centering
+   tolerance, `25` -> `~8`), **NOT a code parameter**; **A2.2 forbids softer re-runs** (tightening only
+   ever moves the bar stricter, never softer); the onset-scoring fix (A3-PC) already **PASSED
+   offline**, and a paid A3 re-run is **pre-registered and HELD** pending David's go — no paid A3
+   attempt has run as of 2026-07-25.
+6. **Glyph lane DEAD** (R1 killed 2026-07-11 at its own bar, PR #103, pooled precision 0.283 <= the
+   0.49 kill floor; "attempt 1 of 2 with a clean result — no second attempt is warranted or
+   permitted"). **ARC breadth CUT from the critical path** (2026-07-05: "more levels buy ~nothing
+   against A1-A6"); its API key is sourced WSL-side only, not reachable from the Windows checkout.
+7. **MKDS A/B: bank the v1 FAIL, do NOT re-run** (#167, DRAFT/NOT AUTHORIZED, recommendation of
+   record). Forensics from the raw artifacts (`oracle.jsonl`/`skills.jsonl`), not just the banked
+   verdict's prose: Arm A's `press_sequence` ran at **288 frames/decision**, Arm B's `run_skill` at
+   **280 frames/decision** — both close to their OWN per-call ceilings (`press_sequence` schema cap
+   16 x 24f = 384; `run_skill`'s absolute ceiling F=300), i.e. a **STRUCTURAL throughput tie**; 1.03x
+   is what racing two similarly-capped batchers looks like. Removing `press_sequence` from the
+   baseline to manufacture a gap is explicitly REJECTED as a strawman — "the same class of error as
+   loosening a numeric bar."
+8. **The corrected 3-part skill-compilation bound** (now in `world-lanes-frontier` +
+   `cheapness-skill-compilation`): (1) batching half **VALIDATED** (ARC 2.94x, unchanged); (2) loop
+   CONSTRUCT firing **HAS happened** — the old "never fired" claim is DEAD (Kirby `steps_elapsed`,
+   NDS MKDS `elapsed_frames` 9/10 calls); (3) world-state-BRANCHING predicates attempted **twice, ZERO
+   qualifying evidence, two different failure modes** — Kirby's `region_changed` fired but
+   DEGENERATELY at iteration 1 (enemies walk toward the avatar, so the watched box triggers
+   immediately — below the `iterations>=2` bar), NDS's `idle_settled` **never fired** at all (ran to
+   its `max_iters=8` ceiling without 4 consecutive under-threshold samples). **Zero paid runs across
+   the whole project, to date, have had a world-state-branching `stop_when` predicate actually fire.**
+   ⚠ Do NOT write the remedy as "just prefer a world-state predicate" — that is the move that failed
+   twice; the real fixes named are `move_blocked`, a box AHEAD of the avatar's own heading, or a
+   STATIONARY target — never a target that moves toward the avatar.
+9. **⚠ WIRING CASCADE, unchanged and reconfirmed this phase:** both GBA worlds still have
+   `watch = {}` in `world_mcp.py` (lines 186, 191, re-checked directly this session) — even a FOUND
+   address yields no oracle rows until wired, but editing `world_mcp.py` cascades into the frozen
+   Gate-0 host/image pins (the same reason PR #138 is deferred). Wiring must be ONE batched PR timed
+   with the next world-image rebuild, never piecemeal.
+10. **#144 PARTIALLY FALSIFIED, caught before any wiring happened.** Outdoor Emerald `map_num` is
+    UNSTABLE — three different, visually-contiguous parts of the *same* Littleroot Town exterior gave
+    three different readings (10 near the truck, 12 near the houses, 14 outside Birch's Lab) while
+    `map_group` stayed `2` throughout, and the third reading, `(2, 14)`, is a genuine collision
+    against the upstairs bedroom's own `(2, 14)` interior reading (confirmed by two independent,
+    fully-settled screenshots). "`map_num` = current map" is **FALSE outdoors** — unsafe as a
+    location oracle for Oldale or anywhere else outdoors without further work. This is the **second
+    instance** of the Cave Noire too-few-anchors pattern (`0xD389` looked right on too few anchors and
+    was wrong; the real HP byte, BCD, was `0xC120`) — a reading confirmed on a handful of similar
+    samples is not the same as one stress-tested against genuinely varied conditions.
+11. **What each hunt banked, so nothing is re-derived:**
+    - **MKDS** (#168): `0x022C8090` disqualified a **second**, independent way (it RESETS to match
+      `0x022C8094`'s value after a stuck/off-track timeout, not just the already-known bidirectional
+      wrong-way decrement); `0x022C8094` remains the best lead but only values 0/1 were ever observed
+      (BCD-vs-plain-int still inconclusive); two new low-confidence leads (`0x022C8358`, likely
+      another kart's struct copy; the `0x022C8A2x`-`0x022C8A4x` cluster, now corroborated across two
+      independent sessions); savestate-chaining (one emulator process per driving decision) proven
+      drift-free by an exact full-replay match.
+    - **Kirby GB** (#169): all 3 prior candidates (`0xD048`, `0xD052`, `0xD3EE`) ELIMINATED with
+      direct evidence (`0xD048` never changes at all; `0xD052`/`0xD3EE` are volatile, dropping 5->1 on
+      the death/continue event); 8 survivors pinned (`0xC057`, `0xC073`, `0xC07B`, `0xD03B`, `0xD19F`,
+      `0xD3A9`, `0xD3BA`, `0xD3CD`, all moving in lockstep, likely mirrors of one value) but cannot
+      yet distinguish "real incrementing stage index" from "one-time past-Stage-1 latch" without a
+      Stage-3 sample; the Castle Lololo pillar obstacle SOLVED via Kirby's actual float mechanic
+      (jump with `A`, then a second `A` press mid-air to float, then steer — not the prior session's
+      mistaken mid-air-`B` attempt).
+    - **Kirby GBA** (#170): `world@0x02006014` (constant `=1`) and `score@0x02006020` re-verified
+      under CONTINUOUS live play (stronger than prior disconnected snapshots); `A` (not `B`) confirmed
+      as the jump/float button, `B` eliminated as having no effect without an inhale target.
+    - **Emerald** (#170): Birch's Lab interior newly pinned at `(map_group, map_num) = (2, 13)`; the
+      outdoor `map_num` instability found (item 10); the Route 101 NPC gate identified as a hard
+      game-design blocker, not a navigation puzzle, tested and eliminated five different ways
+      (approach angle, waiting up to ~50s, visiting the Lab first, talk-vs-bump, 5 repeat cycles).
+12. **SAFETY:** no brain / `core/contracts.py` / tool-schema / `world_mcp.py` / pinned-Gate-0-file /
+    held-out-game edit anywhere this phase; no oracle address shipped unverified (all four hunts
+    explicitly declined to wire an unproven byte); all six PRs worktree-isolated; **$0 total for the
+    entire lane phase** (docs, offline probes, and $0 local emulator driving only — no paid brain
+    call, no Docker world-image spend).
+
+**=> NEXT (David, priority order):** (1) MiniWoB paid-seed human baseline — still the HARD BLOCKER
+for any clean Gate-0 verdict (`uv run --frozen python tools/capture_gate0_baseline_miniwob.py
+--mode paid_gate0 --i-am-human`, ~5 min, seeds 1000-1004 — carried forward unchanged from the PRIOR
+block below); (2) PR #129 exam freeze decision, now informed by the 4/10 scorable finding (item 4);
+(3) VizDoom held-out sign-off (item 5); (4) PR #162 Gate-0 v2 (NO-GO as drafted); (5) PR #138 NDS
+touch-drag (deferred to the next world-image rebuild).
+**Paid ledger this phase (2026-07-25, lane phase): $0 — six PRs, all docs/offline-probe work. No
+paid brain call, no Docker world-image spend. (Distinct from, and does not re-spend, the earlier
+2026-07-23/2026-07-24 Gate-0 paired-attempt spend of $1.4455 + the $0.08 M1 ping, both already
+banked in the PRIOR block below.)**
+
+_Prior update: 2026-07-25 (FIRST PAIRED Gate-0 attempt banked — both arms ran to completion over the
 codex app-server path; both frozen predicates FAIL; Constancy checked clean for the first time
 (tautological-by-construction); scorecard re-scored 19 -> 24/100, proposed for David's sanity-check.)_
 
-**=>=> NEWEST (2026-07-25) - FIRST PAIRED GATE-0 ATTEMPT BANKED: BOTH ARMS RAN; CAPABILITY/GENERALITY FAIL; SCORECARD 19->24/100 (PROPOSED). =>=>**
+**=>=> PRIOR (2026-07-25) - FIRST PAIRED GATE-0 ATTEMPT BANKED: BOTH ARMS RAN; CAPABILITY/GENERALITY FAIL; SCORECARD 19->24/100 (PROPOSED). =>=>**
 1. **DONE — both Gate-0 arms ran to completion over the codex app-server path, the first controlled
    Gate-0 attempt that has ever completed.** One attempt per arm, banked as-is, spent, per the
    gate-methodology one-attempt rule. `reports/2026-07-24-gate0-armR-verdict.md` (PR #161) and
