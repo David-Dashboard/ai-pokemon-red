@@ -1,5 +1,49 @@
 # Kirby's Dream Land (GB) — Stage-3 attempt for the EX02 oracle (2026-07-26)
 
+# ★★★ ANSWERED (2026-07-28): the EX02 stage oracle is `0xD03B`
+
+**A human (David) played Castle Lololo to its end and into Stage 3 with RAM sampling on**
+(`record.py --mode human --ram --watch ...`, 1,128 recorded steps, run
+`runs/2026-07-28_kirby_stage3_human/`). That produced the discriminating sample this hunt has
+needed since PR #169.
+
+| address | Stage 1 | Stage 2 | **Stage 3** | verdict |
+|---|---|---|---|---|
+| **`0xD03B`** | `0` | `1` | **`2`** | ★ **REAL STAGE COUNTER (0-indexed)** |
+| `0xD19F` | `0` | `1` | `1` | latch — ELIMINATED |
+| `0xD3A9` | `0` | `1` | `1` | latch — ELIMINATED |
+| `0xD3BA` | `0` | `1` | `1` | latch — ELIMINATED |
+| `0xD3CD` | `0` | `1` | `1` | latch — ELIMINATED |
+| `0xC057`, `0xC073`, `0xC07B` | — | vary *within* Stage 2 | — | ELIMINATED (this session, earlier) |
+
+Evidence, all from the one human run and verified against the full 8 KB WRAM dump (`ram.bin`,
+every one of the 1,128 steps — not just the sampled oracle rows):
+
+- `0xD03B` takes **only** the values `{1, 2}` across the whole run and changes **exactly once**.
+- The change lands on the Stage-2 → Stage-3 boundary: the **"STAGE 3 FLOAT ISLANDS" title card** is
+  on screen at the adjacent frame (`evidence/stage3_title_card.png`).
+- **It survives two deaths** (recorded at steps 414 and 766) without moving — the exact
+  falsification that killed the 2026-07-23 candidates `0xD052`/`0xD3EE`.
+- The other four are constant `1` for all 1,128 steps, *including inside Stage 3*. They encode
+  "past Stage 1" and nothing more, which is precisely the latch hypothesis PR #169 could not rule
+  out.
+
+So PR #169's two competing hypotheses are now separated: **one byte was the counter and four were
+latches.** A wired oracle built on any of the four would have silently passed EX02 the moment Kirby
+left Green Greens.
+
+⚠ **Still NOT wired, deliberately.** Editing `world_mcp.py` cascades into the frozen Gate-0
+host/image pins (same reason PR #138 is deferred). Wiring belongs in ONE batched PR with the other
+`watch = {}` worlds, timed with the next world-image rebuild.
+
+⚠ **Bound on the claim:** this is one transition (2→3) observed once, plus the 1→2 transition banked
+in PR #169 and the `0` baseline from a fresh boot. That is three anchors, not a stress test. Before
+anything is wired, confirm `0xD03B` reads `3` on the Stage-3 → Stage-4 boundary. Given this lane's
+history (Cave Noire `0xD389`, Emerald outdoor `map_num`, PR #169's lockstep claim), one more anchor
+is cheap insurance.
+
+---
+
 Status: **$0 local probe only, offline PyBoy, NO LLM, NO Docker, NO paid run.** Worktree
 `probe/kirby-gb-stage3` (`../ai-pokemon-red-kirby3`). Continues
 `reports/2026-07-25-oracle-kirby-gb-stage.md` (PR #169), whose banked next step was: *reach Stage 3

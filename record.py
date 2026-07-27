@@ -217,7 +217,7 @@ def main() -> int:
                 tag = f"  mode={mode} stalls={policy.stalls}" if policy is not None else ""
                 print(f"[{args.name}] auto step {i}/{args.steps}{tag}", flush=True)
     else:
-        _run_human(pb, args, record)
+        _run_human(pb, args, record, out)
 
     jf.close()
     if rf is not None:
@@ -229,7 +229,7 @@ def main() -> int:
     return 0
 
 
-def _run_human(pb, args, record):
+def _run_human(pb, args, record, out):
     import sdl2
     nkeys = ctypes.c_int(0)
     if args.keys == "wasd":
@@ -255,7 +255,9 @@ def _run_human(pb, args, record):
             print(f"[auto {'ON' if S['auto'] else 'OFF'}]", flush=True)
         if edge("c", sdl2.SDL_SCANCODE_C):
             S["ckpt"] += 1
-            p = os.path.join("runs", args.name, f"checkpoint_{S['ckpt']:02d}.state")
+            # NOT os.path.join("runs", args.name): the run dir is date-prefixed (see main()), so
+            # using the raw name wrote to a directory that does not exist and crashed the session.
+            p = os.path.join(out, f"checkpoint_{S['ckpt']:02d}.state")
             with open(p, "wb") as f:
                 pb.save_state(f)
             print(f"[checkpoint -> {p}]", flush=True)

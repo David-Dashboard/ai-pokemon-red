@@ -7,11 +7,33 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-26 (EX02 Kirby-GB stage-3 hunt, attempt 2 — reached the END of Castle Lololo
+_Last updated: 2026-07-28 (★ EX02 STAGE ORACLE FOUND: 0xD03B, from a human Stage-3 run; other 4 candidates eliminated as latches; NOT wired. Prior: attempt 2 — reached the END of Castle Lololo
 and the Lololo BOSS via a verified warp-star sequence; candidates narrowed 8 → 5; Stage 3 still NOT
 reached, blocked on winning the boss fight. $0. TWO of my own mechanism claims retracted mid-session.)_
 
-**=>=> NEWEST (2026-07-26) - EX02 KIRBY STAGE-3 HUNT #2: REACHED THE CASTLE LOLOLO BOSS; CANDIDATES 8 -> 5; STILL NO STAGE-3 SAMPLE. $0, PROBE ONLY. =>=>**
+**=>=> NEWEST (2026-07-28) - ★ EX02 STAGE ORACLE FOUND: `0xD03B`. HUNT ANSWERED. $0. =>=>**
+1. **`0xD03B` is Kirby's 0-indexed STAGE COUNTER** — reads `0` in Green Greens, `1` in Castle
+   Lololo, **`2` in Float Islands**. Found from a HUMAN run (David played Castle Lololo to its end
+   and into Stage 3 with `record.py --mode human --ram --watch`, 1,128 steps,
+   `runs/2026-07-28_kirby_stage3_human/`).
+2. **The other four candidates are LATCHES and are ELIMINATED**: `0xD19F`, `0xD3A9`, `0xD3BA`,
+   `0xD3CD` all stay `1` *inside Stage 3*. They encode "past Stage 1" only. A wired oracle on any of
+   them would have silently passed EX02 the moment Kirby left Green Greens. (`0xC057/0xC073/0xC07B`
+   were eliminated earlier the same session — they vary WITHIN Stage 2.) So PR #169's 8 → 1.
+3. **Verified against the full 8KB WRAM dump, all 1,128 steps** (not just sampled oracle rows):
+   `0xD03B` takes only {1,2}, changes exactly once, on the frame adjacent to the "STAGE 3 FLOAT
+   ISLANDS" title card, and **survives two deaths** (steps 414, 766) — the exact falsification that
+   killed the 2026-07-23 candidates.
+4. ⚠ **NOT WIRED, deliberately** — editing `world_mcp.py` cascades into the frozen Gate-0
+   host/image pins (same reason PR #138 is deferred). Wire in ONE batched PR with the other
+   `watch = {}` worlds at the next world-image rebuild.
+5. ⚠ **Bound:** three anchors (0/1/2), not a stress test. Confirm `0xD03B` reads `3` at the
+   Stage-3 → Stage-4 boundary before wiring. This lane has been burned three times by
+   too-few-anchors readings.
+6. Also fixed: `record.py`'s `C` (checkpoint) hotkey wrote to `runs/<name>/` instead of the
+   date-prefixed run dir, crashing the session with FileNotFoundError.
+
+**=>=> PRIOR (2026-07-26) - EX02 KIRBY STAGE-3 HUNT #2: REACHED THE CASTLE LOLOLO BOSS; CANDIDATES 8 -> 5; STILL NO STAGE-3 SAMPLE. $0, PROBE ONLY. =>=>**
 Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
 `reports/2026-07-26-oracle-kirby-gb-stage3.md`. Continues PR #169.
 1. **EX02 IS STILL `ORACLE_PENDING` AND NOTHING WAS WIRED.** `eval/score_exam_kirby_stage3.py`
