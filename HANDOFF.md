@@ -32,11 +32,18 @@ Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
    floors, whose door leads to the battlements; from there the game flies Kirby on a **warp star** into
    the **Lololo boss room** (boss meter = skull + 3 boxes replacing the score row). Verified
    frame-by-frame. `cont_boss2.state` is a banked, controllable boss-room arrival.
-5. **BLOCKED ON WINNING THE BOSS FIGHT.** 948 trials across four approaches (uniform random,
-   structured inhale/spit cycles, reactive controller camping right, reactive controller camping left)
-   landed **zero** boss damage. A RAM sweep for a monotonically-decreasing small byte over a whole
-   fight found exactly one — `0xD086`, Kirby's own HP — so this is a play-capability problem, not a
-   reward-detection one. Kirby arrives with 1-2 HP and dies in ~1000 frames.
+5. **★ THE LOLOLO BOSS IS BEATEN** (`beat_lololo.py`, seed 600000 from `boss_fresh.state`): meter
+   72 → 0, Kirby alive hp 3. Three unlocks after 948 blind trials had landed ZERO damage: match
+   Kirby's HEIGHT to the ledge the block travels on before inhaling (he was inhaling into empty air
+   one ledge below); start at full HP (dying in the boss room respawns hp=6 AND resets the boss);
+   all 3 hits must land on ONE life. Control run — Kirby dying with no input leaves the meter at 72
+   — proves the drops were real hits.
+   **BUT THERE IS NO STAGE-CLEAR: Lololo here is a mid-stage encounter, not Castle Lololo's end.**
+   `advance.py` chained 5 further rooms (score 49960 → 53260); the five candidates read `1` in every
+   one. ⚠ That is NOT the answer — it is only evidence about rooms still inside Stage 2. Calling it
+   a latch now would repeat the too-few-anchors error this lane has made three times. VERDICT OPEN.
+   Also: input is ignored for a few hundred frames after the win — settle before acting or a room
+   looks like a dead end when it is not.
 6. **⚠ TWO OF MY OWN MECHANISM CLAIMS RETRACTED MID-SESSION, both banked then corrected:**
    (a) "randomised search corrupts the game" — it does not; the missing score row is the boss/area
    HUD, and I had built a "validity guard" encoding the assumption, after which 200 trials

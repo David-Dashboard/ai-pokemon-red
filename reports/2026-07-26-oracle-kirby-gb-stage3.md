@@ -231,12 +231,25 @@ Three things made the difference, after 948 trials of blind search had landed ze
    a control run: letting Kirby die with **no input at all** leaves the meter at 72, which also
    proves the meter drops were real hits and not a death artifact.
 
-**The result EX02 wanted, so far:** immediately after the win, and through the next two rooms
-reached by `advance.py`, `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` **all still read `1`**
-(score 49960 → 51240, `0xD052` cycling 1/7/9). ⚠ This is **not yet the answer** — the stage has not
-demonstrably rolled over to Stage 3 (no title card seen, and Lololo may be a mid-stage encounter
-rather than Castle Lololo's final boss). Reading it as "the bytes are a latch" would be exactly the
-too-few-anchors error this lane keeps making. **The verdict stays open.**
+### What happens after the win, and why the verdict is still open
+
+- **There is no stage-clear sequence.** Idling 2400 frames after the win does nothing: Kirby is
+  parked in a doorway, score frozen at 49960. So **Lololo here is a mid-stage encounter, not Castle
+  Lololo's final boss** — or the stage's end is several rooms further on. Either way, beating it did
+  not end Stage 2.
+- **Input is ignored for a few hundred frames after the win.** Every exit tried immediately
+  (`up` in the doorway, walk left/right, float right) moved nothing; the same inputs work after
+  ~600 idle frames. Settle before acting, or a room will look like a dead end when it isn't.
+- **`advance.py` chained forward 5 further rooms** (score 49960 → 51240 → 51660 → 52460 → 53260),
+  each time by searching for a transition, taking it, and re-searching. It stalls every few rooms and
+  needs a new angle each time.
+- **Through every one of those rooms the five candidates read `1`.**
+
+⚠ **This is NOT the answer, and must not be recorded as one.** "The bytes stayed 1 after the boss"
+is only evidence about *rooms still inside Stage 2*. Concluding "therefore they are a latch" would
+be exactly the too-few-anchors error this lane has now made three times (Cave Noire `0xD389`,
+Emerald outdoor `map_num`, and PR #169's own lockstep claim). **The verdict stays OPEN until a
+sample from an actual Stage 3 exists.**
 
 ## The Lololo fight, as characterised before it was won
 
