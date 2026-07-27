@@ -94,9 +94,40 @@ exactly on both arms — including `world_image_id`, `tool_schema_sha256`, `brai
 `task_sha256`, the MCP server/tool inventory, and host-vs-image code parity
 (`host_code_sha256 == image_code_sha256`, i.e. no `stale_world_image`).
 
-Note what Mode B does **not** buy: the ceiling is `NO_GO_INSUFFICIENT_WAKES`, not `PASS`. `audit()`
-is permanently fail-closed on wake accounting (`check_gate0_codex.py:267-281`, 296-298). Even a
-perfectly-pinned run could not have produced a Gate-0 capability PASS through this path.
+**Reading Mode B correctly — `NO_GO_INSUFFICIENT_WAKES` here is not a verdict.** What Mode B proves
+is that with the pin resolution applied, **both arms' failure lists are empty** — `constancy`,
+`leak`, `accounting`, and `run` all `[]`. The accompanying `overall: "NO_GO_INSUFFICIENT_WAKES"` is
+`audit()`'s *terminal value for any clean run*: `check_gate0_codex.py:290-291` is the final `else`
+after the four failure-list branches, and `wakes`/`wake_accounting` are hardcoded literals at
+`:297-298`. A clean audit cannot report anything else on that field. It is a floor, not a finding.
+
+Do not quote it as the gate result. `reports/2026-07-18-gate0-prereg.md:82-84`, verbatim:
+
+> - `tools/check_gate0_codex.py`'s own `overall`/`no_leak`/`wake_accounting` fields (e.g.
+>   `NO_GO_INSUFFICIENT_WAKES`) are an **intermediate per-arm audit input** consumed by
+>   `score_gate0.py`, not the gate's printed verdict — do not quote them as the Gate 0 result.
+
+The Gate-0 verdict is `eval/score_gate0.py::score()["overall"]`, which **does** reach `PASS`/`GO`
+(`score_gate0.py:363-364`, the terminal `else`). `score()` consumes only the four failure lists —
+`leak_failures`/`constancy_failures`/`run_failures` at `:307-310` and `accounting_failures` at
+`:326` — and never reads `audit["overall"]`. Wakes have been **deferred and explicitly non-gating**
+since David's 2026-07-21 decision (`score_gate0.py:263-270`, `:290-291`, and the verdict payload's
+`wake_accounting: {"status": "DEFERRED"}` at `:366-372`). Gate 0 was structurally unpassable for
+exactly one day — 2026-07-21, while the pre-amendment scorer still required
+`wake_accounting == "PASS"` — documented and closed at
+`reports/2026-07-13-minimum-north-star-gate-0-design.md:412-415`.
+
+So: Mode B does not show the harness is unpassable. It shows the *pin chain* would have been clean.
+
+**And the harness was not what stopped these arms.** Both frozen capability predicates returned
+`False` on real, substantive grounds, independent of every pin issue in this addendum: Arm R on
+`red_no_sustained_battle_exit` (`reports/2026-07-24-gate0-paired-verdict.md:38`) and Arm W on
+`miniwob_episode_1_terminal_not_success` — seed 1001 at reward 0.667, a genuine partial
+(`:48`). Had the pins been clean, precedence would have carried past `constancy` to
+`capability`, and the printed verdict would have been `FAIL_CAPABILITY`/`NO_GO`, not `PASS`. **The
+gate discriminated on real capability.** The breach is a measurement-chain defect that voided the
+attempt before scoring reached that discrimination — it is not the reason the arms did not pass, and
+nobody should read this addendum as blaming the harness for the outcome.
 
 ---
 
