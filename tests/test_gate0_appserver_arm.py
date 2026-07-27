@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 
+import tools.check_gate0_codex as checker
 from tools.check_gate0_codex import TOOLS
 from tools.gate0_credit_breaker import LIMIT_NORMALIZED_CREDITS
 import tools.gate0_appserver_arm as arm_mod
@@ -16,12 +17,14 @@ from tools.gate0_appserver_arm import (
     ARM_IMAGE_IDS,
     ARM_SOFT_CREDIT_CAPS,
     HARD_CREDIT_CAP,
+    LAUNCH_INVOCATION_DEPENDENT_MARKER,
     MultiCallStubAppServerPeer,
     SoftCapWatcher,
     adapt_app_server_notifications_to_exec_shape,
     build_agent_metrics,
     build_docker_mcp_args,
     resolve_isolated_codex_home,
+    resolve_expected_pins,
     ensure_wake_boundary_artifact,
     main,
     refuse_if_already_completed,
@@ -30,6 +33,7 @@ from tools.gate0_appserver_arm import (
     render_world_config_toml,
     run_gate0_arm_turn,
     task_text_for,
+    verify_launch_signature_unchanged,
 )
 from tools.gate0_appserver_launch import ObservingGate0Client
 
@@ -581,6 +585,51 @@ def test_unknown_arm_is_rejected(tmp_path):
         main(["--arm", "chess", "--out-dir", str(tmp_path / "out"), "--dry-run"])
 
 
+def test_validate_args_forces_out_dir_absolute(tmp_path, monkeypatch):
+    # Regression (adversarial review of PR #163, correction 4): out_dir used to stay whatever
+    # relative string argparse handed back, so build_docker_mcp_args' `world_dir.resolve()`
+    # (world_dir is derived from out_dir) resolved against the PROCESS'S CURRENT cwd -- the same
+    # launch spec run from a different cwd would silently render a DIFFERENT config.toml (a
+    # different absolute mount source), the exact bug class the exec path's
+    # Confirm-PaidExecSignature caught and this path did not.
+    from pathlib import Path
+    monkeypatch.chdir(tmp_path)
+    parser = arm_mod.build_arg_parser()
+    args = parser.parse_args(["--arm", "red", "--out-dir", "relative_out", "--dry-run"])
+    assert not Path(args.out_dir).is_absolute()
+    arm_mod._validate_args(parser, args)
+    assert Path(args.out_dir).is_absolute()
+    assert Path(args.out_dir) == (tmp_path / "relative_out").resolve()
+
+
+def test_main_with_a_relative_out_dir_still_resolves_the_world_mount_absolutely(tmp_path, monkeypatch):
+    # End-to-end companion to the --validate-args unit test above: the concrete symptom
+    # correction 4 closes is build_docker_mcp_args' `world_dir.resolve()` (called from
+    # --seam-check --with-tools-list and _run_real) anchoring on the process cwd instead of the
+    # launch spec. Drive it through main() with a relative --out-dir and confirm the world mount
+    # source captured by the (mocked) docker call is absolute and correct regardless of cwd.
+    import os
+    from pathlib import Path
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                         lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    captured_mcp_args = {}
+
+    def _fake_tools_list(docker_path, mcp_args):
+        captured_mcp_args["value"] = mcp_args
+        return [{"name": t} for t in TOOLS["red"]]
+    monkeypatch.setattr(arm_mod, "docker_tools_list", _fake_tools_list)
+
+    exit_code = main(["--arm", "red", "--out-dir", "relative_out2", "--seam-check",
+                       "--with-tools-list"])
+    assert exit_code == 0
+    world_mount = next(a for a in captured_mcp_args["value"] if "target=/app/world" in a)
+    src = world_mount.split("source=", 1)[1].rsplit(",target=", 1)[0]
+    assert os.path.isabs(src)
+    assert Path(src) == (tmp_path / "relative_out2" / "world").resolve()
+
+
 # ---------------------------------------------------------------------------
 # agent_metrics.json builder -- human_* copy-vs-missing (the MiniWoB PENDING caveat).
 # ---------------------------------------------------------------------------
@@ -700,6 +749,49 @@ def test_seam_check_with_tools_list_uses_the_mocked_handshake_never_real_docker(
     assert result["checks"]["tools_list_matches_allowlist"]["ok"] is True
 
 
+def test_seam_check_with_tools_list_writes_a_reproducible_mcp_tools_json_and_hash(tmp_path, monkeypatch):
+    # 2026-07-25 fix (adversarial review of PR #163, correction 1): --seam-check --with-tools-list
+    # used to only report tool NAMES inline and never write mcp-tools.json or compute any hash, so
+    # the .appserver.json fixtures' provenance notes describing a reproducible tool_schema_sha256
+    # recipe via this exact invocation were not actually true of this code. Now it must write
+    # mcp-tools.json with the SAME serialization _run_real uses (json.dumps(tools) + "\n") and
+    # record its sha256 in seam_check.json.
+    import hashlib
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                         lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    tools = [{"name": t} for t in TOOLS["red"]]
+    monkeypatch.setattr(arm_mod, "docker_tools_list", lambda docker_path, mcp_args: tools)
+
+    out_dir = tmp_path / "out"
+    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check",
+                       "--with-tools-list"])
+    assert exit_code == 0
+
+    mcp_tools_path = out_dir / "mcp-tools.json"
+    assert mcp_tools_path.is_file()
+    expected_bytes = json.dumps(tools) + "\n"
+    assert mcp_tools_path.read_text(encoding="utf-8") == expected_bytes
+    expected_sha = hashlib.sha256(expected_bytes.encode("utf-8")).hexdigest()
+
+    result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
+    assert result["tool_schema_sha256"] == expected_sha
+
+
+def test_seam_check_without_tools_list_writes_no_mcp_tools_json_or_hash(tmp_path, monkeypatch):
+    # Plain --seam-check (no --with-tools-list) must not claim a tool_schema_sha256 it never
+    # derived.
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                         lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    out_dir = tmp_path / "out"
+    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+    assert exit_code == 0
+    assert not (out_dir / "mcp-tools.json").exists()
+    result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
+    assert "tool_schema_sha256" not in result
+
+
 # ---------------------------------------------------------------------------
 # Low-level docker/codex probe functions -- exercised with a monkeypatched subprocess.run, never a
 # real process.
@@ -733,3 +825,232 @@ def test_docker_image_inspect_id_fails_closed_on_nonzero_exit(monkeypatch):
                                                           returncode=1))
     with pytest.raises(RuntimeError):
         arm_mod.docker_image_inspect_id("docker", "some-tag")
+
+
+# ---------------------------------------------------------------------------
+# Expected-pins resolution -- closes the app-server expected-pins gap: the first real Gate 0 Arm R
+# app-server run reported a BENIGN CONSTANCY_BREACH (pin_mismatch on config_sha256/
+# codex_mcp_list_sha256/tool_schema_sha256) because check_gate0_codex.audit() was handed the raw,
+# static .appserver.json fixture -- whose two launch-invocation-dependent fields hold a literal
+# CONSTRAINT marker string a real receipt can never equal -- directly as `expected_pins`.
+# ---------------------------------------------------------------------------
+
+def _load_real_appserver_fixture(arm):
+    path = arm_mod.REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_resolve_expected_pins_substitutes_only_the_two_launch_dependent_fields():
+    base = {
+        "schema_version": 2, "planned_model": "gpt-5.6-sol",
+        "config_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER,
+        "codex_mcp_list_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER,
+        "tool_schema_sha256": "a" * 64,
+    }
+    resolved = resolve_expected_pins(base, config_sha256="b" * 64, codex_mcp_list_sha256="c" * 64)
+    assert resolved["config_sha256"] == "b" * 64
+    assert resolved["codex_mcp_list_sha256"] == "c" * 64
+    assert resolved["tool_schema_sha256"] == "a" * 64  # untouched
+    assert resolved["planned_model"] == "gpt-5.6-sol"  # untouched
+    assert base["config_sha256"] == LAUNCH_INVOCATION_DEPENDENT_MARKER  # base dict not mutated
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolve_expected_pins_works_against_the_real_committed_fixture(arm):
+    base = _load_real_appserver_fixture(arm)
+    resolved = resolve_expected_pins(base, config_sha256="d" * 64, codex_mcp_list_sha256="e" * 64)
+    assert resolved["config_sha256"] == "d" * 64
+    assert resolved["codex_mcp_list_sha256"] == "e" * 64
+    # every other PIN_FIELD is the real, committed, independently-frozen value -- untouched:
+    for field in checker.PIN_FIELDS:
+        if field in ("config_sha256", "codex_mcp_list_sha256"):
+            continue
+        assert resolved[field] == base[field]
+
+
+@pytest.mark.parametrize("field", ["config_sha256", "codex_mcp_list_sha256"])
+def test_resolve_expected_pins_refuses_to_overwrite_an_already_real_value(field):
+    # Defensive: if a future edit ever puts a real hash in the fixture instead of the documented
+    # marker, this must fail loud, not silently stop checking that field.
+    base = {"config_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER,
+            "codex_mcp_list_sha256": LAUNCH_INVOCATION_DEPENDENT_MARKER}
+    base[field] = "f" * 64
+    with pytest.raises(ValueError, match="not the documented"):
+        resolve_expected_pins(base, config_sha256="b" * 64, codex_mcp_list_sha256="c" * 64)
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolved_real_fixture_produces_zero_pin_mismatches_for_a_matching_receipt(arm):
+    """THE decisive POSITIVE proof: a receipt whose fields genuinely match the real, committed
+    .appserver.json fixture (post-resolution for the two launch-dependent fields) audits clean
+    against check_gate0_codex._expected_failures -- the exact check that produced the false
+    CONSTANCY_BREACH on the real, completed Arm R app-server run before this fix."""
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    resolved = resolve_expected_pins(base, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    assert checker._expected_failures(receipt, resolved) == []
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolved_real_fixture_still_catches_a_genuinely_wrong_tool_inventory(arm):
+    """THE decisive NEGATIVE proof (build-spec requirement 4): a genuinely different
+    tool_schema_sha256 -- representing a real, different tool inventory, exactly the kind of drift
+    this pin exists to catch -- MUST still produce pin_mismatch:tool_schema_sha256 against the
+    fixed, real fixture. Proves the fix (re-deriving tool_schema_sha256 for the app-server's own
+    serialization) did not make the check vacuous."""
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt["tool_schema_sha256"] = "9" * 64  # genuinely wrong -- a different tool inventory
+    resolved = resolve_expected_pins(base, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    assert checker._expected_failures(receipt, resolved) == ["pin_mismatch:tool_schema_sha256"]
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_resolved_real_fixture_still_catches_a_genuinely_wrong_model(arm):
+    # A second, independent negative case (not just tool_schema_sha256): any of the 18
+    # non-launch-dependent PIN_FIELDS still catches real drift too.
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt["planned_model"] = "gpt-wrong-model"
+    resolved = resolve_expected_pins(base, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    assert checker._expected_failures(receipt, resolved) == ["pin_mismatch:planned_model"]
+
+
+def test_full_audit_via_resolved_expected_pins_reports_zero_pin_mismatch(tmp_path):
+    """Integration proof: resolve_expected_pins() plumbed through the real, unmodified
+    check_gate0_codex.audit() end to end reports zero pin_mismatch:* constancy failures -- the
+    exact three fields (config_sha256, codex_mcp_list_sha256, tool_schema_sha256) the real
+    completed Arm R app-server run's first audit incorrectly flagged."""
+    out_dir = tmp_path / "out"
+    receipt_path, _ = _fixture_for_audit(out_dir, arm="red")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+
+    base_expected = dict(receipt)  # stand-in for the 18 real, independently-frozen pins
+    base_expected["config_sha256"] = LAUNCH_INVOCATION_DEPENDENT_MARKER
+    base_expected["codex_mcp_list_sha256"] = LAUNCH_INVOCATION_DEPENDENT_MARKER
+    resolved = resolve_expected_pins(base_expected, config_sha256=receipt["config_sha256"],
+                                     codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    resolved_path = out_dir / "expected-pins.resolved.json"
+    resolved_path.write_text(json.dumps(resolved), encoding="utf-8")
+
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")  # no real transcript needed for this proof
+    from tools.check_gate0_codex import audit as check_audit
+    result = check_audit(transcript_path, receipt_path, resolved_path, out_dir, "red")
+    pin_mismatches = [f for f in result["constancy_failures"] if f.startswith("pin_mismatch:")]
+    assert pin_mismatches == []
+    verify_launch_signature_unchanged(receipt, out_dir)  # must not raise -- artifacts untouched
+
+
+def test_verify_launch_signature_unchanged_passes_when_artifacts_match_the_receipt(tmp_path):
+    import hashlib
+    (tmp_path / "launch" / ".codex").mkdir(parents=True)
+    (tmp_path / "launch" / ".codex" / "config.toml").write_text("config", encoding="utf-8")
+    (tmp_path / "codex-mcp-list.json").write_text("[]", encoding="utf-8")
+    receipt = {
+        "config_sha256": hashlib.sha256(b"config").hexdigest(),
+        "codex_mcp_list_sha256": hashlib.sha256(b"[]").hexdigest(),
+    }
+    verify_launch_signature_unchanged(receipt, tmp_path)  # must not raise
+
+
+def test_verify_launch_signature_unchanged_fails_loud_when_config_drifted(tmp_path):
+    (tmp_path / "launch" / ".codex").mkdir(parents=True)
+    (tmp_path / "launch" / ".codex" / "config.toml").write_text("config", encoding="utf-8")
+    (tmp_path / "codex-mcp-list.json").write_text("[]", encoding="utf-8")
+    receipt = {"config_sha256": "0" * 64, "codex_mcp_list_sha256": "0" * 64}  # stale/wrong
+    with pytest.raises(SystemExit, match="launch signature mismatch"):
+        verify_launch_signature_unchanged(receipt, tmp_path)
+
+
+def test_verify_launch_signature_unchanged_fails_loud_when_mcp_list_drifted(tmp_path):
+    import hashlib
+    (tmp_path / "launch" / ".codex").mkdir(parents=True)
+    (tmp_path / "launch" / ".codex" / "config.toml").write_text("config", encoding="utf-8")
+    (tmp_path / "codex-mcp-list.json").write_text("[]", encoding="utf-8")
+    receipt = {"config_sha256": hashlib.sha256(b"config").hexdigest(),
+               "codex_mcp_list_sha256": "0" * 64}  # stale/wrong
+    with pytest.raises(SystemExit, match="launch signature mismatch"):
+        verify_launch_signature_unchanged(receipt, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# _finalize_real_run -- the ordering fix (PR #163 adversarial review, correction 5): a launch-
+# signature mismatch must never leave a spent paid run with no agent_metrics.json/run-receipt.json
+# (which would make it both unscorable AND unretryable, since refuse_if_already_completed already
+# sees transcript.raw_appserver.jsonl on disk from the start of the turn).
+# ---------------------------------------------------------------------------
+
+def _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path, human_path):
+    return dict(receipt=receipt, receipt_path=receipt_path, transcript_path=transcript_path,
+                out_dir=out_dir, arm="red", wall_clock_s=12.0, credits_result={},
+                rate_pin=_RATE_PIN, watcher=SoftCapWatcher(soft_cap=100.0, rate_pin=None),
+                auth_note="test", model="gpt-5.6-sol", human_path=human_path)
+
+
+def test_finalize_real_run_writes_metrics_and_receipt_even_on_signature_mismatch(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")
+    receipt = {"config_sha256": "0" * 64, "codex_mcp_list_sha256": "0" * 64,
+               "world_image_id": "sha256:" + "a" * 64}
+    receipt_path = out_dir / "handshake-receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    def _boom(receipt, out_dir):
+        raise SystemExit("launch signature mismatch: fixture-injected drift")
+    monkeypatch.setattr(arm_mod, "verify_launch_signature_unchanged", _boom)
+
+    kwargs = _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path,
+                               tmp_path / "missing_human.json")
+    with pytest.raises(SystemExit, match="launch signature mismatch"):
+        arm_mod._finalize_real_run(**kwargs)
+
+    # The whole point of the fix: both artifacts exist despite the raised SystemExit.
+    assert (out_dir / "agent_metrics.json").is_file()
+    assert (out_dir / "run-receipt.json").is_file()
+    run_receipt = json.loads((out_dir / "run-receipt.json").read_text(encoding="utf-8"))
+    assert run_receipt["audit_overall"] == "LAUNCH_SIGNATURE_MISMATCH"
+    # No expected-pins resolution was attempted against the drifted/tampered config.
+    assert not (out_dir / "expected-pins.resolved.json").exists()
+
+
+def test_finalize_real_run_success_path_still_resolves_pins_and_scores(tmp_path, monkeypatch):
+    arm = "red"
+    base = _load_real_appserver_fixture(arm)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    receipt = {f: base[f] for f in checker.PIN_FIELDS
+               if f not in ("config_sha256", "codex_mcp_list_sha256")}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt_path = out_dir / "handshake-receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(arm_mod, "verify_launch_signature_unchanged", lambda receipt, out_dir: None)
+
+    kwargs = _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path,
+                               tmp_path / "missing_human.json")
+    result = arm_mod._finalize_real_run(**kwargs)
+
+    resolved = json.loads((out_dir / "expected-pins.resolved.json").read_text(encoding="utf-8"))
+    assert checker._expected_failures(receipt, resolved) == []
+    run_receipt = json.loads((out_dir / "run-receipt.json").read_text(encoding="utf-8"))
+    assert run_receipt["audit_overall"] != "LAUNCH_SIGNATURE_MISMATCH"
+    assert (out_dir / "agent_metrics.json").is_file()
+    assert result["run_receipt"] == run_receipt

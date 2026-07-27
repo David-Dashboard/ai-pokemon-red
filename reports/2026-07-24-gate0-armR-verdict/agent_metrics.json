@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "arm": "red",
+  "role": "agent",
+  "mode": "paid_gate0",
+  "wall_clock_s": 127.75,
+  "primitive_actions": 142,
+  "human_wall_clock_s": 233.288,
+  "human_primitive_actions": 271,
+  "human_source_note": "copied from E:\\AI_Personas\\10_pokemon_and_chess_and_office\\ai-pokemon-red\\runs\\gate0_human_baseline\\red\\human_metrics.json",
+  "cost_usd": 0.41589099999999996,
+  "normalized_credits": 10.397274999999999
+}

@@ -96,6 +96,18 @@ GAME = "miniwob_click_checkboxes"
 # so a future scorer/verdict-writer can see this from the artifact alone, not just doc prose.
 CAPTURE_MODALITY = "screenshot_relay_typed_action"
 
+# The scroll escape hatch the operator is shown, and how their `key NAME` is delivered. BOTH are
+# recorded verbatim in the artifact because they are INTERFACE ASYMMETRIES vs the paid agent, which a
+# frozen-sha256 artifact must carry on its face: world_mcp.py's press_key schema documents a key NAME
+# (the field is really an index, so the agent's raw name raises ValueError), and its click rejection
+# tells the agent anything below y=176 is "unreachable" without mentioning that the page scrolls.
+# Both asymmetries make the HUMAN faster, i.e. they make the `agent <= 2.0x human` bar HARDER -- they
+# are conservative in the right direction, but an auditor reading only the artifact must still see them.
+OPERATOR_HINT = ("The page SCROLLS: if Submit renders below the 160x177 viewport (6-checkbox layouts "
+                 "put it at y=180, unclickable), 'key ArrowDown' twice scrolls it up into reach -- "
+                 "then re-read the new screenshot, everything has moved up ~39px.")
+PRESS_KEY_RESOLUTION = "name->index (agent received raw-name passthrough)"
+
 # Per-mode defaults. paid_gate0's real_out is the EXACT path
 # eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names -- keep in sync if
 # that fixture ever moves. Both live under the repo-wide gitignored runs/ (never committed).
@@ -156,8 +168,14 @@ def _save_screenshot(sess, path: str) -> None:
     Image.fromarray(sess.mw.screenshot).convert("RGB").save(path)
 
 
-def _prompt_action(prompt: Callable[[str], str]) -> tuple[str, dict]:
-    """Loop until David types a well-formed action; return (tool_name, args) or ("quit", {})."""
+def _prompt_action(prompt: Callable[[str], str], allowed_keys: list[str]) -> tuple[str, dict]:
+    """Loop until David types a well-formed action; return (tool_name, args) or ("quit", {}).
+
+    `allowed_keys` is the LIVE env's own PRESS_KEY vocabulary (miniwob ActionSpaceConfig.allowed_keys,
+    e.g. "<Tab>", "<Enter>"). miniwob's PRESS_KEY field is an INDEX into that list -- its executor does
+    `key_idx = int(action["key"])` (site-packages/miniwob/selenium_actions.py:161) -- so a typed name
+    must be resolved to its index here or every `key NAME` dies on `int('Tab')`. Resolved against the
+    live list rather than a hardcoded index, so the human's key vocabulary is exactly the agent's."""
     while True:
         raw = prompt("action (click X Y | type TEXT | key NAME | quit)> ").strip()
         if not raw:
@@ -176,7 +194,13 @@ def _prompt_action(prompt: Callable[[str], str]) -> tuple[str, dict]:
         elif head == "type" and len(parts) == 2:
             return "type_text", {"text": parts[1]}
         elif head == "key" and len(parts) == 2:
-            return "press_key", {"key": parts[1]}
+            name = parts[1].strip()
+            for candidate in (name if name.startswith("<") else f"<{name}>", name):
+                if candidate in allowed_keys:
+                    return "press_key", {"key": str(allowed_keys.index(candidate))}
+            print(f"key {name!r} isn't in this environment's key vocabulary. Try one of: "
+                  + ", ".join(k.strip("<>") for k in allowed_keys[:11]) + ".")
+            continue
         print("Didn't understand that. Examples: 'click 42 118', 'type hello', 'key Enter', 'quit'.")
 
 
@@ -298,6 +322,7 @@ def run(args, prompt: Callable[[str], str] = input,
         print(f"5 fresh DEV episodes, seeds {expected_seeds}. Every screenshot is saved to {args.out}/ "
               "and popped open for you.")
     print("The timer starts on your FIRST action. Type 'quit' at any prompt to abort.")
+    print(OPERATOR_HINT)
 
     first_action_perf: float | None = None
     started_at = None
@@ -307,6 +332,10 @@ def run(args, prompt: Callable[[str], str] = input,
     input_event_times: list[float] = []
 
     try:
+        # Inside the try that owns sess.close(): the browser is already live by here, so a failure
+        # reading the env's key vocabulary must still close Chromium and write an INCOMPLETE artifact.
+        # miniwob's PRESS_KEY field is an index into THIS list (see _prompt_action).
+        allowed_keys = list(sess.mw.env.unwrapped.action_space_config.allowed_keys)
         while not sess._exhausted:
             png_path = os.path.join(args.out, f"ep{sess._episode_idx}_step{step_img}.png")
             _save_screenshot(sess, png_path)
@@ -314,7 +343,7 @@ def run(args, prompt: Callable[[str], str] = input,
             print(f"[episode {sess._episode_idx} -- screenshot -> {png_path}]")
             opener(png_path)
 
-            tool, tool_args = _prompt_action(prompt)
+            tool, tool_args = _prompt_action(prompt, allowed_keys)
             if tool == "quit":
                 quit_requested = True
                 break
@@ -359,6 +388,11 @@ def run(args, prompt: Callable[[str], str] = input,
         "oracle_path": os.path.normpath(oracle_path),
         "test_mode": bool(args.test),
         "capture_modality": CAPTURE_MODALITY,
+        # Interface asymmetry vs the paid agent, on the face of the artifact (see OPERATOR_HINT): the
+        # exact hint the human was shown, which the agent's own tool docs do not give it, and the fact
+        # that the human's `key NAME` was resolved to an index while the agent's was passed through raw.
+        "operator_hint": OPERATOR_HINT,
+        "press_key_resolution": PRESS_KEY_RESOLUTION,
         # one-cold-attempt bookkeeping (DAVID_BASELINES.md "Re-run rule"): attempt_number is 1 for a
         # normal first capture; retake_reason is only ever non-empty when --allow-retake overrode an
         # existing canonical human_metrics.json.
