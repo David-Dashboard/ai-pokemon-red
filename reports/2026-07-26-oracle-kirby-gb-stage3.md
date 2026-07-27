@@ -43,13 +43,23 @@ minor hits (best score gain 400) but never won. So no Stage-2 → Stage-3 transi
 stuck than PR #169's (which never left the first corridor), and the remaining gap is one won boss
 fight.
 
-⚠ **Rig gotcha that cost hours: a savestate saved at the wrong moment yields a Kirby who cannot move
-horizontally.** In several boss-room states Kirby responded to jump (y changed) but `right` did
-nothing across 400+ frames and 4800 idle frames, with empty background tiles beside him — he simply
-never moved. The same point reached in **one continuous run, with no save/load in between, is fully
-controllable** (`(6,96) -> (148,96)` on a single 150-frame `right`). Savestate-chaining is still the
-right technique for sweeps, but **any "Kirby is stuck" conclusion must be re-tested continuously
-before it is believed.** Two dead ends in this session were this artifact, not the game.
+⚠ **RETRACTED — "savestates yield a frozen Kirby" was my second wrong mechanism claim here.** I
+reported that savestate-chaining produced a Kirby who could not move horizontally. It did not. Two
+separate measurement bugs produced that illusion:
+1. **A hardcoded Kirby sprite-tile set.** I identified Kirby by tiles `{0,1,2,3,16,...,51}`, which
+   covers only some of his animation frames. When he walked he switched to tiles outside the set and
+   read as "not on screen" or as a stale position — so he looked stationary while actually moving.
+2. **Pressing into a wall.** Boss-room states have Kirby at screen x≈148 (the right edge) or x≈4
+   (the left edge). I tested `right` at the right wall and `left` at the left wall and read "no
+   movement" as "frozen".
+
+Corrected method: identify Kirby by *which sprites respond to input*, not by a tile whitelist, and
+always test **both** directions. Savestate-chaining is fine and remains the right technique.
+
+The general lesson is the same one as the "corruption" retraction earlier in this document, and it
+has now cost this session twice: **I inferred a broken mechanism from a measurement I had not
+validated.** Both times the cheap check — vary the suspected cause and see whether the effect
+follows — settled it in one run.
 
 ## ★ The 8 survivors narrow to 5 (and a false alarm I raised and then withdrew)
 
@@ -205,6 +215,43 @@ them.** The falsifying test is unchanged and still unrun: reach Stage 3 and read
    express.
 5. Incidental but useful: **dying is a free full heal** (HP back to 6) at the cost of one life, and
    the respawn checkpoint is early enough that step 1 re-reaches the corridor end in ~10 seconds.
+
+## The Lololo fight, characterised but not won
+
+Everything below is measured, and it is the state of the art for whoever picks this up.
+
+- **The arena.** One screen, no scroll. Three horizontal ledges (tile rows 2, 6, 10) over a solid
+  floor (rows 14-15). Kirby arrives at the right edge (screen x≈148).
+- **The boss meter is real and it is the reward signal.** The score row is replaced by a skull icon
+  plus **3 boxes** (screen x 44-80, y 128-136; 72 dark px at full health). Confirmed by zooming the
+  HUD strip against a normal room, which shows `Sc: NNNNN` in the same place.
+- **The pattern.** Lololo enters from the RIGHT pushing a block LEFTWARD along one ledge, exits
+  left, returns rightward, then repeats on a *different* ledge (observed order y=64 → 96 → 32).
+  Touching either costs Kirby 1 HP.
+- **Sprites:** Kirby is a 2-sprite pair with tiles ≤60 (walk pairs 0/16, 2/18, 4/20, 6/22, 8/24;
+  inhale 36/38/52/54); the **block** is a pair of tile-230 sprites; **Lololo** is the animated pairs
+  248/250, 236/240, 234/242. ⚠ Kirby and Lololo look alike on screen and their tile ranges are not
+  cleanly separable in every frame — this misidentification is what produced the retracted
+  "frozen Kirby" claim, so treat sprite classification here as unreliable and cross-check it.
+- **Inhale demonstrably works**: holding `b` visibly drags objects toward Kirby (traced, a target
+  moved 65→122 px toward him over 72 frames).
+
+**What has been tried and has NOT damaged the boss (meter never left 72):**
+
+| approach | trials | result |
+|---|---|---|
+| uniform random input | 560 | 0 damage; score gains only from eating ordinary enemies |
+| structured cycles (reposition → inhale → spit), `bossfight.py` | 260 | 0 damage, best score gain 1600 |
+| reactive controller, camp-right, `lololo.py` | 40 | 0 damage |
+| reactive controller, camp-LEFT so the block arrives before Lololo | 88 | 0 damage |
+
+A RAM sweep for a monotonically-decreasing small byte across a whole fight found **exactly one**:
+`0xD086`, Kirby's own HP. So the boss really is taking no damage — this is not a reward-detection
+problem.
+
+**Honest read on why:** the route arrives with 1-2 HP, Kirby dies in ~1000 frames, and the
+inhale-then-spit has to land on a specific ledge with correct facing inside that window. The
+remaining work is a genuine game-playing problem, not an instrumentation one.
 
 ## The one thing left: win the Lololo fight
 

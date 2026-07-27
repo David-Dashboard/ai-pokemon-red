@@ -7,11 +7,50 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-25 (POST-GATE-0 LANE PHASE closed — 6 PRs merged, $0, docs-only; the exam is
-only 4/10 scorable; all 4 oracle hunts hit a play-capability wall, four different capability classes,
-measuring the rig not the brain; VizDoom flagged off-limits without David's sign-off.)_
+_Last updated: 2026-07-26 (EX02 Kirby-GB stage-3 hunt, attempt 2 — reached the END of Castle Lololo
+and the Lololo BOSS via a verified warp-star sequence; candidates narrowed 8 → 5; Stage 3 still NOT
+reached, blocked on winning the boss fight. $0. TWO of my own mechanism claims retracted mid-session.)_
 
-**=>=> NEWEST (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
+**=>=> NEWEST (2026-07-26) - EX02 KIRBY STAGE-3 HUNT #2: REACHED THE CASTLE LOLOLO BOSS; CANDIDATES 8 -> 5; STILL NO STAGE-3 SAMPLE. $0, PROBE ONLY. =>=>**
+Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
+`reports/2026-07-26-oracle-kirby-gb-stage3.md`. Continues PR #169.
+1. **EX02 IS STILL `ORACLE_PENDING` AND NOTHING WAS WIRED.** `eval/score_exam_kirby_stage3.py`
+   untouched, still `return 1`. No `world_mcp.py` / fixture / pinned-Gate-0-file / held-out edit. $0
+   throughout (offline PyBoy, no paid call, no Docker).
+2. **★ CANDIDATE LIST NARROWED 8 → 5.** `0xC057`, `0xC073`, `0xC07B` are **ELIMINATED**: measured over
+   60 sampled intervals of ordinary play at constant score, `0xC057` takes {1,32,33} and the other two
+   take {0,1} — they vary *within* Stage 2. PR #169's "all 8 move in perfect lockstep" holds only for
+   the five `0xD0xx`/`0xD3xx` bytes; it never sampled a diverging state. **Live list:
+   `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD`**, all still `1` in every legitimate Stage-2 state, still
+   indistinguishable from a "past Stage 1" latch.
+3. **PR #169 CORRECTED on two bytes:** `0xD051`/`0xD3ED` is Kirby's X within the area (rises on
+   `right`, falls on `left`, still when idle) and `0xD052`/`0xD3EE` is a vertical band index. PR #169
+   eliminated them as "volatile, drops to 1 around the death/continue event" — right verdict, wrong
+   reason (respawn *relocates* Kirby).
+4. **Reached the end of Castle Lololo.** The way on is NOT the water room (a structural dead end — its
+   upper/lower divider row is solid along the room's entire scrolled length) but the corridor's UPPER
+   floors, whose door leads to the battlements; from there the game flies Kirby on a **warp star** into
+   the **Lololo boss room** (boss meter = skull + 3 boxes replacing the score row). Verified
+   frame-by-frame. `cont_boss2.state` is a banked, controllable boss-room arrival.
+5. **BLOCKED ON WINNING THE BOSS FIGHT.** 948 trials across four approaches (uniform random,
+   structured inhale/spit cycles, reactive controller camping right, reactive controller camping left)
+   landed **zero** boss damage. A RAM sweep for a monotonically-decreasing small byte over a whole
+   fight found exactly one — `0xD086`, Kirby's own HP — so this is a play-capability problem, not a
+   reward-detection one. Kirby arrives with 1-2 HP and dies in ~1000 frames.
+6. **⚠ TWO OF MY OWN MECHANISM CLAIMS RETRACTED MID-SESSION, both banked then corrected:**
+   (a) "randomised search corrupts the game" — it does not; the missing score row is the boss/area
+   HUD, and I had built a "validity guard" encoding the assumption, after which 200 trials
+   "confirmed" it; (b) "savestates yield a frozen Kirby" — they do not; I had a hardcoded Kirby
+   sprite-tile whitelist that missed his walk frames, and I was testing `right` while he stood against
+   the right wall. Both were settled in one run each by varying the suspected cause. **A guard built
+   on an unverified premise launders that premise into evidence — do not add one without deriving it.**
+7. **NEXT (cheapest first):** (i) a human plays Castle Lololo's boss for ~2 minutes with RAM sampling
+   on (the recorder already supports `"ram": true`) — this ends the hunt immediately; (ii) otherwise
+   arrive at the boss with full HP and write a fight policy that reads the block position off the
+   tilemap. Read the 5 candidates on the far side: any reading `2` = real stage counter, EX02 oracle
+   found; all staying `1` = latch, hunt restarts on a different byte.
+
+**=>=> PRIOR (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
 1. **DONE — 6 PRs merged this phase, all $0, docs-only, main now `561ea62`:** #166 (de-rot
    `world-lanes-frontier` + 2 canon docs — `cheapness-skill-compilation/SKILL.md` and
    `reports/2026-07-05-northstar-capability-map.md`), #167 (MKDS A/B v2 design, DRAFT/NOT
