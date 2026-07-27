@@ -37,9 +37,16 @@ class _FakeInstance:
         self.driver = _FakeDriver()
 
 
+# The real env's PRESS_KEY vocabulary (miniwob.constants.DEFAULT_ALLOWED_KEYS), first 11 entries --
+# PRESS_KEY takes an INDEX into this list, which is what _prompt_action resolves a typed name to.
+_ALLOWED_KEYS = ("<Enter>", "<PageUp>", "<PageDown>", "<Backspace>", "<Delete>", "<Tab>", "<Space>",
+                 "<ArrowUp>", "<ArrowRight>", "<ArrowDown>", "<ArrowLeft>")
+
+
 class _FakeUnwrapped:
     def __init__(self):
         self.instance = _FakeInstance()
+        self.action_space_config = types.SimpleNamespace(allowed_keys=_ALLOWED_KEYS)
 
     def create_action(self, action_type, **kwargs):
         return {"type": action_type, **kwargs}
@@ -98,16 +105,24 @@ def test_under_real_path_guard():
 
 def test_prompt_action_parses_click_type_key_quit():
     answers = iter(["", "bogus", "click 12 34", "type hi there", "key Enter", "quit"])
-    tool, args = m._prompt_action(lambda _msg: next(answers))
+    tool, args = m._prompt_action(lambda _msg: next(answers), list(_ALLOWED_KEYS))
     assert tool == "click" and args == {"x": 12, "y": 34}
     answers2 = iter(["type hi there"])
-    tool, args = m._prompt_action(lambda _msg: next(answers2))
+    tool, args = m._prompt_action(lambda _msg: next(answers2), list(_ALLOWED_KEYS))
     assert tool == "type_text" and args == {"text": "hi there"}
-    answers3 = iter(["key Enter"])
-    tool, args = m._prompt_action(lambda _msg: next(answers3))
-    assert tool == "press_key" and args == {"key": "Enter"}
-    answers4 = iter(["quit"])
-    tool, args = m._prompt_action(lambda _msg: next(answers4))
+    # A typed key NAME resolves to its INDEX in the env's allowed_keys -- miniwob's PRESS_KEY executor
+    # does int(action["key"]), so passing the name straight through raised
+    # ValueError: invalid literal for int() with base 10: 'Tab' (banked in runs/gate0_paid/miniwob).
+    for typed, idx in (("key Enter", "0"), ("key Tab", "5"), ("key ArrowDown", "9"), ("key <Tab>", "5")):
+        answers3 = iter([typed])
+        tool, args = m._prompt_action(lambda _msg: next(answers3), list(_ALLOWED_KEYS))
+        assert tool == "press_key" and args == {"key": idx}
+    # A key the environment doesn't accept re-prompts instead of dying inside the browser.
+    answers4 = iter(["key Escape", "key Tab"])
+    tool, args = m._prompt_action(lambda _msg: next(answers4), list(_ALLOWED_KEYS))
+    assert tool == "press_key" and args == {"key": "5"}
+    answers5 = iter(["quit"])
+    tool, args = m._prompt_action(lambda _msg: next(answers5), list(_ALLOWED_KEYS))
     assert tool == "quit" and args == {}
 
 
