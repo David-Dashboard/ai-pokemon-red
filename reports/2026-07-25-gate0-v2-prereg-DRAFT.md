@@ -1,15 +1,25 @@
-# Gate 0 v2 pre-registration — Arm R re-attempt under a corrected brief
+# Gate 0 v2 pre-registration — paired re-attempt under a corrected brief and a repaired interface
 
 **Written 2026-07-25. Rewritten end-to-end 2026-07-28** after an adversarial review found the
 2026-07-25 draft NOT freezable (the recommended brief fought the predicate it targeted; the pin
 list was incomplete; a source gate fired before capability; the best case was still FAIL; §0
 misstated the banked v1 verdict). Every defect that review named is addressed below, and the
 passages that would have let a failure be re-labelled a success are deleted, not softened.
-A late challenge — that the harness is structurally incapable of ever emitting `PASS` — was raised
-and withdrawn during the rewrite; §0.1 records the adjudication (true of
-`tools/check_gate0_codex.py::audit()`'s own verdict field, false of the scorer this document names
-as the pass bar) as a **non-blocking** note, since it is a recurring misreading the v1 pre-reg
-already warned against.
+
+Two things were settled during the rewrite and are recorded so they are not re-litigated:
+
+- **The harness *can* emit `PASS`.** A challenge that it cannot was raised and withdrawn; §0.1 holds
+  the adjudication as a **non-blocking** note (true of `tools/check_gate0_codex.py::audit()`'s own
+  verdict field, false of the scorer this document names as the pass bar), since it is a recurring
+  misreading the v1 pre-reg already warned against.
+- **Arm W stays in.** An earlier revision scoped it out, because a repeat of seed 1001's `0.667`
+  banks FAIL whatever Arm R does. That is arithmetically right but rested on a false premise: the
+  `0.667` is substantially a **defect in the world's own tool surface** — `press_key` documents a
+  key NAME it cannot accept, and the click tool tells the agent an off-band control is "unreachable"
+  without mentioning that the page scrolls (§3). Banking that as an agent failure would be
+  dishonest, and dropping the arm would cost the Generality axis. v2 therefore repairs the interface
+  first (**P8**) and runs **fresh seeds** (**P9**), keeping the paired structure — at the cost of a
+  larger precondition list and an Arm W that is **not comparable to v1's** (§3.1).
 
 **Status: DRAFT — FOR DAVID. $0, docs only.** This document proposes a change; it does not make
 one. No fixture, scorer, predicate, or pinned file is edited by this document. No paid run is
@@ -39,6 +49,35 @@ these open produces an unscorable or void artifact and wastes the attempt.
 | **P5** | A mechanical post-run hash-freeze step for the run-produced artifacts (§6, items 11–12) | **NOT PRE-REGISTERED ANYWHERE UNTIL NOW.** See §6. | Any `score_manifest()` verdict |
 | **P6** | `sha256(eval/fixtures/gate0_miniwob_paid_seeds.json)` recomputed **from the tree that will score**, == `263aaed17ee653c8b32e608d88ed1b8d29d6a424d29ce2e123671b56df159e63` | Matches in a clean LF checkout (recomputed this session). v1 nonetheless banked `frozen_seed_hash`, so the scoring tree materialized CRLF. Check, do not assume. | Any `score_manifest()` verdict |
 | **P7** | Adversarial review of **this** document, posted on the PR | Not done for this rewrite. | Launch decision |
+| **P8** | **MiniWoB tool-surface interface repair, rebuilt into the world image and re-pinned** (§3, §0.2) | **NOT DONE.** `world_mcp.py:405-407` promises a key NAME the code cannot accept; `world_mcp.py:391-397` calls y>176 "unreachable" without mentioning that the page scrolls. | Arm W being a fair test at all |
+| **P9** | **Fresh MiniWoB held-out seeds**, drawn and hash-committed before the run (§4.1) | **NOT DONE.** 1000-1004 are spent (§4). **Requires an additive edit to `eval/score_gate0.py::MODES` — see §0.2.** | Arm W as held-out evidence |
+
+**Priority order:** P8 → P9 → P1 → P2 → P3/P4 → P5/P6 → P7. P8 comes first because P1's human
+baseline and P9's seed draw are both downstream of it: capturing a denominator against the broken
+interface, or drawing seeds before the image is re-pinned, wastes the work.
+
+### 0.2 The two preconditions that need code changes — flagged, not made here
+
+This document edits nothing. Two preconditions cannot be satisfied by fixture work alone, and are
+recorded as **required code changes needing their own plan, branch, and adversarial review**:
+
+- **P8 — world-image interface repair.** Correct `_MINIWOB_KEY_TOOL`'s description (name → index,
+  or make the field name-accepting by resolving against `allowed_keys` inside the world adapter) and
+  amend `_MINIWOB_CLICK_TOOL`'s reachability text to state that the page scrolls and that keyboard
+  focus can bring an off-band control into reach. This is **pin-cascading** (§6.5), so it lands in
+  the already-planned batched PR alongside the EX02 oracle wiring and PR #138, followed by **one**
+  world-image rebuild and re-pin. **Rebuild gotcha:** a naive `docker build .` from a Windows
+  checkout bakes CRLF into the image and the resulting `image_code_sha256` self-refuses as stale —
+  the rebuild must use an **LF-forced `git archive` context**.
+- **P9 — fresh seeds require an additive scorer change.** `eval/score_gate0.py:13-16` hardcodes
+  `MODES["paid_gate0"] = (…gate0_miniwob_paid_seeds.json, [1000, 1001, 1002, 1003, 1004])`, and
+  `_verify_sources` (`:237-244`) fails `frozen_seed_contents` unless the seed file's contents equal
+  that literal. **New seeds therefore cannot be adopted without editing the frozen scorer.** The
+  minimal safe form is **additive**: a new `MODES` entry (e.g. `paid_gate0_v2`) with its own seed
+  file and its own `SOURCE_PIN_FILES` entry, leaving `paid_gate0` byte-untouched so v1's banked
+  artifacts stay scoreable exactly as printed. Adding a mode is not loosening a bar, but it **is** a
+  change to the frozen scorer and needs its own review — it must not be smuggled in as part of a
+  fixture regen.
 
 ### 0.1 Settled: the pass bar IS emittable — `audit()`'s ceiling is not the gate's
 
@@ -196,6 +235,24 @@ identical**; earlier documents that guessed "whitespace/key-order" are wrong and
 propagated. The values have since been independently re-derived and re-pinned on `main`
 (commit `346b612`).
 
+**Entry count — reconciling two correct readings.** Two audits reported different breach sizes
+(two entries vs six). Both are right about different code paths, and a third dimension — time —
+was missing from both. Measured this session by comparing each arm's banked
+`handshake-receipt.json` (`reports/2026-07-24-gate0-{armR,paired}-verdict/`) field-by-field against
+each fixture variant:
+
+| Comparison | Producing function / fixture | Mismatched `PIN_FIELDS` |
+|---|---|---|
+| Launch-time audit, **today's** appserver fixtures | `audit()` vs `gate0_expected_pins_{arm}.appserver.json` @ `main` | **2 per arm** — `config_sha256`, `codex_mcp_list_sha256` |
+| Launch-time audit, **run-time** appserver fixtures | `audit()` vs the same files as they stood on 2026-07-24 | **3 per arm** — the two above **+ `tool_schema_sha256`** |
+| Scorer path (what actually banked) | `audit()` vs `gate0_expected_pins_{arm}.json` (**non**-appserver — the files `gate0_paid_source_pins.json:29,37` points at) | **3 per arm** |
+
+`score()` aggregates both arms and arm-prefixes each entry (`:307-310`), so the **banked**
+`failures["constancy"]` is `3 × 2 = 6`. The "two entries" reading is the per-arm `audit()` result
+against **today's** appserver fixture, where `tool_schema_sha256` now matches because `main` re-pinned
+it in `346b612` on 2026-07-25 — *after* the run. Both readings are correct; neither contradicts the
+other; the banked verdict is six. See PR #175 for the mechanism.
+
 **The v1 result nonetheless remains VOID.** Two frozen laws say so, and neither has an exception
 for "the breach turned out to be benign":
 
@@ -228,15 +285,19 @@ score()` emits `PASS`/`GO` on a clean input and `FAIL_CAPABILITY` on a failing p
 demonstrated at `$0`), and v1's two arms already failed on real capability rather than harness
 artifacts. A v2 run can genuinely disconfirm.
 
-**v2 SUCCEEDS if and only if all five hold. Any single miss is a FAIL.**
+**v2 SUCCEEDS if and only if all six hold. Any single miss is a FAIL.**
 
 | ID | Check | Mechanical test |
 |---|---|---|
 | **S-1** | Red predicate clean | `_red_success(_jsonl("<v2out>/red/world/oracle.jsonl"))` returns exactly `(True, [])` |
-| **S-2** | Capability sub-bars | `wall_clock_s <= 466.576` (= `2 × 233.288`) **and** `primitive_actions <= 542` (= `2 × 271`) |
-| **S-3** | No leak, no constancy failure | `audit()` returns empty `leak_failures` **and** empty `constancy_failures` for the arm |
-| **S-4** | Cheap, frozen caps | `cost_usd <= 5.00` and `normalized_credits <= 125` |
-| **S-5** | Attempt integrity | Exactly one launch; artifacts written to the §0-P3 fresh directory; no `runs/` file overwritten |
+| **S-2** | MiniWoB predicate clean | `_miniwob_success(_jsonl("<v2out>/miniwob/world/oracle.jsonl"), <P9 seeds>)` returns exactly `(True, [])` — i.e. `reward == 1.0` on **all five** fresh seeds |
+| **S-3** | Capability sub-bars, both arms | Red: `wall_clock_s <= 466.576` (= `2 × 233.288`) **and** `primitive_actions <= 542` (= `2 × 271`). MiniWoB: same `2×` rule against the P1 human baseline captured on the P9 seeds. |
+| **S-4** | No leak, no constancy failure, both arms | `audit()` returns empty `leak_failures` **and** empty `constancy_failures` for each arm |
+| **S-5** | Cheap, frozen caps | Red `<= $5.00`/`125cr`; MiniWoB `<= $2.00`/`50cr`; combined `<= $7.00`/`175cr`; `<= 250cr` hard breaker |
+| **S-6** | Attempt integrity | Exactly one launch per arm; artifacts written to the §0-P3 fresh directory; no `runs/` file overwritten |
+
+The whole gate is one verdict: `score_manifest()` must print `overall: PASS` / `readiness: GO`.
+Both arms must clear; there is no per-arm PASS.
 
 **Explicit FAIL conditions, spelled out because they are the ones this brief newly puts at risk:**
 
@@ -249,14 +310,16 @@ artifacts. A v2 run can genuinely disconfirm.
 - **D-3.** `red_map_changed_during_battle_exit_span` — the clause the *new* brief puts at risk by
   instructing post-task movement. A FAIL here means the settle wording licensed too much roaming
   and must be tightened, not explained away.
-- **D-4.** If David overrides §3 and runs Arm W: any `_miniwob_success` failure, **specifically
-  including** `miniwob_episode_N_terminal_count` or `miniwob_episode_N_terminal_not_last_row`
-  caused by the settle instruction itself (§5, Arm W analysis). That is the brief actively damaging
-  an arm, and is a FAIL of the intervention, not an incidental.
+- **D-4.** Any `_miniwob_success` failure — **specifically including**
+  `miniwob_episode_N_terminal_count` or `miniwob_episode_N_terminal_not_last_row` caused by the
+  settle instruction itself (§5.5). That is the brief actively damaging an arm, and is a FAIL of the
+  intervention, not an incidental. A reward-`<1.0` terminal on the repaired interface (P8) is a
+  genuine capability FAIL and banks as one — the interface repair removes the excuse, it does not
+  create a new one.
 - **D-5.** Any `leak_failures` or `constancy_failures` → the attempt is **VOID**: not a FAIL, not a
   PASS, no capability evidence in either direction, no rescue, regardless of how benign the cause
   later proves to be. Same law as §1.
-- **D-6.** `_red_success` clean but S-2 or S-4 missed → FAIL (`FAIL_CAPABILITY` or `FAIL_CHEAP`
+- **D-6.** Both predicates clean but S-3 or S-5 missed → FAIL (`FAIL_CAPABILITY` or `FAIL_CHEAP`
   respectively in the frozen vocabulary).
 - **D-7.** Quoting `audit()`'s own `overall` (permanently `NO_GO_INSUFFICIENT_WAKES`) as the gate
   verdict, in either direction — forbidden by `reports/2026-07-18-gate0-prereg.md:81-83` and
@@ -277,45 +340,64 @@ any v2 verdict, in advance:
 
 ---
 
-## 3. Scope decision: v2 is **Arm R only**, and is **not** a Gate 0 verdict
+## 3. Scope: v2 keeps **both arms** — because seed 1001's 0.667 is an interface defect
 
-The 2026-07-25 draft proposed re-running both arms while explicitly "doing nothing else about the
-0.667 episode" and predicting it would recur. Since `score()` emits **one combined verdict** across
-both arms and `_miniwob_success` requires `reward == 1.0` on **all five** seeds
-(`eval/score_gate0.py:112-120`), that plan banks FAIL by construction: a perfect Arm R cannot
-outvote a repeat of seed 1001. Paying for a foregone conclusion is not an experiment.
+An earlier revision of this document scoped Arm W out, on the reasoning that `score()` emits **one
+combined verdict** and `_miniwob_success` requires `reward == 1.0` on **all five** seeds
+(`eval/score_gate0.py:112-120`), so a repeat of seed 1001's 0.667 banks FAIL whatever Arm R does.
+That reasoning was sound but rested on a premise that has since been falsified: it treated the
+0.667 as an unexplained capability miss that v2 had no mechanism to address.
 
-**Decision: Arm W is scoped OUT of v2.** Reasoning, in order of weight:
+**It is substantially a defect in the world's own tool surface — one that actively misinformed the
+agent.** Verified by direct code reading this session:
 
-1. **A v2 Arm W on seeds 1000-1004 is not fresh held-out evidence** (§4). Even a 5/5 would not
-   license the Generality claim Gate 0 exists to test.
-2. **Arm W has no denominator.** P1's human baseline does not exist, so Arm W cannot produce a
-   scorable capability number at all.
-3. **The 0.667 may be a rig defect, not a capability miss.** The Submit-outside-the-clickable-band
-   contradiction (§0-P1) is unresolved. Re-running the arm while its environment is under
-   suspicion buys noise.
-4. **Nothing in the v2 intervention targets Arm W.** The suffix edit addresses a premature-stop
-   failure mode; seed 1001 terminated at the environment's own `done`. There is no mechanism by
-   which v2 improves it — and §5 shows a real mechanism by which v2 could *damage* it.
+1. **`press_key` promises a key NAME and cannot accept one.** `_MINIWOB_KEY_TOOL`
+   (`world_mcp.py:405-407`) describes the argument as *"a single keyboard key (e.g. \"Enter\",
+   \"Tab\", \"ArrowDown\")"* and types it `{"type": "string"}`. `world_mcp.py:2222` forwards it to
+   `MiniWobWorld.press_key`, which at `core/miniwob_world.py:158-160` passes the string straight into
+   miniwob++'s `create_action("PRESS_KEY", key=str(key))` — whose `key` field is an **index into
+   `allowed_keys`**, not a name. `"Tab"` and `"Enter"` therefore raise
+   `ValueError: invalid literal for int()`. *(Code path verified here; the live exception is
+   evidenced in the breach/probe material, not re-run in this `$0` document.)*
+2. **The click tool tells the agent the escape hatch does not exist.** `_MINIWOB_CLICK_TOOL`
+   (`world_mcp.py:391-397`) states *"anything rendered below y=176 is unreachable"* — with **no
+   mention that the page scrolls.** Submit's y is a deterministic function of checkbox count
+   (2→104, 3→123, 4→142, 5→161, **6→180**); the clickable band is 177px against a 210px page, so on
+   6-checkbox layouts Submit renders 3px outside reach and every click at y≥178 throws
+   `MoveTargetOutOfBoundsException`. A real `Tab` keydown walks focus to Submit on the 7th press and
+   scrolls it to y=141 — reachable. The agent could not do that, because of (1).
 
-**What v2 therefore buys, stated without inflation:** one fact — whether this brain, under a
-corrected brief, satisfies the frozen `_red_success` predicate on the fixed Red start. That is one
-arm of a two-arm gate. **It is not a Gate 0 PASS and must never be reported as one.** Gate 0's
-Generality axis requires both arms; a single-arm result cannot satisfy it, whatever it prints.
+**Independent corroboration that this is real and known:** the in-flight branch
+`fix/miniwob-key-name-press` (commits `91c1153`, `818c592`) fixes exactly this name→index
+resolution — **in the human-baseline rig only** (`tools/capture_gate0_baseline_miniwob.py`), and
+its own second commit is titled "Record the human-vs-agent interface asymmetry in the artifact".
+The agent-facing path in `world_mcp.py` / `core/miniwob_world.py` is untouched. So the human
+denominator is being repaired while the agent's interface stays broken — precisely the asymmetry
+that would make banking the 0.667 as an agent failure dishonest.
 
-**Mechanical consequence, pre-registered now rather than discovered later:** the frozen scorer has
-**no single-arm mode**. `score_manifest()` always audits and scores both arms
-(`eval/score_gate0.py:376-389`), and `_verify_sources` unconditionally requires all six named
-artifacts including `miniwob_human`. A Red-only v2 therefore **cannot** be scored end-to-end by
-`score_manifest()`. It will be scored by executing the unedited `_red_success` and `_arm_metrics`
-directly against the produced oracle and metrics — exactly the procedure
-`reports/2026-07-24-gate0-paired-verdict.md` §2 already used. **v2's output is a PREDICATE result,
-not a frozen-scorer verdict, and must be labelled as such in its verdict report.** This is a
-limitation, disclosed in advance, not a workaround.
+**Decision: keep the paired Arm R + Arm W structure, and fix the interface first (P8).** Scoping
+Arm W out would bank a documentation defect as a capability ceiling *and* cost the Generality axis,
+reducing v2 to an Arm-R predicate result rather than a Gate 0 verdict. That is too high a price for
+a bug we can fix. With P8 done, v2 is scored end-to-end by `score_manifest()` in the normal way and
+**can** produce a real Gate 0 verdict.
 
-**If David wants a full two-arm Gate 0 v2 instead**, that is a larger, separate pre-registration
-requiring: a *new* held-out MiniWoB seed block (§4), the paid human baseline (P1), and a diagnosis
-of the 0.667. Not this document.
+### 3.1 What this costs, stated plainly
+
+- **v2's Arm W tests a REPAIRED interface. It is not a like-for-like rerun of v1's Arm W and must
+  never be compared to it as one.** v1's Arm W ran against a tool surface that denied it a working
+  `press_key` and told it the page did not scroll. Any v1↔v2 Arm W delta is confounded by that
+  repair and says nothing about the brain.
+- **Three things change at once for Arm W:** the repaired interface (P8), the new task suffix (§5),
+  and fresh seeds (P9). This is a capability gate, not an ablation — if Arm W passes, we will not
+  know which change was load-bearing. Accepted deliberately; recorded here so no verdict report
+  claims otherwise.
+- **The fix is world-side, which is sanctioned.** Correcting a tool description that lies about its
+  own argument type is world/perceiver work, not brain work — `core/contracts.py`, the brain, and
+  the tool *contract shape* are untouched (**architecture-and-seam**). What changes is a description
+  string and, if the argument is made name-accepting, a resolution step inside the world adapter.
+- **It is not "fixing the world until the agent passes".** The test is whether the repaired
+  interface matches what its own schema always claimed. If Arm W still fails after P8, that failure
+  is a genuine capability result and banks as one.
 
 ---
 
@@ -344,6 +426,33 @@ Three consequences, all binding:
    attached to a **void** attempt (§1). The honest statement of the MiniWoB position is therefore:
    *no valid held-out MiniWoB capability evidence exists, and the seeds that would have produced it
    are spent.*
+
+**This argues for new seeds, not for dropping the arm** (§3). Spent seeds are a reason to draw
+fresh ones; they are not a reason to abandon the Generality axis.
+
+### 4.1 How the fresh seeds are drawn, committed, and kept unseen (P9)
+
+The point of the procedure is that the seeds are **fixed before anyone can see how the agent does
+on them**, and **verifiable afterwards** — without being readable in a merged file in advance.
+
+1. **Draw.** Five seeds from a documented deterministic procedure, recorded in full in the run's
+   verdict report: `seeds = [int.from_bytes(sha256(f"gate0-v2-armW:{i}".encode()).digest()[:4], "big") % 1_000_000 for i in range(5)]`,
+   rejecting any collision with `{0..4}` (dev) or `{1000..1004}` (spent) and re-drawing at the next
+   index. Deterministic, so any reviewer can reproduce the exact list afterwards and confirm nothing
+   was re-rolled to taste.
+2. **Commit before the run, without publishing.** Only the **SHA-256 of the seed file's LF-canonical
+   bytes** goes into this pre-registration and the source-pins fixture before launch. The seed list
+   itself is not written into any merged file until the run is launched. A hash commitment fixes the
+   seeds irrevocably while keeping them out of anything the agent or a brief author could read.
+3. **Freeze at launch.** The seed file is written, its hash checked against the pre-committed value,
+   and `frozen_seed_sha256` in the new mode's source-pins fixture set to it. A mismatch aborts the
+   launch — no re-draw, no substitution.
+4. **Human replay after.** The paid-seed human baseline (P1) is captured on these seeds **only after**
+   the agent's artifacts are banked, per the design doc's ordering
+   (`reports/2026-07-13-minimum-north-star-gate-0-design.md:273-276`), and using the **repaired**
+   interface so that agent and human face the same world.
+5. **One shot.** These seeds are spent the moment the agent plays them, exactly as 1000-1004 were.
+   A v3 needs another block.
 
 ---
 
@@ -396,19 +505,25 @@ it a fix. That defect is the reason this document was rewritten.
 > believe the stated task is complete, do not end your turn on that statement. Stay where you are
 > and keep working the world for a further stretch — alternate observing with small local moves
 > around your current position, without leaving the place you are in and without beginning any new
-> objective — until several consecutive observations show nothing further changing. If the
-> environment states that the episode, task, or input is over, or rejects further input, stop
-> acting on it immediately and do not act on it again. Stop when the stated task is complete and
-> has been confirmed this way."
+> objective — until several consecutive observations show nothing further changing. **Confirming is
+> looking, not doing: once the environment reports that an episode, task, or input is finished, take
+> no further action on it — do not click, type, press a key, or otherwise act on a finished episode
+> again. Looking at it is always safe; acting on it is not.** If the environment rejects further
+> input, stop immediately. Stop when the stated task is complete and has been confirmed this way."
 
-Two clauses carry all the weight, and each is there for a named predicate clause:
+Three clauses carry all the weight, and each is there for a named predicate clause:
 
 - *"alternate observing with small local moves around your current position"* — feeds
   `red_no_sustained_battle_exit` (observes → rows) **and** `red_no_free_movement_after_exit`
   (moves → distinct tiles) with the same behaviour. This is the clause the old candidates lacked.
-- *"without leaving the place you are in"* / *"if the environment states … is over … stop acting"*
-  — the two guards, protecting `red_map_changed_during_battle_exit_span` and Arm W's terminal-row
-  ordering respectively.
+- *"without leaving the place you are in"* — guards
+  `red_map_changed_during_battle_exit_span` (C7), which the settle instruction newly puts at risk.
+- *"Confirming is looking, not doing … do not click, type, press a key, or otherwise act on a
+  finished episode again"* — guards **Arm W's terminal-row ordering** (5.5). This is a **hard
+  prohibition naming the exact acts that corrupt an episode**, not a soft "stop acting" hint,
+  because the failure it prevents is silent and unrecoverable: the agent gets no error, the episode
+  simply fails at scoring time. It also states the safe alternative ("looking at it is always
+  safe"), so the settle instruction and the prohibition cannot be read as contradicting each other.
 
 ### 5.4 Clause-by-clause proof against `_red_success` (`eval/score_gate0.py:34-89`)
 
@@ -463,7 +578,10 @@ the risk in the v2 wording, and one does not:
   five-episode task, between episodes 0-3, can still poison an episode. This is a named,
   pre-registered risk of the v2 wording (D-4), not a discovery to be made afterwards.
 
-This is the fourth independent reason Arm W is scoped out of v2 (§3).
+**This is why the prohibition is in the brief text itself (5.3), not merely in this analysis.** An
+agent cannot discover this rule from the environment: acting on a finished episode returns a normal
+`[click (x,y) -> ok]` result, and the damage surfaces only at scoring time. The brief is the only
+place the rule can live.
 
 ### 5.6 Taint analysis
 
@@ -555,9 +673,44 @@ scored at all. All four were live in v1's banked failure list.
 | 13 | `artifact_paths.live_breaker` | Target file missing from the primary checkout (P2). | Regenerate, verify hash `27538b25…`. |
 | 14 | `frozen_seed_sha256` | v1 banked `frozen_seed_hash` despite the pin matching in a clean LF checkout. | P6: recompute from the exact tree that will score. |
 
-**No code change is required by any of the above.** `eval/score_gate0.py` and
-`tools/check_gate0_codex.py` are not edited and must not be. Items 1-14 are fixture and artifact
-lifecycle work, plus one pre-registered post-run hashing step.
+### 6.5 The P8 world-image rebuild cascade (items 15-20)
+
+The interface repair (§0.2) edits `world_mcp.py` and possibly `core/miniwob_world.py`. Both are
+**baked into the world images and pinned**, so the cascade is larger than the task-text one and
+**hits BOTH arms, not just MiniWoB**:
+
+| # | Pin | Why it moves |
+|---|---|---|
+| 15 | `tool_schema_sha256` (miniwob, both fixture variants) | The `press_key` / `click` descriptions are part of the serialized tool list. |
+| 16 | `world_image_id` + `world_image_tag` digest (**miniwob and red**) | Both images bake `world_mcp.py`. Editing it rebuilds both. |
+| 17 | `image_code_sha256` (**both arms**) | Hashes `/app/world_mcp.py` and `/app/core/miniwob_world.py`. |
+| 18 | `host_code_sha256` (**both arms**) | Same two paths, host side. |
+| 19 | `expected_pins_sha256` × 4 (§6.2) | Recomputed **again**, after items 15-18 land — a second cascade pass. |
+| 20 | `expected_launcher_sha256` / `frozen_commit` (`gate0_signature.appserver.json`) | New frozen commit. |
+
+**Items 17 and 18 hit Red because of a known launcher quirk**, not because Red's world changed: the
+code-hashing step hardcodes the same two world-module paths for **both** arms regardless of which
+world runs (`tools/gate0_appserver_arm.py` ~`:374`, `:986-987`; flagged in
+`reports/2026-07-24-gate0-paired-verdict.md` §3). Red's receipt therefore carries MiniWoB's
+world-module hash. Do not treat a Red pin change here as evidence that Red's world moved.
+
+**Sequencing that this implies, and it is not optional:** P8 must land, be rebuilt, and be re-pinned
+**before** §6.1-6.4's task-text pins are frozen — otherwise the `expected_pins_sha256` cascade is
+computed twice and the second pass silently invalidates the first. One batched PR, one rebuild, one
+re-pin, then the task-text freeze. And the rebuild must use an **LF-forced `git archive` context**:
+a naive `docker build .` from a Windows checkout bakes CRLF, and the resulting `image_code_sha256`
+self-refuses as stale.
+
+### 6.6 What needs a code change, and what does not
+
+- **No code change** for items 1-20: they are fixture, image, and artifact lifecycle work plus the
+  pre-registered post-run hashing step (item 11).
+- **Code changes required, each needing its own plan/branch/review** (§0.2): **P8**'s
+  `world_mcp.py` tool-description repair, and **P9**'s additive `eval/score_gate0.py::MODES` entry
+  for the fresh seed block.
+- **`eval/score_gate0.py`'s predicates, bars, caps, and verdict logic are not edited and must not
+  be.** P9 adds a mode; it changes no threshold and no clause. `tools/check_gate0_codex.py` is not
+  edited at all.
 
 ---
 
@@ -592,20 +745,25 @@ pre-registration may tighten [bars], never loosen them."* v2 loosens nothing. §
 
 ## 8. Budget, with numbers
 
-Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both its caps.
+Both arms. v1 cost `$0.41589` / `10.397275` credits (Red) and `$1.02958` / `25.7395` credits
+(MiniWoB) — 8.3% and 51.5% of their respective caps; combined `$1.4455` / `36.14`.
 
-- **Expected:** `~$0.50` / `~13` credits, allowing for the settle loop. The settle behaviour costs
-  roughly one extra `explore` call plus a handful of `observe` calls; `primitive_actions` counts
-  tool calls, not autopilot steps (5.2), so the action cost is single-digit.
-- **H-d, as a number, not an order of magnitude:** **`cost_usd <= $1.00` and
-  `normalized_credits <= 25` for Arm R.** Exceeding either is a recorded H-d falsification —
-  reported as such in the verdict, meaning the settle instruction licensed an unbounded loop and
-  the next iteration must bound it. (The 2026-07-25 draft said "the same order of magnitude as v1";
-  10× of `$1.4455` is `$14.45`, above that document's own `$7.00` combined cap. That phrasing is
-  deleted.)
-- **Frozen caps, unchanged and authoritative:** `$5.00` / `125cr` Arm R; `$7.00` / `175cr` combined
-  PASS bar; `250cr` hard breaker. H-d does not modify these — it is a prediction, and only the
-  frozen caps decide `FAIL_CHEAP` (S-4).
+- **Expected:** `~$1.80` / `~45` credits combined — `~$0.50` Red (the settle loop costs roughly one
+  extra `explore` call plus a handful of `observe` calls; `primitive_actions` counts tool calls, not
+  autopilot steps, per 5.2) and `~$1.30` MiniWoB (a working `press_key` means more steps per
+  episode than v1, which could not use one).
+- **H-d, as numbers, not an order of magnitude:** **Red `<= $1.00` / `<= 25cr`; MiniWoB
+  `<= $1.60` / `<= 40cr`; combined `<= $2.60` / `<= 65cr`.** Exceeding any of these is a recorded
+  H-d falsification — reported as such, meaning either the settle instruction licensed an unbounded
+  loop or the repaired interface costs materially more per episode than projected. (The 2026-07-25
+  draft said "the same order of magnitude as v1"; 10× of `$1.4455` is `$14.45`, above that
+  document's own `$7.00` cap. That phrasing is deleted.)
+- **MiniWoB's headroom is the tight one.** v1 used 51.5% of the `$2.00`/`50cr` arm cap. The H-d
+  ceiling of `$1.60`/`40cr` leaves real room before `FAIL_CHEAP`, but a run that needs many more
+  steps per episode on the repaired interface could approach it — watch this arm, not Red.
+- **Frozen caps, unchanged and authoritative:** `$5.00`/`125cr` Red; `$2.00`/`50cr` MiniWoB;
+  `$7.00`/`175cr` combined PASS bar; `250cr` hard breaker. H-d does not modify these — it is a
+  prediction, and only the frozen caps decide `FAIL_CHEAP` (S-5).
 
 ---
 
@@ -619,7 +777,16 @@ Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both it
 - **H-c:** the settle instruction does not induce a map change inside the exit span — i.e. C7 does
   not appear in the failure list. If it does, the "without leaving the place you are in" guard is
   insufficient and the next iteration must strengthen it.
-- **H-d:** Arm R stays within `$1.00` / `25` credits (§8).
+- **H-d:** costs stay within §8's numbers — Red `<= $1.00`/`25cr`, MiniWoB `<= $1.60`/`40cr`,
+  combined `<= $2.60`/`65cr`.
+- **H-e (Arm W, the P8 test):** with the repaired interface, the agent successfully reaches and
+  clicks Submit on **6-checkbox** layouts — observable as `reward == 1.0` on any P9 seed that renders
+  six checkboxes, and, in the transcript, as at least one successful `press_key` call. **H-e is the
+  falsifiable form of §3's claim that the 0.667 was an interface defect.** If Arm W still fails on a
+  6-checkbox layout after P8, that diagnosis was wrong and the failure banks as a genuine capability
+  result — §3's reasoning does not get a second appeal.
+- **H-f:** no episode fails on `miniwob_episode_N_terminal_count` or `_terminal_not_last_row` —
+  i.e. the 5.3 prohibition held and the settle instruction did not corrupt an episode.
 
 ---
 
@@ -635,8 +802,10 @@ Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both it
   Infra death AT or AFTER ~10 decisions = the attempt is spent: score whatever artifacts exist with
   the frozen scorer and bank that verdict (`INSUFFICIENT_DATA` is a legitimate outcome). No relaunch
   without David's explicit OK."*
-- **Labelling.** v2's result is an Arm-R predicate result (§3), banked under that name. It is not a
-  Gate 0 verdict and the verdict report must say so in its first line.
+- **Labelling.** v2 is a paired, two-arm attempt scored end-to-end by `score_manifest()`, so it
+  **can** bank a real Gate 0 verdict. The verdict report's first lines must nonetheless state that
+  Arm W ran on a **repaired interface** and **fresh seeds**, and is therefore not comparable to
+  v1's Arm W (§3.1).
 
 ---
 
@@ -653,9 +822,20 @@ Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both it
   One tightening iteration is permitted, stating in advance which direction and why.
 - **If v2 fails a DIFFERENT way** — do not assume the brief is still the problem. Run
   **diagnose-a-run** against the raw artifacts first.
-- **If v2 PASSES** — that is one arm. The next Gate 0 attempt needs a fresh MiniWoB held-out seed
-  block (§4), the paid human baseline (P1), and a diagnosis of the 0.667 before it can claim
-  Generality. There is no path from a v2 Arm R pass to a Gate 0 PASS that skips those.
+- **If Arm W fails on a 6-checkbox layout after P8** (H-e falsified) — §3's interface diagnosis was
+  wrong. Bank it as a genuine capability FAIL. v3 does **not** get to re-diagnose the same episode a
+  third time; the escalation is to the design doc's own shelf (*"MiniWoB cannot identify/check the
+  named targets: the static-UI named layer is the critical path"*), not to another environment fix.
+- **If Arm W fails on `terminal_count` / `terminal_not_last_row`** (H-f falsified) — the settle
+  instruction damaged the arm. That is a brief defect, not a capability result: the wording must be
+  narrowed before any further Arm W spend.
+- **If one arm passes and the other fails** — per the design doc's escalation shelf, *"bank the
+  partial evidence. Fix the failed seam, then wait for a new pre-registration; do not rerun the
+  passing arm."* The combined verdict is still FAIL and is banked as printed; "one arm passed" is a
+  diagnostic note, never a re-labelling of the verdict.
+- **If both arms PASS** — per the design doc, *"add one held-out task/world at the next phase exit.
+  Do not turn Gate 0 into the full ten-task graduation exam midstream."* Note honestly what the
+  Generality claim rests on: two arms, one of which ran on an interface repaired between attempts.
 
 ---
 
@@ -664,10 +844,16 @@ Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both it
 **The document is freezable. The run is not yet launchable.** Every metric, predicate, bar, and
 disconfirmation condition above is fixed and mechanically checkable before any v2 number exists,
 and none of them can be re-read favourably afterwards. The pass bar is one the scorer can actually
-print — demonstrated at `$0` in §0.1, not assumed. What blocks launch is the P1-P7 precondition list —
-fixture and artifact lifecycle work plus one review — not an open question of interpretation.
+print — demonstrated at `$0` in §0.1, not assumed. What blocks launch is the P1-P9 precondition
+list, not an open question of interpretation.
 
-Freeze this document, complete P1-P7, then launch. Do not launch with any precondition open.
+**The gap to launch is now larger than fixture work.** P8 and P9 each require a code change with
+its own plan, branch, and adversarial review (§0.2), plus one world-image rebuild and a two-pass pin
+re-freeze (§6.5). That is real engineering, not bookkeeping — but it is the honest price of Arm W
+being a fair test rather than a banked interface defect.
+
+Freeze this document, complete P1-P9 in the priority order given in §0, then launch. Do not launch
+with any precondition open.
 
 ## Sources
 
@@ -681,6 +867,11 @@ Freeze this document, complete P1-P7, then launch. Do not launch with any precon
   `::test_wake_cap_alone_no_longer_blocks_pass` (`:220-224`) — committed proof that the scorer can
   emit `PASS` while wake accounting is `DEFERRED`
 - `core/perception_plugin.py:189-242` (one oracle row per `observe`)
+- `world_mcp.py:391-397` (`_MINIWOB_CLICK_TOOL`, the "unreachable" text), `:405-407`
+  (`_MINIWOB_KEY_TOOL`, the key-NAME description), `core/miniwob_world.py:158-160`
+  (`press_key` forwarding a string into miniwob++'s index-typed `PRESS_KEY` field) — the §3 defect
+- branch `fix/miniwob-key-name-press` (`91c1153`, `818c592`) — the same name→index fix applied to
+  the **human** rig only; corroborates the agent-side defect is still live
 - `world_mcp.py:174-178` (Red watch spec), `:1861-1899` + `:1914-1928` (autopilot),
   `:2055-2065`, `:2162-2232` (MiniWoB oracle rows and the exhausted-refusal path)
 - `tools/gate0_appserver_arm.py` (`COMMON_TASK_SUFFIX` `:187-190`, `ARM_TASK_SENTENCES`,
