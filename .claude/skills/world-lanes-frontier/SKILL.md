@@ -180,6 +180,7 @@ the number.
   rewards are real per-episode measurements; the paired Gate-0 verdict itself is
   `CONSTANCY_BREACH`/`NO_GO` for reasons spanning both Gate-0 arms, not specific to MiniWoB
   (`reports/2026-07-24-gate0-paired-verdict.md`).
+  **VOID AS GATE-0 EVIDENCE** (breach stands, cause proven benign — fixture placeholder lifecycle): `reports/2026-07-28-gate0-constancy-breach-addendum.md`; applies equally to this map's MiniWoB lane row (:27) and to the Gate-0 citations at :258 / :267.
 - **Open:** forms/typing (the only MiniWoB task classes still untried); the paid-seed human baseline.
   **MiniWoB is currently the project's stated HARD BLOCKER**, not an idle lane: capturing the
   MiniWoB paid-seed human baseline is item (1) on HANDOFF's CURRENT top-of-file `⇒ NEXT` list

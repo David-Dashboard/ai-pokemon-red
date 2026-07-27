@@ -193,6 +193,7 @@ codex app-server path; both frozen predicates FAIL; Constancy checked clean for 
    Combined `$1.4455` / 36.14 credits vs the documented `$7.00`/175-credit bar is a **hand
    computation** over `agent_metrics.json`, whose integrity pins are still the placeholder
    `PENDING_NOT_YET_CAPTURED_paid_attempt_not_run` — labeled as such, not a scorer PASS.
+   **VOID AS GATE-0 EVIDENCE (items 3-4 above):** the `CONSTANCY_BREACH` stands and voids the attempt per `reports/2026-07-18-gate0-prereg.md:117`; cause proven benign (fixture placeholder lifecycle) — `reports/2026-07-28-gate0-constancy-breach-addendum.md`.
 5. **DONE — the between-arms Constancy check ran for the first time ever:**
    `compare_constancy(red, miniwob) -> []`, zero mismatches across all 9 `CONSTANCY_FIELDS`. Stated
    honestly, not oversold: 4 of the 9 fields are hardcoded literals in `build_handshake_receipt`
