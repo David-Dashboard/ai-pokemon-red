@@ -96,6 +96,18 @@ GAME = "miniwob_click_checkboxes"
 # so a future scorer/verdict-writer can see this from the artifact alone, not just doc prose.
 CAPTURE_MODALITY = "screenshot_relay_typed_action"
 
+# The scroll escape hatch the operator is shown, and how their `key NAME` is delivered. BOTH are
+# recorded verbatim in the artifact because they are INTERFACE ASYMMETRIES vs the paid agent, which a
+# frozen-sha256 artifact must carry on its face: world_mcp.py's press_key schema documents a key NAME
+# (the field is really an index, so the agent's raw name raises ValueError), and its click rejection
+# tells the agent anything below y=176 is "unreachable" without mentioning that the page scrolls.
+# Both asymmetries make the HUMAN faster, i.e. they make the `agent <= 2.0x human` bar HARDER -- they
+# are conservative in the right direction, but an auditor reading only the artifact must still see them.
+OPERATOR_HINT = ("The page SCROLLS: if Submit renders below the 160x177 viewport (6-checkbox layouts "
+                 "put it at y=180, unclickable), 'key ArrowDown' twice scrolls it up into reach -- "
+                 "then re-read the new screenshot, everything has moved up ~39px.")
+PRESS_KEY_RESOLUTION = "name->index (agent received raw-name passthrough)"
+
 # Per-mode defaults. paid_gate0's real_out is the EXACT path
 # eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names -- keep in sync if
 # that fixture ever moves. Both live under the repo-wide gitignored runs/ (never committed).
@@ -310,13 +322,7 @@ def run(args, prompt: Callable[[str], str] = input,
         print(f"5 fresh DEV episodes, seeds {expected_seeds}. Every screenshot is saved to {args.out}/ "
               "and popped open for you.")
     print("The timer starts on your FIRST action. Type 'quit' at any prompt to abort.")
-    print("The page SCROLLS: if Submit renders below the 160x177 viewport (6-checkbox layouts put it "
-          "at y=180, unclickable), 'key ArrowDown' twice scrolls it up into reach -- then re-read the "
-          "new screenshot, everything has moved up ~39px.")
-
-    # miniwob's PRESS_KEY field is an index into THIS list (see _prompt_action); read off the live env
-    # so the human's key vocabulary is exactly the one the paid agent gets.
-    allowed_keys = list(sess.mw.env.unwrapped.action_space_config.allowed_keys)
+    print(OPERATOR_HINT)
 
     first_action_perf: float | None = None
     started_at = None
@@ -326,6 +332,10 @@ def run(args, prompt: Callable[[str], str] = input,
     input_event_times: list[float] = []
 
     try:
+        # Inside the try that owns sess.close(): the browser is already live by here, so a failure
+        # reading the env's key vocabulary must still close Chromium and write an INCOMPLETE artifact.
+        # miniwob's PRESS_KEY field is an index into THIS list (see _prompt_action).
+        allowed_keys = list(sess.mw.env.unwrapped.action_space_config.allowed_keys)
         while not sess._exhausted:
             png_path = os.path.join(args.out, f"ep{sess._episode_idx}_step{step_img}.png")
             _save_screenshot(sess, png_path)
@@ -378,6 +388,11 @@ def run(args, prompt: Callable[[str], str] = input,
         "oracle_path": os.path.normpath(oracle_path),
         "test_mode": bool(args.test),
         "capture_modality": CAPTURE_MODALITY,
+        # Interface asymmetry vs the paid agent, on the face of the artifact (see OPERATOR_HINT): the
+        # exact hint the human was shown, which the agent's own tool docs do not give it, and the fact
+        # that the human's `key NAME` was resolved to an index while the agent's was passed through raw.
+        "operator_hint": OPERATOR_HINT,
+        "press_key_resolution": PRESS_KEY_RESOLUTION,
         # one-cold-attempt bookkeeping (DAVID_BASELINES.md "Re-run rule"): attempt_number is 1 for a
         # normal first capture; retake_reason is only ever non-empty when --allow-retake overrode an
         # existing canonical human_metrics.json.
