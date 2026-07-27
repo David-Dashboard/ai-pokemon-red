@@ -5,7 +5,8 @@ perception plugin is drop-in reusable. NDS adds extras beyond the GB surface:
   - `touch(x, y)`  — stylus-down at screen coordinates
   - `touch_release()` — lift the stylus
   - `touch_drag(x1, y1, x2, y2, frames)` — stylus-drag between two points over N ticks, built
-    entirely out of touch()/touch_release() (no new emulator call). Exposed as an MCP tool only
+    entirely out of touch()/touch_release() (no new emulator call), release guaranteed by a
+    `finally` and followed by tick(_TOUCH_SETTLE) so the lift reaches the ROM. Exposed as an MCP tool only
     behind NDS_TOUCH_DRAG=1 (world_mcp.py) — off by default, does not alter the frozen NDS tool
     surface (`_NDS_ACTION_TOOLS`/`assert_action_tools_fresh`).
 
@@ -26,6 +27,11 @@ import numpy as np
 
 # NDS has 12 inputs: all four face buttons, both shoulders, start/select, four d-pad.
 BUTTONS = ("a", "b", "x", "y", "l", "r", "start", "select", "up", "down", "left", "right")
+
+# Frames emulated AFTER a stylus lift so the released-stylus state actually reaches the ROM
+# (DeSmuME samples input only on cycle()). Defined here — the lowest NDS layer — and imported by
+# core/nds_perception_plugin.py's _tap(), so tap and drag can never drift apart.
+_TOUCH_SETTLE = 4
 
 # Map button string → Keys member name (verified via dir(Keys) on the spike venv).
 _BUTTON_KEY = {
@@ -155,14 +161,23 @@ class DeSmuMEEmulator:
         (runs/nds3d_probe/FINDINGS.md:216-219 -- Spirit Tracks rail-drawing, RE:DS item drag/combine
         and aiming both need this). `frames` is the caller's coarse speed/smoothness knob; frames=1
         drags straight to the end point in one tick.
+
+        Ends exactly like NDSPerceptionPlugin._tap(): release THEN tick(_TOUCH_SETTLE). DeSmuME
+        samples input only on cycle(), so without that trailing tick no released-stylus frame is
+        ever emulated and the lift leaks into whatever tool runs next. The release sits in a
+        `finally` so an exception mid-drag can never strand the stylus down for the rest of the
+        episode (World.call() does not catch, so such an error escapes the primitive entirely).
         """
         frames = max(1, frames)
-        self.touch(x1, y1)
-        self.tick(1)
-        for i in range(1, frames + 1):
-            t = i / frames
-            x = round(x1 + (x2 - x1) * t)
-            y = round(y1 + (y2 - y1) * t)
-            self.touch(x, y)
+        try:
+            self.touch(x1, y1)
             self.tick(1)
-        self.touch_release()
+            for i in range(1, frames + 1):
+                t = i / frames
+                x = round(x1 + (x2 - x1) * t)
+                y = round(y1 + (y2 - y1) * t)
+                self.touch(x, y)
+                self.tick(1)
+        finally:
+            self.touch_release()
+            self.tick(_TOUCH_SETTLE)

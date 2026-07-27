@@ -19,12 +19,14 @@ Covers:
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+import core.nds_emulator
 from core.gateway import Gateway
-from core.nds_emulator import DeSmuMEEmulator
+from core.nds_emulator import DeSmuMEEmulator, _TOUCH_SETTLE
 from core.perception import PerceptMemory, SymbolicState
 from core.perception_plugin import PerceptionPlugin
 from core.permissions import Allowlist
@@ -45,15 +47,21 @@ class _TouchRecorder:
         self.touches: list[tuple[int, int]] = []
         self.ticks = 0
         self.releases = 0
+        # ONE ordered log of every call. Separate touches/releases lists cannot express ordering,
+        # so a mid-drag release would be invisible to them -- this is what makes it observable.
+        self.events: list[tuple] = []
 
     def touch(self, x: int, y: int) -> None:
         self.touches.append((x, y))
+        self.events.append(("touch", x, y))
 
     def tick(self, frames: int) -> None:
         self.ticks += frames
+        self.events.append(("tick", frames))
 
     def touch_release(self) -> None:
         self.releases += 1
+        self.events.append(("release",))
 
 
 def _drag(rec, x1, y1, x2, y2, frames=8):
@@ -80,12 +88,15 @@ def test_touch_drag_releases_exactly_once_at_the_end():
 
 
 def test_touch_drag_never_releases_mid_drag():
-    """touch_set_pos moves a HELD point -- release must not happen until the very end."""
+    """touch_set_pos moves a HELD point -- release must not happen until after EVERY interpolated
+    touch. Asserted against the single ordered event log: touch/release ordering is unobservable
+    from separate per-kind lists, so that shape could not have detected a mid-drag release."""
     rec = _TouchRecorder()
     _drag(rec, 0, 0, 100, 100, frames=10)
-    # releases only recorded once, and only after all interpolated touches:
-    assert rec.releases == 1
-    assert rec.touches[-1] == (100, 100)
+    kinds = [e[0] for e in rec.events]
+    assert kinds.count("release") == 1
+    last_touch = max(i for i, k in enumerate(kinds) if k == "touch")
+    assert kinds.index("release") > last_touch, f"stylus lifted mid-drag: {rec.events}"
 
 
 def test_touch_drag_interpolates_monotonically_for_a_straight_line():
@@ -98,9 +109,12 @@ def test_touch_drag_interpolates_monotonically_for_a_straight_line():
 def test_touch_drag_ticks_once_per_touch_call():
     rec = _TouchRecorder()
     _drag(rec, 0, 0, 50, 50, frames=5)
-    # 1 initial tick (landing at the start point) + 1 tick per interpolated point (frames).
-    assert rec.ticks == 1 + 5
+    # 1 initial tick (landing at the start point) + 1 tick per interpolated point (frames) +
+    # _TOUCH_SETTLE after the lift, so the released-stylus frame is actually emulated here rather
+    # than deferred into whatever tool runs next (matches NDSPerceptionPlugin._tap()).
+    assert rec.ticks == 1 + 5 + _TOUCH_SETTLE
     assert len(rec.touches) == 1 + 5
+    assert rec.events[-1] == ("tick", _TOUCH_SETTLE)
 
 
 def test_touch_drag_frames_clamped_to_at_least_one():
@@ -361,67 +375,6 @@ def test_dispatch_returns_trailing_observe(tmp_path, monkeypatch):
     assert len(result) > 1
 
 
-class _TouchOnlyEmu:
-    """An emulator with touch()/touch_release() but deliberately NO touch_drag method -- exercises
-    World._touch_drag's defensive compose-from-touch() fallback path."""
-
-    BUTTONS = FakeNDSEmulator.BUTTONS
-
-    def __init__(self) -> None:
-        self._frame = 0
-        self.touches: list[tuple[int, int]] = []
-        self.releases = 0
-
-    def press(self, button, hold_frames=8, settle_frames=16):
-        self._frame += hold_frames + settle_frames
-
-    def tick(self, frames):
-        self._frame += max(1, frames)
-
-    def screen_ndarray(self, screen="both"):
-        h = 384 if screen == "both" else 192
-        return np.zeros((h, 256, 3), dtype=np.uint8)
-
-    def read(self, addr):
-        return 0
-
-    def save_screen(self, path):
-        with open(path, "wb") as f:
-            f.write(b"")
-
-    def load_state(self, path):
-        self.loaded = path
-
-    def save_state(self, path):
-        self.saved = path
-
-    @property
-    def frame(self):
-        return self._frame
-
-    def close(self):
-        pass
-
-    def touch(self, x, y):
-        self.touches.append((x, y))
-
-    def touch_release(self):
-        self.releases += 1
-
-
-def test_dispatch_falls_back_to_touch_when_emulator_lacks_touch_drag(tmp_path, monkeypatch):
-    """Defensive fallback: an emulator exposing only touch()/touch_release() (no touch_drag method)
-    still works, composed from the same algorithm."""
-    monkeypatch.setenv("NDS_TOUCH_DRAG", "1")
-    emu = _TouchOnlyEmu()
-    assert not hasattr(emu, "touch_drag")
-    w = _make_world(str(tmp_path / "out"), emu=emu)
-    result = w.call("touch_drag", {"x1": 0, "y1": 0, "x2": 30, "y2": 40, "frames": 3})
-    text = " ".join(c["text"] for c in result if c.get("type") == "text")
-    assert "-> ok" in text
-    assert emu.touches[0] == (0, 0)
-    assert emu.touches[-1] == (30, 40)
-    assert emu.releases == 1
 
 
 # ---------------------------------------------------------------------------
@@ -479,11 +432,20 @@ def test_dispatch_rejects_non_integer_coords(tmp_path, monkeypatch):
 # 6. World.__init__ reads the flag once at construction (A/B arm-isolation discipline)
 # ---------------------------------------------------------------------------
 
-def test_world_init_reads_flag_once(monkeypatch):
+def test_world_init_reads_flag_once(tmp_path, monkeypatch):
+    """Drives the REAL World.__init__ (py-desmume stubbed out), so world_mcp.py's own flag-read
+    lines are what is under test -- re-executing copies of them against World.__new__ asserted only
+    on the test's own arithmetic and would have passed with those lines deleted."""
+    monkeypatch.setattr(core.nds_emulator, "DeSmuMEEmulator",
+                        lambda rom_path, headless=True: FakeNDSEmulator())
     monkeypatch.setenv("NDS_TOUCH_DRAG", "1")
-    w = World.__new__(World)
-    w.nds_touch_drag_world = "nds" in world_mcp._NDS_TOUCH_DRAG_WORLDS
-    w._nds_touch_drag_enabled = w.nds_touch_drag_world and world_mcp._nds_touch_drag_enabled()
+    args = SimpleNamespace(game="nds", rom="stub.nds", init_state=None, out=str(tmp_path / "out"),
+                           record=False, with_screenshot=False, keep_frames=False)
+    w = World(args)
+    assert w.nds_touch_drag_world is True
+    assert w._nds_touch_drag_enabled is True
+    # Read ONCE at construction: flipping the env afterwards must not change this session's arm.
+    monkeypatch.setenv("NDS_TOUCH_DRAG", "0")
     assert w._nds_touch_drag_enabled is True
 
 

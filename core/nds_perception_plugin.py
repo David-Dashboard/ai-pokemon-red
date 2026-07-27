@@ -19,14 +19,15 @@ from __future__ import annotations
 from typing import Optional
 
 from core.contracts import ToolCall, ToolResult, ToolSpec
+from core.nds_emulator import _TOUCH_SETTLE   # single definition, shared with touch_drag
 from core.perception_plugin import PerceptionPlugin
 
 # NDS bottom-screen coordinate bounds for validation.
 _TOUCH_X_MAX = 255
 _TOUCH_Y_MAX = 191
-# Default stylus hold and settle: comparable to a button press.
+# Default stylus hold: comparable to a button press. (_TOUCH_SETTLE lives in core/nds_emulator.py
+# so _tap() here and DeSmuMEEmulator.touch_drag() settle identically and can't drift apart.)
 _TOUCH_HOLD = 6
-_TOUCH_SETTLE = 4
 
 
 class NDSPerceptionPlugin(PerceptionPlugin):

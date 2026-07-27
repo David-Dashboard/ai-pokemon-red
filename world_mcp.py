@@ -1832,18 +1832,14 @@ class World:
         if not (1 <= frames <= 120):
             return [{"type": "text", "text": f"touch_drag: frames must be in [1,120]; got {frames}."}]
         emu = self.plugin.emu
-        if not (hasattr(emu, "touch_drag") or (hasattr(emu, "touch") and hasattr(emu, "touch_release"))):
+        # No inline fallback copy of the drag: touch_drag is dispatched only when args.game == "nds"
+        # (_NDS_TOUCH_DRAG_WORLDS), and an "nds" game refuses to start unless --rom is a .nds file
+        # (the fam/ext SystemExit in __init__), which always constructs a DeSmuMEEmulator — which
+        # always has touch_drag. A second copy of the interpolation loop was unreachable in
+        # production and had already drifted from the real one (no try/finally, no settle tick).
+        if not hasattr(emu, "touch_drag"):
             return [{"type": "text", "text": "touch_drag: emulator does not support touch input."}]
-        if hasattr(emu, "touch_drag"):
-            emu.touch_drag(x1, y1, x2, y2, frames=frames)
-        else:   # defensive fallback: compose from touch()/touch_release() directly, same algorithm
-            emu.touch(x1, y1)
-            emu.tick(1)
-            for i in range(1, frames + 1):
-                t = i / frames
-                emu.touch(round(x1 + (x2 - x1) * t), round(y1 + (y2 - y1) * t))
-                emu.tick(1)
-            emu.touch_release()
+        emu.touch_drag(x1, y1, x2, y2, frames=frames)
         self._track_frame()   # keep _frame_hist fresh (read_region/whats_changed parity, if ever mixed)
         head = f"[touch_drag ({x1},{y1})->({x2},{y2}) over {frames} frame(s) -> ok]"
         return [{"type": "text", "text": head}, *self._content(self.plugin.observe(_AGENT))]
@@ -2031,7 +2027,7 @@ class World:
             else:
                 self.decisions += 1   # one LLM decision buys up to _NDS_SKILL_MAX_WORLD_FRAMES frames
                 body = self._run_nds_skill(args)
-        elif name == "touch_drag":
+        elif name == "touch_drag" and self.nds_touch_drag_world:
             if not self._nds_touch_drag_enabled:
                 body = [{"type": "text",
                          "text": "touch_drag error: touch_drag is disabled for this session (set "
