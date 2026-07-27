@@ -5,6 +5,9 @@
 list was incomplete; a source gate fired before capability; the best case was still FAIL; §0
 misstated the banked v1 verdict). Every defect that review named is addressed below, and the
 passages that would have let a failure be re-labelled a success are deleted, not softened.
+A late challenge — that the harness is structurally incapable of ever emitting `PASS` — is
+adjudicated at `$0` in §0.1: it is true of `tools/check_gate0_codex.py::audit()`'s own verdict
+field and false of the scorer this document names as the pass bar.
 
 **Status: DRAFT — FOR DAVID. $0, docs only.** This document proposes a change; it does not make
 one. No fixture, scorer, predicate, or pinned file is edited by this document. No paid run is
@@ -27,6 +30,7 @@ these open produces an unscorable or void artifact and wastes the attempt.
 
 | # | Precondition | State verified 2026-07-28 | Blocks |
 |---|---|---|---|
+| **P0** | **The harness can demonstrably emit `PASS` on a synthetic dry input** — proven, at `$0`, from the exact tree that will score, before any money is spent | **SATISFIED this session** for `eval/score_gate0.py::score()` (§0.1). Must be re-run from the actual scoring tree at launch time. | Everything. Do not spend a cent until this prints `PASS`. |
 | **P1** | `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` exists | **MISSING.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json`, a partial `oracle.jsonl`, `oracle.attempt1_1785174570.jsonl`, and frames `ep0_step0.png`…`ep1_step8.png` — an abandoned capture. | Any `score_manifest()` verdict, **both arms** |
 | **P2** | `runs/gate0_live_breaker/live_breaker_dry_run_trip.json` exists and hashes to `27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734` | **MISSING** — `runs/gate0_live_breaker/` does not exist in the primary checkout. v1 banked `source_unreadable:live_breaker` + `live_breaker_artifact` for exactly this. Regenerable byte-exactly from `tools/gate0_credit_breaker.py`. | Any `score_manifest()` verdict |
 | **P3** | A fresh output directory, with `artifact_paths` / `audit_paths` re-pointed to it | **NOT DONE.** All twelve pinned paths in `eval/fixtures/gate0_paid_source_pins.json` point into `runs/gate0_paid/…`, which v1 already occupies. `runs/` is append-only raw data; v2 must not write there. | The whole attempt |
@@ -34,6 +38,62 @@ these open produces an unscorable or void artifact and wastes the attempt.
 | **P5** | A mechanical post-run hash-freeze step for the run-produced artifacts (§6, items 11–12) | **NOT PRE-REGISTERED ANYWHERE UNTIL NOW.** See §6. | Any `score_manifest()` verdict |
 | **P6** | `sha256(eval/fixtures/gate0_miniwob_paid_seeds.json)` recomputed **from the tree that will score**, == `263aaed17ee653c8b32e608d88ed1b8d29d6a424d29ce2e123671b56df159e63` | Matches in a clean LF checkout (recomputed this session). v1 nonetheless banked `frozen_seed_hash`, so the scoring tree materialized CRLF. Check, do not assume. | Any `score_manifest()` verdict |
 | **P7** | Adversarial review of **this** document, posted on the PR | Not done for this rewrite. | Launch decision |
+
+### 0.1 P0 in detail — can this harness emit `PASS` at all?
+
+A parallel audit raised the alarm that it cannot: `tools/check_gate0_codex.py::audit()` is
+**permanently fail-closed on wake accounting**, and its own `overall` field can never exceed
+`NO_GO_INSUFFICIENT_WAKES`. That part is **true and confirmed here**. `audit()` always returns
+`"wakes": None` and `"wake_accounting": "INSUFFICIENT_WAKES"` (`:297-298`), and its verdict chain
+(`:282-291`) ends in an unconditional `else: overall = "NO_GO_INSUFFICIENT_WAKES"` — there is no
+`PASS` branch in that function at all. Consequently
+`tools/check_gate0_codex.py::build_agent_metrics` (`:311-329`), which refuses anything but
+`overall == "PASS"`, is dead code by its own docstring's admission.
+
+**But `audit()` is not this gate's pass bar, and the conclusion drawn from it does not follow.**
+Verified by direct reading: `eval/score_gate0.py::score()` consumes exactly four fields off an
+audit dict — `leak_failures`, `constancy_failures`, `run_failures` (`:307-310`) and
+`accounting_failures` (`:326`). It **never reads `audit()`'s `overall`**. `wake_accounting` is read
+once, at `:287`, purely to populate the informational `wake_info` payload reported at `:366-371`
+with `"status": "DEFERRED"`. This is deliberate, not accidental: the 2026-07-21 amendment moved
+Cheap onto cost-per-task and de-gated wakes project-wide (`eval/score_gate0.py:263-281`,
+`:331-336`, `"cheap_basis": "cost_per_task"`). The production launcher already routes around the
+dead gate for the same reason — `tools/gate0_appserver_arm.py:858-863` says in as many words that
+it deliberately does **not** call `check_gate0_codex.build_agent_metrics` ("permanently unreachable
+dead wake gate") and builds the metrics record itself from `primitive_action_events`.
+
+**$0 dry check, run this session.** `score()` was fed an audit dict carrying the *exact* shape a
+real `audit()` returns on a clean run — `overall: "NO_GO_INSUFFICIENT_WAKES"`, `wakes: None`,
+`wake_accounting: "INSUFFICIENT_WAKES"`, all four failure lists empty — alongside a synthetic Red
+oracle satisfying all nine `_red_success` clauses, five clean MiniWoB terminals, and in-cap
+metrics. Result:
+
+```
+scorer overall  : PASS
+scorer readiness: GO
+wake_accounting : DEFERRED
+failures        : {"constancy": [], "leak": [], "infra": [], "capability": [], "cheap": [], "source": []}
+```
+
+Corroborated by two already-committed tests that assert the same thing independently:
+`tests/test_score_gate0.py::test_pass_matrix` (`:180-181`) and
+`::test_wake_cap_alone_no_longer_blocks_pass` (`:220-224`, which asserts `overall == "PASS"` and
+`wake_accounting["status"] == "DEFERRED"` **in the same test**).
+
+**Conclusion, stated precisely so it is not re-garbled downstream:**
+
+- `audit()`'s printed `overall` is capped at `NO_GO_INSUFFICIENT_WAKES` and **must never be quoted
+  as the gate verdict**. Any document or verdict report that does so is wrong.
+- `eval/score_gate0.py::score_manifest()` — the pass bar this pre-registration names — **can** emit
+  `PASS` / `GO`, and the wake ceiling does not block it.
+- Therefore the pass bar in §2 is emittable and v2 can disconfirm. **P0 stays a standing
+  precondition anyway**: it costs `$0`, it must be re-run from the exact tree that will score
+  (fixture edits under §6 can break it), and it is the cheapest possible guard against spending
+  money on a harness that cannot produce the verdict being sought.
+- **No code change is required for this.** `tools/check_gate0_codex.py` is not edited. One
+  follow-up is worth filing separately, out of scope here: `audit()`'s dead `PASS` branch and the
+  unreachable `build_agent_metrics` are a standing trap that has now misled at least one reviewer
+  into concluding the gate was unwinnable. That is a comment/naming defect, not a v2 blocker.
 
 ### P1 in detail — the source gate that fires before capability is evaluated
 
@@ -95,16 +155,29 @@ The predicate results *underneath* that verdict — diagnostic, not banked verdi
 
 ### The governance fact, encoded and not argued with
 
-An audit has since **proven the v1 breach was a benign fixture-lifecycle artifact**. Four of the
-six `constancy` entries (`config_sha256`, `codex_mcp_list_sha256`, both arms) were receipt-vs-
-*placeholder* comparisons against the literal sentinel string
-`"CONSTRAINT:launch-invocation-dependent-recompute-at-signature"`; the launcher fix that resolves
-them at launch time (`tools/gate0_appserver_arm.py::resolve_expected_pins()`, commit `3c3f704`,
-"fix(gate0-appserver): resolve expected-pins gap causing a benign CONSTANCY_BREACH",
-2026-07-24 23:56:06 +0200) landed roughly **13 minutes after Arm W's run completed** (Arm W
-handshake 23:39 local, 295.594 s of run). The remaining two (`tool_schema_sha256`, both arms) were
-a JSON-serialization-format mismatch between the PowerShell-era capture recipe and the app-server's
-`json.dumps`, since independently re-derived and re-pinned on `main` (commit `346b612`).
+An audit has since **proven the v1 breach was a benign fixture-lifecycle artifact**
+(`reports/2026-07-28-gate0-constancy-breach-addendum.md`, PR #175 — the authority on the mechanism;
+its evidence is cross-referenced here, not restated).
+
+Four of the six `constancy` entries (`config_sha256`, `codex_mcp_list_sha256`, both arms) were
+comparisons of the run's **`handshake-receipt.json`** against the literal *placeholder* string
+`"CONSTRAINT:launch-invocation-dependent-recompute-at-signature"` — a pin that was never a real
+value. The launcher fix that resolves them at launch time
+(`tools/gate0_appserver_arm.py::resolve_expected_pins()`, commit `3c3f704`, "fix(gate0-appserver):
+resolve expected-pins gap causing a benign CONSTANCY_BREACH", 2026-07-24 23:56:06 +0200) postdates
+**both** arms, but by very different margins, and the difference must not be blurred:
+
+- **Arm W:** receipt at 23:39 local, ~295.594 s of run — the fix landed roughly **13 minutes**
+  after that arm completed.
+- **Arm R:** receipt written **16:00:11**, i.e. the fix postdates it by roughly **eight hours**.
+  The "13 minutes" framing is **true of the MiniWoB arm only** and must not be stated of both.
+
+The remaining two entries (`tool_schema_sha256`, both arms) were a serialization difference between
+the PowerShell-era capture recipe and the app-server's Python `json.dumps` — specifically in
+**separators, non-ASCII escaping, and (Arm R only) apostrophe escaping**. **Key ordering is
+identical**; earlier documents that guessed "whitespace/key-order" are wrong and should not be
+propagated. The values have since been independently re-derived and re-pinned on `main`
+(commit `346b612`).
 
 **The v1 result nonetheless remains VOID.** Two frozen laws say so, and neither has an exception
 for "the breach turned out to be benign":
@@ -122,10 +195,9 @@ result is known is decorative. v1 is banked as `CONSTANCY_BREACH`, void as capab
 is not reinterpreted anywhere in this document. Its predicate outputs are used here only to choose
 what to test next — never as evidence of capability or its absence.
 
-**Cross-reference:** `reports/2026-07-28-gate0-constancy-breach-addendum.md` is being written
-separately and is the authority on the breach mechanism. Verified 2026-07-28: it is not yet
-present on `main` or on any branch fetched here. When it lands, it governs the mechanism; this
-section defers to it and deliberately does not duplicate it. Nothing in it can un-void v1.
+**Cross-reference:** `reports/2026-07-28-gate0-constancy-breach-addendum.md` (PR #175) is the
+authority on the breach mechanism. This section defers to it and deliberately does not duplicate
+its evidence. Nothing in it can un-void v1.
 
 ---
 
@@ -134,10 +206,19 @@ section defers to it and deliberately does not duplicate it. Nothing in it can u
 Stated before any v2 number exists, in terms a hostile reader can check mechanically from the
 on-disk artifacts with the unedited `eval/score_gate0.py`.
 
-**v2 SUCCEEDS if and only if all five hold. Any single miss is a FAIL.**
+**Precondition on this whole section — is the verdict actually a function of agent behaviour?**
+A disconfirmation condition is worthless if the harness prints the same thing regardless of what
+the agent does. §0.1 settles this at `$0`: `eval/score_gate0.py::score()` emits `PASS`/`GO` on a
+clean synthetic input and `FAIL_CAPABILITY` on a dirty one, while `tools/check_gate0_codex.py::
+audit()`'s own `overall` sits permanently at `NO_GO_INSUFFICIENT_WAKES` and is **not** consulted by
+the scorer. The verdict below therefore varies with agent behaviour and the run can disconfirm.
+**S-0 makes re-proving this a launch gate**, because a §6 fixture edit could break it.
+
+**v2 SUCCEEDS if and only if all six hold. Any single miss is a FAIL.**
 
 | ID | Check | Mechanical test |
 |---|---|---|
+| **S-0** | Harness can emit the verdict being sought | The §0.1 dry check, re-run from the scoring tree, prints `overall: PASS` / `readiness: GO`. If it does not, **do not launch** — no run can pass a bar the scorer cannot print. |
 | **S-1** | Red predicate clean | `_red_success(_jsonl("<v2out>/red/world/oracle.jsonl"))` returns exactly `(True, [])` |
 | **S-2** | Capability sub-bars | `wall_clock_s <= 466.576` (= `2 × 233.288`) **and** `primitive_actions <= 542` (= `2 × 271`) |
 | **S-3** | No leak, no constancy failure | `audit()` returns empty `leak_failures` **and** empty `constancy_failures` for the arm |
@@ -164,6 +245,9 @@ on-disk artifacts with the unedited `eval/score_gate0.py`.
   later proves to be. Same law as §1.
 - **D-6.** `_red_success` clean but S-2 or S-4 missed → FAIL (`FAIL_CAPABILITY` or `FAIL_CHEAP`
   respectively in the frozen vocabulary).
+- **D-7.** Quoting `audit()`'s own `overall` (permanently `NO_GO_INSUFFICIENT_WAKES`) as the gate
+  verdict, in either direction. It is not the pass bar (§0.1); a verdict report that cites it as
+  one is a reporting failure regardless of the underlying result.
 
 **Forbidden interpretations.** These framings appeared in the 2026-07-25 draft and are banned from
 any v2 verdict, in advance:
@@ -479,8 +563,12 @@ lifecycle work, plus one pre-registered post-run hashing step.
   `leak → constancy → infra → source → capability → cheap`.
 - **`task_sha256` is in `PIN_FIELDS` but not in `CONSTANCY_FIELDS`** (`tools/check_gate0_codex.py:
   21-31`) — so a task-text change cannot itself trigger a *between-arms* `CONSTANCY_BREACH`. It can
-  and will trigger a *receipt-vs-frozen-pin* mismatch if §6 is not completed; those land in the same
-  `failures["constancy"]` bucket. The two are different checks with an overloaded name.
+  and will trigger a *`handshake-receipt.json`-vs-frozen-pin* mismatch if §6 is not completed; those
+  land in the same `failures["constancy"]` bucket. The two are different checks with an overloaded
+  name.
+- **Wakes do not gate anything** (`:263-281`, `:331-336`). `audit()`'s own `overall` is capped at
+  `NO_GO_INSUFFICIENT_WAKES` and the scorer never reads it (§0.1). `"cheap_basis"` is
+  `"cost_per_task"`; `"wake_accounting"` rides along as `"DEFERRED"`, informational only.
 
 **No predicate, bar, or constant may be loosened.** The design doc's own law: *"the future
 pre-registration may tighten [bars], never loosen them."* v2 loosens nothing. §8's H-d is a
@@ -561,10 +649,11 @@ Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both it
 
 **The document is freezable. The run is not yet launchable.** Every metric, predicate, bar, and
 disconfirmation condition above is fixed and mechanically checkable before any v2 number exists,
-and none of them can be re-read favourably afterwards. What blocks launch is the P1-P7 precondition
-list — fixture and artifact lifecycle work plus one review — not an open question of interpretation.
+and none of them can be re-read favourably afterwards. The pass bar is one the scorer can actually
+print — proven at `$0` in §0.1, not assumed. What blocks launch is the P0-P7 precondition list —
+fixture and artifact lifecycle work plus one review — not an open question of interpretation.
 
-Freeze this document, complete P1-P7, then launch. Do not launch with any precondition open.
+Freeze this document, complete P0-P7, then launch. Do not launch with any precondition open.
 
 ## Sources
 
@@ -572,7 +661,11 @@ Freeze this document, complete P1-P7, then launch. Do not launch with any precon
   `_arm_metrics` `:128-150`, `_verify_audit_paths` `:162-218`, `_verify_sources` `:221-299`,
   `score` `:302-373`, `score_manifest` `:376-389`)
 - `tools/check_gate0_codex.py` (`TOOLS`, `PIN_FIELDS`, `CONSTANCY_FIELDS` `:15-31`;
-  `primitive_action_events` `:251-258`)
+  `primitive_action_events` `:251-258`; the permanently fail-closed wake ceiling `:267-298` and the
+  unreachable `build_agent_metrics` `:311-329`)
+- `tests/test_score_gate0.py::test_pass_matrix` (`:180-181`),
+  `::test_wake_cap_alone_no_longer_blocks_pass` (`:220-224`) — committed proof that the scorer can
+  emit `PASS` while wake accounting is `DEFERRED`
 - `core/perception_plugin.py:189-242` (one oracle row per `observe`)
 - `world_mcp.py:174-178` (Red watch spec), `:1861-1899` + `:1914-1928` (autopilot),
   `:2055-2065`, `:2162-2232` (MiniWoB oracle rows and the exhausted-refusal path)
@@ -588,7 +681,7 @@ Freeze this document, complete P1-P7, then launch. Do not launch with any precon
   `reports/2026-07-18-gate0-prereg.md` (`:117-119`, void law),
   `reports/2026-07-13-minimum-north-star-gate-0-design.md` (`:268-276` held-out ordering,
   `:372-373` bank-as-printed, `:380-397` escalation shelf)
-- `reports/2026-07-28-gate0-constancy-breach-addendum.md` (**forthcoming** — not present on any
-  branch as of 2026-07-28; authority on the breach mechanism when it lands, §1)
+- `reports/2026-07-28-gate0-constancy-breach-addendum.md` (PR #175 — authority on the v1 breach
+  mechanism; cross-referenced in §1, not restated)
 - `.claude/skills/{gate-methodology,run-brief-authoring,safety-invariants,paid-run-harness}/SKILL.md`,
   `.claude/PROTOCOL.md` §6
