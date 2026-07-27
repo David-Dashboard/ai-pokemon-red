@@ -167,12 +167,20 @@ def main() -> int:
             pb.load_state(f)
     pb.tick(4, render=True)
 
-    jf = open(os.path.join(out, "buttons.jsonl"), "a", encoding="utf-8")
+    # buttons.jsonl / ram.bin / oracle.jsonl are opened in APPEND mode, so a second session on the same
+    # out dir continues the same files. Continue the STEP INDEX too: if it restarted at 0 the second
+    # segment would silently overwrite segment 1's frame_NNNNNN.png and desync `step` from the ram.bin
+    # snapshot index. (That is exactly what happened in runs/2026-07-28_kirby_stage3_human, whose
+    # oracle.jsonl has 1128 rows but only 870 surviving frames — see
+    # reports/probes/2026-07-26-kirby-gb-stage3/evidence/README.md.)
+    bpath = os.path.join(out, "buttons.jsonl")
+    start = sum(1 for _ in open(bpath, encoding="utf-8")) if os.path.exists(bpath) else 0
+    jf = open(bpath, "a", encoding="utf-8")
     rf = open(os.path.join(out, "ram.bin"), "ab") if args.ram else None
     # --watch's RAM oracle goes to a SEPARATE channel (oracle.jsonl), never into buttons.jsonl: buttons.jsonl +
     # frames are the pixels+actions substrate the offline pipeline reads, so RAM must stay out of it (ADR-001).
     of = open(os.path.join(out, "oracle.jsonl"), "a", encoding="utf-8") if watch else None
-    n = {"i": 0}
+    n = {"i": start}
 
     def record(buttons, mode):
         path = os.path.join(out, f"frame_{n['i']:06d}.png")
@@ -189,9 +197,13 @@ def main() -> int:
         n["i"] += 1
 
     with open(os.path.join(out, "meta.json"), "w", encoding="utf-8") as mf:
+        # `watch` MUST be persisted: without it oracle.jsonl's column names (c1, x_px, ...) are
+        # unresolvable to addresses after the fact, which makes the whole oracle log unverifiable.
         json.dump({"rom": os.path.basename(args.rom), "mode": args.mode, "keys": args.keys,
                    "ram": bool(args.ram), "hold": args.hold, "settle": args.settle,
-                   "sample_every": args.sample_every, "seed": args.seed}, mf, indent=2)
+                   "sample_every": args.sample_every, "seed": args.seed,
+                   "watch": {nm: f"0x{ad:04X}" for nm, ad in watch},
+                   "watch_arg": args.watch, "start_step": start}, mf, indent=2)
 
     if args.mode == "auto":
         rng = random.Random(args.seed)
@@ -243,7 +255,11 @@ def _run_human(pb, args, record, out):
     keymap[sdl2.SDL_SCANCODE_RETURN] = "start"
     keymap[sdl2.SDL_SCANCODE_BACKSPACE] = "select"
 
-    S = {"quit": False, "auto": False, "ckpt": 0}
+    # `out` is stable for a given --name + date, so a second same-day session restarting this counter
+    # at 1 would OVERWRITE checkpoint_01.state. Raw run data is append-only: seed past what is on disk.
+    prior = [int(m.group(1)) for f in os.listdir(out)
+             for m in [re.fullmatch(r"checkpoint_(\d+)\.state", f)] if m]
+    S = {"quit": False, "auto": False, "ckpt": max(prior, default=0)}
     held = {"tab": False, "c": False, "esc": False}
     rng = random.Random(args.seed)
 

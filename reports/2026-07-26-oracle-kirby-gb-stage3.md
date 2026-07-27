@@ -3,30 +3,46 @@
 # ★★★ ANSWERED (2026-07-28): the EX02 stage oracle is `0xD03B`
 
 **A human (David) played Castle Lololo to its end and into Stage 3 with RAM sampling on**
-(`record.py --mode human --ram --watch ...`, 1,128 recorded steps, run
-`runs/2026-07-28_kirby_stage3_human/`). That produced the discriminating sample this hunt has
-needed since PR #169.
+(`record.py --mode human --ram --watch ...`, **1,128 sampled rows across two recording segments**
+— the step index restarts once — run `runs/2026-07-28_kirby_stage3_human/`). That produced the
+discriminating sample this hunt has needed since PR #169.
 
-| address | Stage 1 | Stage 2 | **Stage 3** | verdict |
+| address | Stage 1 † | Stage 2 | **Stage 3** | verdict |
 |---|---|---|---|---|
-| **`0xD03B`** | `0` | `1` | **`2`** | ★ **REAL STAGE COUNTER (0-indexed)** |
-| `0xD19F` | `0` | `1` | `1` | latch — ELIMINATED |
-| `0xD3A9` | `0` | `1` | `1` | latch — ELIMINATED |
-| `0xD3BA` | `0` | `1` | `1` | latch — ELIMINATED |
-| `0xD3CD` | `0` | `1` | `1` | latch — ELIMINATED |
+| **`0xD03B`** | `0` (PR #169, not re-observed in this run) | `1` | **`2`** | ★ **REAL STAGE COUNTER (0-indexed)** |
+| `0xD19F` | `0` † | `1` | `1` | latch — ELIMINATED |
+| `0xD3A9` | `0` † | `1` | `1` | latch — ELIMINATED |
+| `0xD3BA` | `0` † | `1` | `1` | latch — ELIMINATED |
+| `0xD3CD` | `0` † | `1` | `1` | latch — ELIMINATED |
 | `0xC057`, `0xC073`, `0xC07B` | — | vary *within* Stage 2 | — | ELIMINATED (this session, earlier) |
 
-Evidence, all from the one human run and verified against the full 8 KB WRAM dump (`ram.bin`,
-every one of the 1,128 steps — not just the sampled oracle rows):
+† **The Stage-1 `0` anchor is NOT from this run.** It comes from PR #169 and a fresh-boot baseline. The
+2026-07-28 recording only ever observes `{1, 2}` — it starts already inside Castle Lololo. The `0`
+column is carried forward, not re-measured.
 
-- `0xD03B` takes **only** the values `{1, 2}` across the whole run and changes **exactly once**.
-- The change lands on the Stage-2 → Stage-3 boundary: the **"STAGE 3 FLOAT ISLANDS" title card** is
-  on screen at the adjacent frame (`evidence/stage3_title_card.png`).
-- **It survives two deaths** (recorded at steps 414 and 766) without moving — the exact
-  falsification that killed the 2026-07-23 candidates `0xD052`/`0xD3EE`.
-- The other four are constant `1` for all 1,128 steps, *including inside Stage 3*. They encode
-  "past Stage 1" and nothing more, which is precisely the latch hypothesis PR #169 could not rule
-  out.
+Evidence from that one human run (Stage-1 column excepted, per † above). What is **committed** is the
+sampled oracle log `reports/probes/2026-07-26-kirby-gb-stage3/evidence/human_stage3_oracle.jsonl`
+(1,128 rows across two recording segments; the step index restarts `257 → 0` at file row 258, so
+`step` is not a unique key and the max `step` is 869 — index by file row). The full 8 KB-per-step WRAM
+dump was checked **offline** against the run's `ram.bin`; **that dump is not committed** — it lives
+under `runs/`, which `.gitignore:27` excludes, and no committed script reads it. Column → address
+mapping, its empirical confirmation, and a re-derivation script that uses the committed JSONL alone:
+`reports/probes/2026-07-26-kirby-gb-stage3/evidence/README.md` + `evidence/verify.py`.
+
+- `0xD03B` (column `c1`) takes **only** the values `{1, 2}` across all 1,128 committed rows and changes
+  **exactly once**, at file row 1082 (`step 824`).
+- The change lands on the Stage-2 → Stage-3 boundary: the flip is on the blanked transition frame
+  (`step 824`) and the **"STAGE 3 FLOAT ISLANDS" title card** is on screen at `step 828`, two sampled
+  frames later — both panels are in `evidence/stage3_title_card.png`.
+- **It survives two deaths without moving** — the exact falsification that killed the 2026-07-23
+  candidates `0xD052`/`0xD3EE`. ⚠ This one rests on the **uncommitted** `ram.bin`: the committed JSONL
+  has **no HP/lives/death column**. Offline, Kirby's HP byte (`0xD086`) reaches `0` around file rows
+  ~414 and ~766 — both inside Stage 2 — and `c1` does not move across either.
+- The other four (`c2..c5`) are constant `1` across all 1,128 rows, *including inside Stage 3* — but
+  ⚠ **the Stage-3 observation window is short**: only the **last ~46 rows** of the file are inside
+  Stage 3. Constant `1` across those ~46 recorded Stage-3 rows is what eliminates them: on that window
+  they encode "past Stage 1" and nothing more, which is precisely the latch hypothesis PR #169 could
+  not rule out. It separates them from a counter that has already incremented; it is not a long look.
 
 So PR #169's two competing hypotheses are now separated: **one byte was the counter and four were
 latches.** A wired oracle built on any of the four would have silently passed EX02 the moment Kirby
@@ -44,14 +60,26 @@ is cheap insurance.
 
 ---
 
+> ## ⚠ SUPERSEDED AS OF 2026-07-28 — everything below is the 2026-07-26 hunt narrative
+>
+> Everything from here down was written on **2026-07-26**, before David's human run. It is kept because
+> the record of *how* the answer was reached — and of the two wrong claims made along the way — is the
+> useful part. **Its verdict is wrong.** Where a section's conclusion was overturned it carries its own
+> `SUPERSEDED` marker; read the header above for the current state.
+>
+> Two things below still stand and are **unmodified**: the retraction of the *"savestates yield a frozen
+> Kirby"* claim, and the *"false alarm"* retraction of the *"randomised search corrupts the game"* claim.
+> Both are the load-bearing part of this document's honesty and neither is affected by the new result.
+
 Status: **$0 local probe only, offline PyBoy, NO LLM, NO Docker, NO paid run.** Worktree
 `probe/kirby-gb-stage3` (`../ai-pokemon-red-kirby3`). Continues
 `reports/2026-07-25-oracle-kirby-gb-stage.md` (PR #169), whose banked next step was: *reach Stage 3
 and see whether any of the 8 surviving bytes reads `2` (real stage counter) or stays `1`
 (one-time "past Stage 1" latch).*
 
-**Verdict: STAGE 3 NOT REACHED — EX02 REMAINS ORACLE_PENDING, unchanged.** The 8 survivors are
-still exactly as ambiguous as PR #169 left them. What this session did produce is (a) a materially
+**Verdict as of 2026-07-26 — ⚠ SUPERSEDED 2026-07-28 (the oracle is `0xD03B`; see header):
+STAGE 3 NOT REACHED — EX02 REMAINS ORACLE_PENDING, unchanged.** The 8 survivors were, at that
+point, still exactly as ambiguous as PR #169 left them. What this session did produce is (a) a materially
 better driving rig, (b) a **correction to PR #169's characterisation of `0xD052`/`0xD3EE`**, (c) a
 newly identified pair of position bytes, and (d) a reproducible route to the point where progress
 now stops. Nothing was wired; no scorer, `world_mcp.py`, fixture or pinned file was touched.
@@ -82,10 +110,11 @@ session, all eyes-on and screenshot-verified:
 
 **Where it stopped: the Lololo boss fight, at 1 HP.** The route arrives with hp=1, and the fight
 needs several inhale-a-block-and-spit-it-back cycles; 300 fight-biased randomised trials landed
-minor hits (best score gain 400) but never won. So no Stage-2 → Stage-3 transition was observed and
-**the discriminating sample EX02 needs still does not exist**. This is a much better place to be
-stuck than PR #169's (which never left the first corridor), and the remaining gap is one won boss
-fight.
+minor hits (best score gain 400) but never won. So no Stage-2 → Stage-3 transition was observed **at
+this point in the session**, and the discriminating sample EX02 needs did not yet exist. This is a much
+better place to be stuck than PR #169's (which never left the first corridor), and the remaining gap is
+one won boss fight. *(The fight was won later the same session — see "★★ THE LOLOLO FIGHT IS WON" below
+— and the sample itself came from David's human run on 2026-07-28; see the header.)*
 
 ⚠ **RETRACTED — "savestates yield a frozen Kirby" was my second wrong mechanism claim here.** I
 reported that savestate-chaining produced a Kirby who could not move horizontally. It did not. Two
@@ -188,7 +217,7 @@ characterised from too few conditions (cf. the Cave Noire `0xD389` and Emerald o
 cases) — the fix each time is the same: vary the input deliberately rather than sampling a
 trajectory.
 
-## The 8 survivors — status unchanged, plus extra falsification
+## The 8 survivors — status as of 2026-07-26 (⚠ SUPERSEDED 2026-07-28), plus extra falsification
 
 The five surviving bytes `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` read **`1` in every sample taken
 this session** — across ~40 driven bursts, several deaths + respawns, multiple confirmed room
@@ -199,7 +228,12 @@ three (`0xC057/0xC073/0xC07B`) are eliminated — they vary within Stage 2 (see 
 
 It does **not** discriminate the two live hypotheses (real incrementing stage index vs one-time
 past-Stage-1 latch), because both predict `1` everywhere inside Stage 2. **Do not wire any of
-them.** The falsifying test is unchanged and still unrun: reach Stage 3 and read them.
+them.** The falsifying test was, as of 2026-07-26, unrun: reach Stage 3 and read them.
+
+⚠ **SUPERSEDED 2026-07-28.** That test was run — David's human play-through into Float Islands. It
+came out **`0xD03B` = counter, the other four = latches** (header). The "do not wire" instruction still
+stands, but now for an entirely different reason: `world_mcp.py` edits cascade into the frozen Gate-0
+pins, and `0xD03B` still needs its Stage-3 → Stage-4 anchor.
 
 ## Rig improvements (the reusable part)
 
@@ -332,9 +366,15 @@ problem.
 inhale-then-spit has to land on a specific ledge with correct facing inside that window. The
 remaining work is a genuine game-playing problem, not an instrumentation one.
 
-## The one thing left: win the Lololo fight
+## ⚠ SUPERSEDED — "The one thing left: win the Lololo fight"
 
-The hunt is now **one boss fight** from the Stage-3 sample. Concretely, for the next session:
+**Twice overtaken, kept as the pre-win plan.** The fight *was* won later the same session (see "★★ THE
+LOLOLO FIGHT IS WON" above), and winning it turned out **not** to end Stage 2 — so it was never the one
+thing left. The Stage-3 sample came instead from David's human run on 2026-07-28 (header). Read the
+list below as the state of the plan before either of those, not as work outstanding.
+
+The hunt looked, at the time, **one boss fight** from the Stage-3 sample. Concretely, for the next
+session:
 
 - Start from `cont_boss2.state` (banked boss-room arrival, controllable) or re-derive it with the
   continuous route in step 6 above.
@@ -348,7 +388,10 @@ The hunt is now **one boss fight** from the Stage-3 sample. Concretely, for the 
   any reads `2`, it is a real stage counter and EX02's oracle is found; if they all stay `1`, they
   are a past-Stage-1 latch and the hunt restarts on a different byte.
 
-## Recommended next step (not taken here — needs David)
+## Recommended next step — ★ TAKEN on 2026-07-28, and it is what answered the hunt
+
+*(Written 2026-07-26 as "not taken here — needs David". David took it two days later; this
+recommendation is the direct provenance of the header's verdict.)*
 
 PR #169 already named the fastest path and this session is evidence for it: **a human plays Castle
 Lololo with RAM sampling on.** The recorder already supports it — `2026-06-23_kirby_ramplay` was
@@ -358,9 +401,15 @@ by inspection.
 
 The alternative — continuing the scripted/eyes-on hunt — is what this session did, at length. The
 honest read: it works, it just costs a lot per room (each new sub-area took roughly 8-12 directed
-iterations to map and cross), the areas kept coming, and the automated fallback that would have
-sped it up turns out to corrupt the game. Castle Lololo's boss is still an unknown number of rooms
-away.
+iterations to map and cross), and the areas kept coming.
+
+⚠ The original 2026-07-26 text continued: *"...and the automated fallback that would have sped it up
+turns out to corrupt the game. Castle Lololo's boss is still an unknown number of rooms away."* **Both
+halves are wrong and are struck.** The first re-asserted the *"randomised search corrupts the game"*
+claim that this very document had already **RETRACTED** — see "The false alarm, recorded because the
+reasoning error is the useful part" above: the states were legitimate and the HUD "validity guard"
+laundered my own error into apparent confirmation. The second was overtaken later the same session:
+the boss was reached, and beaten.
 
 ⚠ The paid-brain option (let the agent play it) would also produce a genuine brain-capability
 datapoint, but it needs a pre-registration first per gate-methodology, and the one existing datapoint
@@ -374,3 +423,17 @@ held-out-game edit. No oracle address wired. No scorer or fixture touched — `e
 stage3.py` still refuses unconditionally with `ORACLE_PENDING`, which remains correct. $0: offline
 PyBoy only, no paid call, no Docker. Scratch savestates/screenshots stayed in the session scratchpad
 per the convention of the two prior hunts; nothing written under `runs/`.
+
+**Updated 2026-07-28.** Two things above need amending for the human run and the report revision:
+- The 2026-07-28 human session **did** write under `runs/` — `runs/2026-07-28_kirby_stage3_human/`, a
+  new append-only recording. Nothing existing under `runs/` was modified or deleted. That directory is
+  gitignored (`.gitignore:27`) and is **not** in this repo; only the sampled oracle rows and one
+  montage PNG were copied out into `reports/probes/2026-07-26-kirby-gb-stage3/evidence/`.
+- **`record.py` was edited** — the only production file this branch touches. Three changes: the `C`
+  (checkpoint) hotkey wrote to `runs/<name>/` instead of the date-prefixed run dir and crashed the
+  session with `FileNotFoundError`; `meta.json` now persists the `--watch` mapping (without it an
+  `oracle.jsonl`'s column names are unresolvable after the fact — the gap this revision had to close by
+  reconstruction); and the checkpoint counter and step index are now seeded from what is already on
+  disk, so a second same-day session cannot silently overwrite `checkpoint_01.state` or the first
+  segment's frames. Still no brain / `core/` / contracts / tool-schema / `world_mcp.py` / scorer /
+  fixture / held-out edit, and still no oracle address wired.
