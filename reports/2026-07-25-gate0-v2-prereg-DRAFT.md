@@ -5,9 +5,11 @@
 list was incomplete; a source gate fired before capability; the best case was still FAIL; §0
 misstated the banked v1 verdict). Every defect that review named is addressed below, and the
 passages that would have let a failure be re-labelled a success are deleted, not softened.
-A late challenge — that the harness is structurally incapable of ever emitting `PASS` — is
-adjudicated at `$0` in §0.1: it is true of `tools/check_gate0_codex.py::audit()`'s own verdict
-field and false of the scorer this document names as the pass bar.
+A late challenge — that the harness is structurally incapable of ever emitting `PASS` — was raised
+and withdrawn during the rewrite; §0.1 records the adjudication (true of
+`tools/check_gate0_codex.py::audit()`'s own verdict field, false of the scorer this document names
+as the pass bar) as a **non-blocking** note, since it is a recurring misreading the v1 pre-reg
+already warned against.
 
 **Status: DRAFT — FOR DAVID. $0, docs only.** This document proposes a change; it does not make
 one. No fixture, scorer, predicate, or pinned file is edited by this document. No paid run is
@@ -30,7 +32,6 @@ these open produces an unscorable or void artifact and wastes the attempt.
 
 | # | Precondition | State verified 2026-07-28 | Blocks |
 |---|---|---|---|
-| **P0** | **The harness can demonstrably emit `PASS` on a synthetic dry input** — proven, at `$0`, from the exact tree that will score, before any money is spent | **SATISFIED this session** for `eval/score_gate0.py::score()` (§0.1). Must be re-run from the actual scoring tree at launch time. | Everything. Do not spend a cent until this prints `PASS`. |
 | **P1** | `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` exists | **MISSING.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json`, a partial `oracle.jsonl`, `oracle.attempt1_1785174570.jsonl`, and frames `ep0_step0.png`…`ep1_step8.png` — an abandoned capture. | Any `score_manifest()` verdict, **both arms** |
 | **P2** | `runs/gate0_live_breaker/live_breaker_dry_run_trip.json` exists and hashes to `27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734` | **MISSING** — `runs/gate0_live_breaker/` does not exist in the primary checkout. v1 banked `source_unreadable:live_breaker` + `live_breaker_artifact` for exactly this. Regenerable byte-exactly from `tools/gate0_credit_breaker.py`. | Any `score_manifest()` verdict |
 | **P3** | A fresh output directory, with `artifact_paths` / `audit_paths` re-pointed to it | **NOT DONE.** All twelve pinned paths in `eval/fixtures/gate0_paid_source_pins.json` point into `runs/gate0_paid/…`, which v1 already occupies. `runs/` is append-only raw data; v2 must not write there. | The whole attempt |
@@ -39,34 +40,46 @@ these open produces an unscorable or void artifact and wastes the attempt.
 | **P6** | `sha256(eval/fixtures/gate0_miniwob_paid_seeds.json)` recomputed **from the tree that will score**, == `263aaed17ee653c8b32e608d88ed1b8d29d6a424d29ce2e123671b56df159e63` | Matches in a clean LF checkout (recomputed this session). v1 nonetheless banked `frozen_seed_hash`, so the scoring tree materialized CRLF. Check, do not assume. | Any `score_manifest()` verdict |
 | **P7** | Adversarial review of **this** document, posted on the PR | Not done for this rewrite. | Launch decision |
 
-### 0.1 P0 in detail — can this harness emit `PASS` at all?
+### 0.1 Settled: the pass bar IS emittable — `audit()`'s ceiling is not the gate's
 
-A parallel audit raised the alarm that it cannot: `tools/check_gate0_codex.py::audit()` is
-**permanently fail-closed on wake accounting**, and its own `overall` field can never exceed
-`NO_GO_INSUFFICIENT_WAKES`. That part is **true and confirmed here**. `audit()` always returns
-`"wakes": None` and `"wake_accounting": "INSUFFICIENT_WAKES"` (`:297-298`), and its verdict chain
-(`:282-291`) ends in an unconditional `else: overall = "NO_GO_INSUFFICIENT_WAKES"` — there is no
-`PASS` branch in that function at all. Consequently
-`tools/check_gate0_codex.py::build_agent_metrics` (`:311-329`), which refuses anything but
-`overall == "PASS"`, is dead code by its own docstring's admission.
+A review during this rewrite raised, then withdrew, the alarm that the harness is structurally
+incapable of emitting `PASS` and that v2 could therefore disconfirm nothing. **It is recorded here
+because it is a recurring misreading, not because it is a blocking risk. It is not a precondition.**
 
-**But `audit()` is not this gate's pass bar, and the conclusion drawn from it does not follow.**
-Verified by direct reading: `eval/score_gate0.py::score()` consumes exactly four fields off an
-audit dict — `leak_failures`, `constancy_failures`, `run_failures` (`:307-310`) and
-`accounting_failures` (`:326`). It **never reads `audit()`'s `overall`**. `wake_accounting` is read
-once, at `:287`, purely to populate the informational `wake_info` payload reported at `:366-371`
-with `"status": "DEFERRED"`. This is deliberate, not accidental: the 2026-07-21 amendment moved
-Cheap onto cost-per-task and de-gated wakes project-wide (`eval/score_gate0.py:263-281`,
-`:331-336`, `"cheap_basis": "cost_per_task"`). The production launcher already routes around the
-dead gate for the same reason — `tools/gate0_appserver_arm.py:858-863` says in as many words that
-it deliberately does **not** call `check_gate0_codex.build_agent_metrics` ("permanently unreachable
-dead wake gate") and builds the metrics record itself from `primitive_action_events`.
+**What is true:** `tools/check_gate0_codex.py::audit()` is permanently fail-closed on wake
+accounting. It always returns `"wakes": None` / `"wake_accounting": "INSUFFICIENT_WAKES"`
+(`:297-298`), and its verdict chain (`:282-291`) ends in an unconditional
+`else: overall = "NO_GO_INSUFFICIENT_WAKES"` — there is no `PASS` branch. Consequently
+`check_gate0_codex.build_agent_metrics` (`:311-329`), which refuses anything but `overall ==
+"PASS"`, is dead code by its own docstring's admission.
 
-**$0 dry check, run this session.** `score()` was fed an audit dict carrying the *exact* shape a
-real `audit()` returns on a clean run — `overall: "NO_GO_INSUFFICIENT_WAKES"`, `wakes: None`,
-`wake_accounting: "INSUFFICIENT_WAKES"`, all four failure lists empty — alongside a synthetic Red
-oracle satisfying all nine `_red_success` clauses, five clean MiniWoB terminals, and in-cap
-metrics. Result:
+**What does not follow:** that this caps the gate. `eval/score_gate0.py::score()` consumes exactly
+four fields off an audit dict — `leak_failures`, `constancy_failures`, `run_failures` (`:307-310`)
+and `accounting_failures` (`:326`). It **never reads `audit()`'s `overall`**, and never gates on
+`wake_accounting`, which is read once (`:287`) purely to populate the informational payload
+reported at `:366-371` as `"status": "DEFERRED"`. **The v1 pre-registration already said so, and
+this document simply restores that reading** — `reports/2026-07-18-gate0-prereg.md:81-83`:
+
+> `tools/check_gate0_codex.py`'s own `overall`/`no_leak`/`wake_accounting` fields (e.g.
+> `NO_GO_INSUFFICIENT_WAKES`) are an **intermediate per-arm audit input** consumed by
+> `score_gate0.py`, not the gate's printed verdict — do not quote them as the Gate 0 result.
+
+**Why wakes are non-gating, in one paragraph so it stops being re-litigated.** A wake is one model
+decision. Nothing in the Codex JSONL stream emits one: PR #125 proposed `wakes = usage_events`, and
+PR #126 falsified it — a single `turn.completed` bundles ≥2 real decisions and its usage is
+cumulative for the whole turn, a ≥2x undercount, with no correct event to substitute
+(`reports/2026-07-21-gate0-wake-grounding.md:52-62`). Following David's 2026-07-21 decision, wakes
+are DEFERRED and non-gating, and Cheap rests on cost-per-task
+(`eval/score_gate0.py:263-281`, `:331-336`, `"cheap_basis": "cost_per_task"`). Gate 0 was genuinely
+unpassable for exactly one day — 2026-07-21 — and that is documented and closed. The production
+launcher already routes around the dead gate: `tools/gate0_appserver_arm.py:858-863` says in as many
+words that it deliberately does **not** call `check_gate0_codex.build_agent_metrics` ("permanently
+unreachable dead wake gate") and builds the metrics record itself from `primitive_action_events`.
+
+**Demonstrated, `$0`, this session.** `score()` fed an audit dict with the *exact* shape a real
+`audit()` returns on a clean run — `overall: "NO_GO_INSUFFICIENT_WAKES"`, `wakes: None`,
+`wake_accounting: "INSUFFICIENT_WAKES"`, all four failure lists empty — plus a synthetic Red oracle
+satisfying all nine `_red_success` clauses, five clean MiniWoB terminals, and in-cap metrics:
 
 ```
 scorer overall  : PASS
@@ -75,25 +88,29 @@ wake_accounting : DEFERRED
 failures        : {"constancy": [], "leak": [], "infra": [], "capability": [], "cheap": [], "source": []}
 ```
 
-Corroborated by two already-committed tests that assert the same thing independently:
-`tests/test_score_gate0.py::test_pass_matrix` (`:180-181`) and
-`::test_wake_cap_alone_no_longer_blocks_pass` (`:220-224`, which asserts `overall == "PASS"` and
-`wake_accounting["status"] == "DEFERRED"` **in the same test**).
+Corroborated by two committed tests: `tests/test_score_gate0.py::test_pass_matrix` (`:180-181`) and
+`::test_wake_cap_alone_no_longer_blocks_pass` (`:220-224`, asserting `overall == "PASS"` and
+`wake_accounting["status"] == "DEFERRED"` in the same test).
 
-**Conclusion, stated precisely so it is not re-garbled downstream:**
+**And the gate has already been observed discriminating on performance, not artifacts.** v1's two
+arms failed on real capability — Arm R `red_no_sustained_battle_exit`, Arm W
+`miniwob_episode_1_terminal_not_success` (seed 1001, reward 0.667)
+(`reports/2026-07-24-gate0-paired-verdict.md`). Those are agent-behaviour outcomes; the harness
+distinguished them from each other and from the pin failures.
 
-- `audit()`'s printed `overall` is capped at `NO_GO_INSUFFICIENT_WAKES` and **must never be quoted
-  as the gate verdict**. Any document or verdict report that does so is wrong.
-- `eval/score_gate0.py::score_manifest()` — the pass bar this pre-registration names — **can** emit
-  `PASS` / `GO`, and the wake ceiling does not block it.
-- Therefore the pass bar in §2 is emittable and v2 can disconfirm. **P0 stays a standing
-  precondition anyway**: it costs `$0`, it must be re-run from the exact tree that will score
-  (fixture edits under §6 can break it), and it is the cheapest possible guard against spending
-  money on a harness that cannot produce the verdict being sought.
-- **No code change is required for this.** `tools/check_gate0_codex.py` is not edited. One
-  follow-up is worth filing separately, out of scope here: `audit()`'s dead `PASS` branch and the
-  unreachable `build_agent_metrics` are a standing trap that has now misled at least one reviewer
-  into concluding the gate was unwinnable. That is a comment/naming defect, not a v2 blocker.
+**Non-blocking observations, recorded so the next reader does not re-derive them:**
+
+- `audit()`'s `overall` must never be quoted as the gate verdict (D-7). The authority is
+  `eval/score_gate0.py::score()["overall"]`.
+- `tools/check_gate0_codex.py:380` is `return 0 if summary["overall"] == "PASS" else 1`, so that
+  CLI **always exits non-zero**. Any script branching on that exit code is reading a constant. Not
+  a precondition; worth knowing before someone wires an automation to it.
+- The dead `PASS` branch and the unreachable `build_agent_metrics` are a standing trap that has now
+  misled at least one reviewer into declaring the gate unwinnable. Worth a separate cleanup PR;
+  **out of scope here, and not a v2 blocker.**
+- Running the `$0` dry check above from the actual scoring tree before launch is cheap and sensible
+  hygiene, particularly after the §6 fixture edits. It is **hygiene, not a gate** — nothing in this
+  document is conditioned on it.
 
 ### P1 in detail — the source gate that fires before capability is evaluated
 
@@ -206,19 +223,15 @@ its evidence. Nothing in it can un-void v1.
 Stated before any v2 number exists, in terms a hostile reader can check mechanically from the
 on-disk artifacts with the unedited `eval/score_gate0.py`.
 
-**Precondition on this whole section — is the verdict actually a function of agent behaviour?**
-A disconfirmation condition is worthless if the harness prints the same thing regardless of what
-the agent does. §0.1 settles this at `$0`: `eval/score_gate0.py::score()` emits `PASS`/`GO` on a
-clean synthetic input and `FAIL_CAPABILITY` on a dirty one, while `tools/check_gate0_codex.py::
-audit()`'s own `overall` sits permanently at `NO_GO_INSUFFICIENT_WAKES` and is **not** consulted by
-the scorer. The verdict below therefore varies with agent behaviour and the run can disconfirm.
-**S-0 makes re-proving this a launch gate**, because a §6 fixture edit could break it.
+**These conditions bite.** The verdict is a function of agent behaviour: `eval/score_gate0.py::
+score()` emits `PASS`/`GO` on a clean input and `FAIL_CAPABILITY` on a failing predicate (§0.1,
+demonstrated at `$0`), and v1's two arms already failed on real capability rather than harness
+artifacts. A v2 run can genuinely disconfirm.
 
-**v2 SUCCEEDS if and only if all six hold. Any single miss is a FAIL.**
+**v2 SUCCEEDS if and only if all five hold. Any single miss is a FAIL.**
 
 | ID | Check | Mechanical test |
 |---|---|---|
-| **S-0** | Harness can emit the verdict being sought | The §0.1 dry check, re-run from the scoring tree, prints `overall: PASS` / `readiness: GO`. If it does not, **do not launch** — no run can pass a bar the scorer cannot print. |
 | **S-1** | Red predicate clean | `_red_success(_jsonl("<v2out>/red/world/oracle.jsonl"))` returns exactly `(True, [])` |
 | **S-2** | Capability sub-bars | `wall_clock_s <= 466.576` (= `2 × 233.288`) **and** `primitive_actions <= 542` (= `2 × 271`) |
 | **S-3** | No leak, no constancy failure | `audit()` returns empty `leak_failures` **and** empty `constancy_failures` for the arm |
@@ -246,8 +259,9 @@ the scorer. The verdict below therefore varies with agent behaviour and the run 
 - **D-6.** `_red_success` clean but S-2 or S-4 missed → FAIL (`FAIL_CAPABILITY` or `FAIL_CHEAP`
   respectively in the frozen vocabulary).
 - **D-7.** Quoting `audit()`'s own `overall` (permanently `NO_GO_INSUFFICIENT_WAKES`) as the gate
-  verdict, in either direction. It is not the pass bar (§0.1); a verdict report that cites it as
-  one is a reporting failure regardless of the underlying result.
+  verdict, in either direction — forbidden by `reports/2026-07-18-gate0-prereg.md:81-83` and
+  restated in §0.1. Not a run outcome; a verdict report that cites it as one is a reporting failure
+  regardless of the underlying result.
 
 **Forbidden interpretations.** These framings appeared in the 2026-07-25 draft and are banned from
 any v2 verdict, in advance:
@@ -650,10 +664,10 @@ Arm R only. v1's Arm R cost `$0.41589` / `10.397275` credits — 8.3% of both it
 **The document is freezable. The run is not yet launchable.** Every metric, predicate, bar, and
 disconfirmation condition above is fixed and mechanically checkable before any v2 number exists,
 and none of them can be re-read favourably afterwards. The pass bar is one the scorer can actually
-print — proven at `$0` in §0.1, not assumed. What blocks launch is the P0-P7 precondition list —
+print — demonstrated at `$0` in §0.1, not assumed. What blocks launch is the P1-P7 precondition list —
 fixture and artifact lifecycle work plus one review — not an open question of interpretation.
 
-Freeze this document, complete P0-P7, then launch. Do not launch with any precondition open.
+Freeze this document, complete P1-P7, then launch. Do not launch with any precondition open.
 
 ## Sources
 
