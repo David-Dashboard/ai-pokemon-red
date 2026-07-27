@@ -47,7 +47,7 @@ permanent `NO_GO_INSUFFICIENT_WAKES` floor.
 | `run_failures` | `[]` | `[]` | no `turn.failed`, no `error` event. |
 | `accounting_failures` | `[]` | `[]` | token usage observable and well-typed on every `turn.completed`. |
 
-Two things in the receipts are **non-events** and must never be read as run outcomes:
+Two fields in the receipts are **non-events** and must never be read as run outcomes:
 
 - `readiness: "NO_GO_INSUFFICIENT_WAKES"` and `paid_execution_enabled: false` are **hardcoded
   constants** at `tools/gate0_appserver_arm.py:476-477`, required *verbatim* by
@@ -101,14 +101,14 @@ is that with the pin resolution applied, **both arms' failure lists are empty** 
 after the four failure-list branches, and `wakes`/`wake_accounting` are hardcoded literals at
 `:297-298`. A clean audit cannot report anything else on that field. It is a floor, not a finding.
 
-Do not quote it as the gate result. `reports/2026-07-18-gate0-prereg.md:82-84`, verbatim:
+Do not quote it as the gate result. `reports/2026-07-18-gate0-prereg.md:81-83`, verbatim:
 
 > - `tools/check_gate0_codex.py`'s own `overall`/`no_leak`/`wake_accounting` fields (e.g.
 >   `NO_GO_INSUFFICIENT_WAKES`) are an **intermediate per-arm audit input** consumed by
 >   `score_gate0.py`, not the gate's printed verdict — do not quote them as the Gate 0 result.
 
 The Gate-0 verdict is `eval/score_gate0.py::score()["overall"]`, which **does** reach `PASS`/`GO`
-(`score_gate0.py:363-364`, the terminal `else`). `score()` consumes only the four failure lists —
+(`score_gate0.py:359-360`, the terminal `else`). `score()` consumes only the four failure lists —
 `leak_failures`/`constancy_failures`/`run_failures` at `:307-310` and `accounting_failures` at
 `:326` — and never reads `audit["overall"]`. Wakes have been **deferred and explicitly non-gating**
 since David's 2026-07-21 decision (`score_gate0.py:263-270`, `:290-291`, and the verdict payload's
@@ -119,14 +119,25 @@ exactly one day — 2026-07-21, while the pre-amendment scorer still required
 
 So: Mode B does not show the harness is unpassable. It shows the *pin chain* would have been clean.
 
-**And the harness was not what stopped these arms.** Both frozen capability predicates returned
-`False` on real, substantive grounds, independent of every pin issue in this addendum: Arm R on
-`red_no_sustained_battle_exit` (`reports/2026-07-24-gate0-paired-verdict.md:38`) and Arm W on
-`miniwob_episode_1_terminal_not_success` — seed 1001 at reward 0.667, a genuine partial
-(`:48`). Had the pins been clean, precedence would have carried past `constancy` to
-`capability`, and the printed verdict would have been `FAIL_CAPABILITY`/`NO_GO`, not `PASS`. **The
-gate discriminated on real capability.** The breach is a measurement-chain defect that voided the
-attempt before scoring reached that discrimination — it is not the reason the arms did not pass, and
+**And the harness was not what stopped these arms.** Both frozen capability predicates ran and
+returned `False` on real, substantive grounds, independent of every pin issue in this addendum:
+Arm R on `red_no_sustained_battle_exit` (`reports/2026-07-24-gate0-paired-verdict.md:37`) and Arm W
+on `miniwob_episode_1_terminal_not_success` — seed 1001 at reward 0.667, a genuine partial (`:49`).
+
+**But a clean pin chain would not have produced a capability verdict either.** `score()`'s
+precedence (`eval/score_gate0.py:347-360`) is leak → constancy → **infra → source** → capability →
+cheap. The banked attempt carries **20 `source` failures** that have nothing to do with the pins
+(`reports/2026-07-24-gate0-paired-verdict.md:212-233` — e.g. `source_unreadable:miniwob_human`,
+`frozen_seed_hash`, the `missing_or_invalid_metric:*` set). With the pins fixed, the printed verdict
+would be `INSUFFICIENT_DATA` / `INSUFFICIENT_SOURCE` — the scorer would short-circuit at the source
+tier and never reach `capability`. This is exactly what `HANDOFF.md:187-189` already says ("do not
+read this as `INSUFFICIENT_DATA`; that is what a fixed pin-chain would return"), and this addendum
+must not be read as contradicting it.
+
+So, precisely: **real capability shortfalls were observed by the frozen predicates, while the gate's
+printed verdict was — and would remain — blocked at the source tier until the MiniWoB paid-seed
+human baseline exists.** The gate did not discriminate on capability; the predicates did. The breach
+is a measurement-chain defect that voided the attempt, not the reason the arms fell short, and
 nobody should read this addendum as blaming the harness for the outcome.
 
 ---

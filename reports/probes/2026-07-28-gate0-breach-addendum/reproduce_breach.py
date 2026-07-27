@@ -13,12 +13,12 @@ re-execution, no docker. Calls the FROZEN tools/check_gate0_codex.py::audit() tw
                        (landed 13 min after the miniwob arm finished) does today.
 
 READ THE `overall` FIELD BELOW CORRECTLY. `audit()["overall"]` is an INTERMEDIATE per-arm audit
-input, NOT the Gate-0 verdict (reports/2026-07-18-gate0-prereg.md:82-84 -- "do not quote them as
+input, NOT the Gate-0 verdict (reports/2026-07-18-gate0-prereg.md:81-83 -- "do not quote them as
 the Gate 0 result"). "NO_GO_INSUFFICIENT_WAKES" is simply its terminal value for ANY clean run:
 check_gate0_codex.py:290-291 is the final `else` after the four failure-list branches, and
 wakes/wake_accounting are hardcoded literals at :297-298. The signal in Mode B is the FAILURE
 LISTS being empty, not that string. The real verdict is eval/score_gate0.py::score()["overall"],
-which does reach PASS/GO (score_gate0.py:363-364); it reads only the four failure lists and never
+which does reach PASS/GO (score_gate0.py:359-360); it reads only the four failure lists and never
 gates on wake_accounting (deferred and non-gating since 2026-07-21, score_gate0.py:263-270).
 
 Run dirs are READ-ONLY here: nothing under runs/ is written, moved, or created. The
