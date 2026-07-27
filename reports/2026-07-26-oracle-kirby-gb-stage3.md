@@ -216,7 +216,29 @@ them.** The falsifying test is unchanged and still unrun: reach Stage 3 and read
 5. Incidental but useful: **dying is a free full heal** (HP back to 6) at the cost of one life, and
    the respawn checkpoint is early enough that step 1 re-reaches the corridor end in ~10 seconds.
 
-## The Lololo fight, characterised but not won
+## ★★ THE LOLOLO FIGHT IS WON — and the five candidates still read `1` on the far side
+
+**Beaten** (`beat_lololo.py`, seed 600000 from `boss_fresh.state`): boss meter 72 → 0, screen
+transition, Kirby alive at hp 3 / 3 lives, score 49960. Banked as `LOLOLO_WIN.state`.
+
+Three things made the difference, after 948 trials of blind search had landed zero damage:
+1. **Match Kirby's HEIGHT to the ledge the block is on before inhaling.** He had been inhaling into
+   empty air one ledge below the block the whole time. This alone produced the first-ever hit.
+2. **Start at full HP.** The route arrives at 1-2 HP; dying in the boss room respawns Kirby at hp 6
+   *and resets the boss to full*, so a fresh death is the cheapest full-health start
+   (`boss_fresh.state`).
+3. **All three hits must land on one life** — because dying resets the boss meter to 72. Verified by
+   a control run: letting Kirby die with **no input at all** leaves the meter at 72, which also
+   proves the meter drops were real hits and not a death artifact.
+
+**The result EX02 wanted, so far:** immediately after the win, and through the next two rooms
+reached by `advance.py`, `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD` **all still read `1`**
+(score 49960 → 51240, `0xD052` cycling 1/7/9). ⚠ This is **not yet the answer** — the stage has not
+demonstrably rolled over to Stage 3 (no title card seen, and Lololo may be a mid-stage encounter
+rather than Castle Lololo's final boss). Reading it as "the bytes are a latch" would be exactly the
+too-few-anchors error this lane keeps making. **The verdict stays open.**
+
+## The Lololo fight, as characterised before it was won
 
 Everything below is measured, and it is the state of the art for whoever picks this up.
 
