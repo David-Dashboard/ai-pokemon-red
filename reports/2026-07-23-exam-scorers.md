@@ -28,9 +28,23 @@ it isn't duplicated across the two MiniWoB scorers).
 
 ## ORACLE_PENDING (oracle still being hunted — stub only, no address fabricated)
 
+**[AMENDED 2026-07-28 — EX02 IS NO LONGER PENDING. The original row below is kept as written and
+struck rather than silently rewritten; this note is the correction.]** The stage oracle was found —
+`stage` @ `0xD03B`, the 0-indexed stage selector, established CAUSALLY
+(`reports/2026-07-26-oracle-kirby-gb-stage3.md`, PR #173) — and wired into `world_mcp.py`'s
+`kirby_dreamland` `watch` by PR #180. `eval/score_exam_kirby_stage3.py` now carries a real
+predicate: `stage >= 3` ("advancing past Stage 3", the exam definition's own wording; index 2 is
+Float Islands, i.e. merely REACHING Stage 3) held across >= 2 consecutive rows, with an `hp >= 1`
+in-play row inside the streak and a lower-stage row before it. Tested by
+`tests/test_score_exam_kirby_stage3.py`. **EX02 belongs in the "Scorable now" table above; exam
+readiness is 5/10 scorable, up from 4/10.**
+⚠ **Scorable is not passable.** The `2 -> 3` increment has never been observed in natural play —
+every `3` on record was produced by WRITING memory — and that report's Stage-3 → Stage-4 bound is
+STILL OPEN. Nobody has cleared Float Islands, and a PASS here would NOT discharge that bound.
+
 | task | scorer | why pending |
 |---|---|---|
-| EX02 — Kirby's Dream Land: clear Stage 3 | `eval/score_exam_kirby_stage3.py` | `kirby_dreamland`'s only wired oracle is `hp` (0xD086); no stage-counter address identified yet |
+| ~~EX02 — Kirby's Dream Land: clear Stage 3~~ **(RESOLVED 2026-07-28 — see the amendment above)** | `eval/score_exam_kirby_stage3.py` | ~~`kirby_dreamland`'s only wired oracle is `hp` (0xD086); no stage-counter address identified yet~~ |
 | EX03 — Emerald: reach Oldale Town | `eval/score_exam_emerald_oldale.py` | `emerald_gba` registry `watch` is `{}`; GBA oracle hunt running separately (worktree `ai-pokemon-red-oracle-emerald`) |
 | EX04 — Kirby (GBA): clear Level 1-1 | `eval/score_exam_kirby_gba_level1.py` | `kirby_gba` registry `watch` is `{}`; same GBA-oracle gap as EX03 |
 | EX05 — MKDS: finish one lap | `eval/score_exam_mkds_lap.py` | candidate byte `0x022C8090` is explicitly UNVERIFIED (`reports/2026-07-13-mkds-ab-verdict.md`: "do not claim checkpoint/lap progress from RAM for this run"); oracle-hunt running separately (worktree `ai-pokemon-red-oracle-mkds`) |
@@ -38,6 +52,8 @@ it isn't duplicated across the two MiniWoB scorers).
 Each stub's `score()` always returns `overall: "ORACLE_PENDING"`, exits nonzero, and cites (in its
 module docstring) the future oracle-hunt report that must land before it can be replaced with a
 real predicate. `tests/test_score_exam_oracle_pending_stubs.py` pins that all four always refuse.
+**[AMENDED 2026-07-28: three, not four. EX02 left that test when its scorer was implemented (see the
+amendment above); EX03/EX04/EX05 remain stubs and are still pinned by it.]**
 
 ## Explicitly excluded (HELD-OUT LAW)
 
