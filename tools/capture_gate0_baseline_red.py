@@ -1,4 +1,4 @@
-"""Gate 0 Arm R human-baseline capture rig (Pokemon Red, bedroom -> starter -> rival win).
+r"""Gate 0 Arm R human-baseline capture rig (Pokemon Red, bedroom -> starter -> rival win).
 
 HARD LAW: this script only launches the emulator, times, records, and writes artifacts. It never
 presses a button and never decides an action -- the actual playthrough must be performed by a human
@@ -59,15 +59,19 @@ Separate defaults are NOT on their own a safety property, and this docstring use
 they were: an explicit `--out` can still name another mode's directory. What binds that is the
 WRITE-PATH GUARD in run() (see the block marked "THE WRITE-PATH GUARD"): every write this rig makes
 lands inside `args.out`, so `args.out` is the single choke point both the mode-derived default and
-an explicit `--out` pass through, and the guard sits there. It has two clauses:
+an explicit `--out` pass through, and the guard sits there. It has three clauses:
+  (a0) UNC/device `--out` (`\\host\share\...`, `\\localhost\C$\...`, `\\.\C:\...`) is refused
+      outright, because clauses (a)/(b) provably cannot answer for it -- see _is_unc_or_device_path.
   (a) UNCONDITIONAL, every mode, every flag -- `--out` may never be at or under a DIFFERENT mode's
       real baseline path. Referent is MODE_CONFIG, a module constant, never fixture contents.
   (b) `--test` additionally may never write under the selected mode's OWN real path, so a smoke test
       can never touch any of the three.
-Neither is overridable by --test/--i-am-human/--allow-retake, both compare RESOLVED paths (see
-_under_real_path), both are directory-wide (so the append-only oracle.jsonl is covered, not just
-human_metrics.json), and both run before the exists() test and before any mkdir, so a refusal
-creates nothing on disk. Shape ported from PR #196's write_artifact() guard.
+None is overridable by --test/--i-am-human/--allow-retake, (a)/(b) compare NORMALISED paths (see
+_under_real_path, and read its docstring before touching it -- both the symmetry and the union of
+two normalisations are load-bearing invariants that a plausible-looking simplification breaks), all
+are directory-wide (so the append-only oracle.jsonl is covered, not just human_metrics.json), and
+all run before the exists() test and before any mkdir, so a refusal creates nothing on disk. Shape
+ported from PR #196's write_artifact() guard.
 require_fixture_points_here is a SEPARATE, weaker question -- "will the scorer read what I am about
 to write?" -- and is deliberately NOT the thing standing between a paid mode and the banked tree:
 review D1 showed that binding safety to a fixture-derived comparison made the answer correct only by
@@ -172,22 +176,72 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def _under_real_path(out: str, real_out: str = REAL_OUT) -> bool:
-    """Is `out` at, or inside, `real_out`?
+def _strip_extended_prefix(p: str) -> str:
+    r"""Drop a Win32 extended-length prefix: `\\?\C:\x` -> `C:\x`, `\\?\UNC\host\share\x` ->
+    `\\host\share\x`. Both spellings open exactly the same object, and NEITHER `realpath` nor
+    `abspath` touches them -- the prefix exists precisely to tell Win32 "do not normalise this" --
+    so without this the guard below compares a prefixed candidate against an unprefixed referent and
+    returns False for the same directory (review E1)."""
+    for prefix, keep in (("\\\\?\\unc\\", "\\\\"), ("\\\\?\\", "")):
+        if p[:len(prefix)].lower() == prefix:
+            return keep + p[len(prefix):]
+    return p
 
-    `normcase` + `realpath`, not `normpath` + `abspath`, because the thing that must be bound is
-    WHERE THE WRITE LANDS, not the string the caller typed. Review D3 got five different spellings of
-    one directory past the `normpath`/`abspath` form -- `UPPER`, `lower`, a mixed-case leaf, a
-    `mklink /J` junction (no admin needed) and an 8.3 short name -- each of which wrote an INCOMPLETE
-    artifact into a stand-in banked directory and renamed its append-only oracle.jsonl away.
-    `realpath` collapses the junction and the short name (it is non-strict, so the target need not
-    exist yet); `normcase` collapses the case, which is what a case-insensitive filesystem actually
-    does. Measured on all thirteen spellings: the five escapes close, the seven already-caught ones
-    stay caught, and the two negative controls (an unrelated directory, and a sibling sharing the
-    prefix) stay False -- no false positive."""
-    norm = os.path.normcase(os.path.realpath(out))
-    real = os.path.normcase(os.path.realpath(real_out))
-    return norm == real or norm.startswith(real + os.sep)
+
+def _is_unc_or_device_path(p: str) -> bool:
+    r"""Does `p` reach the filesystem through a share or a device namespace (`\\host\share\...`,
+    `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\.\C:\...`) rather than a drive letter, after any
+    extended-length prefix is stripped?
+
+    `_under_real_path` CANNOT answer for these and no amount of normalisation will make it: every
+    host alias (`localhost`, `127.0.0.1`, `::1`, the machine name, a DNS alias, an IPv6-literal
+    name) is a different spelling of the same admin share, and the set is unbounded. run() therefore
+    REFUSES them outright rather than trying to compare them -- see the write-path guard's (a0)."""
+    q = _strip_extended_prefix(p)
+    return q[:1] in ("\\", "/") and q[1:2] in ("\\", "/")
+
+
+def _under_real_path(out: str, real_out: str = REAL_OUT) -> bool:
+    r"""Is `out` at, or inside, `real_out`?
+
+    THE INVARIANT, STATED BECAUSE IT IS OTHERWISE INVISIBLE AND A REFACTOR COULD SILENTLY BREAK IT:
+    every normalisation here is applied SYMMETRICALLY, to the MODE_CONFIG referent as well as to the
+    candidate. That symmetry -- not the normalisation strength -- is what makes this guard immune to
+    a junction anywhere on a SHARED prefix: `runs/` already holds 26 NTFS junctions into another
+    volume, and if a Gate-0 directory were junctioned off-volume tomorrow both sides would resolve
+    through it and the comparison would still hold. A guard that resolves only the candidate against
+    a literal referent (the shape #197 uses) escapes on every spelling in that situation. Do not
+    "simplify" either side to a raw string.
+
+    UNION, NEVER REPLACEMENT -- also stated because getting this wrong once already cost a round.
+    The previous version REPLACED `normpath`+`abspath` with `normcase`+`realpath`. That closed five
+    spellings (UPPER, lower, mixed-case leaf, a `mklink /J` junction, an 8.3 short name -- review D3,
+    each of which had written an INCOMPLETE artifact into a stand-in banked directory and renamed its
+    append-only oracle.jsonl away) and OPENED two, because the two normalisations see different
+    things and neither dominates:
+
+      * `realpath` sees through junctions and 8.3 short names, and asks the filesystem for the
+        on-disk case -- but only for a path that ALREADY EXISTS, and it leaves a trailing dot or
+        space on the leaf verbatim.
+      * `abspath` goes through Win32 `GetFullPathNameW`, which STRIPS trailing dots and spaces
+        (`...\red.` and `...\red ` both open `...\red`) -- but is blind to junctions and short names.
+
+    So `--mode readiness_dev --out "<paid_v2 dir>."` walked past the replacement and wrote into the
+    paid directory (review E2, a regression the replacement introduced). Comparing the UNION of both
+    forms can only ever refuse MORE, never less, so it cannot reintroduce a false negative; the
+    negative controls in the tests are what keep it from over-matching. `normcase` is load-bearing on
+    top of both: it collapses case for a path that does not exist yet, which is the fresh-checkout
+    case where `realpath` cannot.
+
+    Does NOT answer for UNC/device paths -- see `_is_unc_or_device_path`, which run() refuses
+    outright before this is ever consulted."""
+    def forms(p: str) -> set[str]:
+        p = _strip_extended_prefix(p)
+        return {os.path.normcase(os.path.realpath(p)),
+                os.path.normcase(os.path.normpath(os.path.abspath(p)))}
+
+    return any(a == b or a.startswith(b + os.sep)
+               for a in forms(out) for b in forms(real_out))
 
 
 def score_gate0_modes() -> dict:
@@ -434,6 +488,27 @@ def run(args, max_frames: int | None = None) -> int:
     # fixtures (all three still pinning red_human at the banked readiness_dev artifact) turned that
     # accident into a blessing -- `--mode paid_gate0_v2 --i-am-human --out <the banked directory>
     # --allow-retake "..."` renamed the banked oracle.jsonl away and wrote a paid-stamped artifact in.
+    #
+    # (a0) A UNC or device-namespace --out is REFUSED OUTRIGHT, before the two clauses below, because
+    # they cannot answer for it: `\\localhost\C$\...`, `\\127.0.0.1\C$\...` and `\\?\UNC\...` all open
+    # the same directory as the drive-letter spelling, but no normalisation maps them back to it --
+    # the set of host aliases is unbounded. Review E1 drove `--test --mode readiness_dev --out
+    # "\\?\<banked>"` into a stand-in banked directory: the append-only oracle.jsonl was renamed away
+    # and an INCOMPLETE artifact written in, by the one flag whose stated invariant is that it may
+    # never write under ANY mode's real baseline path. (`\\?\<drive-letter>` itself IS handled, by
+    # _strip_extended_prefix; only the share/device forms have to be refused.) No legitimate capture
+    # needs one -- but if this repo itself were checked out on a share, every real_out would be UNC
+    # too and refusing would break the only thing this rig exists to do, so the refusal is conditioned
+    # on the referents being drive paths.
+    if _is_unc_or_device_path(args.out) and not any(_is_unc_or_device_path(cfg["real_out"])
+                                                    for cfg in MODE_CONFIG.values()):
+        print(f"refusing: --out {args.out!r} names a UNC share or device path. Every baseline "
+              "directory on this checkout is a drive path, and a share spelling of one of them "
+              "(\\\\localhost\\C$\\..., \\\\127.0.0.1\\C$\\..., \\\\?\\UNC\\...) opens the same "
+              "directory while defeating the path comparison that keeps a capture out of another "
+              "mode's append-only baseline tree. Pass a drive-letter --out. No flag overrides this.",
+              file=sys.stderr)
+        return 2
     blocked = sorted(m for m, cfg in MODE_CONFIG.items()
                      if _under_real_path(args.out, cfg["real_out"]))
     foreign = [m for m in blocked if m != mode]

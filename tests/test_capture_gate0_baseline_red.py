@@ -73,6 +73,80 @@ def fake_pyboy_raises(monkeypatch):
     return _FakePyBoy
 
 
+@pytest.fixture
+def fake_pyboy_boots(monkeypatch):
+    """A PyBoy stub that BOOTS, unlike `fake_pyboy_raises` -- the only way to reach the code AFTER
+    the interactive loop, which is where the canonical-vs-INCOMPLETE artifact NAME is chosen.
+
+    Still no real gameplay and no window (the HARD LAW in this file's docstring): the fake ticks
+    frames, reports all-zero RAM, and `run(max_frames=...)` -- the Python-only seam -- ends the loop.
+    `sdl2` stays REAL, including the scancode constants; only `SDL_GetKeyboardState` is replaced, by
+    a plain array the test drives, so no SDL_Init and no keyboard is ever touched. Returns that
+    array: setting `keys[sdl2.SDL_SCANCODE_A] = 1` makes the rig see a held button, which is what
+    starts the timer and lets the oracle be consulted at all."""
+    import sdl2
+
+    class _AllZeroRAM:
+        def __getitem__(self, _addr):
+            return 0
+
+    class _FakePyBoy:
+        def __init__(self, *_a, **_kw):
+            self.frame_count = 0
+            self.memory = _AllZeroRAM()
+
+        def set_emulation_speed(self, *_a):
+            pass
+
+        def load_state(self, _f):
+            pass
+
+        def tick(self, n=1, _render=False, **_kw):
+            self.frame_count += n
+            return True
+
+        def stop(self, save=False):
+            assert save is False, "the rig must never let PyBoy write cartridge RAM"
+
+    fake_module = types.ModuleType("pyboy")
+    fake_module.PyBoy = _FakePyBoy
+    monkeypatch.setitem(sys.modules, "pyboy", fake_module)
+    keys = [0] * 512
+    monkeypatch.setattr(sdl2, "SDL_GetKeyboardState", lambda _n: keys)
+    return keys
+
+
+@pytest.mark.parametrize("succeeds, expected_glob, forbidden", [
+    (False, "human_metrics.INCOMPLETE_*.json", "human_metrics.json"),
+    (True, "human_metrics.json", "human_metrics.INCOMPLETE_*.json"),
+])
+def test_a_botched_capture_is_named_incomplete_and_a_real_one_is_not(tmp_path, monkeypatch,
+                                                                     fake_pyboy_boots, succeeds,
+                                                                     expected_glob, forbidden):
+    """REVIEW E4: `name = "human_metrics.json" if success else f"...INCOMPLETE_{...}.json"` survived
+    the FULL 1732-test suite as an unkilled mutant. Every other test that asserts on an INCOMPLETE
+    artifact reaches it through the SETUP-FAILURE path, which hardcodes the INCOMPLETE name
+    separately -- so the one line the module docstring points at when it claims "a botched capture
+    can never silently masquerade as a banked baseline" had no test at all.
+
+    Both directions are pinned, so neither half of the ternary can be collapsed to a constant."""
+    import sdl2
+    if succeeds:
+        # A held button is what sets first_input_perf, without which the oracle is never consulted.
+        fake_pyboy_boots[sdl2.SDL_SCANCODE_A] = 1
+        monkeypatch.setattr(scorer, "_red_success", lambda rows: (True, []))
+    out = tmp_path / "out"
+    # 40 frames: past SAMPLE_EVERY_FRAMES (15) so the oracle IS consulted, and far short of
+    # COMPLETION_GRACE_SECONDS so a success exits on the frame cap rather than sleeping.
+    rc = red.run(_args(tmp_path, out=out, test=False, mode="readiness_dev"), max_frames=40)
+
+    assert rc == (0 if succeeds else 1)
+    assert list(out.glob(expected_glob)), sorted(p.name for p in out.iterdir())
+    assert not list(out.glob(forbidden)), sorted(p.name for p in out.iterdir())
+    written = json.loads(next(iter(out.glob(expected_glob))).read_text(encoding="utf-8"))
+    assert written["success"] is succeeds
+
+
 # ---- _atomic_write_json -----------------------------------------------------------------------
 
 def test_atomic_write_json_happy_path(tmp_path):
@@ -877,6 +951,38 @@ def _intact(d: Path) -> bool:
             and (d / "oracle.jsonl").read_text(encoding="utf-8") == '{"BANKED_SENTINEL": true}\n')
 
 
+def _hostile_spellings(d: Path):
+    r"""Review E1/E2: the spellings that walked past the `normcase`+`realpath`-ONLY form that D3
+    introduced. Kept SEPARATE from `_spellings` below on purpose -- these are spellings a legitimate
+    capture may never use, so unlike D3's they cannot double as the write-side controls that
+    test_test_mode_refuses_under_every_modes_real_path_for_every_flag_and_spelling counts.
+
+    Two families, closed by two different mechanisms, and the labels say which:
+
+    * TRAILING DOT / SPACE (E2, a regression D3 introduced) -- Win32 strips both from the leaf, so
+      `...\red.` opens `...\red`. `abspath` strips them; `realpath` does not. Closed by comparing the
+      UNION of both normalisations, which is why D3's REPLACEMENT of one with the other was the bug.
+    * EXTENDED-LENGTH / UNC / DEVICE (E1, pre-existing, present on `322499f` too) -- `realpath` and
+      `abspath` both return these VERBATIM. `\\?\<drive>` is closed by stripping the prefix; the
+      share and device forms cannot be closed by normalisation at all (unbounded host aliases) and
+      are refused outright by the guard's clause (a0).
+
+    No junction/8.3 row here: those are D3's and `_spellings` already carries them."""
+    s = str(d)
+    assert os.path.splitdrive(s)[0].endswith(":"), f"expected a drive-rooted tmp path, got {s!r}"
+    drive = os.path.splitdrive(s)[0].rstrip(":")
+    unc_tail = "\\" + drive + "$" + s[2:]
+    return [("trailing dot", s + "."),
+            ("trailing space", s + " "),
+            ("trailing dot + sep", s + "." + os.sep),
+            (r"\\?\ extended-length", "\\\\?\\" + s),
+            (r"\\?\ extended-length + trailing dot", "\\\\?\\" + s + "."),
+            (r"\\?\UNC\ admin share", "\\\\?\\UNC\\localhost" + unc_tail),
+            (r"\\localhost\ admin share", "\\\\localhost" + unc_tail),
+            (r"\\127.0.0.1\ admin share", "\\\\127.0.0.1" + unc_tail),
+            (r"\\.\ device namespace", "\\\\.\\" + s)]
+
+
 def _spellings(d: Path):
     """Every way of naming the SAME directory `d` that review D3 attacked, plus the ones already
     caught. Returns (label, spelling) pairs; the junction and 8.3 rows are skipped rather than faked
@@ -1158,6 +1264,152 @@ def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_and_spelli
                    for mode in red.MODE_CONFIG)
     assert len(controls) == expected, \
         f"matrix is vacuous -- only {len(controls)} of {expected} combinations wrote"
+
+
+# ---- E1/E2: the spellings the D3 form was blind to ------------------------------------------------
+
+def test_the_write_guard_survives_the_e1_e2_spellings_when_the_target_exists(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    r"""REGRESSION (review E1). `--test --mode readiness_dev --allow-retake "x" --out "\\?\<banked>"`
+    renamed a stand-in banked `oracle.jsonl` away and wrote an INCOMPLETE artifact in, at `d8cbe00`
+    AND at `322499f`. Same via `\\localhost\<drive>$\...`. The plain spelling of the same command was
+    correctly refused, so it was purely the spelling.
+
+    Driven against a FOREIGN mode, both `--test` values, cross-check neutralised so the write-path
+    guard alone holds."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    banked = dirs["readiness_dev"]
+    _bank(banked)
+
+    violations = []
+    for label, spelling in _hostile_spellings(banked):
+        for test in (False, True):
+            rc = red.run(_args(tmp_path, out=spelling, test=test, mode="paid_gate0_v2",
+                               i_am_human=True, allow_retake="a stated reason"))
+            if rc != 2 or not _intact(banked):
+                violations.append((label, test, rc, sorted(p.name for p in banked.iterdir())))
+    assert violations == [], f"an E1/E2 spelling walked past the write guard: {violations}"
+
+
+def test_the_write_guard_survives_the_e1_e2_spellings_when_the_target_does_not_exist_yet(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    r"""REGRESSION (review E2) -- the one this PR itself introduced, and the reason the guard now
+    takes the UNION of two normalisations instead of swapping one for the other.
+
+    `322499f`'s `normpath`+`abspath` form CAUGHT `<dir>.` and `<dir> ` (Win32 `GetFullPathNameW`
+    strips a trailing dot or space from the leaf). `d8cbe00`'s `normcase`+`realpath` form does not,
+    for a path that does not exist yet -- and `--mode readiness_dev --out "<paid_v2 dir>."` duly wrote
+    an INCOMPLETE artifact into the paid v2 directory.
+
+    THE NOT-YET-CREATED STATE IS THE LIVE ONE: `runs/gate0_paid_human_baseline/red` and
+    `runs/gate0_paid_v2_human_baseline/red` do not exist on this checkout, which is exactly the
+    condition the escape needs. Nothing may be created under ANY spelling -- the assertion is on the
+    parent, so a run that quietly created a sibling directory fails too."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    paid_v2 = dirs["paid_gate0_v2"]
+    assert not paid_v2.exists(), "this test is about the not-yet-created case"
+
+    violations = []
+    for label, spelling in _hostile_spellings(paid_v2):
+        rc = red.run(_args(tmp_path, out=spelling, test=False, mode="readiness_dev"))
+        created = sorted(p.name for p in tmp_path.iterdir() if p.is_dir())
+        if rc != 2 or created:
+            violations.append((label, rc, created))
+    assert violations == [], f"an E1/E2 spelling walked past the guard in a fresh checkout: {violations}"
+
+
+def test_test_mode_refuses_the_e1_e2_spellings_of_a_modes_own_real_path(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    r"""Review E1's demonstration verbatim: the escape was reached with `--mode readiness_dev`, whose
+    OWN directory the foreign-path clause permits and which is exempt from the fixture cross-check --
+    so `--test`'s clause was the only thing behind it, and there was nothing behind that.
+
+    `--test` may never write under ANY mode's real path, in ANY spelling."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    violations = []
+    for mode, target in sorted(dirs.items()):
+        _bank(target)
+        for label, spelling in _hostile_spellings(target):
+            rc = red.run(_args(tmp_path, out=spelling, test=True, mode=mode, i_am_human=True,
+                               allow_retake="a stated reason"))
+            if rc != 2 or not _intact(target):
+                violations.append((mode, label, rc, sorted(p.name for p in target.iterdir())))
+    assert violations == [], f"--test wrote under a real baseline path via a spelling: {violations}"
+
+
+def test_a_unc_or_device_out_is_refused_outright_with_its_own_message(tmp_path, monkeypatch, capsys,
+                                                                       fake_pyboy_raises):
+    r"""Clause (a0). Unlike every other spelling, the share forms are refused because they CANNOT be
+    compared, not because the comparison caught them -- `\\localhost\C$\x`, `\\127.0.0.1\C$\x` and
+    the machine name are unboundedly many spellings of one directory and no normalisation maps them
+    back to `C:\x`. The distinct message is asserted so a future refactor cannot fold this into the
+    foreign-path clause and silently make it depend on a comparison that does not work."""
+    _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    unrelated = tmp_path / "nowhere_near_a_baseline"
+    drive = os.path.splitdrive(str(unrelated))[0].rstrip(":")
+    for spelling in ("\\\\localhost\\" + drive + "$" + str(unrelated)[2:],
+                     "\\\\?\\UNC\\localhost\\" + drive + "$" + str(unrelated)[2:],
+                     "\\\\.\\" + str(unrelated)):
+        assert red.run(_args(tmp_path, out=spelling, test=False, mode="readiness_dev")) == 2
+        assert "UNC share or device path" in capsys.readouterr().err, spelling
+        assert not unrelated.exists()
+
+    # the predicate itself, including the extended-length forms it must see THROUGH rather than trip on
+    assert red._is_unc_or_device_path(r"\\localhost\C$\x")
+    assert red._is_unc_or_device_path(r"\\?\UNC\localhost\C$\x")
+    assert red._is_unc_or_device_path(r"\\.\C:\x")
+    assert red._is_unc_or_device_path("//localhost/C$/x")           # forward slashes are separators too
+    assert not red._is_unc_or_device_path(r"\\?\C:\x")              # extended-length DRIVE path: fine
+    assert not red._is_unc_or_device_path(r"C:\x")
+    assert not red._is_unc_or_device_path(str(tmp_path))
+
+
+def test_a_plain_scratch_out_is_still_allowed_through(tmp_path, monkeypatch, fake_pyboy_raises):
+    """The negative control the E1/E2 hardening needs: a union of two normalisations can only ever
+    refuse MORE, so the risk it carries is a FALSE POSITIVE -- a legitimate dry-run `--out` that the
+    guard starts swallowing. It must still reach the emulator (here: the faked failure)."""
+    _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    scratch = tmp_path / "scratch_dry_run"
+    assert red.run(_args(tmp_path, out=scratch, test=False, mode="paid_gate0_v2",
+                         i_am_human=True)) == 2          # the FAKED PyBoy failure, not a refusal
+    assert list(scratch.glob("human_metrics.INCOMPLETE_*.json"))
+
+
+def test_both_normalisations_are_load_bearing_and_neither_dominates(tmp_path):
+    r"""The invariant the fix round exists to protect, stated as an executable claim rather than a
+    comment: `realpath` and `abspath` each catch a spelling the other misses, so the guard must
+    compare the UNION. Replacing either with the other reopens a hole -- which is precisely what
+    happened between `322499f` and `d8cbe00`.
+
+    Also pins the SYMMETRY invariant: `_under_real_path` normalises the REFERENT as well as the
+    candidate, which is what makes it immune to a junction on a shared prefix (`runs/` already holds
+    26 of them). A guard that resolves only the candidate escapes on every spelling there."""
+    existing = tmp_path / "exists" / "red"
+    existing.mkdir(parents=True)
+    absent = tmp_path / "absent" / "red"
+
+    for d in (existing, absent):
+        # abspath-only territory: realpath leaves a trailing dot/space on the leaf verbatim
+        assert red._under_real_path(str(d) + ".", str(d)), d
+        assert red._under_real_path(str(d) + " ", str(d)), d
+        # neither normalisation touches an extended-length prefix; stripping it is what closes this
+        assert red._under_real_path("\\\\?\\" + str(d), str(d)), d
+        # ... and the guard must not over-match while doing it
+        assert not red._under_real_path(str(d) + "2.", str(d)), d
+        assert not red._under_real_path(str(d.parent), str(d)), d
+
+    # realpath-only territory, and the symmetry: a junction is seen through from EITHER side
+    junction = tmp_path / "exists" / "red_junc"
+    if subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(existing)],
+                      capture_output=True, text=True).returncode == 0:
+        assert red._under_real_path(str(junction), str(existing))
+        assert red._under_real_path(str(existing), str(junction))     # SYMMETRY: referent resolved too
+        assert red._under_real_path(str(junction) + ".", str(existing))   # both, at once
 
 
 def test_test_mode_refuses_even_when_the_fixture_blesses_the_banked_directory(tmp_path, monkeypatch,

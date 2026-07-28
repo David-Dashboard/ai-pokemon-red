@@ -332,6 +332,12 @@ on-disk case only for a path that *already exists*, so it leaves `UPPER`/`lower`
 the fresh-checkout/container/worktree case PR #196's guard comment singles out. The word
 "unconditional" is retained only where the spelling matrix now backs it.
 
+> **CORRECTED by the third review round — do not read D3 as unqualified strengthening.** It was a
+> **trade**: `normcase`+`realpath` *replaced* `normpath`+`abspath` rather than joining it, and the
+> replacement **opened** trailing-dot and trailing-space on a not-yet-created target while closing
+> the five above. See **E2** below. The five closures are real; the paragraph above simply does not
+> record the one that opened, and that omission is the finding.
+
 **D4 (major).** Three of the reviewer's 24 mutants survived, including `if not allow_retake:` →
 `if False:` — deleting the one-cold-attempt law outright left the full 1720-test suite green,
 because control simply fell through to a faked setup failure that also returns 2 and writes a
@@ -368,3 +374,76 @@ It leaves a **declared duplication**:
 symbol does not exist on `origin/main`) and `tools/gate0_appserver_arm.py` was off-limits to this
 change. Two resolutions of one pin is the drift class this workstream exists to remove — once both
 land, lift one shared helper and delete both.
+
+### Third review fix round (adversarial review of `d8cbe00`) — the D3 fix was a trade, not a strict win
+
+Two blocking findings, one of them **a regression D3 itself introduced**. The transferable lesson,
+and the reason this round exists at all:
+
+> **Harden by UNION, not by REPLACEMENT.** D3 swapped one normalisation for a stronger-looking one.
+> "Stronger" was not a total order: the two see different things and neither dominates, so the swap
+> closed five spellings and opened two. Adding a normalisation can only ever refuse more. Replacing
+> one can always refuse less, somewhere you did not measure.
+
+**E1 (blocking, pre-existing — `322499f` escapes too).** `os.path.realpath` returns extended-length
+and UNC paths **verbatim**; it canonicalises neither. So `--test --mode readiness_dev --allow-retake
+"x" --out "\\?\<banked dir>"` renamed a stand-in banked `oracle.jsonl` away and wrote an INCOMPLETE
+artifact in — by `--test`, whose stated invariant is that it may never write under **any** mode's
+real baseline path. Identical via `\\localhost\<drive>$\...`. The plain spelling of the same command
+was correctly refused, so it was purely the spelling. Worse than a curiosity for two reasons:
+`readiness_dev` is exempt from the fixture cross-check, so on that mode the path guard is the only
+line of defence and there was nothing behind it; and for the paid modes the escape was stopped only
+by the cross-check — the guard this PR's own D1 lesson says may never be the last line.
+
+Closed in two pieces, because one mechanism cannot do both:
+
+* `\\?\C:\...` and `\\?\UNC\...`: the prefix is **stripped** before normalising. Both spellings open
+  the same object; the prefix exists precisely to tell Win32 "do not normalise this".
+* `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\.\C:\...`: **refused outright**, not compared. No
+  normalisation maps a share back to a drive letter, and the set of host aliases (`localhost`, the
+  machine name, IPv4/IPv6 literals, DNS aliases) is unbounded — so the rig refuses rather than
+  pretending to check. Conditioned on the referents being drive paths, so a checkout that genuinely
+  lives on a share is not bricked.
+
+**E2 (blocking, REGRESSION introduced by D3).** Win32 strips a trailing dot or space from a path
+component, and `abspath` (via `GetFullPathNameW`) strips them too — so the **old** form caught them.
+`realpath` does not, for a path that does not exist yet. `--mode readiness_dev --out "<paid_v2
+dir>."` therefore wrote an INCOMPLETE artifact into the paid v2 directory at `d8cbe00`, and would
+have on the **real tree today**: neither paid directory exists on this checkout, which is exactly the
+condition the escape needs. Closed by comparing the **union** of both normalisations. A union can
+only ever refuse more, so it cannot reintroduce a false negative; the negative controls (an unrelated
+directory, a sibling sharing the prefix, the parent, and a plain scratch `--out` that must still
+reach the emulator) are what keep it from over-matching.
+
+**Both halves are now pinned by mutation, not by argument.** Dropping the `abspath` half reopens E2;
+dropping the `realpath` half reopens D3; dropping `normcase` reopens the fresh-checkout case;
+dropping the prefix strip reopens E1; and resolving only the **candidate** against a literal referent
+— the asymmetric shape — is killed too. That last one matters: the symmetry is what makes this guard
+immune to a junction on a shared prefix (`runs/` already holds 26 junctions into another volume), and
+it was an unstated invariant. It is now written into `_under_real_path`'s docstring, along with the
+union rule, because both are invisible to a reader and a plausible-looking simplification breaks them.
+
+**Matrix re-run in BOTH states** — target existing and target not yet created — over 19 spellings ×
+`--test` ∈ {False, True}, driving the real `run()` against stand-in directories: every row refused,
+nothing written/moved/renamed, negative control still reaches the emulator. The 8.3 row is exercised
+in the existing state (`GetShortPathNameW` requires an existing path, so it is inherently unavailable
+in the other) — contrary to the review's aside, 8.3 generation **is** enabled here and that row
+asserts rather than skips.
+
+**E3 (major).** `DAVID_BASELINES.md` claimed "*Nor does spelling the path differently (case, a
+junction, an 8.3 short name); the comparison is made on the resolved path*" — false for exactly the
+spellings above, and one paragraph after this PR replaced a *different* false reassurance in the same
+place with the note "a false reassurance here is worse than none". Replaced with a table that names
+each spelling, says which mechanism stops it, and states explicitly that the enumeration is **what
+has been executed, not a proof of exhaustiveness**.
+
+**E4 (minor, pre-existing).** `name = "human_metrics.json" if success else
+f"human_metrics.INCOMPLETE_{...}.json"` survived the full 1732-test suite. Every test asserting on an
+INCOMPLETE artifact reached it through the *setup-failure* path, which hardcodes that name
+separately — so the one line the module docstring cites for "a botched capture can never silently
+masquerade as a banked baseline" had no test. Pinned now in **both** directions with a PyBoy stub
+that boots (still no window, no gameplay, no real keyboard: `sdl2` stays real and only
+`SDL_GetKeyboardState` is replaced by an array the test drives).
+
+**E5 (minor).** The PR body's merged-stack suite counts cited SHAs that are not descendants of this
+branch, so a reader could not reproduce them. Dropped rather than re-derived.
