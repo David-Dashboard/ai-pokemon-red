@@ -453,10 +453,11 @@ def test_brain_config_toml_matches_the_frozen_pin():
         "ab7e54c1785f5d8be4352bbe0f85edb37cda68cf56df2128d61df025c1041fc3")
 
 
-# The three load-bearing clauses of the Gate-0 v2 task brief, quoted from the FROZEN
-# pre-registration reports/2026-07-25-gate0-v2-prereg.md §5.3, with the predicate clause §5.4/§5.5
-# ties each one to. Dropping any of them silently reverts part of the intervention the whole v2
-# attempt exists to test, so pin them by name as well as by digest below.
+# The load-bearing clauses of the Gate-0 v2 task brief, with the predicate clause §5.4/§5.5 ties
+# each one to. The first three are still reports/2026-07-25-gate0-v2-prereg.md §5.3 verbatim; the
+# rest are the D6 amendments (reports/2026-07-28-gate0-v2-deviations.md), which the frozen document
+# cannot carry because it must not be edited. Dropping any of them silently reverts part of the
+# intervention the whole v2 attempt exists to test, so pin them by name as well as by digest below.
 V2_LOAD_BEARING_CLAUSES = {
     # §5.4 C5 red_no_sustained_battle_exit (observes -> rows) AND C9
     # red_no_free_movement_after_exit (moves -> distinct tiles), fed by the same behaviour.
@@ -469,25 +470,82 @@ V2_LOAD_BEARING_CLAUSES = {
     # oracle row for the same (episode, seed) and hard-fails it. Instruction-only containment
     # for episodes 0-3, so the prohibition must survive verbatim in the brief itself.
     "no_action_on_a_finished_episode": "Confirming is looking, not doing",
-    "no_action_on_a_finished_episode_acts": "do not click, type, press a key, or otherwise "
-                                            "act on a finished episode again",
+    # D6/W5. Was "do not click, type, press a key, or otherwise act on a finished episode again",
+    # which named three of check_gate0_codex.TOOLS["miniwob"] almost verbatim and was exactly the
+    # row-writing subset of that surface. Tool-agnostic and strictly wider, so no weaker.
+    "no_action_on_a_finished_episode_acts": "take no further action on it — send it no further "
+                                            "input of any kind",
+    # D6/W1+W2. THE C5 MARGIN. §5.3's stop condition could only be satisfied by ceasing to move,
+    # so its terminating tail was observation-only and its entire margin was the word "several"
+    # (two rows per round against a ten-row window: five rounds hit the bar exactly, four missed).
+    # These three sentences are what replace it -- a round unit, a floor above a handful, a
+    # refusal to stop at first quiet, and a doubling rule. Worst-case yield 24 rows, floor 12.
+    "settle_round_unit": "one move and the observation that follows it are one round",
+    "settle_floor_above_a_handful": "a handful of rounds is not enough",
+    "settle_does_not_stop_at_first_quiet": "stopping the first time nothing new appears is not "
+                                           "enough either",
+    "settle_doubling_rule": "treat that judgement as the halfway point rather than the end",
+    # D6/W4. Arm W's five episodes cannot advance without reset_episode, which the §5.3 prohibition
+    # did not exempt. MiniWobSession.call handles it ABOVE the _exhausted guard and _log_oracle
+    # fires AFTER _advance_pinned_seed, so the row lands on the NEW episode. Scoped to a FINISHED
+    # episode on purpose: an early reset makes _advance_pinned_seed log done=True/abandoned=True
+    # against the current one and hard-fails it.
+    "reset_to_next_episode_is_allowed": "Starting the next episode is not acting on the "
+                                        "finished one",
 }
+# D6/W3: "task," is GONE from the prohibition's trigger list -- in Arm R it fired at the same
+# instant as the settle instruction and forbade a button press, Red's only local move. The trigger
+# must still name an episode (Arm W's protection) and must NOT name a task.
+V2_PROHIBITION_TRIGGER = "once the environment reports that an episode or an input is finished"
 
 
 @pytest.mark.parametrize("name,clause", sorted(V2_LOAD_BEARING_CLAUSES.items()))
-def test_task_brief_pins_the_three_load_bearing_clauses(name, clause):
+def test_task_brief_pins_the_load_bearing_clauses(name, clause):
     assert clause in COMMON_TASK_SUFFIX, name
     # The suffix is shared verbatim by both arms, so every clause reaches both TASK.md files.
     for arm in ("red", "miniwob"):
         assert clause in task_text_for(arm), (name, arm)
 
 
+def test_the_prohibition_trigger_names_an_episode_and_not_a_task():
+    """D6/W3, asserted in both directions so a future edit cannot quietly put "task" back."""
+    assert V2_PROHIBITION_TRIGGER in COMMON_TASK_SUFFIX
+    assert "an episode, task, or input is finished" not in COMMON_TASK_SUFFIX
+
+
+def test_the_brief_leaks_no_digit_and_no_oracle_vocabulary():
+    """Prereg §5.6's own taint rule, run mechanically over the amended text (D6 re-ran it).
+
+    §5.6's "No tool named" claim was already false of §5.3 -- `click` is verbatim a
+    check_gate0_codex.TOOLS["miniwob"] entry -- which is why the MiniWoB action verbs are gone
+    from the brief and are asserted absent here.
+    """
+    low = COMMON_TASK_SUFFIX.lower()
+    assert not any(ch.isdigit() for ch in COMMON_TASK_SUFFIX)
+    for token in ("in_battle", "ram", "hp", "party", "oracle", "row", "score", "tile", "battle",
+                  "map", "watch", "exit", "jsonl", "predicate", "threshold"):
+        assert token not in low, token
+    # Every tool of either arm EXCEPT `observe`, which is the one act the brief must name: it is
+    # the blessed "looking" act, it writes no MiniWoB row, and §5.6's own permitted-vocabulary
+    # list already contains "observing". Naming any of the others -- all of which act on the
+    # world, and in MiniWoB all of which write a row -- is the leak D6/W5 closed.
+    for tool in sorted(set(checker.TOOLS["miniwob"] + checker.TOOLS["red"]) - {"observe"}):
+        assert tool not in low, tool
+    # ...and the near-paraphrases of the three MiniWoB action tools that §5.3 spelled out.
+    for verb in ("click", "type_text", "type a", "press a key", "keystroke"):
+        assert verb not in low, verb
+
+
 @pytest.mark.parametrize("arm,expected_sha", [
-    ("red", "9adb98f89f1d3f2c68c55fb5ea6c646ba79c2c38e5aadaf80cc187b4dd4968a7"),
-    ("miniwob", "ba1549d4814e0fc9265643c794376b119721bf993846695446988c5f2ceb5b74"),
+    ("red", "aa8f1a7a4e409d03c42843e622df896fdc61c7ff8a74d51905defdcbfcb06d88"),
+    ("miniwob", "24e4d9b27aa8277c8e2d35639c3b1d0bc53d7343a3b00efa46c34ba79daae440"),
 ])
 def test_task_text_matches_the_frozen_pin(arm, expected_sha):
-    """v2 values, recomputed from task_text_for() when §5.3's suffix was applied.
+    """v2 values, recomputed from task_text_for() after the D6 amendments to §5.3's suffix.
+
+    They supersede 9adb98f8.../ba1549d4..., which pinned the un-amended §5.3 text; both moved
+    again because COMMON_TASK_SUFFIX reaches both arms (prereg §6.1). §6.1's re-freeze must copy
+    THESE values, not the earlier pair.
 
     NOT yet mirrored into eval/fixtures/gate0_expected_pins_{red,miniwob}{,.appserver}.json --
     those four still hold the v1 digests (306751c3... / 845638c8...) on purpose. Re-freezing
