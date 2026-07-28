@@ -12,9 +12,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
+import subprocess
 import sys
 import types
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -305,14 +309,50 @@ def test_retake_allowed_past_setup_failure_records_attempt_2_and_reason(fake_pyb
 # silent: it surfaces as human_metric_identity:red at SCORING, after a paid run is spent.
 # ================================================================================================
 
-import os
-from pathlib import Path
-
 import tools.capture_gate0_baseline_red as red
 
 
 def _parser():
     return red.build_arg_parser()
+
+
+# ---- the DOCUMENTED invocation actually runs -----------------------------------------------------
+
+def _direct_script(tmp_path, *argv):
+    """`python tools/capture_gate0_baseline_red.py ...` as a real subprocess, from an unrelated cwd
+    and with PYTHONPATH scrubbed. Both matter: the shim must key off __file__ rather than the
+    working directory, and an inherited PYTHONPATH would make this test pass without any shim at
+    all."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    return subprocess.run([sys.executable, str(Path(red.__file__)), *argv], cwd=tmp_path,
+                          capture_output=True, text=True, env=env)
+
+
+def test_the_documented_invocation_runs_as_a_direct_script(tmp_path):
+    """Review B1, and the deliverable: DAVID_BASELINES.md hands David
+    `uv run python tools/capture_gate0_baseline_red.py --mode paid_gate0_v2 --i-am-human` to close
+    P1c step 2. Running a file in tools/ directly puts tools/ -- not the repo root -- on
+    sys.path[0], so build_arg_parser()'s read of the scorer's MODES died with
+    `ModuleNotFoundError: No module named 'eval'` on the very first line. `--help` regressed the
+    same way (it exits 0 on origin/main `322499f`), so anyone debugging would have blamed --mode.
+
+    Nothing tested the tool as a SCRIPT, which is the only way it is ever actually invoked."""
+    r = _direct_script(tmp_path, "--help")
+    assert r.returncode == 0, r.stderr
+    assert "ModuleNotFoundError" not in r.stderr
+    for mode in ("readiness_dev", "paid_gate0", "paid_gate0_v2"):
+        assert mode in r.stdout
+
+
+def test_the_documented_invocation_reaches_the_real_guards_not_an_import_error(tmp_path):
+    """--help alone would pass with a lazily-imported parser, so go further: a real capture
+    invocation must get past parser construction and reach run()'s own checks. An explicit missing
+    --rom makes the expected stopping point deterministic wherever this runs."""
+    r = _direct_script(tmp_path, "--mode", "readiness_dev", "--test",
+                       "--rom", str(tmp_path / "no_such.gb"), "--out", str(tmp_path / "scratch"))
+    assert r.returncode == 2
+    assert "ModuleNotFoundError" not in r.stderr and "Traceback" not in r.stderr
+    assert "ROM not found" in r.stderr
 
 
 # ---- the flag itself ---------------------------------------------------------------------------
@@ -342,6 +382,20 @@ def test_mode_config_covers_exactly_the_scorers_modes():
 
 def test_score_gate0_modes_reads_the_scorer_never_a_local_copy():
     assert red.score_gate0_modes() is scorer.MODES
+
+
+def test_the_parser_reads_the_scorers_modes_at_build_time_not_a_hardcoded_tuple(monkeypatch):
+    """Mutation-driven (review B4/M5): the two tests above compare VALUES that happen to coincide
+    today, so replacing `choices=tuple(score_gate0_modes())` with a hardcoded
+    ("readiness_dev", "paid_gate0", "paid_gate0_v2") left the whole suite green -- i.e. the headline
+    "this rig can never offer a mode the scorer cannot score" was not enforced at the parser, which
+    is where it has to hold.
+
+    Move the scorer's map and the parser must move with it. A hardcoded tuple cannot."""
+    monkeypatch.setattr(scorer, "MODES", dict(scorer.MODES, synthetic_probe_mode=None))
+    action = next(a for a in _parser()._actions if a.dest == "mode")
+    assert "synthetic_probe_mode" in action.choices
+    assert _parser().parse_args(["--mode", "synthetic_probe_mode"]).mode == "synthetic_probe_mode"
 
 
 # ---- per-mode output directories ----------------------------------------------------------------
@@ -409,16 +463,42 @@ def test_a_v2_stamped_artifact_satisfies_the_frozen_identity_check(tmp_path):
 # ---- held-out gating: a paid mode cannot be entered casually --------------------------------------
 
 @pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
-def test_held_out_mode_refused_without_the_acknowledgement(tmp_path, mode, monkeypatch,
+def test_held_out_mode_refused_without_the_acknowledgement(tmp_path, mode, monkeypatch, capsys,
                                                            fake_pyboy_raises):
     """THE gating test. A paid-mode capture produces the human denominator the 2.0x bar is measured
-    against; it must never happen by accident or from a script."""
+    against; it must never happen by accident or from a script.
+
+    ISOLATED, after review found this test could not tell the two guards apart. `exit == 2` and
+    `not out.exists()` are satisfied *equally well* by the fixture cross-check, so deleting the
+    --i-am-human gate outright left this test green. Two changes fix that: the mode's pins are
+    re-pointed at `out` so the cross-check WOULD pass (the post-step-1 world, in which the
+    acknowledgement is the only remaining protection -- the exact configuration nothing tested), and
+    the assertion is on the refusal's own text. Delete the gate now and control falls through to a
+    successful cross-check, the faked PyBoy, and an INCOMPLETE artifact in `out` -- three failures."""
     out = tmp_path / "out"
     monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, mode,
+                        _pins_pointing_at(tmp_path, mode, out / "human_metrics.json"))
     args = _args(tmp_path, out=out, test=False, mode=mode, i_am_human=False)
     assert red.run(args) == 2
+    assert "--i-am-human" in capsys.readouterr().err
     # Refused BEFORE anything is created -- not merely refused after writing an artifact.
     assert not out.exists()
+
+
+@pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
+def test_the_acknowledgement_is_the_only_guard_left_once_the_fixture_points_here(
+        tmp_path, mode, monkeypatch, fake_pyboy_raises):
+    """The companion to the test above, stated as a positive: with the pins re-pointed, the ONLY
+    difference between refusal and a real capture is --i-am-human. If this passes and the one above
+    passes, the gate is load-bearing and independently observable."""
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, mode,
+                        _pins_pointing_at(tmp_path, mode, out / "human_metrics.json"))
+    args = _args(tmp_path, out=out, test=False, mode=mode, i_am_human=True)
+    assert red.run(args) == 2                      # reaches (and fails at) faked PyBoy
+    assert len(list(out.glob("human_metrics.INCOMPLETE_*.json"))) == 1
 
 
 def test_held_out_modes_are_exactly_the_paid_modes():
@@ -434,11 +514,18 @@ def test_readiness_dev_needs_no_acknowledgement(tmp_path, fake_pyboy_raises):
     assert json.loads(incomplete[0].read_text(encoding="utf-8"))["mode"] == "readiness_dev"
 
 
-def test_cli_refuses_a_held_out_mode_without_the_acknowledgement():
-    """End to end through the real parser, not just run()."""
+def test_cli_refuses_a_held_out_mode_without_the_acknowledgement(tmp_path, monkeypatch, capsys):
+    """End to end through the real parser, not just run(). Same isolation as the test above: the
+    pins are re-pointed so only the acknowledgement can be doing the refusing."""
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, "paid_gate0_v2", {"real_out": str(out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2", out / "human_metrics.json"))
     parsed = _parser().parse_args(["--mode", "paid_gate0_v2"])
     assert parsed.i_am_human is False
     assert red.run(parsed) == 2
+    assert "--i-am-human" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_unknown_mode_is_refused_by_run_even_if_argparse_is_bypassed(tmp_path):
@@ -474,8 +561,10 @@ def test_all_three_fixtures_currently_pin_the_same_banked_red_baseline():
 
 @pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
 def test_held_out_capture_refused_while_the_fixture_points_somewhere_else(tmp_path, mode,
-                                                                          monkeypatch,
+                                                                          monkeypatch, capsys,
                                                                           fake_pyboy_raises):
+    """The mirror image of the gating test: --i-am-human IS passed, so only the cross-check can be
+    refusing, and the message is asserted so it cannot be confused with any other guard."""
     out = tmp_path / "out"
     monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(out)})
     monkeypatch.setitem(
@@ -483,7 +572,51 @@ def test_held_out_capture_refused_while_the_fixture_points_somewhere_else(tmp_pa
         _pins_pointing_at(tmp_path, mode, tmp_path / "elsewhere" / "human_metrics.json"))
     args = _args(tmp_path, out=out, test=False, mode=mode, i_am_human=True)
     assert red.run(args) == 2
+    err = capsys.readouterr().err
+    assert "will read the" in err and "would never be scored" in err
     assert not out.exists()          # refused before a single byte was written
+
+
+@pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
+def test_an_explicit_out_cannot_walk_past_the_fixture_cross_check(tmp_path, mode, monkeypatch,
+                                                                   capsys, fake_pyboy_raises):
+    """REGRESSION (review B2): the cross-check used to validate MODE_CONFIG's `real_out` -- the
+    directory the mode would write BY DEFAULT -- while run() went on to write `args.out`. With the
+    v2 fixture re-pointed (step 1 of P1c, simulated here), `--out <the banked readiness_dev
+    directory>` therefore validated a directory it was not about to touch, returned None, and
+    proceeded: the banked human_metrics.json was overwritten with a paid-mode stamp and the banked
+    append-only oracle.jsonl renamed away. `args.out != real_out` under a held-out mode was
+    exercised by no test at all.
+
+    Here the fixture legitimately points at the mode's own real_out (so nothing about the FIXTURE is
+    wrong), --i-am-human is passed, and only `--out` differs -- the exact configuration that used to
+    pass."""
+    real_out = tmp_path / "v2_real_out"
+    elsewhere = tmp_path / "banked_stand_in"
+    elsewhere.mkdir()
+    (elsewhere / "oracle.jsonl").write_text('{"BANKED_SENTINEL": true}\n', encoding="utf-8")
+    monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(real_out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, mode,
+                        _pins_pointing_at(tmp_path, mode, real_out / "human_metrics.json"))
+    args = _args(tmp_path, out=elsewhere, test=False, mode=mode, i_am_human=True,
+                 allow_retake="simulating the hazard")
+    assert red.run(args) == 2
+    assert "would never be scored" in capsys.readouterr().err
+    # Nothing written, and the append-only trace not renamed away.
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["oracle.jsonl"]
+    assert not real_out.exists()
+
+
+def test_the_cross_check_binds_the_effective_write_target_not_the_modes_default(tmp_path,
+                                                                                 monkeypatch):
+    """Stated directly on the guard, independent of run(): its verdict follows the directory it is
+    handed, so run() passing `args.out` is what makes it answer the question its docstring asks."""
+    real_out = tmp_path / "v2_real_out"
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2",
+                                          real_out / "human_metrics.json"))
+    assert red.require_fixture_points_here("paid_gate0_v2", str(real_out)) is None
+    assert red.require_fixture_points_here("paid_gate0_v2", str(tmp_path / "anywhere_else")) is not None
 
 
 @pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
@@ -528,14 +661,108 @@ def test_fixture_cross_check_fails_closed_on_an_unreadable_fixture(tmp_path, mon
 
 def test_pinned_red_human_path_resolves_relative_entries_like_verify_sources(tmp_path, monkeypatch):
     """_verify_sources resolves a relative artifact_paths entry against the SCORER's ROOT, not the
-    cwd. Two different resolutions of one pin is the drift class this workstream removes."""
+    cwd. Two different resolutions of one pin is the drift class this workstream removes.
+
+    Runs from a DIFFERENT cwd deliberately. Without the chdir this test was vacuous: pytest runs
+    from the repo root, where cwd == scorer.ROOT, so replacing the whole resolution with a bare
+    `path.resolve()` passed anyway (a third surviving mutant, found this round -- the reviewer's
+    mutation set reported two). The scorer resolves against its own ROOT from any cwd; so must
+    this."""
     monkeypatch.setitem(
         scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
         _pins_pointing_at(tmp_path, "paid_gate0_v2",
                           "runs/gate0_paid_v2_human_baseline/red/human_metrics.json"))
+    monkeypatch.chdir(tmp_path)
     assert red.pinned_red_human_path("paid_gate0_v2") == (
-        scorer.ROOT / "runs" / "gate0_paid_v2_human_baseline" / "red"
-        / "human_metrics.json").resolve()
+        scorer.ROOT / "runs" / "gate0_paid_v2_human_baseline" / "red" / "human_metrics.json")
+
+
+def test_pinned_red_human_path_does_not_symlink_resolve_because_the_scorer_does_not(tmp_path,
+                                                                                     monkeypatch):
+    """Kept in step with PR #192, whose own review removed the trailing `.resolve()` from
+    `pinned_artifact_path` on the grounds that `_verify_sources` applies none, so a second
+    resolution here would itself be the drift. `require_fixture_points_here` resolves at the
+    comparison instead. Asserted as an exact identity against the scorer's literal expression --
+    re-adding `.resolve()` breaks this on any path where the two differ."""
+    monkeypatch.setitem(
+        scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+        _pins_pointing_at(tmp_path, "paid_gate0_v2", "runs/./../runs/x/../red/human_metrics.json"))
+    got = red.pinned_red_human_path("paid_gate0_v2")
+    expected = scorer.ROOT / "runs/./../runs/x/../red/human_metrics.json"
+    assert got == expected
+    assert ".." in str(got), "an un-normalised pin must survive un-normalised, exactly as the scorer sees it"
+
+
+def test_the_pin_helper_matches_192s_pinned_artifact_path(tmp_path, monkeypatch):
+    """DECLARED DUPLICATION, bound rather than asserted. #192's `pinned_artifact_path(mode, key)` is
+    the symbol this helper temporarily duplicates; the two must agree until one is deleted. #192's
+    body is re-implemented here verbatim (it cannot be imported -- #192 is unmerged and its file is
+    off-limits to this PR) and compared over a matrix of pin spellings including the ones that used
+    to diverge before #192 dropped `.resolve()`."""
+    def pinned_artifact_path_192(mode, key):                     # verbatim from #192 @ 6ca6b38
+        pins = json.loads(scorer.SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))
+        path = Path(pins["artifact_paths"][key])
+        return path if path.is_absolute() else scorer.ROOT / path
+
+    spellings = [
+        "runs/gate0_paid_v2_human_baseline/red/human_metrics.json",
+        "runs\\gate0_paid_v2_human_baseline\\red\\human_metrics.json",
+        "./runs/gate0_paid_v2_human_baseline/red/human_metrics.json",
+        "runs/../runs/gate0_paid_v2_human_baseline/red/human_metrics.json",
+        str(tmp_path / "absolute" / "human_metrics.json"),
+        str(tmp_path / "absolute" / ".." / "absolute" / "human_metrics.json"),
+    ]
+    for spelling in spellings:
+        monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                            _pins_pointing_at(tmp_path, "paid_gate0_v2", spelling))
+        assert red.pinned_red_human_path("paid_gate0_v2") == \
+            pinned_artifact_path_192("paid_gate0_v2", "red_human"), spelling
+
+
+# ---- the cross-check validates the fixture's SHAPE, exactly as the scorer does ---------------------
+
+@pytest.mark.parametrize("broken, why", [
+    ({"schema_version": 2}, "schema_version != 1"),
+    ({"mode": "readiness_dev"}, "pins['mode'] != the mode being captured"),
+    ({"schema_version": None, "mode": None}, "neither key present"),
+])
+def test_cross_check_rejects_the_fixtures_the_scorer_would_reject(tmp_path, monkeypatch, broken,
+                                                                   why):
+    """Review B5: require_fixture_points_here read `artifact_paths.red_human` and nothing else, while
+    eval/score_gate0.py::_verify_sources additionally requires `schema_version == 1` and
+    `pins["mode"] == mode` (its `source_pins_schema_or_mode` failure). A fixture with the right path
+    but the wrong mode/schema was ALLOWED by the rig and REJECTED by the scorer -- discovered only
+    at scoring, which is precisely the failure class this guard exists to pre-empt. Aligned."""
+    out = tmp_path / "out"
+    pins = tmp_path / "pins_broken.json"
+    payload = {"schema_version": 1, "mode": "paid_gate0_v2",
+               "artifact_paths": {"red_human": str(out / "human_metrics.json")}}
+    payload.update(broken)
+    payload = {k: v for k, v in payload.items() if v is not None}
+    pins.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2", pins)
+    msg = red.require_fixture_points_here("paid_gate0_v2", str(out))
+    assert msg is not None and "source_pins_schema_or_mode" in msg, why
+
+
+def test_cross_check_agrees_with_the_scorers_own_schema_and_mode_predicate(tmp_path, monkeypatch):
+    """Bind the two, rather than asserting the rule twice: for a matrix of fixtures, the rig's
+    verdict must agree with the scorer's literal `schema_version != 1 or mode != <mode>` predicate.
+    A divergence here is the drift this whole workstream removes."""
+    out = tmp_path / "out"
+    for schema in (1, 2, None):
+        for pin_mode in ("paid_gate0_v2", "paid_gate0", None):
+            payload = {"artifact_paths": {"red_human": str(out / "human_metrics.json")}}
+            if schema is not None:
+                payload["schema_version"] = schema
+            if pin_mode is not None:
+                payload["mode"] = pin_mode
+            pins = tmp_path / "pins_matrix.json"
+            pins.write_text(json.dumps(payload), encoding="utf-8")
+            monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2", pins)
+            scorer_rejects = schema != 1 or pin_mode != "paid_gate0_v2"
+            rig_rejects = red.require_fixture_points_here("paid_gate0_v2", str(out)) is not None
+            assert rig_rejects == scorer_rejects, (schema, pin_mode)
 
 
 # ---- the real-path guard is now per mode ----------------------------------------------------------
@@ -557,3 +784,82 @@ def test_test_mode_still_refuses_to_write_under_a_paid_modes_real_path(tmp_path,
     args = _args(tmp_path, out=out, test=True, mode="paid_gate0_v2", i_am_human=True)
     assert red.run(args) == 2
     assert not out.exists()
+
+
+def _redirect_all_modes(monkeypatch, tmp_path):
+    """Every mode's real_out redirected into tmp. NOTHING in this file may write under the actual
+    runs/ tree -- these tests are about a guard that protects append-only banked evidence, so the
+    tests themselves must not be the thing that damages it."""
+    dirs = {}
+    for mode in red.MODE_CONFIG:
+        d = tmp_path / f"real_{mode}"
+        dirs[mode] = d
+        monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(d)})
+    return dirs
+
+
+def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_combination(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    """REGRESSION (review B3), the one true regression against origin/main.
+
+    On `322499f` `_under_real_path(out)` had a single referent, so `--test` could NEVER write under
+    `runs/gate0_human_baseline/red`, whatever else was passed. `a4e5969` scoped the check to the
+    SELECTED mode's directory (inherited verbatim from the MiniWoB sibling -- the one place copying
+    it weakened this rig), and the reviewer got `--test --mode paid_gate0_v2 --out
+    runs/gate0_human_baseline/red` to write an INCOMPLETE artifact into the banked directory and
+    rename the banked append-only oracle.jsonl away.
+
+    The invariant is restored UNCONDITIONALLY and proven exhaustively: mode x target-directory x
+    --i-am-human x --allow-retake = 3*3*2*2 = 36 combinations, each run twice (--test and not), 72
+    run() calls. The cross-check is neutralised throughout so that --test alone is what holds -- the
+    guarantee must not depend on another guard happening to fire first."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+
+    violations, controls = [], []
+    for mode in sorted(red.MODE_CONFIG):
+        for target_mode, target in sorted(dirs.items()):
+            for i_am_human in (False, True):
+                for allow_retake in (None, "a stated reason"):
+                    combo = (mode, target_mode, i_am_human, bool(allow_retake))
+                    rc = red.run(_args(tmp_path, out=target, test=True, mode=mode,
+                                       i_am_human=i_am_human, allow_retake=allow_retake))
+                    if rc != 2 or target.exists():
+                        violations.append((combo, rc, target.exists()))
+                    # control: the SAME combination without --test must be able to reach the
+                    # emulator (and so write), otherwise the matrix above proves nothing.
+                    red.run(_args(tmp_path, out=target, test=False, mode=mode,
+                                  i_am_human=i_am_human, allow_retake=allow_retake))
+                    if target.exists():
+                        controls.append(combo)
+                        shutil.rmtree(target)
+
+    assert violations == [], f"--test wrote under a real baseline path: {violations}"
+    # Four (mode, --i-am-human) pairs get past the acknowledgement gate -- readiness_dev with the
+    # flag either way, and each paid mode with it -- times 3 target directories times 2
+    # --allow-retake values = 24 combinations that genuinely wrote without --test. Everything the
+    # matrix blocked above, it blocked BECAUSE of --test.
+    assert len(controls) == 24, f"matrix is vacuous -- only {len(controls)} combinations wrote"
+
+
+def test_test_mode_refuses_even_when_the_fixture_blesses_the_banked_directory(tmp_path, monkeypatch,
+                                                                              capsys,
+                                                                              fake_pyboy_raises):
+    """The reviewer's exact B3 shape, with the cross-check deliberately made permissive: a hostile
+    (or simply stale) v2 fixture that points at the banked readiness_dev directory. The cross-check
+    then PASSES and --test is the only thing standing between a smoke test and the banked artifact.
+    On `a4e5969` this wrote; it must refuse."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    banked = dirs["readiness_dev"]
+    banked.mkdir(parents=True)
+    (banked / "oracle.jsonl").write_text('{"BANKED_SENTINEL": true}\n', encoding="utf-8")
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2",
+                                          banked / "human_metrics.json"))
+    assert red.require_fixture_points_here("paid_gate0_v2", str(banked)) is None   # it blesses it
+    args = _args(tmp_path, out=banked, test=True, mode="paid_gate0_v2", i_am_human=True,
+                 allow_retake="simulating the hazard")
+    assert red.run(args) == 2
+    assert "ANY mode's real baseline path" in capsys.readouterr().err
+    assert sorted(p.name for p in banked.iterdir()) == ["oracle.jsonl"]
+    assert '{"BANKED_SENTINEL": true}\n' == (banked / "oracle.jsonl").read_text(encoding="utf-8")

@@ -190,6 +190,16 @@ modes only:
    output directory from the pin would send a v2 capture straight into the banked artifact — the
    worse of the two rows in the table above.
 
+   It is cross-checked against `args.out` — the directory this invocation will *actually* write —
+   not against `MODE_CONFIG`'s `real_out`. Binding it to `real_out` (review **B2**) meant an
+   explicit `--out` was never checked at all, and it also validates the fixture's
+   `schema_version`/`mode` exactly as `_verify_sources` does (review **B5**), so the rig and the
+   scorer agree on which fixtures are trustworthy.
+
+A third guard is NOT held-out-only: `--test` refuses to write under **any** mode's real baseline
+path, unconditionally. See the identity section below for why that is both a behaviour change and
+the right one.
+
 **`readiness_dev` is exempt from guard 2, and that scoping is load-bearing.** Its baseline is already
 captured, banked, and pinned to exactly the file it writes; re-checking protects nothing and would add
 a new way for a legitimate `--allow-retake` to fail. The exemption is what keeps that path untouched.
@@ -197,28 +207,74 @@ a new way for a legitimate `--allow-retake` to fail. The exemption is what keeps
 ### `readiness_dev` identity — measured, not asserted
 
 A throwaway differential harness (not committed) records what the tool **actually writes and where**:
-the effective output directory, `REAL_OUT`, the `_under_real_path` answers over a path matrix, the
-full `_build_metrics` payload, and — driving the real `run()` with `PyBoy` faked to raise, so no SDL2
-window is ever created — the exit code, stdout, stderr and **every file written (path and content)**
-across five scenarios: first attempt, `--test`, overwrite-refusal, `--allow-retake`, and stale-oracle
-archival. Repo root, temp dirs, unix timestamps and ISO timestamps are normalised so two worktrees
-are comparable; the harness was confirmed self-stable (two runs of the same tree hash equal).
+the effective output directory, `REAL_OUT`, the `_under_real_path` answers over an 11-path matrix,
+the full `_build_metrics` payload in three configurations, and — driving the real `run()` with
+`PyBoy` faked to raise, so no SDL2 window is ever created — the exit code, stdout, stderr and
+**every file written (path and content)** across ten scenarios: first attempt, `--test` to scratch,
+`--test` under the real path, overwrite-refusal, `--allow-retake`, stale-oracle archival, missing
+ROM, missing savestate, `--out` left at its default, and `--test` aimed at another mode's directory.
+Repo root, temp dirs, unix timestamps and ISO timestamps are normalised so two worktrees are
+comparable; both sides were confirmed self-stable (two runs of the same tree hash equal).
 
-`origin/main` (`322499f`, no flag) vs this branch (`--mode readiness_dev`):
+`origin/main` (`322499f`, no flag) vs this branch (`--mode readiness_dev`), re-proved after the
+review fix round:
 
 ```
-IDENTICAL
-b1a0c865931463d0adee8f19e43b998e4b8c1e11c909b46247128cb85131b3f3   (both sides)
+base 0d6fbd3d2d2f2af00dab49a85886e71559b090045fd37857040c33bcdb6b1556
+head f89c23fadc4ba3f4986f849f87772c8a42d0cd7abd566fbcb806d1eade0a1eb5
 ```
 
-The only recorded difference is the parsed argparse namespace, which gains `mode` and `i_am_human`
-and moves `--out`'s default out of argparse into `run()`. The **effective** output directory is
-byte-identical and is compared inside the hash above.
+**Two recorded differences, both created deliberately by the B3 fix and both in the strictly
+more-refusing direction. Everything else is byte-identical** — all constants, the whole
+`_under_real_path` matrix, all three `_build_metrics` payloads, and eight of the ten `run()`
+scenarios including the one that resolves `--out`'s default:
+
+| scenario | `322499f` | here |
+|---|---|---|
+| `--test --out runs/gate0_human_baseline/red` | refuses, exit 2, writes nothing | refuses, exit 2, writes nothing — **message reworded** to name the mode |
+| `--test --out runs/gate0_paid_v2_human_baseline/red` | **writes** `human_metrics.INCOMPLETE_*.json` there | refuses, exit 2, writes nothing |
+
+The second row is review finding **B3** and is the only true regression the review found against
+`origin/main`: `_under_real_path` had a single referent there, so `--test` could never write under
+`runs/gate0_human_baseline/red`; scoping it per-mode (copied verbatim from the MiniWoB sibling) let
+`--test --mode paid_gate0_v2 --out <the banked directory>` write an INCOMPLETE artifact into the
+banked directory and rename the banked append-only `oracle.jsonl` away. The guard is now
+unconditional and cross-mode, proven over all 36 mode × target-directory × `--i-am-human` ×
+`--allow-retake` combinations with the fixture cross-check neutralised so `--test` alone is what
+holds.
+
+The remaining recorded difference is the parsed argparse namespace, which gains `mode` and
+`i_am_human` and moves `--out`'s default out of argparse into `run()`. The **effective** output
+directory is byte-identical and is compared inside the hashes above.
+
+### Review fix round (adversarial review of `a4e5969`)
+
+Six findings, all addressed on this branch; the review's structural claims about the design all
+survived being re-run. **B1** the documented command tracebacked with `ModuleNotFoundError: No
+module named 'eval'` (and `--help` regressed against `322499f`) because `build_arg_parser()` reads
+the scorer's `MODES` at parser-build time while `python tools/x.py` puts `tools/` on `sys.path[0]`;
+fixed with the same 3-line shim three sibling tools carry, and now pinned by two subprocess tests
+that invoke the file as a script. **B2** the fixture cross-check validated `MODE_CONFIG`'s
+`real_out` rather than the directory actually being written, so an explicit `--out` walked past it
+once the fixture re-point lands; it is bound to `args.out` now. **B3** above. **B4** the
+`--i-am-human` gate was not distinguishable from the cross-check by any test (deleting it left the
+whole suite green), and the parser's `choices` were not bound to the scorer; both isolated now.
+**B5** the cross-check skipped the `schema_version`/`mode` validation `_verify_sources` performs and
+is aligned. **B6** corrected a false claim in the PR body — see below.
 
 ### What this does NOT do
 
 It does not satisfy P1c. It supplies the first of three steps. It produces no capability evidence,
-touches no `runs/` artifact, and re-freezes nothing. It also leaves a **declared duplication**:
+touches no `runs/` artifact, and re-freezes nothing.
+
+It also does **not** fix `tools/reconstruct_gate0_red_baseline.py`, which still carries
+`MODE = "readiness_dev"` with the banked path as its `DEFAULT_OUT` and stamps that mode
+unconditionally — the identical defect this PR fixes, in the tool that actually produced the banked
+artifact and that is the recovery path if a v2 capture mis-detects. Deliberately out of scope here
+(it deserves its own reviewed PR, and it is the fallback if the capture path fails); recorded so the
+gap is not lost.
+
+It leaves a **declared duplication**:
 `pinned_red_human_path()` re-implements #192's `pinned_artifact_path()` because #192 is unmerged (the
 symbol does not exist on `origin/main`) and `tools/gate0_appserver_arm.py` was off-limits to this
 change. Two resolutions of one pin is the drift class this workstream exists to remove — once both

@@ -53,8 +53,15 @@ docstring) or copy the one from an existing checkout/readiness run
 (`runs/gate0_readiness_2026-07-14/`).
 
 ```
-uv run python tools/capture_gate0_baseline_red.py --mode readiness_dev
+UV_PROJECT_ENVIRONMENT=.venv-win uv run --frozen python \
+    tools/capture_gate0_baseline_red.py --mode readiness_dev
 ```
+
+(Windows: that is the form used everywhere in this repo. On Linux/Pi, drop the two `UV_` bits and
+use `uv run python ...`. Either way, running the file directly works -- the script puts the repo
+root on `sys.path` itself, so you do not need `PYTHONPATH=.` or `python -m`. Both this command and
+`--help` were executed as written on 2026-07-28 before this was documented; `--help` exits 0 and the
+capture command reaches the ROM/savestate checks.)
 
 `--mode` is **required and has no default** (2026-07-28), exactly like the MiniWoB rig's. It stamps
 `human_metrics.json`'s `mode` field -- which `eval/score_gate0.py` requires to equal the mode being
@@ -71,12 +78,22 @@ so the task, the savestate and the predicate are identical in every mode -- you 
 thing. `--i-am-human` is required for the paid modes anyway, because that artifact becomes the
 denominator the `agent <= 2.0x human` bar is measured against.
 
-A paid-mode capture also **refuses to start** unless that mode's source-pins fixture already points
+For the Gate 0 v2 paid baseline (prereg P1c), the command is:
+
+```
+UV_PROJECT_ENVIRONMENT=.venv-win uv run --frozen python \
+    tools/capture_gate0_baseline_red.py --mode paid_gate0_v2 --i-am-human
+```
+
+A paid-mode capture **refuses to start** unless that mode's source-pins fixture already points
 `artifact_paths.red_human` at the directory above. Today all three fixtures still point at
-`runs/gate0_human_baseline/red/`, so `--mode paid_gate0_v2` refuses until that re-point lands (prereg
-P1c). The refusal prints the exact fixture field to change. Do **not** work around it by pointing
-`--out` at the banked dev directory: that file is append-only raw data and three fixtures freeze its
-digest.
+`runs/gate0_human_baseline/red/`, so the command above refuses until that re-point lands (prereg
+P1c) -- executed as written on 2026-07-28, it prints that refusal and exits `2`, which is the
+correct behaviour today, not a breakage. The refusal names the exact fixture field to change. Do
+**not** work around it by pointing `--out` at the banked dev directory: that file is append-only raw
+data and three fixtures freeze its digest. `--out` will not get you there anyway -- the refusal is
+checked against the directory the run would actually write, and `--test` refuses to write under any
+mode's real baseline path at all.
 
 What you'll see: a real PyBoy window opens straight into the fresh bedroom. The terminal prints the
 fresh party count (must read `0` -- if it doesn't, you've got the wrong savestate, Ctrl-C and fix

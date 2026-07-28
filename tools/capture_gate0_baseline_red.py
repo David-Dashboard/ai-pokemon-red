@@ -20,8 +20,13 @@ Reuses, rather than reinvents:
 
 Three modes, selected with a REQUIRED `--mode` (see "Why --mode has no default" below):
   * `readiness_dev` -- the readiness-phase capture. This is the mode the banked
-    `runs/gate0_human_baseline/red/human_metrics.json` was produced under, and its behaviour is
-    byte-identical to the pre-`--mode` rig.
+    `runs/gate0_human_baseline/red/human_metrics.json` was produced under. Every capture path is
+    byte-identical to the pre-`--mode` rig -- same effective output directory, same artifact, same
+    exit codes, same stdout/stderr -- with exactly ONE deliberate exception, measured rather than
+    asserted (see the deviations log's D5): the `--test` refusal below is now UNCONDITIONAL and
+    cross-mode, so it refuses `--out` under any mode's real path and its message names which. On the
+    pre-`--mode` rig the two paid directories did not exist, so `--test` was free to write into
+    them; that is the hole review B3 found and it is closed in the more-refusing direction.
   * `paid_gate0` -- Gate 0 v1's paid mode.
   * `paid_gate0_v2` -- Gate 0 v2's paid mode (reports/2026-07-25-gate0-v2-prereg.md P1c).
 
@@ -42,10 +47,18 @@ Writes, on a DETECTED SUCCESS (oracle-only end-state, exactly eval.score_gate0._
     <out>/oracle.jsonl          -- append-only watch-row trace (raw data law)
 
 `<out>` defaults per mode (all gitignored under runs/, never committed) -- one directory PER MODE so
-a paid capture can never overwrite, or be confused with, the banked readiness_dev one:
+a paid capture's DEFAULT output cannot collide with, or be confused with, the banked readiness_dev
+one:
     readiness_dev -> runs/gate0_human_baseline/red/          (unchanged; the banked artifact)
     paid_gate0    -> runs/gate0_paid_human_baseline/red/
     paid_gate0_v2 -> runs/gate0_paid_v2_human_baseline/red/
+Separate defaults are NOT on their own a safety property, and this docstring used to overclaim that
+they were: an explicit `--out` can still name another mode's directory. What actually binds that is
+(a) require_fixture_points_here, cross-checked against `args.out` -- the directory this invocation
+will really write -- so a held-out mode cannot write anywhere its own fixture does not point, and
+(b) the unconditional cross-mode `--test` guard in run(), which refuses `--out` under ANY mode's
+real path. Both were added after review found `--out` walking past the first and `--test` walking
+past the second.
 This mirrors tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG exactly. It is NOT derived from
 the mode's source-pins fixture, deliberately: all three fixtures currently pin `artifact_paths.
 red_human` at the readiness_dev path, so deriving the OUTPUT from the pin would make a v2 capture
@@ -91,6 +104,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Running this file directly (`uv run python tools/capture_gate0_baseline_red.py` -- the form
+# DAVID_BASELINES.md documents and the one David is handed) puts tools/, not the repo root, on
+# sys.path[0], so the root-level `eval` / `world_mcp` / `games` imports below raise
+# ModuleNotFoundError. Same 3-line shim three sibling tools already carry
+# (tools/reconstruct_gate0_red_baseline.py, tools/smoke_sweep.py, tools/gate3d_baselines.py); it is
+# needed at MODULE scope here, not just inside run(), because build_arg_parser() reads the scorer's
+# MODES to populate --mode's choices -- without it even `--help` tracebacks.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 ARM = "red"
 # Per-mode output directory. Same shape and same purpose as
 # tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG -- the two rigs are peers and any divergence
@@ -157,23 +179,52 @@ def score_gate0_modes() -> dict:
 def pinned_red_human_path(mode: str) -> Path:
     """The absolute path `mode`'s source-pins fixture pins for `red_human`, resolved EXACTLY as
     eval/score_gate0.py::_verify_sources resolves it -- relative entries against the scorer's own
-    ROOT, absolute ones left alone.
+    ROOT, absolute ones left alone, and NO `.resolve()` on top, because the scorer applies none --
+    and REJECTING (by raising) the fixtures _verify_sources would reject outright.
 
-    DUPLICATION, DECLARED: PR #192 adds an identical `pinned_artifact_path(mode, key)` to
+    The schema_version/mode guard mirrors _verify_sources' `source_pins_schema_or_mode` failure
+    exactly. Without it this helper would happily read `red_human` out of a fixture the scorer
+    refuses to trust at all, so a capture could pass the cross-check below and still score
+    INSUFFICIENT_DATA -- the very "discovered only at scoring" class this guard exists to pre-empt.
+    Raising rather than returning a message keeps it on require_fixture_points_here's existing
+    fail-closed path.
+
+    DUPLICATION, DECLARED: PR #192 has an identical `pinned_artifact_path(mode, key)` in
     tools/gate0_appserver_arm.py. Reusing it was the intent and is not possible here -- #192 is not
     merged, so the symbol does not exist on `origin/main` (this branch's base), and that file is
     off-limits to this change. Two resolutions of one pin is exactly the drift class this whole
     workstream exists to remove, so this copy is a KNOWN TEMPORARY: once both land, lift one shared
-    helper and delete both. Flagged in the PR body, not left for a reader to discover."""
+    helper and delete both. Flagged in the PR body, not left for a reader to discover.
+
+    Kept deliberately in step with #192 rather than merely similar: its own review (G-series) removed
+    the trailing `.resolve()` for exactly this reason -- the scorer does not symlink-resolve, so a
+    second resolution here would BE the drift -- and pushed symlink resolution down to the one
+    comparison that needs it. Same shape here (see require_fixture_points_here). #192 additionally
+    raises SystemExit from its version; this one must NOT, because SystemExit derives from
+    BaseException and would sail straight through require_fixture_points_here's `except Exception`
+    fail-closed path and out of run(), turning a clean exit-2 refusal into an unhandled unwind. This
+    file's guards refuse by returning a message; that difference is a deliberate match to THIS rig's
+    style, not drift from #192's."""
     from eval.score_gate0 import ROOT as SCORER_ROOT, SOURCE_PIN_FILES
     pins = json.loads(SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))
+    if pins.get("schema_version") != 1 or pins.get("mode") != mode:
+        raise ValueError(f"source_pins_schema_or_mode: schema_version="
+                         f"{pins.get('schema_version')!r} mode={pins.get('mode')!r}, "
+                         f"expected 1 and {mode!r}")
     path = Path(pins["artifact_paths"]["red_human"])
-    return (path if path.is_absolute() else SCORER_ROOT / path).resolve()
+    return path if path.is_absolute() else SCORER_ROOT / path
 
 
-def require_fixture_points_here(mode: str, real_out: str) -> str | None:
+def require_fixture_points_here(mode: str, out_dir: str) -> str | None:
     """VALIDATE AND REFUSE: does `mode`'s own source-pins fixture actually point at the file this
     capture is about to write? Returns a refusal message, or None if it does.
+
+    `out_dir` is the EFFECTIVE write target -- run() passes `args.out` (after the per-mode default
+    has been filled in), never the mode's `real_out`. Binding it to `real_out` instead was a real
+    defect: with the v2 fixture re-pointed, `--mode paid_gate0_v2 --out <the banked readiness_dev
+    directory>` validated the directory it was NOT about to write and returned None, letting a
+    paid-mode capture land on top of an append-only artifact whose digest three fixtures freeze. The
+    guard now answers the question its first sentence asks.
 
     Without this the failure is silent and expensive in the way this project keeps getting caught by:
     the capture succeeds, the artifact is perfect, and the scorer reads a DIFFERENT file -- the
@@ -193,13 +244,18 @@ def require_fixture_points_here(mode: str, real_out: str) -> str | None:
     which is what the differential in the PR body proves."""
     if mode not in HELD_OUT_MODES:
         return None
-    target = Path(os.path.join(real_out, "human_metrics.json")).resolve()
+    target = Path(os.path.join(out_dir, "human_metrics.json")).resolve()
     try:
         pinned = pinned_red_human_path(mode)
     except Exception as exc:
         return (f"refusing: cannot read {mode!r}'s source-pins fixture to confirm where the scorer "
                 f"will look for the Red human baseline ({exc}).")
-    if pinned != target:
+    # Symlink resolution happens HERE, at the one comparison that needs it, and never inside
+    # pinned_red_human_path -- same split as #192's pinned_artifact_path/_validate_args. The pin is
+    # reported to the operator unresolved, i.e. as the scorer will actually open it; only the
+    # equality test is taken on resolved forms, so a symlinked or 8.3-shortened repo path cannot
+    # manufacture a false refusal.
+    if pinned.resolve() != target:
         return (
             f"refusing: eval/score_gate0.py will read the {mode!r} Red human baseline from\n"
             f"    {pinned}\n"
@@ -305,7 +361,10 @@ def run(args, max_frames: int | None = None) -> int:
               file=sys.stderr)
         return 2
 
-    refusal = require_fixture_points_here(mode, real_out)
+    # Cross-checked against args.out -- the directory this invocation will ACTUALLY write -- not
+    # against MODE_CONFIG's real_out, so an explicit --out cannot walk past it (see the guard's
+    # docstring).
+    refusal = require_fixture_points_here(mode, args.out)
     if refusal is not None:
         print(refusal, file=sys.stderr)
         return 2
@@ -318,9 +377,19 @@ def run(args, max_frames: int | None = None) -> int:
               "(and runs/gate0_readiness_2026-07-14/ receipts) for how to obtain it.", file=sys.stderr)
         return 2
 
-    if args.test and _under_real_path(args.out, real_out):
-        print(f"--test refuses to write under the real baseline path {real_out!r}; "
-              "pass a scratch --out.", file=sys.stderr)
+    # --test's invariant is UNCONDITIONAL and cross-mode: it may never write under ANY mode's real
+    # baseline path, whatever --mode/--out/--allow-retake say. Scoping this to the selected mode's
+    # real_out (inherited verbatim from tools/capture_gate0_baseline_miniwob.py) was the one place
+    # copying the sibling WEAKENED this rig against origin/main, where _under_real_path had a single
+    # referent and `--test` therefore could never touch runs/gate0_human_baseline/red. Demonstrated:
+    # `--test --mode paid_gate0_v2 --out runs/gate0_human_baseline/red` wrote an INCOMPLETE artifact
+    # into the banked directory and renamed the banked append-only oracle.jsonl away.
+    blocked = sorted(m for m, cfg in MODE_CONFIG.items()
+                     if _under_real_path(args.out, cfg["real_out"]))
+    if args.test and blocked:
+        which = "; ".join(f"{m} -> {MODE_CONFIG[m]['real_out']}" for m in blocked)
+        print(f"--test refuses to write under ANY mode's real baseline path; --out {args.out!r} is "
+              f"under {which}. Pass a scratch --out.", file=sys.stderr)
         return 2
     if not args.test and not _under_real_path(args.out, real_out):
         print(f"warning: --out {args.out!r} is outside the canonical real baseline path "
