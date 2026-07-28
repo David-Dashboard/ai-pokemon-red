@@ -109,3 +109,159 @@ triage could be misled. This is the identical shape the pre-existing unpinned-ar
 in `score_manifest()` already produced, so it is inherited, not created here. Left alone
 deliberately: fixing it would mean touching `score()`, which this deviation exists to prove was not
 touched.
+
+---
+
+## D2 — the checker was edited after the freeze (`audit()`'s `overall` → `audit_overall`)
+
+**Landed by:** PR #188, `fix/audit-verdict-not-gate-verdict`.
+**Touches:** `tools/check_gate0_codex.py`, `tools/gate0_appserver_arm.py`,
+`tools/gate0_wake_boundary.py`, their tests, and one probe script under `reports/probes/`.
+`eval/score_gate0.py` is byte-untouched.
+
+### What the prereg says
+
+§6.6 ("What needs a code change, and what does not"), `:869-870`:
+
+> **`eval/score_gate0.py`'s predicates, bars, caps, and verdict logic are not edited and must not
+> be.** P9 adds a mode; it changes no threshold and no clause. `tools/check_gate0_codex.py` is not
+> edited at all.
+
+As of PR #188 the final sentence is false: `tools/check_gate0_codex.py` **is** edited. That is the
+deviation being reported.
+
+### Why this is a deviation to report, not a violation to escalate
+
+- **The clause is descriptive, not prescriptive.** Note the asymmetry inside that one bullet: the
+  scorer is "not edited **and must not be**"; the checker is only "not edited at all". §6.6's job is
+  to say which files §6's twenty pin items touch — it is scoping the re-freeze work, not issuing a
+  prohibition. The prohibition in that bullet attaches to `eval/score_gate0.py`, which PR #188 does
+  not touch.
+- **§0.1 asks for exactly this change.** The same frozen document records the 2026-07-28 false
+  escalation — a reviewer read `audit()`'s `overall: NO_GO_INSUFFICIENT_WAKES` as the gate's ceiling
+  and concluded Gate 0 v2 was structurally unwinnable — and names the dead `build_agent_metrics`
+  (`:311-329`) as evidence of the trap. `:180-182` calls that trap "worth a separate cleanup PR;
+  **out of scope here, and not a v2 blocker**". PR #188 is that cleanup PR.
+- **Line-number drift is pre-authorised.** §"Line-number citations are anchored to a commit"
+  anchors every `tools/check_gate0_codex.py:N` citation to `208d211` and states that where a
+  citation and the quoted code disagree, the quoted code and the named identifier win.
+
+### The property the prereg warns about is deliberately preserved
+
+`:176-179` records:
+
+> `tools/check_gate0_codex.py:380` is `return 0 if summary["overall"] == "PASS" else 1`, so that
+> CLI **always exits non-zero**. Any script branching on that exit code is reading a constant. Not
+> a precondition; worth knowing before someone wires an automation to it.
+
+An earlier revision of PR #188 changed `main()` to exit 0 when the four failure lists are clean,
+which would have falsified that paragraph outright. **That change was dropped before merge** and
+`main()` still returns `0 if summary[<verdict key>] == "PASS" else 1` — now keyed on
+`audit_overall`, and still always 1, because that chain has no `PASS` branch. Only the quoted key
+name in that citation is stale; the behaviour it documents is intact. Reasoning: `audit()` is an
+intermediate diagnostic, the verdict authority is `eval/score_gate0.py::score()`, and a CLI that
+exits 0 on a clean audit is the audit-verdict/gate-verdict conflation in executable form — one
+`... && echo PASS` away from a fabricated Gate 0 pass. No consumer of that exit code exists (no
+launcher, no CI, no `.ps1`/`.sh`), so there was no benefit to weigh against that risk.
+
+### What did NOT change — measured, not asserted
+
+`eval/score_gate0.py` is byte-untouched (`git diff --name-only origin/main..HEAD` lists no file
+under `eval/`). Two `$0` differentials were run:
+
+**`audit()`, `origin/main` vs PR #188, five transcript shapes across both arms:**
+
+```
+clean             all other fields identical + verdict VALUE identical: True  (NO_GO_INSUFFICIENT_WAKES)
+leak              all other fields identical + verdict VALUE identical: True  (NO_LEAK)
+run_failed        all other fields identical + verdict VALUE identical: True  (NO_GO_RUN_FAILED)
+empty_transcript  all other fields identical + verdict VALUE identical: True  (NO_LEAK)
+red_arm_clean     all other fields identical + verdict VALUE identical: True  (NO_GO_INSUFFICIENT_WAKES)
+-> field-level mismatches: 0
+```
+
+Only two things differ at all: the key `overall` → `audit_overall`, and the emitted dict's
+`schema_version` 2 → 3. Every verdict VALUE is unchanged, and every field the scorer reads is
+unchanged.
+
+**`score()` fed both audit-dict shapes, across all five failure tiers:**
+
+```
+all clean    verdict identical: True  -> INSUFFICIENT_DATA/INSUFFICIENT_SOURCE
+leak         verdict identical: True  -> NO_LEAK/NO_GO
+constancy    verdict identical: True  -> CONSTANCY_BREACH/NO_GO
+run failure  verdict identical: True  -> INSUFFICIENT_DATA/INSUFFICIENT_SOURCE
+accounting   verdict identical: True  -> INSUFFICIENT_DATA/INSUFFICIENT_SOURCE
+-> verdict differences across shapes: 0
+```
+
+No predicate, bar, cap, threshold, seed, mode, fixture, or pinned constant is touched. The RUN
+RECEIPT's `schema_version` deliberately stays `2` (`_receipt_shape_failures`); only `audit()`'s own
+emitted dict moves to `3`.
+
+### The cost this deviation does carry: four §0.1 citations no longer resolve against HEAD
+
+PR #188 deletes `check_gate0_codex.build_agent_metrics`, and the frozen prereg cites that function
+in **four** places as evidence for §0.1's own reasoning — `:115` and `:138` and `:180` inside §0.1
+itself, plus `:1034` in `## Sources` ("the unreachable `build_agent_metrics` `:311-329`"). A hostile
+reader re-deriving §0.1 against HEAD will find the cited function absent and cannot verify the
+citations from the working tree; they now resolve only against the anchor commit `208d211`.
+
+This is a real cost and it is not being papered over. It is judged minor and accepted because: the
+argument those citations support is that the function was **dead** — deleting it does not weaken
+that argument, it completes it; §0.1's conclusion (that `audit()`'s ceiling does not cap the gate)
+rests on `eval/score_gate0.py`, which is untouched and still verifiable line-for-line; and `git show
+208d211:tools/check_gate0_codex.py` reproduces every cited line on demand. The prereg is frozen and
+is **not** edited to repair the citations. (A fifth mention, `:1047`, lists a `build_agent_metrics`
+belonging to `tools/gate0_appserver_arm.py` — a different function, still present, unaffected.)
+
+### Precondition impact (P1a–P9)
+
+**No effect: P1a, P1b, P1c, P2, P3, P5, P6, P7, P8, P9.**
+
+**P4 — partial, item 9 only.** PR #188 edits `tools/gate0_appserver_arm.py`, so that file's blob
+hash moves, and §6.3 pins it as `expected_launcher_sha256`. Nothing is invalidated today:
+`eval/fixtures/gate0_signature.appserver.json` still carries
+`REPLACE_WITH_canonical_HEAD_blob_sha256_of_tools/gate0_appserver_arm.py` and
+`REPLACE_WITH_git_rev-parse_HEAD_AT_SIGNATURE_TIME`. P4's re-freeze must be computed **after**
+#188 merges, as it must be after any launcher edit. `COMMON_TASK_SUFFIX` is untouched, so the four
+`task_sha256` pins do not move.
+
+### One artifact under `reports/` was repaired
+
+`reports/probes/2026-07-28-gate0-breach-addendum/reproduce_breach.py` is tracked executable code
+that imports the live `audit()`; the rename would have made it raise `KeyError`. Its three key
+tuples were repointed and its docstring updated. No finding, verdict, or number of that probe
+changes — the `reports/` freeze protects claims, and a claim's reproduction script that no longer
+runs protects nothing.
+
+**Correction (added after an independent review of this report).** An earlier revision claimed the
+repaired probe "still print[s] `CONSTANCY_BREACH` with `['pin_mismatch:config_sha256',
+'pin_mismatch:codex_mcp_list_sha256']`, matching
+`reports/2026-07-28-gate0-constancy-breach-addendum.md:73-74`." **The verdict reproduces; that
+specific failure list does not.** It was copied from the addendum's table rather than read off the
+run, which is exactly the "never claim a result you did not just observe" rule this repo runs on.
+What the probe actually prints today, both arms `CONSTANCY_BREACH`:
+
+```
+miniwob  Mode A: pin_mismatch: config_sha256, codex_mcp_list_sha256, tool_schema_sha256,
+                 world_image_id, host_code_sha256, image_code_sha256      (6)
+         Mode B: pin_mismatch: tool_schema_sha256, world_image_id,
+                 host_code_sha256, image_code_sha256                      (4)
+red      Mode A: pin_mismatch: config_sha256, codex_mcp_list_sha256, world_image_id,
+                 host_code_sha256, image_code_sha256                      (5)
+         Mode B: pin_mismatch: world_image_id, host_code_sha256, image_code_sha256   (3)
+```
+
+**This is not caused by PR #188** — the differential above shows `origin/main`'s `audit()` and this
+branch's produce byte-identical failure lists. The extra entries are post-addendum fixture re-pins
+landing between the addendum and now: the #180 world-image rebuild moves `world_image_id` /
+`host_code_sha256` / `image_code_sha256`, and the P8 MiniWoB tool-surface repair moves
+`tool_schema_sha256` on that arm only. The addendum's own numbers were true against the tree it was
+written on; reproducing it byte-for-byte requires that tree, not this one.
+
+### Sources
+
+- `reports/2026-07-25-gate0-v2-prereg.md` §0.1, §6.3, §6.6, `:176-179` (frozen; read, not edited)
+- `reports/2026-07-28-gate0-constancy-breach-addendum.md:73-74`
+- PR #188, and its posted adversarial reviews

@@ -341,12 +341,14 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Audit ONE Gate 0 arm's Codex transcript against its frozen pins.",
-        epilog="EXIT CODE: 0 = leak/constancy/run/accounting failure lists are all empty; 1 = at "
-               "least one is non-empty. Exit 0 is NOT a Gate 0 PASS, and the printed "
-               "audit_overall is NOT the Gate 0 verdict -- it reads NO_GO_INSUFFICIENT_WAKES even "
-               "on a perfectly clean run, because wakes are permanently fail-closed and "
-               "deliberately non-gating. The Gate 0 verdict comes from eval/score_gate0.py::"
-               "score(), which reads those four failure lists and never reads audit_overall.")
+        epilog="EXIT CODE: always 1, on purpose. It tracks audit_overall == \"PASS\", which can "
+               "never happen: wakes are permanently fail-closed and deliberately non-gating, so "
+               "even a perfectly clean run reads NO_GO_INSUFFICIENT_WAKES. This CLI therefore "
+               "CANNOT signal a Gate 0 pass, and `check_gate0_codex.py ... && echo PASS` is a bug "
+               "by construction rather than a green light. Read the printed JSON, not the exit "
+               "status. The Gate 0 verdict comes from eval/score_gate0.py::score(), which reads "
+               "leak_failures/constancy_failures/run_failures/accounting_failures and never reads "
+               "audit_overall.")
     parser.add_argument("transcript", type=Path)
     parser.add_argument("receipt", type=Path)
     parser.add_argument("expected_pins", type=Path)
@@ -357,10 +359,12 @@ def main() -> int:
     summary = audit(args.transcript, args.receipt, args.expected_pins, args.artifacts_dir,
                     args.arm, args.peer_receipt)
     print(json.dumps(summary, sort_keys=True))
-    # Exit 0 means ONLY that the four fields eval/score_gate0.py::score() consumes are clean -- it
-    # is NOT a Gate 0 PASS (module docstring). Keying it on audit_overall would exit 1 forever.
-    return 0 if not (summary["leak_failures"] or summary["constancy_failures"]
-                     or summary["run_failures"] or summary["accounting_failures"]) else 1
+    # Fail-closed by construction: audit_overall has no PASS branch, so this ALWAYS returns 1. That
+    # is the point, not an oversight. audit() is an intermediate diagnostic; the verdict authority
+    # is eval/score_gate0.py::score(). A CLI that exited 0 on a clean audit would put the
+    # audit-verdict/gate-verdict conflation this module's docstring exists to prevent into
+    # executable form -- one `... && echo PASS` away from a fabricated Gate 0 pass.
+    return 0 if summary["audit_overall"] == "PASS" else 1
 
 
 if __name__ == "__main__":

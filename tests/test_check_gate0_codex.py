@@ -203,14 +203,15 @@ def test_run_failure_precedes_missing_accounting(tmp_path):
     assert _audit(run)["audit_overall"] == "NO_GO_RUN_FAILED"
 
 
-def test_main_exits_zero_for_a_clean_synthetic_transcript(monkeypatch, capsys, tmp_path):
-    # Exit 0 == the four fields eval/score_gate0.py::score() consumes are clean. It is NOT a Gate 0
-    # PASS: audit_overall still reports the permanently fail-closed NO_GO_INSUFFICIENT_WAKES
-    # (reports/2026-07-21-gate0-wake-grounding.md), which is not what the exit code tracks.
+def test_main_exits_nonzero_for_a_clean_synthetic_transcript(monkeypatch, capsys, tmp_path):
+    # A clean transcript with a valid turn.completed decision must NOT reach PASS: wake accounting
+    # is permanently fail-closed until Codex exposes a real per-decision boundary event
+    # (reports/2026-07-21-gate0-wake-grounding.md). main() keys on audit_overall, which has no PASS
+    # branch, so this CLI is fail-closed by construction and can never signal a Gate 0 pass.
     run = _fixture(tmp_path)
     monkeypatch.setattr(sys, "argv", ["check_gate0_codex.py", str(run[0]), str(run[1]),
                                       str(run[2]), str(run[3]), "--arm", "miniwob"])
-    assert checker.main() == 0
+    assert checker.main() == 1
     result = json.loads(capsys.readouterr().out)
     assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
