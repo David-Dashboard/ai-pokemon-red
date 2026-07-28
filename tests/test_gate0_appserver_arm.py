@@ -16,6 +16,7 @@ import tools.gate0_appserver_arm as arm_mod
 from tools.gate0_appserver_arm import (
     ARM_IMAGE_IDS,
     ARM_SOFT_CREDIT_CAPS,
+    COMMON_TASK_SUFFIX,
     HARD_CREDIT_CAP,
     LAUNCH_INVOCATION_DEPENDENT_MARKER,
     MultiCallStubAppServerPeer,
@@ -452,11 +453,47 @@ def test_brain_config_toml_matches_the_frozen_pin():
         "ab7e54c1785f5d8be4352bbe0f85edb37cda68cf56df2128d61df025c1041fc3")
 
 
+# The three load-bearing clauses of the Gate-0 v2 task brief, quoted from the FROZEN
+# pre-registration reports/2026-07-25-gate0-v2-prereg.md §5.3, with the predicate clause §5.4/§5.5
+# ties each one to. Dropping any of them silently reverts part of the intervention the whole v2
+# attempt exists to test, so pin them by name as well as by digest below.
+V2_LOAD_BEARING_CLAUSES = {
+    # §5.4 C5 red_no_sustained_battle_exit (observes -> rows) AND C9
+    # red_no_free_movement_after_exit (moves -> distinct tiles), fed by the same behaviour.
+    "settle_by_moving_locally": "alternate observing with small local moves around your "
+                                "current position",
+    # §5.4 C7 red_map_changed_during_battle_exit_span -- the clause that keeps the settle
+    # behaviour from walking the autopilot through a door.
+    "stay_in_place": "without leaving the place you are in",
+    # §5.5 Arm W terminal-row ordering: acting on a finished MiniWoB episode appends another
+    # oracle row for the same (episode, seed) and hard-fails it. Instruction-only containment
+    # for episodes 0-3, so the prohibition must survive verbatim in the brief itself.
+    "no_action_on_a_finished_episode": "Confirming is looking, not doing",
+    "no_action_on_a_finished_episode_acts": "do not click, type, press a key, or otherwise "
+                                            "act on a finished episode again",
+}
+
+
+@pytest.mark.parametrize("name,clause", sorted(V2_LOAD_BEARING_CLAUSES.items()))
+def test_task_brief_pins_the_three_load_bearing_clauses(name, clause):
+    assert clause in COMMON_TASK_SUFFIX, name
+    # The suffix is shared verbatim by both arms, so every clause reaches both TASK.md files.
+    for arm in ("red", "miniwob"):
+        assert clause in task_text_for(arm), (name, arm)
+
+
 @pytest.mark.parametrize("arm,expected_sha", [
-    ("red", "306751c34627f6d5c6a8c94ac2f714e358f0dcbc5867866c273e434de7f4b7c4"),
-    ("miniwob", "845638c874df2f2de2adaebdd1d6c9318c689a46d0032fa76a9393e1e47512d1"),
+    ("red", "9adb98f89f1d3f2c68c55fb5ea6c646ba79c2c38e5aadaf80cc187b4dd4968a7"),
+    ("miniwob", "ba1549d4814e0fc9265643c794376b119721bf993846695446988c5f2ceb5b74"),
 ])
 def test_task_text_matches_the_frozen_pin(arm, expected_sha):
+    """v2 values, recomputed from task_text_for() when §5.3's suffix was applied.
+
+    NOT yet mirrored into eval/fixtures/gate0_expected_pins_{red,miniwob}{,.appserver}.json --
+    those four still hold the v1 digests (306751c3... / 845638c8...) on purpose. Re-freezing
+    them is prereg §6.1 items 1-4, a separate reviewed commit that must land before any paid v2
+    launch; until it does, a real run refuses with pin_mismatch:task_sha256.
+    """
     import hashlib
     assert hashlib.sha256(task_text_for(arm).encode("utf-8")).hexdigest() == expected_sha
 
