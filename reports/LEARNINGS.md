@@ -6,7 +6,42 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
-## 2026-07-28 (latest) — I closed my own bound on evidence of the wrong SHAPE
+## 2026-07-28 (latest) — I briefed a LOOSER bar than the task text, because I derived it from the evidence I had
+- **What:** writing EX02's scorer (PR #186, Kirby "clear Stage 3"), I briefed the implementer to use
+  `stage >= 2`. The graduation-exam definition words the task as *"advancing PAST Stage 3"*, and `0xD03B` is
+  0-indexed — so past Stage 3 is Bubbly Clouds, **index 3**. `>= 2` scores merely REACHING Float Islands as
+  CLEARING it. No intent to cheat: I had internalised "the oracle reads 2 at Float Islands" from a week of
+  hunting and never re-opened the task definition. **Caught only because the implementer flagged it as a
+  deviation instead of complying**; the merged bar is `>= 3`. `$0`.
+- **The finding:** the wrong constant was the one my *evidence* made most vivid, not the one the
+  *requirement* named. That is the exact shape of post-hoc bar selection this project's gate methodology
+  exists to prevent — and it arrived without any of the usual warning signs, because I was not choosing
+  between bars, I was recalling one. The repo helped it along: `world_mcp.py:255` carries "Only `>= 2` is
+  meaningful", a true WIRING-HAZARD note (it rules out `== 0`) that reads like a bar.
+- **Method note:** **when you write a predicate, re-read the requirement text at the moment you write the
+  constant.** Not before, not from memory — at the keystroke. Paste the requirement's own words into the
+  code next to the number (the merged scorer now carries a `BAR PROVENANCE` block doing exactly this) so
+  the next reader can check the bar against the task without leaving the file. And when a hazard note and a
+  bar share a number, say which is which.
+
+## 2026-07-28 — A scorer that FAILS a genuine success is worse than no scorer
+- **What:** PR #186's review found that the EX02 predicate, as first written, scored
+  `[3@hp5, 3@hp0, 3@hp5]` as **FAIL** — a real Bubbly Clouds clear with one sampled death mid-stage. The
+  cause: the "≥2 consecutive rows" streak was computed over `stage >= 3 AND hp >= 1`, so a single sampled
+  `hp=0` broke the streak. Fixed by computing the streak over `stage` alone and requiring `hp >= 1`
+  somewhere INSIDE it. Pinned as `tests/test_score_exam_kirby_stage3.py::test_sampled_death_inside_the_streak_does_not_break_it`.
+- **The finding:** a false FAIL is strictly worse than an absent scorer. An absent scorer returns
+  `ORACLE_PENDING` and everyone knows they have nothing. A false FAIL returns a **confident wrong verdict**,
+  and the whole triage apparatus then points at the agent — a capability investigation, possibly a re-run —
+  when the defect is in the harness. Fail-closed protects against passing a failure; it does nothing
+  against failing a pass, and this project's scorers are all built fail-closed.
+- **Method note:** the defect was found by **CONSTRUCTING the input a real run would produce** and running
+  the predicate on it — not by reading the diff. Same lesson as the `poke_test.py` collection break the day
+  before, in a different costume. For any new scorer, hand-build at least one **genuine-success-with-noise**
+  trace (a death, a dropped sample, a glitch row) and assert PASS. Reviewing the code for what it rejects is
+  half a review; the other half is checking what it accepts.
+
+## 2026-07-28 — I closed my own bound on evidence of the wrong SHAPE
 - **What:** the EX02 bound was *"confirm `0xD03B` reads 3 at the Stage-3 → Stage-4 boundary."* I banked it
   as discharged on the strength of a causal experiment — `0xD03B` was WRITTEN to 3, Bubbly Clouds loaded,
   the value held 4,740 frames. PR #183 retracted that the same day; the bound is STILL OPEN. `$0`.
