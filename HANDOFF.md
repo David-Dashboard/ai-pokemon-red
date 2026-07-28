@@ -138,6 +138,15 @@ measuring the rig not the brain; VizDoom flagged off-limits without David's sign
     - **Kirby GBA** (#170): `world@0x02006014` (constant `=1`) and `score@0x02006020` re-verified
       under CONTINUOUS live play (stronger than prior disconnected snapshots); `A` (not `B`) confirmed
       as the jump/float button, `B` eliminated as having no effect without an inhale target.
+    - **Kirby GBA** (#176, 2026-07-28): #170's "Gordo-type hazard at score 2800" was the stage EXIT
+      DOOR (enter with `up` when aligned) — **stage 1-1 is now cleared** and stage 1-2 reachable.
+      EX04 candidate `0x030023ec` (u8, IWRAM) = **"most recently entered stage"**, 0 in 1-1 / 1 in
+      1-2, NOT a latch and NOT confirmed as a counter (only 2 values reachable; 1-3 needs 1-2
+      cleared). **Wiring caveat:** it reads 0 on the world map — i.e. exactly where the agent lands
+      on clearing 1-1 — and 1 on the GAME OVER menu, so only `any(row == 1)` over the whole run is a
+      safe "cleared 1-1" predicate; end-of-run or on-map sampling reads 0 on a successful run. Also
+      note it survives the uniqueness sweep only when game-over frames group with stage 1-2
+      (`reports/2026-07-28-kirby-gba-level-oracle.md`, `.../probes/.../groups.md`).
     - **Emerald** (#170): Birch's Lab interior newly pinned at `(map_group, map_num) = (2, 13)`; the
       outdoor `map_num` instability found (item 10); the Route 101 NPC gate identified as a hard
       game-design blocker, not a navigation puzzle, tested and eliminated five different ways
