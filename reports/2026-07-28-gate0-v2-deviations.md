@@ -118,12 +118,16 @@ touched.
 **Touches:** `tools/gate0_appserver_arm.py` + its tests only. No fixture, no scorer, no `runs/`
 artifact, and **not** `reports/2026-07-25-gate0-v2-prereg.md`.
 
-**Why D4 and not D2/D3:** D1 is on `main`. Two unmerged PRs each currently claim **D2** — #188
-(`fix/audit-verdict-not-gate-verdict`, head `7d6b2ee`) and #191 (`fix/red-glitch-row-signature`) —
-verified by reading this file on both branch heads. Whichever merges first takes D2 and the other
-must renumber to D3, so D2 and D3 are both spoken for. D4 is the first uncontested slot. If either
-of those PRs is closed unmerged the numbering will have a cosmetic gap; a gap is preferable to a
-collision, and nothing in this log depends on the numbers being dense.
+**Why D4 and not D2/D3:** D1 is on `main`; #188 (`fix/audit-verdict-not-gate-verdict`, head
+`7d6b2ee`) claims **D2**; #191 (`fix/red-glitch-row-signature`, head `24e27f2`) claims **D3** —
+verified by reading this file on both branch heads. D4 is therefore the first uncontested slot and
+there is no collision. (An earlier revision of this section said #191 also claimed D2; that was true
+when written and #191 has since renumbered to D3. Corrected here rather than left standing, because
+this log is a permanent record that will be read as history.) The three PRs should land in numeric
+order **#188 → #191 → #192**: this log appends newest-last, so landing #192 first would leave it
+ordered D1, D4, D2. Numeric order keeps it monotonic with zero renumbering. If any of those PRs is
+closed unmerged the numbering will have a cosmetic gap; a gap is preferable to a collision, and
+nothing in this log depends on the numbers being dense.
 
 ### What the prereg says
 
@@ -133,8 +137,8 @@ one seed hardcode, and it is the **scorer's**:
 > **P9 — fresh seeds require an additive scorer change.** `eval/score_gate0.py:13-16` hardcodes
 > `MODES["paid_gate0"] = (…gate0_miniwob_paid_seeds.json, [1000, 1001, 1002, 1003, 1004])` …
 
-P9 was satisfied (PR #179 + the additive `MODES` entry, `208d211`). But **the launcher has three
-hardcodes of its own, and none of P1–P9 mentions any of them.** The prereg's §0 table asserts that
+P9 was satisfied (PR #179 + the additive `MODES` entry, `208d211`). But **the launcher has four
+mode-blind v1 paths of its own, and none of P1–P9 mentions any of them.** The prereg's §0 table asserts that
 "each was verified on disk this session" and that "a run launched with any of these open produces
 an unscorable or void artifact and wastes the attempt" — the list was not complete. `P3` even
 records that v2 "writes to `runs/gate0_paid_v2/<arm>/`" as **DONE**, on the strength of the fixture
@@ -148,22 +152,42 @@ them.
 | 1 | `build_docker_mcp_args` `:313` mounted `eval/fixtures/gate0_miniwob_paid_seeds.json` | Arm W plays the **SPENT** `[1000..1004]` block. `_miniwob_success` then fails `miniwob_extra_episode_or_seed_conflict` against v2's expected seeds — and even a clean run could not be reported as held-out, since v1's Arm W transcript with the answers is committed. |
 | 2 | `_finalize_real_run` `:1192` stamped `mode="paid_gate0"` | `_verify_sources` (`:276-279`) requires the stamp to equal the scoring mode → `agent_metric_identity:<arm>` → `INSUFFICIENT_SOURCE`. |
 | 3 | `_finalize_real_run` `:1196` wrote `REPO_ROOT/runs/gate0_paid/wake_boundary.json` **regardless of `--out-dir`** | v2's `wake_boundary` pin points at `runs/gate0_paid_v2/wake_boundary.json` → `source_unreadable:wake_boundary`. And any run through this launcher reached into v1's banked, append-only tree uninvited — demonstrated: on `322499f`, running `pytest tests/test_gate0_appserver_arm.py` in a fresh worktree with no `runs/` directory **creates `runs/gate0_paid/wake_boundary.json`**. |
+| 4 | `_default_human_metrics_path` `:1063` took `arm` and **not** `mode`, returning v1's `runs/gate0_paid_human_baseline/miniwob/` for every mode | v2 pins `runs/gate0_paid_v2_human_baseline/miniwob/` (P1a), and `tools/capture_gate0_baseline_miniwob.py`'s `MODE_CONFIG` already routes the CAPTURE side there — the launcher was the sole peer of that pair that was not mode-aware. Not verdict-gating (the scorer reads human numbers from the pinned human FILE, not from `agent_metrics.json`), but a v2 `agent_metrics.json` would have banked **v1's denominator** in its own `human_source_note` — a provenance defect in an append-only artifact. Found by the adversarial review of this PR (F1), not by the original pass, which had named `tools/check_gate0_codex.py:14` as the fourth instance; that one is genuinely unrelated to the v2 flow and #188 deletes it. |
 
-All three are silent. Each is detected only at scoring, i.e. after the attempt is paid for.
+All four are silent. Each is detected only at scoring — or, for #4, never, which is worse.
 
 ### What changed
 
-One required `--mode` argument, choices taken from `eval.score_gate0.MODES` itself, and all three
+One required `--mode` argument, choices taken from `eval.score_gate0.MODES` itself, and all four
 values derived from it (plus `--out-dir` for the wake boundary). No default — an unstated mode is a
-refusal, not a guess. A cross-check re-reads the selected seed manifest at launch and refuses if its
-contents differ from the scorer's exact list, so launcher/scorer disagreement is impossible rather
-than merely absent today.
+refusal, not a guess. Three guards, all reading the SAME frozen declarations the scorer reads, so
+launcher/scorer disagreement is impossible rather than merely absent today:
 
-`paid_gate0` behaviour is **unchanged**, proven by differential rather than asserted: the same
-capture script run against `322499f` and against this branch produces byte-identical output
-(sha256 `26c74a3bd82847b230e1d7762092b612e7a7b4676e2649a13edef683be6e11a1`) for the docker argv of
-both arms, the `agent_metrics` mode stamp, the wake-boundary path, and every file `_finalize_real_run`
-writes. v1's banked artifacts stay scoreable exactly as printed, which is what §0.2 requires.
+1. the selected seed manifest is re-read at launch and refused if its decoded contents differ from
+   `MODES[mode][1]` **or** if its bytes differ from that mode's `frozen_seed_sha256` pin (the
+   contents check alone is type-blind: `[417545.0, …]` and `[false, true, 2, 3, 4]` both compared
+   equal and launched — F3);
+2. on the **real-run** path only, `--out-dir` must equal the directory the mode pre-registers
+   (`artifact_paths.<arm>_agent`'s parent). `wake_boundary.json` is the one artifact written
+   *outside* `out_dir` (at `out_dir.parent`, because both arms of an attempt share it), so an
+   out-of-shape `--out-dir` was the only input that could make a write escape the attempt tree —
+   `--out-dir runs/gate0_paid_v2` dropped one at the top of `runs/`, a bare relative path in the
+   repo root (F2). Binding `out_dir` itself, rather than deriving the wake path from the pin, was
+   deliberate: deriving would reinstate the very defect fixed above, a launch pointed at a scratch
+   directory reaching into `runs/gate0_paid_v2/` uninvited;
+3. the human-baseline path is read from the mode's own `artifact_paths.<arm>_human` (F1).
+
+`paid_gate0` behaviour is **unchanged**, proven by differential rather than asserted, and re-proven
+after the review fixes with a second harness that records full JSON payloads rather than hashes.
+Run against `322499f` and against this branch with `--mode paid_gate0`, the docker argv of both
+arms, the resolved human-baseline path of both arms, the seed manifest, the `agent_metrics` mode
+stamp, the wake-boundary path, and every file `_finalize_real_run` writes (path **and** content) are
+byte-identical: sha256 `898049a0b2df650fc7891588486a697daf53b9e92a19cfb2bdb3683ada719235` on both
+sides. The **one** deliberate behaviour change is guard 2: at both pre-registered v1 out-dirs
+(`runs/gate0_paid/red`, `runs/gate0_paid/miniwob`) the launcher accepts exactly as before; it now
+refuses only real-run invocations aimed off that shape, which are precisely the ones `main` allowed
+to write outside the attempt tree. v1's banked artifacts stay scoreable exactly as printed, which is
+what §0.2 requires.
 
 ### What this does NOT do
 
@@ -172,4 +196,9 @@ It does not make a v2 launch ready. P1a/P1b/P1c/P2/P4/P5/P6/P7 all remain open, 
 must be re-frozen after whichever launcher edit lands last. It also does not touch
 `tools/run_gate0_codex.ps1:632`, which carries the same v1 seed hardcode on the **superseded exec**
 launch surface; see the PR body for why that was left, and treat it as a live trap for anyone who
-reaches for that script.
+reaches for that script. Sharper than the PR body originally put it: that script's paid path is
+gated by `Confirm-PaidExecSignature` against `eval/fixtures/gate0_signature.json`, which is
+**untracked and absent from git but present and fully populated (no `REPLACE_WITH_…` placeholders)
+in David's primary checkout** — so on the machine a v2 attempt would actually be launched from, the
+mitigation is weaker than the repo suggests, not stronger. The honest minimum follow-up is to make
+that script *refuse* a non-v1 attempt outright rather than to teach it modes.

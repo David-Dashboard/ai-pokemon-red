@@ -26,6 +26,8 @@ from tools.gate0_appserver_arm import (
     resolve_isolated_codex_home,
     resolve_expected_pins,
     ensure_wake_boundary_artifact,
+    pinned_artifact_path,
+    wake_boundary_path_for,
     main,
     refuse_if_already_completed,
     render_brain_config_toml,
@@ -1210,26 +1212,157 @@ def test_finalize_stamps_the_declared_mode_not_a_hardwired_one(tmp_path, monkeyp
 def test_finalize_writes_the_wake_boundary_beside_the_out_dir_not_into_runs_gate0_paid(
         tmp_path, monkeypatch):
     banked = arm_mod.REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json"
-    banked_before = banked.exists()
+    banked_before = banked.read_bytes() if banked.exists() else None
     out_dir = _finalize_for_mode(tmp_path, monkeypatch, "paid_gate0_v2")
     assert (out_dir.parent / "wake_boundary.json").is_file()
     assert not (out_dir / "wake_boundary.json").exists()
-    # runs/ is append-only and this launcher has no business touching it uninvited.
-    assert banked.exists() == banked_before
+    # runs/ is append-only and this launcher has no business touching it uninvited. Asserted both
+    # ways round on purpose (PR #192 adversarial review, F4): `banked.exists() == banked_before`
+    # was True==True in the primary checkout and False==False in a fresh worktree, i.e. vacuous in
+    # the tree most likely to run it. Not created if absent; byte-untouched if present.
+    if banked_before is None:
+        assert not banked.exists()
+    else:
+        assert banked.read_bytes() == banked_before
 
 
 def test_wake_boundary_path_matches_each_modes_pinned_artifact_path():
-    # Pure path arithmetic against the committed source-pins fixtures: for the pre-registered
-    # --out-dir convention (<attempt>/<arm>), out_dir.parent lands EXACTLY where each mode's
-    # source pins say wake_boundary.json lives -- including reproducing v1's removed hardcode.
-    root = arm_mod.REPO_ROOT
-    pin_files = {"paid_gate0": ("gate0_paid", "gate0_paid_source_pins.json"),
-                 "paid_gate0_v2": ("gate0_paid_v2", "gate0_paid_v2_source_pins.json")}
-    for mode, (attempt, fixture) in pin_files.items():
-        pins = json.loads((root / "eval" / "fixtures" / fixture).read_text(encoding="utf-8"))
+    # Calls the REAL derivation (wake_boundary_path_for) and the REAL pin resolution
+    # (pinned_artifact_path) -- not fixture arithmetic (PR #192 adversarial review, F4: the earlier
+    # version was pure Path.parent over two fixtures and SURVIVED the mutation that reverted the
+    # wake path to the v1 hardcode, so it could not carry the proof the PR body assigned it).
+    # For every mode and arm, the wake boundary derived from that mode's pre-registered out-dir
+    # lands exactly where its source pins say -- including reproducing v1's removed hardcode.
+    from eval.score_gate0 import MODES
+    for mode in MODES:
         for arm in ("red", "miniwob"):
-            derived = (root / "runs" / attempt / arm).parent / "wake_boundary.json"
-            assert derived == root / pins["artifact_paths"]["wake_boundary"], mode
+            out_dir = pinned_artifact_path(mode, f"{arm}_agent").parent
+            assert wake_boundary_path_for(out_dir) == pinned_artifact_path(mode, "wake_boundary"), \
+                f"{mode}/{arm}"
     # And explicitly: v1's derived path IS the literal the fix removed.
-    assert ((root / "runs" / "gate0_paid" / "red").parent / "wake_boundary.json"
-            == root / "runs" / "gate0_paid" / "wake_boundary.json")
+    assert (wake_boundary_path_for(arm_mod.REPO_ROOT / "runs" / "gate0_paid" / "red")
+            == arm_mod.REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json")
+
+
+# ---------------------------------------------------------------------------
+# PR #192 adversarial review fixes: F1 (human-baseline path was the FOURTH mode-blind v1 path),
+# F2 (out_dir.parent was unbounded off the pre-registered shape), F3 (the seed cross-check was
+# semantic, not byte-exact).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("mode", ["paid_gate0", "paid_gate0_v2", "readiness_dev"])
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_default_human_metrics_path_follows_the_modes_pin_not_a_v1_hardcode(mode, arm):
+    assert arm_mod._default_human_metrics_path(arm, mode) == pinned_artifact_path(
+        mode, f"{arm}_human")
+
+
+def test_paid_gate0_v2_human_baseline_is_the_v2_one_never_v1s():
+    # The provenance defect F1 found: a v2 run banked v1's denominator in its own agent_metrics.json
+    # `human_source_note`, because the launcher returned v1's path for every mode while
+    # tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG already wrote the v2 baseline to
+    # runs/gate0_paid_v2_human_baseline/miniwob/ (prereg P1a).
+    v2 = arm_mod._default_human_metrics_path("miniwob", "paid_gate0_v2")
+    v1 = arm_mod._default_human_metrics_path("miniwob", "paid_gate0")
+    assert v2.parent.parent.name == "gate0_paid_v2_human_baseline"
+    assert v1.parent.parent.name == "gate0_paid_human_baseline"
+    assert v2 != v1
+
+
+def test_default_human_metrics_path_for_paid_gate0_reproduces_the_removed_hardcodes():
+    # v1 behaviour is unchanged: both arms' pins are byte-identical to the literals that were
+    # removed, so a paid_gate0 launch resolves exactly the same file it did on origin/main.
+    root = arm_mod.REPO_ROOT
+    assert arm_mod._default_human_metrics_path("red", "paid_gate0") == (
+        root / "runs" / "gate0_human_baseline" / "red" / "human_metrics.json")
+    assert arm_mod._default_human_metrics_path("miniwob", "paid_gate0") == (
+        root / "runs" / "gate0_paid_human_baseline" / "miniwob" / "human_metrics.json")
+
+
+def _real_run_argv(arm, mode, out_dir):
+    return ["--arm", arm, "--mode", mode, "--out-dir", str(out_dir),
+            "--model", "gpt-5.6-sol", "--credit-rate-pin", "pin.json"]
+
+
+@pytest.mark.parametrize("mode", ["paid_gate0", "paid_gate0_v2", "readiness_dev"])
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_a_real_run_accepts_exactly_the_pre_registered_out_dir(arm, mode):
+    from pathlib import Path
+    parser = arm_mod.build_arg_parser()
+    pinned = pinned_artifact_path(mode, f"{arm}_agent").parent
+    args = parser.parse_args(_real_run_argv(arm, mode, pinned))
+    arm_mod._validate_args(parser, args)  # must not raise
+    assert Path(args.out_dir) == pinned
+
+
+@pytest.mark.parametrize("bad", ["attempt_dir_without_the_arm_segment", "bare_relative",
+                                 "v1s_banked_tree", "elsewhere"])
+def test_a_real_run_refuses_an_out_dir_that_would_write_the_wake_boundary_outside_the_attempt(
+        bad, tmp_path, monkeypatch):
+    # F2's table, mode=paid_gate0_v2: each of these lands wake_boundary.json somewhere it must never
+    # go -- runs/ itself, the repo root, or v1's banked tree. The derivation is out_dir.parent, so
+    # the only way to bound it is to bound out_dir.
+    monkeypatch.chdir(tmp_path)
+    candidates = {"attempt_dir_without_the_arm_segment": arm_mod.REPO_ROOT / "runs" / "gate0_paid_v2",
+                  "bare_relative": "myout",
+                  "v1s_banked_tree": arm_mod.REPO_ROOT / "runs" / "gate0_paid" / "scratch",
+                  "elsewhere": tmp_path / "somewhere" / "red"}
+    parser = arm_mod.build_arg_parser()
+    args = parser.parse_args(_real_run_argv("red", "paid_gate0_v2", candidates[bad]))
+    with pytest.raises(SystemExit):
+        arm_mod._validate_args(parser, args)
+
+
+def test_the_out_dir_guard_is_real_run_only_so_dry_runs_still_use_scratch_dirs(tmp_path):
+    # A $0 rehearsal into tmp_path must stay legal (this suite depends on it), and it writes its
+    # wake boundary INSIDE out_dir, so it cannot escape in the first place.
+    exit_code, out_dir = _run_dry(tmp_path, mode="paid_gate0_v2")
+    assert exit_code == 0
+    assert (out_dir / "wake_boundary.json").is_file()
+    assert not (out_dir.parent / "wake_boundary.json").exists()
+
+
+@pytest.mark.parametrize("decoded, label", [
+    ([417545.0, 662948.0, 660918.0, 981149.0, 558952.0], "floats that == the ints"),
+    ([1000, 1001, 1002, 1003, 1004], "the spent v1 block"),
+])
+def test_launch_refuses_a_seed_manifest_that_is_byte_different_from_the_frozen_pin(
+        decoded, label, tmp_path, monkeypatch):
+    # F3: Python's `==` is type-blind across int/float/bool, so a contents-only guard LAUNCHED
+    # `[417545.0, ...]`. frozen_seed_sha256 is already real (not a placeholder) in every mode's
+    # source-pins fixture, and it is the same check eval/score_gate0.py::_verify_sources applies at
+    # scoring -- so the launcher now refuses before the money, not after.
+    import eval.score_gate0 as scorer
+    tampered = tmp_path / "seeds.json"
+    tampered.write_text(json.dumps(decoded), encoding="utf-8")
+    monkeypatch.setitem(scorer.MODES, "paid_gate0_v2",
+                        (tampered, [417545, 662948, 660918, 981149, 558952]))
+    with pytest.raises(SystemExit) as exc:
+        build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
+                              mode="paid_gate0_v2")
+    assert "frozen_seed_sha256" in str(exc.value) or "does not match the frozen" in str(exc.value)
+
+
+def test_every_modes_frozen_seed_sha256_pin_matches_its_manifest_on_disk():
+    # The byte guard is only worth anything if the pins are real. All three are, and this is the
+    # tripwire if one is ever replaced by a placeholder.
+    import hashlib
+    from pathlib import Path
+    from eval.score_gate0 import MODES
+    for mode, (seed_path, _) in MODES.items():
+        assert arm_mod.source_pins_for(mode)["frozen_seed_sha256"] == hashlib.sha256(
+            Path(seed_path).read_bytes()).hexdigest(), mode
+
+
+def test_a_whitespace_only_reformat_of_a_seed_manifest_is_refused(tmp_path, monkeypatch):
+    # Same decoded value, different bytes -> the scorer's frozen_seed_hash would void it. The
+    # launcher must agree, which is the whole point of reading the SAME pin.
+    import eval.score_gate0 as scorer
+    tampered = tmp_path / "seeds.json"
+    tampered.write_text(json.dumps([417545, 662948, 660918, 981149, 558952], indent=4),
+                        encoding="utf-8")
+    monkeypatch.setitem(scorer.MODES, "paid_gate0_v2",
+                        (tampered, [417545, 662948, 660918, 981149, 558952]))
+    with pytest.raises(SystemExit, match="frozen_seed_sha256"):
+        build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
+                              mode="paid_gate0_v2")
