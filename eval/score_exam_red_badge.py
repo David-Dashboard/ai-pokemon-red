@@ -32,8 +32,9 @@ _WATCHED_KEYS = ("x", "y", "map", "party", "badges", "in_battle", "party_hp_hi",
 
 def _is_corrupt_glitch_row(watch: dict) -> bool:
     """The full eight-field wrong-WRAM-bank signature -- see `score_gate0.py::_red_success`'s
-    `_is_corrupt_glitch_row` for the established mechanism (CGB-mode SVBK bank stomp; every watched
-    address is in the banked 0xD000-0xDFFF window, so all eight misread together for one tick).
+    `_is_corrupt_glitch_row` for the established mechanism (the oracle reads the SVBK-banked
+    0xD000-0xDFFF window with an unbanked `memory[addr]`; every watched address is in that window,
+    so all eight misread together for one tick).
 
     This scorer needs the widened form MORE than score_gate0.py does, because here the artifact can
     produce a FALSE PASS, not just a false FAIL: the non-zero variant reads `badges == 1`, i.e. bit 0
@@ -77,6 +78,25 @@ def _plain_int(value: object) -> bool:
     return not isinstance(value, bool) and isinstance(value, int)
 
 
+def _malformed_row(watch: dict) -> bool:
+    """Any watched field PRESENT but not a plain int. Mirrors `score_gate0.py::_red_success`'s
+    helper of the same name, including the deliberate "absent (None) is not malformed" carve-out.
+
+    PR #191 re-review NEW-2. `_is_corrupt_glitch_row` returns False on such a row -- it cannot prove
+    the row is the artifact, so it declines to drop it -- and this scorer then READ it. Only three of
+    the eight fields (`badges`, `party`, `in_battle`) were type-checked downstream, so a residue-shaped
+    row with a single mistyped field (e.g. `{"x": 7, "y": "7", "map": 7, "badges": 7, "party": 0,
+    rest 0}`) escaped the filter AND every type check, and donated a spurious `badges` bit 0. On a
+    trace where no badge is ever earned that alone scores PASS -- on `origin/main` too, so it is a
+    shared pre-existing hole, but `origin/main` happened to catch the constructed case because a
+    SECOND, even-residue row (bit 0 clear) tripped `red_badge_bit_reverted_after_set`; the widened
+    filter drops that second row, removing the accidental net. Refusing the untypeable row closes
+    both halves at once. `red_badge_missing_or_invalid_oracle_field` is this scorer's existing
+    refusal token for exactly this ("anything else missing/malformed is a hard refusal") -- no new
+    failure name."""
+    return any(watch.get(k) is not None and not _plain_int(watch.get(k)) for k in _WATCHED_KEYS)
+
+
 def _red_badge_success(rows: list[dict]) -> tuple[bool, list[str]]:
     failures: list[str] = []
     watches = [row.get("watch") for row in rows if isinstance(row.get("watch"), dict)]
@@ -86,6 +106,12 @@ def _red_badge_success(rows: list[dict]) -> tuple[bool, list[str]]:
     kept = [w for w in watches if not _is_corrupt_glitch_row(w)]
     if not kept:
         return False, ["red_badge_all_rows_corrupt_glitch"]
+
+    # REFUSE a row `_is_corrupt_glitch_row` kept only because it could not type it -- see
+    # `_malformed_row`. Refuse and not drop: every clause below only ever ADDS a failure, so
+    # dropping an untypeable row could suppress a real revert; refusing cannot.
+    if any(_malformed_row(w) for w in kept):
+        return False, ["red_badge_missing_or_invalid_oracle_field"]
 
     bits = [_badges_bit0(w.get("badges")) for w in kept]
     if any(b is None for b in bits):

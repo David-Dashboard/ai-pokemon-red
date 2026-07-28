@@ -249,6 +249,36 @@ def test_real_banked_wrong_bank_row_after_the_battle_is_not_a_false_pass():
     assert failures == ["red_badge_never_earned"]
 
 
+def test_mistyped_residue_row_cannot_manufacture_a_badge_that_was_never_earned():
+    # PR #191 RE-review NEW-2. `_is_corrupt_glitch_row` declines to drop a residue-shaped row with
+    # ONE mistyped field, and only badges/party/in_battle were type-checked downstream -- so the row
+    # escaped the filter AND every type check and donated a spurious `badges` bit 0 to a trace in
+    # which no badge is ever earned. `origin/main` caught the two-row form only by accident (the
+    # SECOND, even-residue row tripped red_badge_bit_reverted_after_set); the widened filter drops
+    # that row, removing the accidental net. The one-row form was a false PASS on origin/main TOO.
+    #
+    # Refusing the untypeable row closes both, including the hole origin/main also had.
+    spurious = {"x": 7, "y": "7", "map": 7, "badges": 7, "party": 0, "in_battle": 0,
+                "party_hp_hi": 0, "party_hp_lo": 0}          # one str field -> not droppable
+    even_residue = {"x": 6, "y": 6, "map": 6, "badges": 6, "party": 0, "in_battle": 0,
+                    "party_hp_hi": 0, "party_hp_lo": 0}      # bit 0 clear -> the revert signal
+    for label, extra in (("spurious only", [spurious]),
+                         ("spurious + even residue", [spurious, even_residue])):
+        rows = _rows(False) + [{"watch": dict(w)} for w in extra]
+        assert _red_badge_success(rows) == (
+            False, ["red_badge_missing_or_invalid_oracle_field"]), label
+
+
+def test_badge_refusal_guard_does_not_fire_on_a_well_typed_trace():
+    # The other direction: the guard must not refuse genuine traces. The same construction with the
+    # mistyped field repaired is droppable corruption again, and the true reason comes back.
+    well_typed = {"x": 7, "y": 7, "map": 7, "badges": 7, "party": 0, "in_battle": 0,
+                  "party_hp_hi": 0, "party_hp_lo": 0}
+    rows = _rows(False) + [{"watch": dict(well_typed)}]
+    assert _red_badge_success(rows) == (False, ["red_badge_never_earned"])
+    assert _red_badge_success(_rows()) == (True, [])
+
+
 def test_real_banked_traces_report_the_true_failure_not_the_artifact():
     # Regression on committed REAL data, both traces that carry the non-zero variant. Before the
     # widening both returned red_badge_flip_not_after_battle -- a failure reason manufactured

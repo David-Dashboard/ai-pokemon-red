@@ -592,10 +592,12 @@ def test_red_no_movement_baseline_fails():
 
 
 def test_red_malformed_post_row_cannot_manufacture_free_movement():
-    # `_is_corrupt_glitch_row` KEEPS a row with any bool/non-int field. In the safety span that is
-    # fail-closed (the hi/lo isinstance checks fire). At `post` it was fail-OPEN: the kept row
-    # donated its (x, y) as a second distinct position and flipped this FAIL to PASS. All four rows
-    # below are all-zero -- they carry no real movement -- and none may pass.
+    # `_is_corrupt_glitch_row` KEEPS a row with any bool/non-int field. At `post` that was
+    # fail-OPEN: the kept row donated its (x, y) as a second distinct position and flipped this FAIL
+    # to PASS. All four rows below are all-zero -- they carry no real movement -- and none may pass.
+    # (An earlier version of this comment added "in the safety span that is fail-closed (the hi/lo
+    # isinstance checks fire)". That was false for six of the eight fields -- see
+    # test_red_malformed_row_inside_the_safety_span_is_refused_not_read below.)
     #
     # The middle case is why an x/y-only type check is not enough: its x and y ARE plain ints, and
     # the corruption is on `party`.
@@ -625,3 +627,36 @@ def test_red_post_guard_does_not_drop_a_genuine_second_position():
     rows.append({"watch": {"party": 1, "in_battle": 0, "map": 40, "x": 7, "y": 4,
                            "party_hp_hi": 0, "party_hp_lo": 5}})
     assert _red_success(rows) == (True, [])
+
+
+# --- PR #191 RE-review NEW-1: the safety span must REFUSE an untypeable row, never read it ---
+
+def test_red_malformed_row_inside_the_safety_span_is_refused_not_read():
+    # The span KEEPS a row `_is_corrupt_glitch_row` could not type. Before the guard it then READ
+    # that row: `map` was compared with no type check at all, and the plain-int hp_hi/hp_lo == 0
+    # passed the HP checks whenever the mistyped field was one of the other SIX -- so a single
+    # `"party": false` produced the substantive claims red_player_hp_reached_zero AND
+    # red_map_changed_during_battle_exit_span from a row whose type the predicate had explicitly
+    # declined to establish. A refusal is the only honest verdict on a row the scorer cannot read.
+    #
+    # Refuse and do NOT drop: the span's three clauses only ever ADD failures, so dropping could
+    # suppress a real HP=0 or a real map change riding on the same row (the PR #121 Major 1 hazard).
+    # That is the opposite of `post` above, where dropping IS the fail-closed direction.
+    for bad in (0.0, False, "0"):
+        for field in _ZERO_INT_ROW:
+            rows = _red()
+            # exit_idx == 3, so index 5 is inside the safety span (battle_idx .. exit_idx + 10).
+            rows.insert(5, {"watch": dict(_ZERO_INT_ROW, **{field: bad})})
+            # `in_battle: "0"` is refused EARLIER, by the sustained-exit scan (`== 0` is False for a
+            # str), so the span is never reached. Still a refusal, just a different clause -- named
+            # explicitly rather than loosening the assert, so this test cannot silently pass on the
+            # wrong reason.
+            expected = ("red_no_sustained_battle_exit" if (field == "in_battle" and bad == "0")
+                        else "red_missing_player_hp_oracle")
+            assert _red_success(rows) == (False, [expected]), (bad, field)
+
+
+def test_red_safety_span_guard_does_not_fire_on_a_partial_watch_dict():
+    # The other direction: `_red()`'s own rows omit `badges` entirely, and an absent field is NOT
+    # malformed. Without this the guard would refuse every fixture in this file.
+    assert _red_success(_red()) == (True, [])

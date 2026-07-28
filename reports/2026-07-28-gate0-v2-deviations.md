@@ -119,8 +119,9 @@ touched.
 `D3` here to avoid a collision on merge; nothing else about the entry changed with the renumber.
 
 **Landed by:** PR #191 on branch `fix/red-glitch-row-signature`.
-**Touches:** `eval/score_gate0.py::_red_success::_is_corrupt_glitch_row` and its mirror in
-`eval/score_exam_red_badge.py` (EX01), plus four tests. No fixture, no pin, no other predicate.
+**Touches:** `eval/score_gate0.py::_red_success` (the `_is_corrupt_glitch_row` predicate, plus the
+type guards its widening made necessary at `post` and in the safety span) and the mirror in
+`eval/score_exam_red_badge.py` (EX01), plus twelve tests. No fixture, no pin, no other predicate.
 
 **Timing, on the record:** this change is made **before any Gate 0 v2 run exists** — P1a/P1b/P1c/P2
 are all still open, no v2 agent attempt has been launched, and there is no v2 result of any kind to
@@ -155,9 +156,26 @@ predicate. Two reasons it was not sufficient to leave in place:
 
 ### The mechanism, established — not inferred
 
+> **CORRECTED (PR #191 re-review §4).** The first draft of this section said *"Pokémon Red is DMG
+> code and never manages SVBK, but transiently stomps it."* **That is false.** `roms/PokemonRed.gb`
+> is **byte-identical** to `Pokemon Red Version (Colorization).gb` inside
+> `roms/Pokemon Red Version (Colorization).zip` in the same directory — both sha256
+> `0602291f922443faf9d6b3a31948e37607a5f487ed8927892f926f86f4105700`, 1 048 576 bytes; confirmed
+> independently three times, most recently by hashing both here. The held-out Red world is therefore
+> running a **CGB colorization romhack, not stock Red**, and its SVBK writes are **deliberate CGB
+> code**, not a DMG program stomping a register it does not know about. The header byte says so
+> without any measurement: `0x143` is `0xC0` = **CGB-ONLY** (not `0x80` = CGB-compatible).
+>
+> The mechanism that actually matters is unchanged and is on the *reader's* side: the oracle reads a
+> bank-switched window with an unbanked `memory[addr]`, so whichever bank the ROM has selected at
+> sample time is what comes back. Everything below follows from that, not from who wrote to SVBK.
+>
+> That the world runs a romhack rather than stock Red is **out of scope for this PR and has
+> implications past this scorer** — it needs its own issue.
+
 `roms/PokemonRed.gb` carries CGB flag **`0xC0`** at header offset `0x143`, so PyBoy runs it in **CGB
-mode**, where `0xD000-0xDFFF` is WRAM-bank-switched by **SVBK (`0xFF70`)**. Pokémon Red is DMG code
-and never manages SVBK, but transiently stomps it (values 2–7 observed live). **Every** watched
+mode**, where `0xD000-0xDFFF` is WRAM-bank-switched by **SVBK (`0xFF70`)**, and the ROM — being CGB
+code — drives SVBK deliberately (values 2–7 observed live). **Every** watched
 address — `0xD057`, `0xD163`, `0xD16C`, `0xD16D`, `0xD356`, `0xD35E`, `0xD361`, `0xD362`
 (`world_mcp.py` `GAMES["pokemon_red"]["watch"]`) — lies inside that banked window, and
 `core/perception_plugin.py::_log_oracle` builds the whole watch dict in one comprehension against
@@ -188,10 +206,21 @@ reproduce them, correctly — see "Corrected figures" below):
 **Corrected figures (PR #191 review Nit 6).** The original entry's `1003 | 1003` / `358 / 358` are
 withdrawn: they were quoted without the input policy, and the mid-battle scan **cannot** be
 reproduced without one — 150 000 frames from `run9_end.state` with **zero** input yields **0** stomped
-ticks, because an idle game never stomps SVBK. The two rows above are what actually reproduces. Both
-were measured twice: the cold-boot row matches the PR #191 reviewer's independent scan **exactly**
-(785 / 410 / same SVBK histogram / same single tuple), and the reviewer's read of *why* it is 52% not
+ticks, because an idle game never stomps SVBK. The two rows above are what actually reproduces.
+
+**Both rows have now been measured three times, and every figure in the table matches on all three.**
+The cold-boot row matches the PR #191 round-1 reviewer's independent scan exactly (785 / same SVBK
+histogram / 410 / same single tuple / 0-of-410 old / 410-of-410 new); the PR #191 **re-review** fix
+round re-ran **both** rows from scratch and reproduced every cell, including the mid-battle row's
+`247` / `247` / `{x/y/map/badges=1}×242` + `all-zero×5` / `5-of-247` / `247-of-247` and the
+`in_battle == 2` count of **2** below. The reviewer's read of *why* the cold-boot row is 52% and not
 100% is right — a cold-boot prefix exists where the alternate bank happens to equal truth.
+
+**Every count in this entry is now stated with its input policy attached**, and that is a standing
+rule for this document, not a one-off correction: the withdrawn `358 / 358` was explained entirely by
+an unstated input policy, and the `cgb=False` PC-count under "What this does NOT fix" has since been
+measured twice as **73** and as **31** — a ~2.4x disagreement on the same quantity — for exactly the
+same reason. A bare count in this file is a defect.
 
 **What the predicate actually needs is the second column, not the first:** not "every stomped tick
 diverges" but **"every *diverging* tick produces this signature"** — 410/410 and 247/247, i.e. 657/657
@@ -202,8 +231,8 @@ same signature with an untouched bank.** Widening it completes that predicate ra
 one. The old predicate matched **5 / 657**.
 
 Two of the mid-battle scan's divergent samples occurred while the true row read `in_battle == 2`,
-i.e. **inside a live trainer battle** — the span C8 scans. (That figure reproduces from the first
-draft unchanged.)
+i.e. **inside a live trainer battle** — the span C8 scans. (That figure reproduces unchanged from the
+first draft, and again in the re-review fix round.)
 
 ### The artifact is in banked data, and C8's hazard is realised there
 
@@ -296,18 +325,93 @@ Both the PR's boot scan and the reviewer's observed only **odd** residue bytes (
 bit-0-clear residue is untested rather than impossible — if one is ever observed live, this is the
 clause to re-examine first.
 
+**Second reason to re-examine that clause: it was also the only net on a FAKE badge (PR #191
+re-review NEW-2).** The justification above — "a `party == 0` row alongside a *held badge* is
+corrupt, so declining to read it as a revert is defensible" — quietly assumes the badge is genuine.
+It need not be. The re-review built an EX01 trace in which **no badge is ever earned**, where the
+badge bit is supplied entirely by a residue-shaped row with **one field mistyped** (so
+`_is_corrupt_glitch_row` declines to drop it), while the even-residue revert-catcher **is** dropped:
+
+```
+base: fresh → starter → in_battle==2 → sustained exit, badges NEVER leaves 0
+  + {"x":7,"y":"7","map":7,"badges":7,"party":0,...}   ← ONE field a str: not dropped, donates badge bit 0
+  + {"x":6,"y":6,"map":6,"badges":6,"party":0,...}     ← even residue, bit 0 clear: the revert signal, dropped
+```
+
+Reproduced exactly:
+
+| trace | `origin/main` | `24e27f2` | fixed |
+|---|---|---|---|
+| clean base (no badge anywhere) | `red_badge_never_earned` | `red_badge_never_earned` | `red_badge_never_earned` |
+| + spurious row only | **PASS** (shared pre-existing hole) | **PASS** | `red_badge_missing_or_invalid_oracle_field` |
+| + spurious row + even residue | `red_badge_bit_reverted_after_set` | **PASS — false PASS** | `red_badge_missing_or_invalid_oracle_field` |
+| control: same row with `y: 7` (int) | `red_badge_bit_reverted_after_set` | `red_badge_never_earned` | `red_badge_never_earned` |
+
+**Closed, not argued away**, because a false PASS on a graduation-exam scorer is the worst direction
+this file has. `origin/main`'s catch was accidental — one corruption catching another — and row 2
+shows the spurious-badge hole is **shared by both branches**; the widening only removed the accident.
+The fix refuses the untypeable row outright (`_malformed_row` in `eval/score_exam_red_badge.py`,
+mirroring `score_gate0.py`), which closes both rows at once, including the pre-existing one
+`origin/main` also had. **Refuse, not drop:** every clause in `_red_badge_success` only ever *adds* a
+failure, so dropping an untypeable row could suppress a real revert; refusing cannot.
+`red_badge_missing_or_invalid_oracle_field` is this scorer's existing refusal token for exactly this
+case — no new failure name. The **first** reason above (a live even-residue byte) is unaffected and
+still stands on its own.
+
 ### `post` was fail-OPEN — the type guard, corrected (PR #191 review Major 1)
 
 The first draft claimed the widened form is "strictly more fail-closed on malformed input than the
 `w.get(k) == 0` form it replaces, which accepted `False` as `0`". **That was false**, and it was
 false in the direction that matters. `_is_corrupt_glitch_row` *keeps* a row carrying any bool/non-int
-field. That is fail-closed at `score_gate0.py`'s safety span (the kept row hits the `hi`/`lo`
-`isinstance` checks and raises `red_missing_player_hp_oracle`) and at `score_exam_red_badge.py:76`
-(a kept malformed row makes `_badges_bit0` return `None` → hard refusal). It was fail-**OPEN** at
+field. It was fail-**OPEN** at
 `_red_success`'s `post` clause, which had **no type validation at all** — it gated only on
 `is not None`. `origin/main` filtered those rows incidentally (`0.0 == 0`, `False == 0`); the
 equality-free predicate does not, so a kept malformed row donated its `(x, y)` and manufactured the
 second distinct position that satisfies `red_no_free_movement_after_exit`.
+
+> **CORRECTION #2, on the correction (PR #191 re-review NEW-1).** The fix round's replacement text
+> here, and the matching comment in `eval/score_gate0.py`, added that the same kept row is
+> *"fail-closed at `score_gate0.py`'s safety span (the kept row hits the `hi`/`lo` `isinstance`
+> checks and raises `red_missing_player_hp_oracle`)"*. **That was true for 2 of the 8 watched
+> fields.** For the other six the mistyped field is not `hi`/`lo`, the row's plain-int
+> `party_hp_hi == party_hp_lo == 0` sailed past those checks, and `map` was compared with **no type
+> check at all** — so the span emitted the substantive claims **`red_player_hp_reached_zero` AND
+> `red_map_changed_during_battle_exit_span`** from a row whose type the predicate had *explicitly
+> declined to establish*. That is not "fail-closed", it is a different failure mode wearing a
+> reassuring name — **the same defect class as Major 2 (a safety sentence true at one site and false
+> at the others), sitting inside the block written to fix Major 2.** The re-review notes it seeded
+> this claim in round 1 and that it was wrong then too; it was inherited rather than invented here,
+> and that does not make it less load-bearing.
+>
+> Reproduced — all-zero row with ONE field mistyped, inserted **inside** the safety span of the
+> standard success fixture (`battle_idx=2`, `exit_idx=3`, span `2..12`), 24 cases:
+>
+> | mistyped field | value | `origin/main` | `24e27f2` | fixed |
+> |---|---|---|---|---|
+> | `x`,`y`,`map`,`party`,`badges`,`in_battle` | `0.0` / `False` | **PASS** | `['red_map_changed_during_battle_exit_span', 'red_player_hp_reached_zero']` | `['red_missing_player_hp_oracle']` |
+> | `party_hp_hi`, `party_hp_lo` | `0.0` / `False` | **PASS** | `['red_missing_player_hp_oracle']` | `['red_missing_player_hp_oracle']` |
+> | `x`,`y`,`map`,`party`,`badges` | `"0"` | `['red_map_changed…', 'red_player_hp_reached_zero']` | same | `['red_missing_player_hp_oracle']` |
+>
+> **Fixed by refusing, NOT by dropping, and not by rewording.** Fail-closed points the *opposite* way
+> at the two sites, which is precisely what the wrong sentence obscured:
+>
+> - At **`post`**, the clause fails for having too *few* distinct positions, so removing a row can
+>   only ever *cause* `red_no_free_movement_after_exit`. **Dropping is fail-closed.**
+> - At the **safety span**, all three clauses only ever *add* a failure, so removing a row can only
+>   ever *suppress* one — dropping an untypeable row would silently erase a real HP=0 or a real map
+>   change riding on it, which is exactly the PR #121 Major 1 hazard. **Dropping is fail-OPEN;
+>   refusing is fail-closed.**
+>
+> The token is **`red_missing_player_hp_oracle`** — the span's existing *refusal* clause (prereg §5.4
+> **C6**), meaning "this span's oracle row is not a readable RAM sample". It is deliberately not a new
+> name: the frozen prereg's clause list must not grow, and C6 already carries exactly this "refuse
+> rather than guess" semantics for this span. A refusal is honest about what the scorer knows; a
+> death claim is not.
+>
+> Direction and reach, stated plainly: on these inputs `origin/main` **PASSes** (it drops the row
+> incidentally under `== 0`) and this head now **refuses**, so this is a **false-FAIL-direction**
+> difference, on input `core/perception_plugin.py::_log_oracle` cannot emit. It is inert on
+> everything reachable — see the differential-fuzz row below.
 
 Reproduced on the standard success fixture with the last row's `x`/`y` left unmoved (so the run
 genuinely never moves) and **one** row appended past `exit_idx + 10`, i.e. never touching the safety
@@ -350,12 +454,14 @@ Reproduce (LF-canonical, split at the `def _red_success` / `def _miniwob_success
 git show origin/main:eval/score_gate0.py | tr -d '\r' | sed -n '1,43p'    | sha256sum
 sed -n '1,43p'  eval/score_gate0.py      | tr -d '\r' | sha256sum
 git show origin/main:eval/score_gate0.py | tr -d '\r' | sed -n '102,$ p'  | sha256sum
-sed -n '167,$ p' eval/score_gate0.py     | tr -d '\r' | sha256sum
+sed -n '209,$ p' eval/score_gate0.py     | tr -d '\r' | sha256sum
 ```
 
-(`102` and `167` are the `def _miniwob_success` lines on `origin/main` and on this head; `44` is
+(`102` and `209` are the `def _miniwob_success` lines on `origin/main` and on this head; `44` is
 `def _red_success` on both. The un-hashed middle is `_red_success` plus its two blank separator lines
-and nothing else, so the two digests cover the whole file between them.)
+and nothing else, so the two digests cover the whole file between them. Both digests re-derived
+unchanged after the PR #191 re-review fix round, which only grew `_red_success` — the head split line
+moved `167` → `209`.)
 
 So `MODES`, `SOURCE_PIN_FILES`, `MINIWOB_TASK`, `AUDIT_PATH_KEYS`, `_miniwob_success`,
 `_arm_metrics`, `_verify_audit_paths`, `_verify_sources`, the arm caps, and the leak → constancy →
@@ -369,6 +475,14 @@ verdict), re-derived 2026-07-28 after the PR #191 review fixes:
 | `paid_gate0` (banked v1 artifacts) | `ca1768bca23617563f8d30f06a97162f487dd60edad54a07243de965bbda7424` | identical | `NO_GO` | ✅ |
 | `readiness_dev` | `2286dde5c4ccf332e9980dc3580a3e23f8aa4aabebcdafdb27a00f88f4007cdd` | identical | `NO_GO` | ✅ |
 | `paid_gate0_v2` | `20d35b8ca46d4aafd88edfce435dbd61401ddceea6c17fd7287bca238fbaf86e` | identical | `INSUFFICIENT_SOURCE` | ✅ |
+
+**Re-verified after the re-review fix round**, this time three-way — `origin/main` vs `24e27f2` vs
+this head — on one machine, same on-disk state: **all three modes identical across all three
+revisions.** The absolute digests from that re-run differ from the table above and are NOT
+substituted in, because it was run with `ROOT` repointed at a checkout whose `runs/**` tree is not in
+the same state; that is the environment-dependence the next paragraph is about, and it is why the
+equality column is the load-bearing one. The claim that does not depend on any of this is the
+per-trace table below, `_red_success` and EX01 run **directly** on the banked oracle rows.
 
 **How to reproduce, and what is *not* reproducible from the repo alone (PR #191 review Nit 7).** The
 first draft quoted three digests with no recipe at all; these replace them. The manifest is built
@@ -411,24 +525,85 @@ EX01 `overall` is `FAIL_CAPABILITY` on all four traces on **both** branches — 
 corrections; `overall` stays `FAIL_CAPABILITY` in both cases. **No verdict anywhere flips.** The
 banked v1 `paid_gate0` `CONSTANCY_BREACH` stands, and this does not un-void it.
 
-Root suite: **1676 passed / 18 skipped** on `origin/main` → **1684 passed / 18 skipped** here (+8 =
-four tests built from the literal banked rows, none hand-invented, plus four added for the PR #191
-review Minor 4 gap — the `post` clause and the type guard had zero coverage).
+Root suite, from the repo root, both measured here: **1676 passed / 18 skipped** on `origin/main` →
+**1688 passed / 18 skipped** here (+12 = four tests built from the literal banked rows, none
+hand-invented; four for the PR #191 review Minor 4 gap — the `post` clause and the type guard had
+zero coverage; and four for the re-review, two per finding, covering NEW-1's safety-span refusal and
+NEW-2's mistyped residue row, each paired with an over-fire test in the opposite direction).
+
+### Differential fuzz — the re-review fix round is inert on reachable input
+
+The re-review measured this PR against a ground-truth oracle (ground truth = the verdict on the base
+trace with the injected artifact rows removed). The NEW-1/NEW-2 fixes were re-measured the same way,
+three-way, so the question "did fixing the findings cost anything?" has a number rather than an
+argument.
+
+**Input policy**, since that is the standing rule here: base traces are structurally valid Red runs
+(fresh → starter → `in_battle == 2` → sustained exit → optional movement / faint / map change /
+badge). Arm A is 20 000 clean traces, no artifact rows. Arm B is 60 000 traces poisoned with 1–3
+well-formed artifact rows at random positions — the residue shape
+`{x == y == map == badges == k, party == in_battle == hp_hi == hp_lo == 0}` for `k` in 0..7 (`k == 0`
+is the all-zero row), i.e. everything `_log_oracle` can emit under a wrong-bank sample. **Every value
+is a plain int; no malformed value appears anywhere**, which is exactly why the fixes cannot show up
+here.
+
+| | new false PASS | new false FAIL | fixes a `main` false PASS | fixes a `main` false FAIL |
+|---|---|---|---|---|
+| `_red_success` | **0** | **0** | 1 369 | 21 666 |
+| `_red_badge_success` | **0** | **0** | 865 | 14 218 |
+
+- Arm A: `origin/main`, `24e27f2` and this head agree **20 000 / 20 000** on both predicates.
+- Arm B: **`24e27f2` and this head disagree 0 times in 120 000 poisoned scorer-evaluations.** The
+  NEW-1 and NEW-2 fixes are *exactly* inert on the reachable input domain — they are unreachable by
+  construction, since both trigger only on a value that is not a plain int.
+- The absolute counts differ from the re-review's (which reported 1 873 / 20 390 fixed) because the
+  trace generators differ; the columns that carry the claim are the two zeros and the 0 disagreements.
 
 ### What this does NOT fix
 
-The **root cause is the emulator configuration, not the scorer.** `core/gb_emulator.py` constructs
-`PyBoy(rom_path, ...)` with no `cgb` argument, so the CGB-flagged header selects CGB mode and the
-banked-WRAM window exists at all. Constructing with `cgb=False` (DMG mode) makes `0xD000-0xDFFF`
-unbanked and SVBK inert, eliminating the artifact at source — no scorer filter needed. That was
-**not** done here: it is a world change (image rebuild + re-pin), and it **invalidates every
-existing savestate** — verified, `PyBoy.load_state` raises
-`Loading state which *is* CGB-mode, but PyBoy *is not* in CGB mode!` on `runs/*.state`. It needs its
-own plan and its own PR.
+> **CORRECTED (PR #191 re-review §4).** This section previously named `cgb=False` as the root fix:
+> *"Constructing with `cgb=False` (DMG mode) makes `0xD000-0xDFFF` unbanked and SVBK inert,
+> eliminating the artifact at source — no scorer filter needed."* **`cgb=False` is not a fix, because
+> it does not run this ROM at all.** The decisive evidence is the header byte, not a measurement:
+> `0x143` is `0xC0` = **CGB-ONLY**, and a non-CGB machine refuses such a cartridge by specification.
+> The ROM's own nature was the missing premise — see the correction in "The mechanism, established"
+> above: this is a CGB colorization romhack, so "make it a DMG machine" was never available.
+>
+> The corroborating measurement, **with its input policy attached**: cold boot from ROM reset (no
+> savestate), **zero input**, 20 000 frames advanced one at a time, `window="null"`, PC sampled
+> **once per frame at the frame boundary** via `pyboy.register_file.PC` and collected into a set —
+> **73 distinct PCs under `cgb=False` vs 559 with no `cgb=` argument.** 73 distinct PCs over 20 000
+> frames is a spin loop, i.e. a hard lock. Measured here; reproduces the PR #191 re-reviewer's scan
+> exactly on both numbers.
+>
+> ⚠ **Do not quote a bare PC count.** A *separate* investigation measured the same `cgb=False`
+> quantity as **31** — ~2.4x off the 73 above. The figures are not comparable and neither is wrong:
+> a once-per-frame PC sample is a function of **sampling cadence and input policy**, not of how much
+> code executed (20 000 samples against billions of instructions), and a zero-input CGB-mode figure
+> is an attract-loop-only number that would be far higher with input. Every run shows the same hard
+> lock and the conclusion is unaffected. **The `0xC0` header byte is the claim that depends on none
+> of this, and it is the one to rely on.** This is the second figure in this document to need its
+> input policy supplied after the fact; see the standing rule under "Corrected figures".
 
-Until then the scorer-side signature remains a **residue-shape filter, not a law**: it caught
-~1800/1800 reproduced samples, but the corrupt values are whatever the alternate bank happens to
-hold, and a bank dirtied differently could in principle produce a shape this predicate does not
-match. It is strictly better than the all-zero-only form and strictly safer than no filter — it is
-not a proof that the artifact can never leak through. **C8's advice to check the raw rows behind any
-Red failure therefore remains good practice and is not retired by this change.**
+The **root cause is on the read side, not in the scorer.** `core/perception_plugin.py::_log_oracle`
+reads the eight watch addresses with an **unbanked** `memory[addr]`, while `0xD000-0xDFFF` is
+bank-switched in CGB mode — so whichever bank the ROM has selected at sample time is what comes back.
+
+**The actual root fix is a bank-correct read: `memory[1, addr]` for `0xD000-0xDFFF`, guarded on CGB
+mode.** Measured against truth on the cold-boot scan (60 000 frames, zero input, no `cgb=` argument):
+it equalled truth on **785/785** stomped ticks, including all **410** diverging ones. That is a total
+fix at source, and it needs its own plan and its own PR — it touches the world (`world_mcp.py` /
+`core/perception_plugin.py`), which means an image rebuild and a re-pin.
+
+**The disposition of this filter has therefore changed.** It is no longer a stopgap awaiting a
+one-line emulator flag — that flag does not exist. **Until a bank-correct oracle read lands, this
+filter is the only mitigation for the artifact**, on both `_red_success` and EX01. That is why the
+re-review's NEW-1 was worth fixing *before* merge rather than after.
+
+Even so, the scorer-side signature remains a **residue-shape filter, not a law**: it matched
+**657/657** diverging ticks across the two reproduction scans above (each with its input policy
+stated there), but the corrupt values are whatever the alternate bank happens to hold, and a bank
+dirtied differently could in principle produce a shape this predicate does not match. It is strictly
+better than the all-zero-only form (which matched **5/657**) and strictly safer than no filter — it
+is not a proof that the artifact can never leak through. **C8's advice to check the raw rows behind
+any Red failure therefore remains good practice and is not retired by this change.**

@@ -65,13 +65,17 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
         failures.append("red_no_sustained_battle_exit")
         return False, failures
     # A one-tick corrupted RAM read, never a real state. MECHANISM (established 2026-07-28 by
-    # offline reproduction, not inferred): roms/PokemonRed.gb carries CGB flag 0xC0 in its header,
-    # so PyBoy runs it in CGB mode, where 0xD000-0xDFFF is WRAM-BANK-SWITCHED by SVBK (0xFF70).
-    # Pokemon Red is DMG code and never manages SVBK, but transiently stomps it (values 2-7 observed
-    # live). EVERY watched address (0xD057/0xD163/0xD16C/0xD16D/0xD356/0xD35E/0xD361/0xD362) lies in
-    # that banked window, so a stomped tick reads ALL EIGHT fields out of the wrong WRAM bank at
-    # once, and the next sample is back on bank 1 -- hence "sandwiched between identical, consistent
-    # neighbor rows". 358/358 stomped ticks diverged from truth in a 150k-frame mid-battle scan.
+    # offline reproduction, not inferred): roms/PokemonRed.gb is byte-identical to the ROM inside
+    # roms/Pokemon Red Version (Colorization).zip (both sha256 0602291f92...), i.e. the world runs a
+    # CGB COLORIZATION ROMHACK, not stock Red. Its header 0x143 is 0xC0 = CGB-ONLY, so PyBoy runs it
+    # in CGB mode, where 0xD000-0xDFFF is WRAM-BANK-SWITCHED by SVBK (0xFF70) -- and being CGB code
+    # it drives SVBK DELIBERATELY (values 2-7 observed live). The artifact is not the ROM misusing a
+    # register it does not know about; it is the ORACLE reading a banked window with an unbanked
+    # `memory[addr]`, so whatever bank the ROM has selected at sample time is what comes back.
+    # EVERY watched address (0xD057/0xD163/0xD16C/0xD16D/0xD356/0xD35E/0xD361/0xD362) lies in that
+    # banked window, so a sample taken while bank != 1 reads ALL EIGHT fields out of the wrong WRAM
+    # bank at once, and the next sample is back on bank 1 -- hence "sandwiched between identical,
+    # consistent neighbor rows".
     #
     # The alternate bank holds only residue, so the corrupt row reads party/in_battle/HP all 0 with
     # the four D3xx fields all showing one repeated residue byte. All-zero is the common case (an
@@ -80,8 +84,20 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     # row 624 and gate0_red_human_attempt2_completion.jsonl row 494 (BOTH mid-battle, in_battle==2
     # on both neighbors -- so this artifact demonstrably lands inside THIS span); the non-zero
     # variant {x/y/map/badges=1, rest=0} at gate0_red_human_attempt2_completion.jsonl row 363 and
-    # reports/2026-07-24-gate0-armR-verdict/oracle.jsonl rows 335/347. ~1800 offline reproductions
-    # across boot and mid-battle savestates produced this signature and no other shape. The former
+    # reports/2026-07-24-gate0-armR-verdict/oracle.jsonl rows 335/347.
+    #
+    # OFFLINE REPRODUCTION -- figures quoted WITH their input policy, because this PR has twice been
+    # burned by a count quoted without one (a prior draft's 1003|1003 / 358-of-358 are WITHDRAWN; see
+    # reports/2026-07-28-gate0-v2-deviations.md D3 "Corrected figures"). Two scans, both re-measured
+    # independently for the PR #191 re-review and matching exactly:
+    #   - cold boot, 60 000 frames, ZERO input: 785 ticks with SVBK not in {0,1}, of which 410 DIVERGE
+    #     from a bank-1 read; one shape, (3,3,3,0,3,0,0,0).
+    #   - runs/run9_end.state (mid trainer battle), 150 000 frames, random.Random(3) one button every
+    #     24 frames delay=8: 247 stomped, 247 DIVERGE; two shapes, {x/y/map/badges=1, rest=0} x242 and
+    #     all-zero x5. Two of them diverged while the TRUE row read in_battle == 2, i.e. inside the
+    #     span this filter protects.
+    # What the predicate needs is the DIVERGING column, not the stomped one: 657/657 across both
+    # scans, two distinct shapes, both matched. The old all-zero-only form matched 5/657. The former
     # all-zero-only predicate was this same signature with a clean bank; widening it closes the gap
     # reports/2026-07-25-gate0-v2-prereg.md §5.4 C8 pre-registered as a live risk to this exact span
     # (deviation recorded in reports/2026-07-28-gate0-v2-deviations.md).
@@ -123,15 +139,38 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
 
     def _malformed_row(w):
         # "_is_corrupt_glitch_row said False" means EITHER "provably a real row" OR "cannot tell --
-        # some field isn't a RAM byte". This separates the second case out. A field that is absent
-        # (None) is not malformed: the Gate 0 Red predicate has always tolerated partial watch dicts
-        # and only `x`/`y` are load-bearing for `post`.
+        # some field isn't a RAM byte". This separates the second case out, and BOTH consumers act
+        # on it, in OPPOSITE directions, because fail-closed points opposite ways at the two sites:
+        # the safety span REFUSES an untypeable row (its clauses only add failures, so dropping
+        # would suppress a real one), `post` DROPS it (that clause only fails for too few distinct
+        # positions, so dropping can only cause it). A field that is absent (None) is not malformed:
+        # the Gate 0 Red predicate has always tolerated partial watch dicts.
         return any(w.get(k) is not None and not _plain_int(w.get(k)) for k in watched_keys)
 
     safety_span = [w for w in watches[battle_idx:exit_idx + 10] if not _is_corrupt_glitch_row(w)]
     hp_values = []
     battle_map = watches[battle_idx].get("map")
     for watch in safety_span:
+        if _malformed_row(watch):
+            # PR #191 re-review NEW-1. `_is_corrupt_glitch_row` KEEPS a row carrying a non-int
+            # watched field (it cannot prove the row is the artifact, so it declines to drop it).
+            # Without this guard the span then went on to READ that row: `map` is compared with no
+            # type check at all, and `party_hp_hi`/`lo` pass the checks below whenever the mistyped
+            # field is one of the other six -- so a single `"party": false` produced the substantive
+            # claims `red_player_hp_reached_zero` AND `red_map_changed_during_battle_exit_span` from
+            # a row whose type the predicate had explicitly declined to establish.
+            # REFUSE, do not drop. Dropping is the fail-OPEN direction in THIS span (unlike `post`
+            # below): the span's three clauses only ever ADD failures, so removing a row can only
+            # suppress one -- which is exactly the PR #121 Major 1 hazard, a real HP=0 or real map
+            # change erased because some unrelated field on the same row was untypeable.
+            # `red_missing_player_hp_oracle` and not a new token: it is the span's existing REFUSAL
+            # clause (prereg §5.4 C6) -- "this span's oracle row is not a readable RAM sample" -- and
+            # the frozen prereg's clause list must not grow. Unreachable from a well-formed run
+            # (`core/perception_plugin.py::_log_oracle` emits PyBoy ints); `origin/main` PASSes these
+            # inputs by dropping the row incidentally under `== 0`, so this is a false-FAIL-direction
+            # difference on input the writer cannot emit.
+            failures.append("red_missing_player_hp_oracle")
+            break
         hi, lo = watch.get("party_hp_hi"), watch.get("party_hp_lo")
         if (isinstance(hi, bool) or isinstance(lo, bool) or not isinstance(hi, int)
                 or not isinstance(lo, int) or not 0 <= hi <= 255 or not 0 <= lo <= 255):
@@ -144,9 +183,12 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     if hp_values and min(hp_values) == 0:
         failures.append("red_player_hp_reached_zero")
     # Type-guarded (PR #191 review Major 1). `_is_corrupt_glitch_row` KEEPS any row carrying a
-    # bool/non-int field, which is fail-closed in the safety span above (the hi/lo isinstance checks
-    # catch it) but was fail-OPEN here: `post` had no type validation at all, it gated only on
-    # `is not None`. A kept malformed row donated its (x, y) and manufactured the second distinct
+    # bool/non-int field, and this clause was fail-OPEN on one: `post` had no type validation at
+    # all, it gated only on `is not None`. (An earlier version of this comment added that the same
+    # kept row was already "fail-closed in the safety span above (the hi/lo isinstance checks catch
+    # it)". That was FALSE for six of the eight fields and is now handled explicitly at the span --
+    # see the NEW-1 block there.)
+    # A kept malformed row donated its (x, y) and manufactured the second distinct
     # position that satisfies this clause. Demonstrated on the standard success fixture with the
     # final row's x/y left unmoved and ONE row appended past exit_idx + 10 (so the safety span is
     # never touched): an all-zero-FLOAT row, an all-`false` row, or an all-zero-int row with a single
