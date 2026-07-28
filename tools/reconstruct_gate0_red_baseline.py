@@ -25,12 +25,49 @@ Logic (mirrors the live rig's own detection loop -- see capture_gate0_baseline_r
      are trimmed to <= t_done so the artifact never carries post-completion presses as if they were
      part of the timed attempt.
 
-Usage:
-    uv run python tools/reconstruct_gate0_red_baseline.py --trace <oracle.jsonl> \
-        --incomplete <human_metrics.INCOMPLETE_*.json> [--out <path>]
+Three modes, selected with a REQUIRED `--mode` (see "Why --mode has no default" below):
+  * `readiness_dev` -- the readiness-phase mode. This is the mode the banked
+    `runs/gate0_human_baseline/red/human_metrics.json` was reconstructed under, and the payload this
+    tool produces under it is byte-identical to the pre-`--mode` tool's.
+  * `paid_gate0` -- Gate 0 v1's paid mode.
+  * `paid_gate0_v2` -- Gate 0 v2's paid mode.
+Both paid modes require `--i-am-human` (see HELD_OUT_MODES), exactly as
+tools/capture_gate0_baseline_red.py and tools/capture_gate0_baseline_miniwob.py do.
 
-Refuses to overwrite an existing canonical human_metrics.json at --out (default: the real Red
-baseline path) -- same one-cold-attempt-per-task law the live rig enforces.
+`--mode` selects the output directory as well as the stamp -- one directory PER MODE, mirroring
+tools/capture_gate0_baseline_red.py's MODE_CONFIG:
+    readiness_dev -> runs/gate0_human_baseline/red/          (the banked artifact -- see BANKED_DIR)
+    paid_gate0    -> runs/gate0_paid_human_baseline/red/
+    paid_gate0_v2 -> runs/gate0_paid_v2_human_baseline/red/
+
+Usage:
+    uv run python tools/reconstruct_gate0_red_baseline.py --mode paid_gate0_v2 --i-am-human \
+        --trace <oracle.jsonl> --incomplete <human_metrics.INCOMPLETE_*.json> [--out <path>]
+
+Refuses to overwrite an existing canonical human_metrics.json at the resolved --out -- the same
+one-cold-attempt-per-task law the live rig enforces -- and refuses outright, in every mode and with
+every flag combination, to write anywhere inside BANKED_DIR (see write_artifact).
+
+Why `--mode` has NO default (same decision as tools/capture_gate0_baseline_red.py's --mode, PR
+#195): the defect it closes is a SILENT one. Until 2026-07-28 this tool hardcoded
+`MODE = "readiness_dev"`, so every artifact it produced was stamped readiness_dev -- and
+`_verify_sources` (score_gate0.py, the `human_metric_identity:<arm>` check) rejects that under any
+paid mode, a failure discovered only at SCORING, after the paid run is spent. A default of
+`readiness_dev` would preserve exactly that trap for anyone who forgets the flag. The choices are
+read from `eval.score_gate0.MODES` itself (score_gate0_modes(), a function-local import matching
+tools/capture_gate0_baseline_red.py's and tools/capture_gate0_baseline_miniwob.py's tools->eval
+idiom), so this tool can never offer a mode the scorer cannot score.
+
+RECOVERY PATH, NOT A CAPTURE PATH. A paid-mode reconstruction still needs a REAL capture session's
+archived `oracle.jsonl` + `human_metrics.INCOMPLETE_*.json` as input -- this tool never plays and
+never invents rows, so it cannot fabricate a baseline. Its paid modes exist for exactly one case:
+a genuine held-out capture whose LIVE detector missed a real completion (the 2026-07-21 attempt-1
+case this tool was built for, one scorer bug away from recurring). Note for whoever needs it:
+reports/2026-07-25-gate0-v2-prereg.md's P1c names its satisfaction method as "a FRESH CAPTURE under
+`--mode paid_gate0_v2`, producing a new artifact". A reconstruction of such a capture is not
+literally that; if a reconstructed artifact is ever used to satisfy P1c, THAT use needs its own
+entry in reports/2026-07-28-gate0-v2-deviations.md. Having the tool is not the deviation; using its
+output as a precondition's satisfaction would be.
 """
 from __future__ import annotations
 
@@ -54,9 +91,29 @@ from eval.score_gate0 import _red_success
 ROOT = _REPO
 ARM = "red"
 ROLE = "human"
-MODE = "readiness_dev"
 SCHEMA_VERSION = 1
-DEFAULT_OUT = ROOT / "runs" / "gate0_human_baseline" / "red" / "human_metrics.json"
+# Per-mode output directory. Same three destinations, for the same reason, as
+# tools/capture_gate0_baseline_red.py's MODE_CONFIG -- the reconstruct tool is that rig's recovery
+# path and the two must land in the same place per mode or the scorer reads the wrong file. Values
+# are `Path`, not the sibling's normpath'd `str`, because this module is Path-typed throughout
+# (`--out` is `type=Path`, write_artifact takes a Path); that is the only shape difference.
+# readiness_dev's entry is the exact directory this module's deleted `DEFAULT_OUT` pointed into.
+MODE_CONFIG = {
+    "readiness_dev": {"real_out": ROOT / "runs" / "gate0_human_baseline" / "red"},
+    "paid_gate0": {"real_out": ROOT / "runs" / "gate0_paid_human_baseline" / "red"},
+    "paid_gate0_v2": {"real_out": ROOT / "runs" / "gate0_paid_v2_human_baseline" / "red"},
+}
+# Modes whose artifact is a PRE-REGISTERED GATE DENOMINATOR. Same frozenset, same flag, same
+# rationale as tools/capture_gate0_baseline_red.py's: what --i-am-human protects on this arm is the
+# ARTIFACT, not a held-out seed family (Red has none). #195 already reframed the flag from "a human
+# is playing" to "a human, not a script, is deliberately producing this denominator" -- that second
+# reading is the one that transfers here, where nobody plays at all.
+HELD_OUT_MODES = frozenset({"paid_gate0", "paid_gate0_v2"})
+# The banked Red human baseline's directory. NOTHING this tool runs may write inside it, in any mode,
+# with any flag combination -- see write_artifact(). It holds the append-only artifact that produced
+# every Red number in the project, whose digest three source-pin fixtures freeze, plus the oracle
+# trace those numbers were derived from.
+BANKED_DIR = MODE_CONFIG["readiness_dev"]["real_out"]
 # Clock-start cross-check tolerance: the live rig sets `started_at` and appends
 # input_event_times[0] in the same loop iteration (see capture_gate0_baseline_red.run()); any
 # larger gap in an archived INCOMPLETE artifact means our clock-start assumption doesn't hold there.
@@ -67,6 +124,20 @@ RECONSTRUCTION_METHOD = (
     "wall_clock_s/primitive_actions/input_event_times are derived against that row's timestamp "
     "exactly as tools/capture_gate0_baseline_red.py freezes them against live detection."
 )
+
+
+def score_gate0_modes() -> dict:
+    """`eval.score_gate0.MODES` -- the frozen scorer's own mode map, read from the scorer and NEVER
+    re-declared here, so this tool cannot offer a mode the scorer cannot score.
+
+    Function-local import, the same symbol and the same tools->eval idiom as
+    tools/capture_gate0_baseline_red.py::score_gate0_modes and
+    tools/capture_gate0_baseline_miniwob.py::run's `from eval.score_gate0 import MODES`. (This module
+    already imports `_red_success` at module scope, so the sibling's "don't drag in eval/ on import"
+    motive does not apply here; matching the sibling's shape so the three rigs stay one family, and a
+    future shared helper is a rename not a redesign, is the reason.)"""
+    from eval.score_gate0 import MODES
+    return MODES
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -87,7 +158,7 @@ def find_completion_row(rows: list[dict]) -> int | None:
     return None
 
 
-def reconstruct(trace_path: Path, incomplete_path: Path) -> dict:
+def reconstruct(trace_path: Path, incomplete_path: Path, mode: str) -> dict:
     trace_bytes = trace_path.read_bytes()
     incomplete_bytes = incomplete_path.read_bytes()
     rows = _load_jsonl(trace_path)
@@ -125,7 +196,11 @@ def reconstruct(trace_path: Path, incomplete_path: Path) -> dict:
         "schema_version": SCHEMA_VERSION,
         "arm": ARM,
         "role": ROLE,
-        "mode": MODE,
+        # Was the module-level constant MODE = "readiness_dev". eval/score_gate0.py::_verify_sources
+        # requires this to EQUAL the mode being scored, so a hardwired stamp makes every paid-mode
+        # reconstruction void -- and only at scoring. Required, never defaulted: see the module
+        # docstring's "Why --mode has no default".
+        "mode": mode,
         "wall_clock_s": round(t_done - t_first_input, 3),
         "primitive_actions": len(trimmed_events),
         "success": True,
@@ -156,7 +231,36 @@ def reconstruct(trace_path: Path, incomplete_path: Path) -> dict:
     }
 
 
+def _resolves_inside_banked(out_path: Path) -> bool:
+    """Is `out_path`'s EFFECTIVE write target at or under BANKED_DIR?
+
+    Resolved, not merely normalised: the thing that must be bound is where the write actually lands,
+    not the string the caller typed. `Path.resolve()` is non-strict (the target need not exist yet)
+    and follows symlinks in the existing parents, so `--out <symlink-into-runs>/human_metrics.json`
+    is caught too. PR #195's review found exactly this hole in the sibling -- an explicit `--out`
+    slipping past a check that had been applied only to the mode-derived path."""
+    target = out_path.resolve()
+    banked = BANKED_DIR.resolve()
+    return target == banked or banked in target.parents
+
+
 def write_artifact(artifact: dict, out_path: Path) -> None:
+    # UNCONDITIONAL, and deliberately not overridable by any flag. This is the single choke point
+    # every write goes through -- the mode-derived default and an explicit `--out` both arrive here
+    # as the same `out_path` -- so there is no argument, mode, or flag combination that can reach
+    # BANKED_DIR. It is checked BEFORE the existence test and before any mkdir, so a refusal creates
+    # nothing on disk. Two distinct reasons it is a path check rather than the existence check
+    # below: (1) the existence check only protects files that happen to already be there, so in a
+    # fresh checkout/container/worktree it protects nothing -- verified on origin/main, where a
+    # no-`--out` run silently CREATED runs/gate0_human_baseline/red/human_metrics.json and exited 0;
+    # (2) it also covers oracle.jsonl and everything else banked alongside it.
+    if _resolves_inside_banked(out_path):
+        raise SystemExit(
+            f"refusing: {out_path} is inside the banked Red baseline directory {BANKED_DIR} -- "
+            "that tree is append-only raw data (the artifact three source-pin fixtures freeze by "
+            "digest, and the oracle trace its numbers came from). No flag overrides this. Pass "
+            "--out somewhere else, or use the paid-mode directory for the mode you are "
+            "reconstructing.")
     if out_path.exists():
         raise SystemExit(
             f"refusing: {out_path} already exists -- one cold attempt per task "
@@ -165,15 +269,53 @@ def write_artifact(artifact: dict, out_path: Path) -> None:
     out_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def main() -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
+    # REQUIRED, NO DEFAULT -- see the module docstring's "Why --mode has no default". Choices come
+    # from the frozen scorer's own MODES map, never a list re-declared here.
+    ap.add_argument("--mode", required=True, choices=tuple(score_gate0_modes()),
+                     help="which pre-registered Gate 0 mode this reconstruction belongs to; stamps "
+                          "human_metrics.json's `mode` field (which eval/score_gate0.py requires to "
+                          "equal the mode being scored) and selects the output directory. Both paid "
+                          "modes additionally require --i-am-human. No default: an unstated mode is "
+                          "an artifact the scorer rejects.")
     ap.add_argument("--trace", type=Path, required=True, help="attempt-1 oracle.jsonl trace")
     ap.add_argument("--incomplete", type=Path, required=True,
                      help="attempt-1 human_metrics.INCOMPLETE_*.json")
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    args = ap.parse_args()
+    ap.add_argument("--out", type=Path, default=None,
+                     help="defaults to <the --mode directory>/human_metrics.json (see the module "
+                          "docstring). Never permitted inside the banked baseline directory.")
+    ap.add_argument("--i-am-human", action="store_true", dest="i_am_human",
+                     help="required for every held-out mode (HELD_OUT_MODES: paid_gate0, "
+                          "paid_gate0_v2) -- explicit, non-default acknowledgement that a real "
+                          "human, not a script, is deliberately producing a paid-gate denominator. "
+                          "A scripted invocation cannot satisfy this by accident.")
+    return ap
 
-    artifact = reconstruct(args.trace, args.incomplete)
+
+def main() -> int:
+    args = build_arg_parser().parse_args()
+
+    # Mode resolution + the held-out guard, before a single file is read. Same order and same shape
+    # as tools/capture_gate0_baseline_red.py::run(). The MODE_CONFIG membership test is not dead
+    # code: --mode's choices come from the SCORER's MODES, so a mode added there but not here must
+    # refuse rather than KeyError.
+    mode = args.mode
+    if mode not in MODE_CONFIG:
+        print(f"refusing: unknown --mode {mode!r} (must be one of {sorted(MODE_CONFIG)}).",
+              file=sys.stderr)
+        return 2
+    if mode in HELD_OUT_MODES and not getattr(args, "i_am_human", False):
+        print(f"refusing: --mode {mode} requires --i-am-human -- this reconstructs the human "
+              "denominator the paid gate's `agent <= 2.0x human` bar is measured against; a "
+              "scripted or absent-minded invocation must never be able to produce it. Pass "
+              "--i-am-human only when a real human is deliberately recovering a real capture "
+              "session's archived evidence.", file=sys.stderr)
+        return 2
+    if args.out is None:
+        args.out = MODE_CONFIG[mode]["real_out"] / "human_metrics.json"
+
+    artifact = reconstruct(args.trace, args.incomplete, mode)
     write_artifact(artifact, args.out)
 
     print(f"wrote {args.out}")
