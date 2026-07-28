@@ -1186,8 +1186,12 @@ def _finalize_for_mode(tmp_path, monkeypatch, mode):
     receipt_path = out_dir / "handshake-receipt.json"
     receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
     monkeypatch.setattr(arm_mod, "verify_launch_signature_unchanged", lambda receipt, out_dir: None)
+    # Both spellings of the verdict key on purpose: `overall` today, `audit_overall` after the
+    # in-flight rename (PR #188) -- the two changes merge cleanly in the code but would collide
+    # SEMANTICALLY here, which is the kind of break a textual merge does not surface.
     monkeypatch.setattr(arm_mod, "audit",
-                        lambda *a, **k: {"overall": "PASS", "primitive_action_events": 7})
+                        lambda *a, **k: {"overall": "PASS", "audit_overall": "PASS",
+                                         "primitive_action_events": 7})
     monkeypatch.setattr(arm_mod, "resolve_expected_pins", lambda base, **k: dict(base))
     arm_mod._finalize_real_run(**_finalize_kwargs(out_dir, receipt, receipt_path, transcript_path,
                                                   tmp_path / "missing_human.json", mode=mode))
