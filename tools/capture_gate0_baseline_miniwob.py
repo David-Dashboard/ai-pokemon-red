@@ -9,7 +9,7 @@ Three modes, selected with `--mode`:
     gate-0-design.md:273-276). `--mode paid_gate0` additionally requires `--i-am-human` (see below)
     -- a scripted stand-in must never be able to produce this artifact.
   * `paid_gate0_v2` -- Gate 0 v2's FRESH held-out block, `eval.score_gate0.MODES["paid_gate0_v2"]`
-    (reports/2026-07-25-gate0-v2-prereg-DRAFT.md §4.1/P9). Identical contract to `paid_gate0` in
+    (reports/2026-07-25-gate0-v2-prereg.md §4.1/P9). Identical contract to `paid_gate0` in
     every respect (--i-am-human required, utterance suppressed, post-Arm-W-only ordering); it exists
     because 1000..1004 are SPENT -- the v1 Arm W transcript, correct answers and all, is committed
     at reports/2026-07-24-gate0-paired-verdict/oracle.jsonl. Writes to its own output directory so a
