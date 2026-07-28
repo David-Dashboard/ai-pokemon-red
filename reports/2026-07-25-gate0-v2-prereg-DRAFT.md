@@ -43,17 +43,18 @@ these open produces an unscorable or void artifact and wastes the attempt.
 | # | Precondition | State verified 2026-07-28 | Blocks |
 |---|---|---|---|
 | **P1a** | `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` **captured** on the P9 seeds | **NOT DONE.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json` and an abandoned capture's frames. The rig blocker is **resolved** (PR #174); this now waits only on David playing the episodes. | Any `score_manifest()` verdict, **both arms** |
+| **P1c** | A **RED** human baseline whose `mode` field matches the mode being scored | **NOT DONE.** `runs/gate0_human_baseline/red/human_metrics.json` carries `mode: "readiness_dev"` (verified), so `_verify_sources:278-279` yields `human_metric_identity:red` under `paid_gate0`/`paid_gate0_v2`. **Currently masked** — `red_agent`'s hash mismatch hits `continue` at `:257`, so the identity block is skipped; it fires the moment P5 succeeds. | Any `score_manifest()` verdict, **both arms** |
 | **P1b** | `artifact_sha256.miniwob_human` **frozen** to that file's real digest, in its own reviewed commit | **NOT DONE.** Still the literal `PENDING_NOT_YET_CAPTURED_…`, which `eval/score_gate0.py:255` compares against the real digest — capture alone does **not** clear the gate. | Any `score_manifest()` verdict, **both arms** |
 | **P2** | `runs/gate0_live_breaker/live_breaker_dry_run_trip.json` exists and hashes to `27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734` | **MISSING** — `runs/gate0_live_breaker/` does not exist in the primary checkout. v1 banked `source_unreadable:live_breaker` + `live_breaker_artifact` for exactly this. Regenerable byte-exactly from `tools/gate0_credit_breaker.py`. | Any `score_manifest()` verdict |
 | **P3** | A fresh output directory — **`runs/gate0_paid_v2/<arm>/`** — with all 18 `artifact_paths` / `audit_paths` strings re-pointed to it | **NOT DONE.** All twelve pinned paths in `eval/fixtures/gate0_paid_source_pins.json` point into `runs/gate0_paid/…`, which v1 already occupies. `runs/` is append-only raw data; v2 must not write there. | The whole attempt |
 | **P4** | The four `task_sha256` pins, the four `expected_pins_sha256` cascade values, **and `gate0_signature.appserver.json`'s `expected_launcher_sha256` + `frozen_commit`** re-frozen (§6, items **1-9**) | **NOT DONE** (this document does not edit fixtures). | Launch audit + scoring |
 | **P5** | A mechanical post-run hash-freeze step for the run-produced artifacts (§6, item 11; item 12 is P1b) | **NOT PRE-REGISTERED ANYWHERE UNTIL NOW.** See §6. | Any `score_manifest()` verdict |
-| **P6** | `sha256(eval/fixtures/gate0_miniwob_paid_seeds.json)` recomputed **from the tree that will score**, == `263aaed17ee653c8b32e608d88ed1b8d29d6a424d29ce2e123671b56df159e63` | Matches in a clean LF checkout (recomputed this session). v1 nonetheless banked `frozen_seed_hash`, so the scoring tree materialized CRLF. Check, do not assume. | Any `score_manifest()` verdict |
+| **P6** | The P9 seed file's sha256 recomputed **from the tree that will score**, == `4ede74d3110a067c2e5e625b65c1992b4c7d25ad8788f80b8c1ec053e1392172` | **Check, do not assume.** v1 banked `frozen_seed_hash` on the equivalent check because its scoring tree materialized CRLF. Getting `0e1861d3…` instead means exactly that. | Any `score_manifest()` verdict |
 | **P7** | Adversarial review of **this** document, posted on the PR | Not done for this rewrite. | Launch decision |
 | **P8** | **MiniWoB tool-surface interface repair, rebuilt into the world image and re-pinned** (§3, §0.2) | **NOT DONE.** `world_mcp.py:405-407` promises a key NAME the code cannot accept; `world_mcp.py:391-397` calls y>176 "unreachable" without mentioning that the page scrolls. | Arm W being a fair test at all |
-| **P9** | **Fresh MiniWoB held-out seeds**, drawn and hash-committed before the run (§4.1) | **NOT DONE.** 1000-1004 are spent (§4). **Requires an additive edit to `eval/score_gate0.py::MODES` — see §0.2.** | Arm W as held-out evidence |
+| **P9** | **Fresh MiniWoB held-out seeds**, drawn and hash-committed before the run (§4.1) | **DRAWN, NOT CLOSED.** Block `[417545, 662948, 660918, 981149, 558952]`, `frozen_seed_sha256` `4ede74d3…2172` (PR #179, recomputed here). **Closes only when BOTH #179 and this document merge** — the fixture is the numbers, this document is the formula (§4.1.3). Still **requires an additive edit to `eval/score_gate0.py::MODES` — see §0.2.** | Arm W as held-out evidence |
 
-**Priority order:** P8 → P9 → P1a → P1b → P2 → P3/P4 → P5/P6 → P7. P8 comes first because P1a's human
+**Priority order:** P8 → P9 → P1a → P1b → P1c → P2 → P3/P4 → P5/P6 → P7. P8 comes first because P1a's human
 baseline and P9's seed draw are both downstream of it: capturing a denominator against the broken
 interface, or drawing seeds before the image is re-pinned, wastes the work.
 
@@ -207,6 +208,31 @@ proved this. Even with the file present, `eval/score_gate0.py:255` compares
 completed capture with an unchanged pin yields `source_hash:miniwob_human` instead of
 `source_unreadable:miniwob_human` — the same `INSUFFICIENT_DATA` / `INSUFFICIENT_SOURCE` verdict,
 one line further down. So:
+
+### P1c — the RED arm needs a human baseline too, and the existing one is in the wrong mode
+
+Easy to miss, because Red's *numbers* are fine and have been used all along.
+`runs/gate0_human_baseline/red/human_metrics.json` carries `mode: "readiness_dev"` (verified this
+session, alongside `arm: "red"`, `role: "human"`, `schema_version: 1`, `233.288 s`, `271` actions).
+`_verify_sources` requires
+`(schema_version, arm, role, mode) == (1, arm, "human", mode)` for the mode **being scored**
+(`eval/score_gate0.py:278-279`), so under `paid_gate0` — and equally under P9's new
+`paid_gate0_v2` — this yields **`human_metric_identity:red`**, a `source` failure, hence
+`INSUFFICIENT_DATA` for the whole gate.
+
+**Why nobody has seen it fire yet, and why that is not reassurance.** When `red_agent`'s hash pin
+does not match, `_verify_sources` hits `continue` at `:257` and never populates `loaded["red_agent"]`;
+the identity block then skips the arm entirely (`:273-275`). So today `paid_gate0` yields only
+`source_hash:red_agent` and the identity failure is **masked**. It **will fire the moment a real red
+agent run exists and its hash is frozen** — i.e. exactly when P5 succeeds. Fixing P5 uncovers this.
+
+**Required:** a Red human baseline whose `mode` field matches the mode being scored, captured with
+`tools/capture_gate0_baseline_red.py` under that mode. The design doc's *"Red uses the same fixed
+start for agent and human"* means the underlying play need not be redone for held-out reasons — but
+the artifact must be produced under the correct mode rather than hand-edited, since `runs/` is
+append-only raw data and editing a banked artifact to satisfy a scorer is exactly the move this
+pre-registration exists to forbid. **Whether that means a fresh capture or a tool change is a
+decision for the P8/P9 batch, not for this document.**
 
 - **P1a — capture.** Produce `runs/gate0_paid_human_baseline/miniwob/human_metrics.json`.
 - **P1b — freeze the hash.** Set `artifact_sha256.miniwob_human` in the P9 mode's source-pins fixture
@@ -486,19 +512,42 @@ fixed in a merged document before the run**, not from the hash.
 2. **6-checkbox requirement — binding, not optional.** The accepted set **must contain at least one
    seed that renders six checkboxes**, since that is the layout P8 repairs and the only layout on
    which H-e is testable. Determine each candidate's checkbox count by instantiating the task at that
-   seed **without playing it** (`$0`, no model call, no reward observed), and if the first five
-   accepted seeds contain none, continue the walk and **replace the last accepted seed** with the
-   next accepted candidate that does. Record the walk in full — every `i`, every candidate, every
-   accept/reject and why — in the verdict report, so the list is reproducible and the replacement is
-   auditable. A rule applied by formula is not post-hoc selection; a rule invented afterwards would
-   be.
-3. **Commit the hash before the run.** Compute the SHA-256 of the seed file's LF-canonical bytes and
-   **write that literal 64-hex value into this document and into the P9 source-pins fixture before
-   launch.** Until that value is actually written here, this pre-registration commits to nothing on
-   seeds — the placeholder below must be replaced, not left as prose.
+   seed **without playing it** (`$0`, reset-only, no model call, no reward observed), and if the
+   first five accepted seeds contain none, continue the walk and **replace the last accepted seed**
+   with the next accepted candidate that does. Record the walk in full — every `i`, every candidate,
+   every accept/reject and why — so the list is reproducible and the replacement is auditable.
 
-   > `frozen_seed_sha256` (P9): `__________________________________________________________________`
-   > — **UNSET. Filling this in is part of P9; the document is not frozen on seeds until it is.**
+   **The checkbox count is a property of the WORLD IMAGE, not of the seed alone.** This is the one
+   genuinely fragile step in the procedure: P8 rebuilds the MiniWoB image before launch, so a later
+   reader re-measuring the same candidates against a *different* image could faithfully follow this
+   rule and legitimately derive a **different** fifth seed. Two requirements close that gap:
+   - The derivation **must record the world-image digest and the miniwob++ version it was measured
+     against**, alongside the walk.
+   - **Once frozen, the recorded seed block binds — not the re-derivable rule.** The formula's job
+     was to fix the block before anyone saw a result; after freezing, the block in step 3 is the
+     authority, and a re-derivation that disagrees indicates a changed measurement environment, not
+     a licence to substitute seeds.
+3. **Commit the hash before the run — FILLED.** The draw was executed per steps 1-2 in **PR #179**
+   and independently recomputed here (all nine candidates and both hash variants reproduced exactly).
+
+   - **Walk from `i=0`:** `417545, 662948, 660918, 981149, 189410, 751969, 824167, 567613, 558952`.
+   - `i=0..4` accepted with **zero** rejections, but that base draw measured **5/5/2/2/3** checkboxes
+     — **no 6-checkbox layout**, failing step 2. Per step 2 the last accepted seed (`189410`) was
+     replaced by walking on: `i=5 → 751969` (5 boxes), `i=6 → 824167` (3), `i=7 → 567613` (2),
+     `i=8 → 558952` (**6 boxes**) — accepted.
+   - **Final frozen block:** **`[417545, 662948, 660918, 981149, 558952]`** — five distinct seeds,
+     disjoint from the dev seeds `{0..4}` and the spent v1 seeds `{1000..1004}` (both verified).
+   - **`frozen_seed_sha256` = `4ede74d3110a067c2e5e625b65c1992b4c7d25ad8788f80b8c1ec053e1392172`**
+     — the LF-canonical bytes, equal to the git blob. The CRLF variant would be `0e1861d3…`; if the
+     scoring tree ever produces that value, the checkout materialized CRLF and P6 has failed.
+   - **`558952` is the H-e test case.** If it is ever dropped or substituted, H-e becomes vacuous and
+     §3's interface diagnosis goes untested.
+
+   **P9 does NOT close when PR #179 merges.** §4.1's protection comes from *the formula being fixed
+   in a merged document before the run* — PR #179 is the **fixture**; **this document is the
+   formula**. The fixture alone binds nothing: without the merged rule, the block is just five
+   numbers with no account of why those five. **P9 closes only when BOTH #179 and this document
+   (#162, with the block and hash above) are merged.** Do not tick P9 off after #179 alone.
 
 4. **Freeze at launch.** Write the seed file, check its hash against the committed value, and set
    `frozen_seed_sha256` in the new mode's source-pins fixture. A mismatch aborts the launch — no
@@ -901,18 +950,20 @@ Both arms. v1 cost `$0.41589` / `10.397275` credits (Red) and `$1.02958` / `25.7
 
 ## 12. Is this document freezable?
 
-**The document is freezable. The run is not yet launchable.** Every metric, predicate, bar, and
-disconfirmation condition above is fixed and mechanically checkable before any v2 number exists,
-and none of them can be re-read favourably afterwards. The pass bar is one the scorer can actually
-print — demonstrated at `$0` in §0.1, not assumed. What blocks launch is the P1-P9 precondition
-list, not an open question of interpretation.
+**The document is freezable, and the last hole in it is now filled.** Every metric, predicate, bar,
+and disconfirmation condition is fixed and mechanically checkable before any v2 number exists, and
+none can be re-read favourably afterwards. The pass bar is one the scorer can actually print
+(§0.1, demonstrated at `$0`). The seed block and its hash are recorded in §4.1.3, so merging this
+document commits to a specific five seeds and a specific H-e test case (`558952`) — the earlier
+UNSET placeholder is gone. What blocks launch is the P1a-P9 precondition list, not an open question
+of interpretation.
 
 **The gap to launch is now larger than fixture work.** P8 and P9 each require a code change with
 its own plan, branch, and adversarial review (§0.2), plus one world-image rebuild and a two-pass pin
 re-freeze (§6.5). That is real engineering, not bookkeeping — but it is the honest price of Arm W
 being a fair test rather than a banked interface defect.
 
-Freeze this document, complete P1-P9 in the priority order given in §0, then launch. Do not launch
+Freeze this document, complete P1a-P9 in the priority order given in §0, then launch. Do not launch
 with any precondition open.
 
 ## Sources
