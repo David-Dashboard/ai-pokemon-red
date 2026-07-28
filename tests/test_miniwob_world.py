@@ -47,9 +47,17 @@ class _FakeInstance:
         self.driver = _FakeDriver(calls)
 
 
+class _FakeActionSpaceConfig:
+    """The real miniwob ActionSpaceConfig's `allowed_keys` tuple. PRESS_KEY's `key` field is a
+    Discrete(len(allowed_keys)) INDEX into this, never a keysym — MiniWobSession._resolve_key reads it to
+    turn the brain's key NAME into that index. Angle-bracketed, same shape as the real vocabulary."""
+    allowed_keys = ("<Enter>", "<Tab>", "<ArrowDown>", "<ArrowUp>", "<Backspace>")
+
+
 class _FakeUnwrapped:
     def __init__(self, calls: list):
         self.instance = _FakeInstance(calls)
+        self.action_space_config = _FakeActionSpaceConfig()
 
     def create_action(self, action_type, **kwargs):
         return {"type": action_type, **kwargs}

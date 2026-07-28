@@ -102,8 +102,8 @@ def code_sha256(path: "str | Path", *, repo_root: "Path | None" = None) -> str:
 # Per-world registry so this harness serves ANY world via `--game`, not just Cave Noire. Each entry is the
 # import paths + the per-world bits (default ROM, the RAM `watch` for the SCORING oracle — never on the wire).
 # Lean worlds share the structure (a PerceptionPlugin subclass + a GridPerceiver-based perceiver + a sandbox).
-_NDS_WORLDS = frozenset({"nds"})   # game keys that are NDS worlds (get touch + NDS buttons)
-_GBA_WORLDS = frozenset({"kirby_gba", "emerald_gba"})   # game keys that are GBA worlds (mgba, no touch)
+_NDS_WORLDS = frozenset({"nds", "mkds"})   # game keys that are NDS worlds (get touch + NDS buttons)
+_GBA_WORLDS = frozenset({"kirby_gba", "gba_generic", "emerald_gba"})   # game keys that are GBA worlds (mgba, no touch)
 # MiniWoB++ computer-use worlds: a task-per-entry registry (mirrors the rest of GAMES — one key per
 # concrete playable task, e.g. "kirby_gba" is one ROM) rather than a generic "--game miniwob --task foo"
 # passthrough. Reasons: (1) --game's argparse `choices=` validation stays uniform and fails loud on typos
@@ -169,7 +169,20 @@ GAMES = {
             "sandbox": "NDS_MCP_SANDBOX",
             "perceiver_mod": "core.nds_perceiver", "perceiver": "NDSPerceiver",
             "rom": "roms/nds/game.nds",   # override with --rom
-            "watch": {}},
+            "watch": {}},   # ROM-GENERIC carrier: stays {} forever. Any oracle here would apply to EVERY .nds.
+    # Mario Kart DS: the ROM-SPECIFIC NDS key. "nds" above is a generic carrier (any .nds via --rom), so a
+    # `watch` entry there would claim to be the oracle for every DS ROM anyone ever mounts. This entry exists
+    # so MKDS's eventual lap/race oracle has a key that means only MKDS -- same reason gb_generic and
+    # kirby_dreamland are separate keys. Otherwise a byte-for-byte clone of "nds" (same plugin/perceiver/
+    # sandbox, same tool surface via _NDS_WORLDS/_NDS_SKILLS_WORLDS/_NDS_TOUCH_DRAG_WORLDS membership).
+    # watch DELIBERATELY EMPTY: the EX05 lap-counter base is savestate-specific (it moves between races),
+    # so pinning it now would bake in ground truth that is wrong for any other savestate. Adding the KEY is
+    # the free half; wiring an unvalidated address is the half that costs a second image rebuild to undo.
+    "mkds": {"pkg": "core.nds_perception_plugin", "plugin": "NDSPerceptionPlugin",
+             "sandbox": "NDS_MCP_SANDBOX",
+             "perceiver_mod": "core.nds_perceiver", "perceiver": "NDSPerceiver",
+             "rom": "roms/nds/Mario Kart DS (USA) (En,Fr,De,Es,It).nds",
+             "watch": {}},
     "pokemon_red": {"pkg": "games.pokemon_red", "plugin": "PokemonRedPlugin", "sandbox": "POKEMON_SANDBOX",
                     "perceiver_mod": "games.pokemon_red.perceiver", "perceiver": "OverworldPerceiver",
                     "rom": "roms/PokemonRed.gb",
@@ -184,6 +197,20 @@ GAMES = {
                   "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                   "rom": "roms/gba/Kirby - Nightmare in Dreamland (U) [!].gba",
                   "watch": {}},
+    # The ROM-GENERIC GBA carrier, split OUT of kirby_gba. tools/make_probe_launcher.py used to point
+    # _GBA_CARRIER_GAME at kirby_gba and hand it any .gba via --rom, which meant kirby_gba could never hold
+    # a Kirby-specific `watch` without that oracle silently claiming to describe every GBA ROM probed
+    # through the carrier. This key takes over the carrier job (watch stays {} forever, same contract as
+    # "nds"); kirby_gba is now free to hold a ROM-specific watch later. Same plugin/perceiver/sandbox and
+    # the same default ROM as kirby_gba -- the carrier's default is never used (make_probe_launcher always
+    # passes --rom), and reusing a real, existing path keeps test_gba_world_rom_path_exists honest.
+    # watch DELIBERATELY EMPTY on BOTH: EX04's Kirby-GBA level predicate is not yet validated against a
+    # real level clear, and an unvalidated oracle frozen into a Gate-0 pin costs a second rebuild to fix.
+    "gba_generic": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
+                    "sandbox": "GBA_MCP_SANDBOX",
+                    "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
+                    "rom": "roms/gba/Kirby - Nightmare in Dreamland (U) [!].gba",
+                    "watch": {}},
     "emerald_gba": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
                     "sandbox": "GBA_MCP_SANDBOX",
                     "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
@@ -217,7 +244,16 @@ GAMES = {
     "kirby_dreamland": {"pkg": "core.perception_plugin", "plugin": "PerceptionPlugin",
                         "perceiver_mod": "core.grid_perceiver", "perceiver": "FollowCameraPerceiver",
                         "rom": "roms/Kirby's Dream Land (USA, Europe).gb",
-                        "watch": {"hp": 0xD086}},
+                        # stage @ 0xD03B is the 0-INDEXED stage selector (0=Green Greens, 1=Castle Lololo,
+                        # 2=Float Islands, 3=Bubbly Clouds, 4=Mt. Dedede), a plain int like hp above.
+                        # Established CAUSALLY (writing it before a stage load determines which stage
+                        # loads), then held over 9,000 frames of live play with 0 spurious transitions and
+                        # confirmed reading 4 at Stage 4 -- reports/2026-07-26-oracle-kirby-gb-stage3.md
+                        # (PR #173). SCORER HAZARD, read before writing any predicate on this: `== 0` is
+                        # NOT "reached Green Greens" -- 0 is ALSO the uninitialized boot value AND the
+                        # post-game-over title-screen value, so it cannot tell progress from
+                        # never-having-started. Only `>= 2` is meaningful (Stage 3 == index 2).
+                        "watch": {"hp": 0xD086, "stage": 0xD03B}},
     # GATE-3D-A1 (reports/2026-07-04-vizdoom-3d-floor-design.md + AMENDMENT A1): ViZDoom
     # defend_the_center, symbolic-only seam (P1 yaw + P2 movers + episode status; no screenshot, no
     # game variables on the wire). No pkg/plugin/rom entry — DoomDtcSession below is a standalone
@@ -391,7 +427,12 @@ _MINIWOB_CLICK_TOOL = {
     "description": ("Click at pixel (x, y) on the task page. (x, y) must be inside the real clickable "
                     "viewport (x 0-159, y 0-176): the page is 210px tall but the headless browser can "
                     "only click down to y=176, so a click outside that band is REJECTED with an error "
-                    "(never silently moved) — anything rendered below y=176 is unreachable."),
+                    "(never silently moved). Something rendered below y=176 is NOT out of reach — the "
+                    "page SCROLLS. Bring it up into the clickable band, then re-observe (everything "
+                    "shifts up ~39px per scroll) and click its NEW coordinates. Two ways to scroll: "
+                    "press_key \"ArrowDown\" scrolls immediately and needs no focus; repeated press_key "
+                    "\"Tab\" walks focus through the page and scrolls once focus passes the fold (on a "
+                    "6-checkbox click-checkboxes layout the 7th Tab reaches Submit)."),
     "inputSchema": {"type": "object",
                     "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
                     "required": ["x", "y"]},
@@ -403,7 +444,11 @@ _MINIWOB_TYPE_TOOL = {
 }
 _MINIWOB_KEY_TOOL = {
     "name": "press_key",
-    "description": "Press a single keyboard key (e.g. \"Enter\", \"Tab\", \"ArrowDown\") on the task page.",
+    "description": ("Press a single keyboard key on the task page. Pass the key NAME, e.g. \"Enter\", "
+                    "\"Tab\", \"ArrowDown\" (angle brackets optional: \"<Enter>\" works too). Names are "
+                    "resolved against this environment's own key vocabulary; an unknown name is "
+                    "REJECTED with the list of valid names, never silently dropped. \"ArrowDown\" "
+                    "scrolls the page; \"Tab\" advances focus (and scrolls once focus passes the fold)."),
     "inputSchema": {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
 }
 _MINIWOB_RESET_TOOL = {
@@ -844,7 +889,7 @@ _NDS_SKILL_TOOLS = [_NDS_DEFINE_SKILL_TOOL, _NDS_RUN_SKILL_TOOL]
 
 # nds ONLY (mirrors Kirby's one-world-per-flag scoping) — a future third continuous-time world pins its
 # own flag too, never a shared SKILLS_WORLDS var.
-_NDS_SKILLS_WORLDS = frozenset({"nds"})
+_NDS_SKILLS_WORLDS = frozenset({"nds", "mkds"})
 
 
 def _nds_skills_enabled() -> bool:
@@ -894,8 +939,11 @@ _TOUCH_DRAG_TOOL = {
                     "required": ["x1", "y1", "x2", "y2"]},
 }
 
-# nds ONLY (mirrors _NDS_SKILLS_WORLDS's one-world-per-flag scoping).
-_NDS_TOUCH_DRAG_WORLDS = frozenset({"nds"})
+# NDS worlds only (mirrors _NDS_SKILLS_WORLDS's scoping exactly). "mkds" is included for the same reason
+# it is in _NDS_SKILLS_WORLDS: it is a pure clone of "nds" that exists only to give MKDS a ROM-specific
+# key for a future oracle. MKDS is the world this drag primitive was built for, so omitting it here would
+# make `--game mkds` a strict capability DOWNGRADE from `--game nds` -- the opposite of the split's intent.
+_NDS_TOUCH_DRAG_WORLDS = frozenset({"nds", "mkds"})
 
 
 def _nds_touch_drag_enabled() -> bool:
@@ -2248,6 +2296,34 @@ class MiniWobSession:
         first = (str(e).splitlines() or [""])[0]
         return f"{type(e).__name__}: {first[:200]}"
 
+    def _resolve_key(self, key: str) -> str:
+        """Resolve a press_key NAME ("Enter", "<Enter>") to the index miniwob's PRESS_KEY field actually
+        wants, raising ValueError with the valid vocabulary on a miss.
+
+        WHY THIS EXISTS: miniwob's PRESS_KEY `key` field is a Discrete(104) INDEX into the env's own
+        `allowed_keys` tuple, not a keysym — passing the raw name reaches `int("Tab")` and dies with
+        `ValueError: invalid literal for int()`. The tool description promised names, so a banked paid
+        run lost both its 'Tab' and 'Enter' presses to that error. This is the SAME name->index
+        resolution tools/capture_gate0_baseline_miniwob.py:196-202 already does for the human baseline
+        rig (PR #174), lifted to the agent's side of the seam so the two interfaces finally match:
+        that rig records the gap as PRESS_KEY_RESOLUTION = "name->index (agent received raw-name
+        passthrough)", an asymmetry that made the HUMAN denominator faster than the agent's numerator.
+
+        A bare digit string still passes through unchanged, so anything already sending a raw index
+        keeps working. Fixing the DESCRIPTION instead was the alternative and was rejected: nothing on
+        this tool surface enumerates the 104-entry ordering, so "it's an index" would have left the
+        brain unable to press any key at all without a 104-name dump in the schema.
+        """
+        name = key.strip()
+        if name.isdigit():
+            return name
+        allowed = list(self.mw.env.unwrapped.action_space_config.allowed_keys)
+        for candidate in ((name if name.startswith("<") else f"<{name}>"), name):
+            if candidate in allowed:
+                return str(allowed.index(candidate))
+        raise ValueError(f"press_key: {name!r} is not a key in this task's vocabulary. Valid names include: "
+                         + ", ".join(k.strip("<>") for k in allowed[:11]) + ".")
+
     def call(self, name: str, args: dict) -> list[dict]:
         args = args or {}
         if name == "observe":
@@ -2308,7 +2384,11 @@ class MiniWobSession:
             if "key" not in args:
                 return [{"type": "text", "text": "press_key needs a string `key`."}]
             try:
-                _, ep_over = self.mw.press_key(str(args["key"]))
+                resolved = self._resolve_key(str(args["key"]))
+            except ValueError as e:
+                return [{"type": "text", "text": str(e)}]
+            try:
+                _, ep_over = self.mw.press_key(resolved)
             except Exception as e:
                 return [{"type": "text", "text": f"press_key error: {self._sanitize_exc(e)}"}]
             head = f"[press_key {args['key']} -> ok]"

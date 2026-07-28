@@ -131,12 +131,15 @@ def _mcp_config(slug: str, family: str, rom_path: str, repo_wsl: str, repo_root:
     }}}
 
 
-# Any already-registered GBA world key works as a generic-GBA carrier via --rom override: kirby_gba's
-# pkg/plugin/perceiver (core.perception_plugin.PerceptionPlugin + core.grid_perceiver.FollowCameraPerceiver)
-# is already game-agnostic — the registry entry only pins a default ROM, which --rom replaces. No new
-# "gba_generic" registry key is needed (gb_generic is GB-family only; a GBA ROM must use a GBA-family key
-# so world_mcp.py's --rom/--game family check, ext == fam, agrees).
-_GBA_CARRIER_GAME = "kirby_gba"
+# The generic-GBA carrier: any .gba ROM rides this key via --rom override, since its pkg/plugin/perceiver
+# (core.perception_plugin.PerceptionPlugin + core.grid_perceiver.FollowCameraPerceiver) is game-agnostic and
+# the registry entry only pins a default ROM, which --rom replaces. It must be a GBA-family key (gb_generic
+# is GB-family only) so world_mcp.py's --rom/--game family check, ext == fam, agrees.
+# Repointed from "kirby_gba" to the dedicated "gba_generic" key: this pointer is exactly what made
+# kirby_gba ROM-generic, so any `watch` oracle added to kirby_gba would have silently claimed to describe
+# every GBA ROM probed through here. gba_generic's watch is contractually {} forever; kirby_gba is now free
+# to hold a Kirby-specific oracle without leaking it to unrelated probes.
+_GBA_CARRIER_GAME = "gba_generic"
 
 
 def _gba_server_sh(slug: str, rom_path: str, repo_wsl: str, repo_root: str) -> str:
