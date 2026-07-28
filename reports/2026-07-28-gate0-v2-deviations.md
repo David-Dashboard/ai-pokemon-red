@@ -114,7 +114,7 @@ touched.
 
 ## D4 — the LAUNCHER's own v1 hardcodes were not pre-registered, and had to be fixed to launch at all
 
-**Landed by:** PR #PRNUM, `fix/gate0-launcher-mode`.
+**Landed by:** PR #192, `fix/gate0-launcher-mode`.
 **Touches:** `tools/gate0_appserver_arm.py` + its tests only. No fixture, no scorer, no `runs/`
 artifact, and **not** `reports/2026-07-25-gate0-v2-prereg.md`.
 
