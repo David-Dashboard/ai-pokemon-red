@@ -6,7 +6,39 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
-## 2026-07-28 (latest) — Superseding stale text IN PLACE is a correctness task, not tidiness
+## 2026-07-28 (latest) — I closed my own bound on evidence of the wrong SHAPE
+- **What:** the EX02 bound was *"confirm `0xD03B` reads 3 at the Stage-3 → Stage-4 boundary."* I banked it
+  as discharged on the strength of a causal experiment — `0xD03B` was WRITTEN to 3, Bubbly Clouds loaded,
+  the value held 4,740 frames. PR #183 retracted that the same day; the bound is STILL OPEN. `$0`.
+- **The finding:** the evidence was genuinely *better* in one dimension — causal rather than merely
+  correlational — and still not the observation the bound asked for. The bound wanted the byte to
+  **increment on a real transition**, seen twice; it has been seen once (`1 → 2`, human run). Writing a
+  value and watching the stage load proves the byte is the stage SELECTOR, which is a different claim.
+  **Closing a bound on stronger-but-differently-shaped evidence is exactly the failure the bound existed
+  to prevent** — and I was the one who had set it.
+- **Method note:** a bound is a sentence with a fixed subject, verb, and count. Before discharging one,
+  restate it verbatim and check the new evidence against each of those three, not against your overall
+  confidence. If the honest answer is "I have something better but different", the bound stays open and
+  the new result gets banked beside it. Corollary from the same day: when a document contradicts itself
+  (`reports/2026-07-26-oracle-kirby-gb-stage3.md` said both "bound MET" and "still needs its anchor"),
+  the CAUTIOUS clause is the one to trust until re-derived — here `:350` was right and the headline wrong.
+
+## 2026-07-28 — Reviewing a change and verifying the resulting state are different activities
+- **What:** PR #177 shipped `reports/probes/2026-07-28-mkds-lap-oracle/poke_test.py`, which matched
+  pytest's `*_test.py` pattern, booted a DeSmuME emulator **at import**, poisoned `core.nds_emulator`,
+  aborted collection of `tests/test_nds_touch_drag.py`, and wrote PNGs into a committed evidence dir.
+  **Four adversarial reviewers passed over that PR and none caught it.** Fixed in PR #184 with
+  `norecursedirs += reports/probes`; the root suite is back to 1652 passed, 18 skipped.
+- **The finding:** every reviewer read the DIFF, and the diff is clean — a standalone probe script is a
+  reasonable thing to commit. The defect exists only in the *interaction* between the new file's NAME and
+  the suite's collection rules, and only when pytest runs from the repo ROOT on the MERGED tree. No amount
+  of adversarial diff-reading finds it, because it is not in the diff.
+- **Method note:** a review gate that only reads diffs cannot catch collection-order, import-side-effect,
+  or naming-collision defects. Run the suite from the repo root on the merged result at least once per
+  batch of merges, and treat "committed artifact whose filename matches a tooling glob" as its own hazard
+  class (`*_test.py`, `conftest.py`, `setup.py`, `__init__.py` under a scanned tree).
+
+## 2026-07-28 — Superseding stale text IN PLACE is a correctness task, not tidiness
 - **What:** a ten-PR day (#129, #162, #173-#180 minus #172; main `b890d8c`). Twice in one session a
   merged document was left asserting something the same day's later work had falsified — and the
   second leak was into `HANDOFF.md`, the continuity spine itself (its 2026-07-28 block still said the

@@ -7,18 +7,21 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-28, DAY CLOSE (TEN PRs merged, **zero left open**, main `b890d8c`, **$0 — no model
-turn launched today**. The Gate-0 v2 pre-registration is **FROZEN ON MERGE** (#162); the EX02 Kirby stage
-oracle `0xD03B` is causally established (#173) **and now WIRED** (#180); four oracle hunts banked
-(EX02 FOUND, EX04 candidate-not-settled, EX05 found-but-address-moves, EX03 NOT FOUND); the MiniWoB
-human-baseline rig is repaired (#174) and both world images were genuinely rebuilt + re-pinned (#180).
-The two banked paid Gate-0 arms remain **VOID** (#175) — the cause is proven benign and that does not
-un-void them.)_
+_Last updated: 2026-07-28, DAY CLOSE (TWELVE PRs merged, main `13e4592`, **$0 — no model turn launched
+today**; PR #181 is APPROVED BUT HELD, deliberately. The Gate-0 v2 pre-registration is **FROZEN ON MERGE**
+(#162); the EX02 Kirby stage oracle `0xD03B` is causally established (#173) **and now WIRED** (#180) —
+⚠ **but its Stage-3 → Stage-4 boundary bound is STILL OPEN**: it was called discharged and RETRACTED the
+same day (#183), the fourth retraction on this hunt. Four oracle hunts banked (EX02 FOUND, EX04
+candidate-not-settled, EX05 found-but-address-moves, EX03 NOT FOUND); the MiniWoB human-baseline rig is
+repaired (#174) and both world images were genuinely rebuilt + re-pinned (#180). The two banked paid
+Gate-0 arms remain **VOID** (#175) — the cause is proven benign and that does not un-void them.)_
 
-**=>=> NEWEST (2026-07-28, day close) - TEN PRs MERGED, ZERO OPEN; GATE-0 v2 PREREG FROZEN; EX02 ORACLE WIRED; $0. =>=>**
+**=>=> NEWEST (2026-07-28, day close) - TWELVE PRs MERGED (#181 HELD); GATE-0 v2 PREREG FROZEN; EX02 ORACLE WIRED BUT ITS STAGE-4 BOUND RETRACTED BACK OPEN; $0. =>=>**
 
-**Merged today, main = `b890d8c`.** `gh pr list --state open` returns EMPTY — there is no open PR in this
-repo for the first time in weeks. Ten PRs: #129, #174, #175, #173, #176, #177, #178, #179, #162, #180.
+**Merged today, main = `13e4592`. TWELVE PRs:** #129, #174, #175, #173, #176, #177, #178, #179, #162,
+#180, then #184 and #183 late. **PR #181 is APPROVED BUT HELD, deliberately — see LATE LANDINGS.** (An
+earlier draft of this block said "ten PRs, zero open"; #183/#184 landed after it was written, and #181 was
+opened and held. Corrected here rather than left standing.)
 
 1. **DONE — #129 graduation exam v1 merged, and the merge is explicitly NOT THE FREEZE.** The document
    (`reports/2026-07-22-graduation-exam-v1-definition.md`) opens with a banner: *"⚠ MERGING THIS PR DOES
@@ -65,11 +68,10 @@ repo for the first time in weeks. Ten PRs: #129, #174, #175, #173, #176, #177, #
    wrong:** value `3` held **4,740 frames** of live Bubbly Clouds (159 sampled rows) before a title-screen
    reset; the **9,000**-frame figures belong to two OTHER runs — the Float Islands hold at value `2`, and
    the reverse-dissociation in Green Greens where `0xD03B`=0 while all four rival candidates still read
-   `1` (that is the result that kills them as stale latches). ⚠ **The Stage-3→Stage-4 boundary was never
-   actually crossed**; the original bound ("confirm `0xD03B` reads 3 at the boundary before wiring") was
-   discharged by a SUBSTITUTE — causal write plus sustained hold. Defensible, but it is a substitution,
-   and `reports/2026-07-26-oracle-kirby-gb-stage3.md:350` still contradicts the discharge in place.
-   Values `3` and `4` have never been produced by the game unforced. **Wiring hazard stands: `0` is also
+   `1` (that is the result that kills them as stale latches). ⚠⚠ **THE STAGE-4 BOUND IS STILL OPEN —
+   #183 RETRACTED THE DISCHARGE (see LATE LANDINGS below). Do not re-assert it.** Value `3` was **written**,
+   not reached; the increment has been observed exactly once (`1 → 2`, human run), and the bound asks for
+   a second. Values `3` and `4` have never been produced by the game unforced. **Wiring hazard stands: `0` is also
    the uninitialized boot value and the post-game-over title screen — a predicate keyed on `== 0` is
    unsafe; `>= 2` is meaningful.**
 7. **DONE — #180 batched world change + full image rebuild + Gate-0 re-pin.** (a) **The EX02 oracle IS
@@ -112,6 +114,36 @@ repo for the first time in weeks. Ten PRs: #129, #174, #175, #173, #176, #177, #
    code block at `:91`) so even a blind copy-paste carries the warning. ⚠ **It has FOUR entries, not
    three:** `map_group`/`map_num`/`y` are falsified, and the fourth (`x = 0x02037360`) survives but is
    **u16**, which the byte-only `watch` reader cannot express — so all four are unusable as written.
+
+**LATE LANDINGS — merged after this block was first drafted, and one of them corrects it:**
+- **⚠⚠ #183 — A FOURTH RETRACTION ON THE KIRBY HUNT: "the Stage-4 bound is DISCHARGED" IS RETRACTED.**
+  The Stage-3 → Stage-4 boundary was **never crossed**. `0xD03B` was **WRITTEN** to `3`, Bubbly Clouds
+  loaded, and the value held 4,740 frames — strong evidence the byte is the stage **SELECTOR**, but not
+  the observation the bound asked for. The bound wants the byte to **INCREMENT on a real transition**,
+  and that has been seen **exactly once** (`1 → 2`, in the human run), not twice. **To discharge: observe
+  `0xD03B` go `2 → 3` across a genuine Stage-3 → Stage-4 completion with NO memory write — which requires
+  actually clearing Float Islands.** #183 flipped the nav-layer item back to STILL OPEN and marked
+  `reports/2026-07-26-oracle-kirby-gb-stage3.md:350` as the statement that held up all along. **The
+  oracle itself is unaffected and stays wired** — the causal 0-4 map, the 9,000-frame Float Islands hold
+  and the Green Greens reverse-dissociation are all independent of this bound.
+- **#184 — a probe script was breaking the repo-root test suite.**
+  `reports/probes/2026-07-28-mkds-lap-oracle/poke_test.py` matched pytest's `*_test.py` pattern, booted a
+  DeSmuME emulator **at import**, poisoned `core.nds_emulator`, aborted collection of
+  `tests/test_nds_touch_drag.py`, and wrote PNGs into a committed evidence dir. Fixed with
+  `norecursedirs += reports/probes` in `pyproject.toml`; the root suite is now **1652 passed, 18 skipped**.
+  ⚠ **Four adversarial reviewers passed over PR #177 and none caught it** — they all reviewed the DIFF,
+  and the defect only exists when the suite runs from the ROOT on a MERGED tree.
+- **#181 (v2 pin freeze) — APPROVED BUT HELD, NOT MERGED. Do not merge it to "tidy up".** Two reasons,
+  both load-bearing: (a) the frozen prereg **§6.2** requires 8a/8b to be computed **after** P8's rebuild
+  **and after items 1-2 are re-frozen** — items 1-2 are still the **v1** `task_sha256`; (b) merging early
+  **removes a working tripwire** — the `PENDING_` placeholder is what makes v2 return a clean
+  `INSUFFICIENT_DATA`, and clearing it turns a pre-run v2 result into an unhandled `FileNotFoundError`.
+- **⚠ `world_mcp.py:250` CARRIES A WRONG COMMENT, added by #180.** It says the byte was *"confirmed
+  reading 4 at Stage 4"* — **wrong value AND wrong claim**: the counter is 0-indexed, so Stage 4 reads
+  **3**, and nothing was confirmed at a Stage-4 boundary at all (see #183). **Anyone wiring a Stage-4
+  predicate off that comment will key it on `== 4` and be wrong.** Not fixable in isolation:
+  `world_mcp.py` is byte-pinned by `eval/fixtures/gate0_expected_pins*.json`, so a comment edit breaks
+  Gate-0 parity and forces another image rebuild — **queued for the next batched world PR.**
 
 **OPERATIONAL FACTS a future session most needs (verified this session, quote these not the folklore):**
 10. **The `watch` contract, precisely.** It is `watch: Optional[dict]` (`core/perception_plugin.py:74`),
@@ -168,9 +200,14 @@ repo for the first time in weeks. Ten PRs: #129, #174, #175, #173, #176, #177, #
     wired into the world; the SCORER predicate is not written. **EX02 is not scorable today** — the exam
     is still 4/10, and #180 did not change that.
 17. **`gate0_paid_v2_source_pins.json`'s `expected_pins_sha256` is NOT frozen** — both arms read the literal
-    `PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin`. Fails closed by design.
-    **Receipt for "undone": as of this wrap there is NO open PR and no unmerged origin branch doing it**
-    (`gh pr list --state open` empty; every origin branch is an ancestor of `main`).
+    `PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin`. **Fails closed by design,
+    and that failure mode is a FEATURE, not debt: the placeholder is what yields a clean
+    `INSUFFICIENT_DATA`.** PR #181 does the freeze, is **APPROVED but deliberately HELD** on prereg §6.2
+    (items 1-2 are still v1 `task_sha256`) — see LATE LANDINGS for both hold reasons.
+17b. **BLOCKER FOR THE NEXT SESSION, and it must land BEFORE #181:** a ~2-line
+    `try/except → source_unreadable:oracle:<arm>` fix in the scorer, so that once the v2 pins are cleared
+    a dead run yields a **verdict** instead of a stack trace. It changes scorer SEMANTICS and affects
+    `readiness_dev` identically, so it needs **its own reviewed PR** — do not smuggle it into #181.
 18. **The MiniWoB paid human baseline is STILL NOT CAPTURED** (prereg P1a). The rig blocker is resolved;
     this now waits only on David playing five episodes. `runs/gate0_paid_v2_human_baseline/miniwob/` does
     not exist on this machine at all. P1b (freeze `artifact_sha256.miniwob_human`) and P2
@@ -184,27 +221,33 @@ repo for the first time in weeks. Ten PRs: #129, #174, #175, #173, #176, #177, #
     `tools/capture_gate0_baseline_miniwob.py:12` (a module docstring). **Verified non-load-bearing**: no
     hash covers any of them, none feeds a predicate or a file-open. Cosmetic only.
 
-**=> NEXT (priority order):** (1) **Freeze `gate0_paid_v2_source_pins.json`'s `expected_pins_sha256`** for
-both arms against the rebuilt fixtures (prereg P4, §6 items 1-9) — nothing is in flight for it. (2)
-**Re-check the v2 six-checkbox seed measurement against the REBUILT image.** The draw is frozen and
-binding; `_measured_against.world_image_id` in the v2 pins records `sha256:8bb3358e…`, the **pre-rebuild**
-image the 5/5/2/2/6 counts were measured on. Prereg `:72-79` is explicit: a disagreement *"is a finding to
-report against P8's rebuild — not a licence to re-draw."* (3) Work the prereg preconditions in ITS stated
-order — **P8 → P9 → P1a → P1b → P1c → P2 → P3/P4 → P5/P6 → P7** — with P1a (David plays five episodes) the
-only one that needs a human. (4) Write the EX02 scorer predicate so `0xD03B` actually buys a scorable
-exam task, keyed on `>= 2`, never on `== 0`. (5) David's calls, unchanged: the exam pass bar (#129 merged
-but NOT frozen), and VizDoom held-out sign-off.
+**=> NEXT — the first two are fixed in this order, do not reorder them:**
+**(1)** Land the **`try/except → source_unreadable:oracle:<arm>` scorer fix** in its own reviewed PR
+(item 17b). **(2)** Re-freeze prereg **items 1-2** (still v1 `task_sha256`) — that is what unblocks
+**#181**, which is approved and waiting. Only then merge #181.
+Then: **(3)** Re-check the v2 six-checkbox seed measurement against the REBUILT image. The draw is frozen
+and binding; `_measured_against.world_image_id` in the v2 pins records `sha256:8bb3358e…`, the
+**pre-rebuild** image the 5/5/2/2/6 counts were measured on — **deliberate provenance, not a stale pin to
+"fix"**. Prereg `:72-79` is explicit: a disagreement *"is a finding to report against P8's rebuild — not a
+licence to re-draw."* **(4)** Work the remaining preconditions in the prereg's own order —
+**P8 → P9 → P1a → P1b → P1c → P2 → P3/P4 → P5/P6 → P7** — with P1a (David plays five episodes) the only
+one that needs a human. **(5)** Write the EX02 scorer predicate so `0xD03B` buys a scorable exam task,
+keyed on `>= 2`, never on `== 0`. **(6)** Next batched world PR: fix the wrong `world_mcp.py:250` comment
+(it will mislead anyone writing a Stage-4 predicate). **(7)** David's calls, unchanged: the exam pass bar
+(#129 merged but NOT frozen), and VizDoom held-out sign-off. **Not on this list: discharging the Stage-4
+bound** — that needs somebody to actually clear Float Islands, and no shortcut substitutes for it.
 
 **Paid ledger today (2026-07-28): $0.** No model turn was launched — no `claude -p`, no codex turn, no new
-directory under `runs/gate0_paid*`. All ten PRs are documentation, offline emulator probes (PyBoy / mgba
+directory under `runs/gate0_paid*`. All twelve PRs are documentation, offline emulator probes (PyBoy / mgba
 savestate sweeps / DeSmuME), and a local Docker image rebuild. Running total is unchanged from the banked
 2026-07-23/24 Gate-0 spend of $1.4455 + the $0.08 M1 ping. **Note on LEDGER.md:** it is still armed but
 frozen at its 2026-07-21 Gate-0 readiness slice and was NOT updated by this or several prior sessions —
 HANDOFF is the live spine; treat LEDGER as a stale artifact of that one run.
 
 _Prior update: 2026-07-28, earlier (★ EX02 STAGE ORACLE FOUND: 0xD03B — CAUSAL, the byte the game reads to
-pick the stage; other 4 candidates eliminated as stale latches; not yet wired at the time of writing — it
-was wired later the same day by PR #180.)_
+pick the stage; other 4 candidates eliminated as stale latches; wired later the same day by PR #180.
+⚠ Its Stage-3 → Stage-4 bound was called DISCHARGED in that block and RETRACTED the same day by PR #183 —
+item 5 below carries the corrected version; the bound is STILL OPEN.)_
 
 **=>=> PRIOR (2026-07-28, earlier) - ★ EX02 STAGE ORACLE FOUND: `0xD03B`. HUNT ANSWERED. $0. =>=>**
 1. **`0xD03B` is Kirby's 0-indexed STAGE COUNTER** — reads `0` in Green Greens, `1` in Castle
@@ -222,19 +265,26 @@ was wired later the same day by PR #180.)_
 4. ⚠ **NOT WIRED, deliberately** — editing `world_mcp.py` cascades into the frozen Gate-0
    host/image pins (same reason PR #138 is deferred). Wire in ONE batched PR with the other
    `watch = {}` worlds at the next world-image rebuild.
-   ✅ **SUPERSEDED LATER THE SAME DAY (2026-07-28, PR #180) — IT IS NOW WIRED.** `world_mcp.py:256`
-   carries `"watch": {"hp": 0xD086, "stage": 0xD03B}`, landed in the batched world change together
-   with the image rebuild and the Gate-0 re-pin, exactly as this item planned. PR #138 rode along by
-   branch point in the same merge. **But `eval/score_exam_kirby_stage3.py` is still an
-   `ORACLE_PENDING` stub returning 1 — the address is wired, the scorer predicate is not written, so
-   EX02 is still NOT scorable.** See the NEWEST block.
-5. ✅ **Bound DISCHARGED (2026-07-28 follow-up probe).** The old gate — "confirm `0xD03B` reads `3` at
-   the Stage-3 → Stage-4 boundary before wiring" — is **met**, and the claim is now **CAUSAL**: writing
+   *(Stale as of PR #180: that batched PR landed and `stage: 0xD03B` IS wired at `world_mcp.py:256`
+   (`"watch": {"hp": 0xD086, "stage": 0xD03B}`), with both world images rebuilt and Gate-0 re-pinned,
+   and PR #138 riding along by branch point. Kept for the reason wiring was batched. ⚠ **But
+   `eval/score_exam_kirby_stage3.py` is still an `ORACLE_PENDING` stub returning 1 — the address is
+   wired, the scorer PREDICATE is not written, so EX02 is still NOT scorable.**)*
+5. ⚠ **Bound STILL OPEN — I wrongly called it DISCHARGED on 2026-07-28, RETRACTED the same day.**
+   The gate is *"confirm `0xD03B` reads `3` at the Stage-3 → Stage-4 boundary before wiring"*, and
+   **that boundary was never crossed** — nobody has cleared Float Islands. What I banked instead was a
+   substitution: `0xD03B` was **written** to `3`, Bubbly Clouds loaded, and the value **held 4,740
+   frames** of live play (159 sampled rows) and through the CONTINUE prompt. Real evidence that the
+   byte is the stage *selector*; **not** evidence that it *increments* on a real transition — that has
+   been seen exactly once (`1 → 2`, human run), not twice. **To discharge: observe `0xD03B` go `2 → 3`
+   across a genuine Stage-3 → Stage-4 completion with NO memory write. Requires actually clearing
+   Float Islands.** Retraction in full: `reports/2026-07-26-oracle-kirby-gb-stage3.md`.
+   **Unaffected — the oracle is sound and stays wired.** The claim is **CAUSAL**: writing
    `0xD03B` before a stage load *determines which stage loads* (0 Green Greens, 1 Castle Lololo,
    2 Float Islands, 3 Bubbly Clouds, 4 Mt. Dedede; no-write control loads Castle Lololo). Five values
-   anchored, four causally. `3` held ~4,700 frames of live Bubbly Clouds and through the CONTINUE
-   prompt. Strongest elimination result: the **reverse dissociation** — in 9,000 frames of live *Green
-   Greens* with `0xD03B`=0, all four candidates still read `1`. They are STALE latches.
+   anchored, four causally. Strongest elimination result: the **reverse dissociation** — in 9,000
+   frames of live *Green Greens* with `0xD03B`=0, all four candidates still read `1` (and 9,000 frames
+   of live *Float Islands* held `0xD03B`=2). They are STALE latches.
    ⚠ **NEW WIRING HAZARD:** `0` is NOT a positive "Green Greens" signal — it is also the uninitialized
    boot value (frame 10: `D03B=0 hp=0 lives=0`) and the post-game-over title screen. **A predicate keyed
    on `== 0` is unsafe; `>= 2` is meaningful.** Gate any read on the game actually being in play.
