@@ -75,7 +75,11 @@ def test_make_launcher_gba_writes_gba_server(tmp_path):
     assert server["args"][0].endswith("gba_server.sh")
 
     gba_sh = open(os.path.join(out_dir, "gba_server.sh"), encoding="utf-8").read()
-    assert "kirby_gba" in gba_sh
+    # The carrier is the dedicated ROM-generic "gba_generic" key, NOT kirby_gba: routing arbitrary probe
+    # ROMs through kirby_gba is what kept kirby_gba ROM-generic and therefore unable to ever hold a
+    # Kirby-specific `watch` oracle. Asserted negatively too, so a revert cannot pass silently.
+    assert "--game gba_generic" in gba_sh
+    assert "kirby_gba" not in gba_sh
     assert "gba-spike" in gba_sh
     # repo-path interpolations must be quoted (a repo root with a space would otherwise break cd/PYTHONPATH)
     assert 'cd "' in gba_sh

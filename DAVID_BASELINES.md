@@ -92,8 +92,23 @@ MiniWoB only runs inside the Docker/Selenium image (`miniwob`/`selenium` are int
 installed in the main project env -- see `Dockerfile.miniwob`). Build it once if you haven't:
 
 ```
-docker build -f Dockerfile.miniwob -t miniwob-mcp-world .
+docker build -f Dockerfile.miniwob -t miniwob-world .
 ```
+
+**Precondition -- check this before capturing, or the capture is silently wrong.** Confirm the image
+you are about to run is the pinned one:
+
+```
+docker image inspect --format '{{.Id}}' miniwob-world
+```
+
+It must equal `world_image_id` in `eval/fixtures/gate0_expected_pins_miniwob.json`. If it does not,
+rebuild (above) before capturing. A stale image lacks `MiniWobSession._resolve_key`, so every
+`key NAME` dies on `ValueError: invalid literal for int()` -- which means no scrolling, which means
+Submit stays unreachable on 6-checkbox layouts and the run is unwinnable for reasons that have
+nothing to do with your performance. (Historic trap: an older, superseded copy of this image was
+tagged `miniwob-mcp-world`. That tag is no longer used anywhere -- if you have one lying around, it
+is stale by definition; use `miniwob-world`.)
 
 Then run the capture script inside that image. The image (`Dockerfile.miniwob`) only bakes in
 `core/` + `world_mcp.py` -- it does NOT contain `tools/` or `eval/`, which the script needs
@@ -107,7 +122,7 @@ docker run -it --rm \
   -v "$PWD/tools:/app/tools" \
   -v "$PWD/eval:/app/eval" \
   -v "$PWD/runs:/app/runs" \
-  --entrypoint python miniwob-mcp-world -m tools.capture_gate0_baseline_miniwob
+  --entrypoint python miniwob-world -m tools.capture_gate0_baseline_miniwob
 ```
 
 (On Windows PowerShell, use `${PWD}` or an absolute path in place of `$PWD` if your shell doesn't

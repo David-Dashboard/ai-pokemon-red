@@ -30,9 +30,11 @@ def test_kirby_dreamland_registered_in_games():
     assert spec["rom"] == "roms/Kirby's Dream Land (USA, Europe).gb"
 
 
-def test_kirby_dreamland_watch_is_hp_oracle():
-    """hp @ 0xD086 — verified plain-int oracle (0-5, 1 per HUD pip); see runs/entity_world_port_findings.md."""
-    assert GAMES["kirby_dreamland"]["watch"] == {"hp": 0xD086}
+def test_kirby_dreamland_watch_is_hp_and_stage_oracle():
+    """hp @ 0xD086 — verified plain-int oracle (0-5, 1 per HUD pip); see runs/entity_world_port_findings.md.
+    stage @ 0xD03B — 0-indexed stage selector, established causally then held over 9,000 frames of live
+    play; reports/2026-07-26-oracle-kirby-gb-stage3.md (PR #173). Both are plain ints, not BCD."""
+    assert GAMES["kirby_dreamland"]["watch"] == {"hp": 0xD086, "stage": 0xD03B}
 
 
 def test_kirby_dreamland_perceiver_is_zero_arg_constructible():

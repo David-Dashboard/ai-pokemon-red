@@ -24,7 +24,7 @@ the actual rendered screenshot for that step. The rig is a relay, not a player.
 
 Design choice (documented per the build instructions, since the literal "David plays in a real
 browser" path was considered and rejected -- see DAVID_BASELINES.md for the fuller writeup): MiniWoB
-only ever runs inside the `miniwob-mcp-world` Docker image (miniwob/selenium are intentionally NEVER
+only ever runs inside the `miniwob-world` Docker image (miniwob/selenium are intentionally NEVER
 installed in the main project env -- Dockerfile.miniwob). Driving a REAL visible browser window
 through that container would need either host GUI passthrough or the base image's bundled noVNC, and
 correctly detecting a human's native click as an episode-terminating action would require reverse-
@@ -44,7 +44,7 @@ Reuses:
   * eval/fixtures/gate0_miniwob_dev_seeds.json -- the frozen DEV seed manifest (0..4), never overridden.
 
 Deployment: MiniWobSession needs the real `miniwob`/`selenium` packages, which only exist inside the
-`miniwob-mcp-world` image (docker build -f Dockerfile.miniwob -t miniwob-mcp-world .). Run this
+`miniwob-world` image (docker build -f Dockerfile.miniwob -t miniwob-world .). Run this
 script inside that image by bind-mounting it over the entrypoint (see DAVID_BASELINES.md for the
 exact command) -- no Dockerfile change needed.
 
@@ -107,17 +107,22 @@ GAME = "miniwob_click_checkboxes"
 # so a future scorer/verdict-writer can see this from the artifact alone, not just doc prose.
 CAPTURE_MODALITY = "screenshot_relay_typed_action"
 
-# The scroll escape hatch the operator is shown, and how their `key NAME` is delivered. BOTH are
-# recorded verbatim in the artifact because they are INTERFACE ASYMMETRIES vs the paid agent, which a
-# frozen-sha256 artifact must carry on its face: world_mcp.py's press_key schema documents a key NAME
-# (the field is really an index, so the agent's raw name raises ValueError), and its click rejection
-# tells the agent anything below y=176 is "unreachable" without mentioning that the page scrolls.
-# Both asymmetries make the HUMAN faster, i.e. they make the `agent <= 2.0x human` bar HARDER -- they
-# are conservative in the right direction, but an auditor reading only the artifact must still see them.
-OPERATOR_HINT = ("The page SCROLLS: if Submit renders below the 160x177 viewport (6-checkbox layouts "
-                 "put it at y=180, unclickable), 'key ArrowDown' twice scrolls it up into reach -- "
-                 "then re-read the new screenshot, everything has moved up ~39px.")
-PRESS_KEY_RESOLUTION = "name->index (agent received raw-name passthrough)"
+# The scroll escape hatch the operator is shown, and how their `key NAME` is delivered. BOTH are still
+# recorded verbatim in the artifact, because a frozen-sha256 artifact must carry its own interface
+# conditions on its face -- but AS OF THE 2026-07-28 BATCHED WORLD REBUILD THEY ARE NO LONGER
+# ASYMMETRIES. Previously: world_mcp.py's press_key schema documented a key NAME while the field was
+# really an index (so the agent's raw name raised ValueError), and its click rejection told the agent
+# anything below y=176 was "unreachable" without mentioning that the page scrolls -- both made the
+# HUMAN faster, which made the `agent <= 2.0x human` bar HARDER (conservative in the right direction,
+# but real). That rebuild fixed BOTH on the agent's side: press_key now takes names via
+# MiniWobSession._resolve_key -- the very same code path this rig now calls, rather than pre-resolving
+# to an index itself -- and both the click description AND its runtime rejection message now name the
+# scroll escape hatch. Kept here as the artifact's honest record of what the operator was told.
+OPERATOR_HINT = ("The page SCROLLS: if the Submit button renders below the 160x177 viewport and is "
+                 "unclickable, type 'key ArrowDown', re-read the new screenshot, and repeat until "
+                 "Submit is visible -- then click it at its NEW coordinates. Do not assume a fixed "
+                 "number of presses or a fixed shift; just look at each screenshot.")
+PRESS_KEY_RESOLUTION = "name (resolved by MiniWobSession._resolve_key -- same path as the agent)"
 
 # Per-mode defaults. Each paid mode's real_out is the EXACT path its own source-pins fixture's
 # artifact_paths.miniwob_human names (gate0_paid_source_pins.json / gate0_paid_v2_source_pins.json)
@@ -192,9 +197,12 @@ def _prompt_action(prompt: Callable[[str], str], allowed_keys: list[str]) -> tup
 
     `allowed_keys` is the LIVE env's own PRESS_KEY vocabulary (miniwob ActionSpaceConfig.allowed_keys,
     e.g. "<Tab>", "<Enter>"). miniwob's PRESS_KEY field is an INDEX into that list -- its executor does
-    `key_idx = int(action["key"])` (site-packages/miniwob/selenium_actions.py:161) -- so a typed name
-    must be resolved to its index here or every `key NAME` dies on `int('Tab')`. Resolved against the
-    live list rather than a hardcoded index, so the human's key vocabulary is exactly the agent's."""
+    `key_idx = int(action["key"])` (site-packages/miniwob/selenium_actions.py:161) -- but that
+    name->index step does NOT happen here: a typed name is only VALIDATED against the live list (so a
+    typo re-prompts instead of dying inside the browser) and then passed through AS A NAME.
+    MiniWobSession._resolve_key does the conversion, for the human and the agent alike. Validating
+    against the live list rather than a hardcoded one keeps the human's key vocabulary exactly the
+    agent's."""
     while True:
         raw = prompt("action (click X Y | type TEXT | key NAME | quit)> ").strip()
         if not raw:
@@ -214,9 +222,15 @@ def _prompt_action(prompt: Callable[[str], str], allowed_keys: list[str]) -> tup
             return "type_text", {"text": parts[1]}
         elif head == "key" and len(parts) == 2:
             name = parts[1].strip()
+            # Validate here (so a typo re-prompts instead of dying inside the browser), but pass the
+            # NAME through -- MiniWobSession._resolve_key is now the single place a name becomes an
+            # index, for the human and the agent alike. Pre-resolving here was the old behaviour and is
+            # deliberately gone: indices 0/5/9 are <Enter>/<Tab>/<ArrowDown> while '0'-'9' are ALSO key
+            # names (indices 22-31), so a pre-resolved "5" and a typed "5" are indistinguishable on the
+            # wire and the world cannot honour both.
             for candidate in (name if name.startswith("<") else f"<{name}>", name):
                 if candidate in allowed_keys:
-                    return "press_key", {"key": str(allowed_keys.index(candidate))}
+                    return "press_key", {"key": candidate}
             print(f"key {name!r} isn't in this environment's key vocabulary. Try one of: "
                   + ", ".join(k.strip("<>") for k in allowed_keys[:11]) + ".")
             continue
@@ -407,9 +421,14 @@ def run(args, prompt: Callable[[str], str] = input,
         "oracle_path": os.path.normpath(oracle_path),
         "test_mode": bool(args.test),
         "capture_modality": CAPTURE_MODALITY,
-        # Interface asymmetry vs the paid agent, on the face of the artifact (see OPERATOR_HINT): the
-        # exact hint the human was shown, which the agent's own tool docs do not give it, and the fact
-        # that the human's `key NAME` was resolved to an index while the agent's was passed through raw.
+        # The artifact's own record of the interface the human was given (see OPERATOR_HINT and the
+        # module header). Both fields USED to record real asymmetries vs the paid agent; as of the
+        # 2026-07-28 batched world rebuild neither is one any more. press_key_resolution: the human's
+        # `key NAME` and the agent's now go through the SAME resolver -- MiniWobSession._resolve_key --
+        # because this rig passes the name through rather than pre-resolving it to an index.
+        # operator_hint: the agent's own click/press_key tool docs, and the click rejection message it
+        # gets at the moment of failure, now name the scroll escape hatch too. Kept on the artifact
+        # because its hash freezes: an auditor must be able to see what the operator was told.
         "operator_hint": OPERATOR_HINT,
         "press_key_resolution": PRESS_KEY_RESOLUTION,
         # one-cold-attempt bookkeeping (DAVID_BASELINES.md "Re-run rule"): attempt_number is 1 for a

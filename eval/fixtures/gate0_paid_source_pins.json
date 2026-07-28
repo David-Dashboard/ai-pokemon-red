@@ -42,8 +42,8 @@
   },
   "_source_audit_paths": "Same OutputDir/launch/world layout contract as readiness_dev, under runs/gate0_paid/<arm> instead -- so a real launch with -OutputDir runs/gate0_paid/<arm> lines up with zero renaming. expected_pins point at the SAME two frozen files as readiness_dev (the 20 PIN_FIELDS pin the brain/executable/config, which this pre-reg holds constant across dev and paid mode) -- hash-pinned below via expected_pins_sha256, identical values to gate0_readiness_dev_source_pins.json.",
   "expected_pins_sha256": {
-    "red": "ff00540b58704039d4da437ab677eb094f7a688d72f06a70148ee6fdfb850a82",
-    "miniwob": "5d34c5ca56df78de3621001b6a8adb66eff51a72f5f51c9d14e1df8d65aa3870"
+    "red": "67b95a29966443a792f93a61149c5630924a602a12e6515bc9ac1acda3522b92",
+    "miniwob": "8c19185309773ee565796e290460baa79838cae4553ba91e2aac98a01f180a02"
   },
-  "_source_expected_pins_sha256": "sha256 of eval/fixtures/gate0_expected_pins_red.json / gate0_expected_pins_miniwob.json exactly as committed on this branch -- identical to gate0_readiness_dev_source_pins.json's values, since both modes pin the same brain/executable/config. Recompute if either file is edited."
+  "_source_expected_pins_sha256": "sha256 of eval/fixtures/gate0_expected_pins_red.json / gate0_expected_pins_miniwob.json exactly as committed on this branch -- identical to gate0_readiness_dev_source_pins.json's values, since both modes pin the same brain/executable/config. Recompute if either file is edited. Re-frozen 2026-07-23 (PR #138) after that PR's world_mcp.py touch-drag change updated both files' host_code_sha256/image_code_sha256 for world_mcp.py. Re-frozen again 2026-07-28 (PR #138 review-fix commit) after the touch-drag review fixes re-edited world_mcp.py and image_code_sha256 was replaced with a value extracted from a real built image. Re-frozen AGAIN 2026-07-28 by the batched world rebuild (feat/batched-world-rebuild-2026-07-28, source commit 609ab8a16ea6a7606827d08ff3b5c137cc751104), which moved world_mcp.py's host_code_sha256/image_code_sha256, world_image_id (BOTH images genuinely rebuilt) and miniwob's tool_schema_sha256 inside the two files hashed here. Both manifests are updated together on purpose: they point at the SAME two targets, so editing either target silently invalidates BOTH."
 }
