@@ -386,7 +386,7 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
 def score_manifest(path: str | Path) -> dict:
     manifest = json.loads(Path(path).read_text(encoding="utf-8"))
     pinned_paths, path_failures = _verify_audit_paths(manifest)
-    audits, oracles = {}, {}
+    audits, oracles, oracle_failures = {}, {}, []
     for name in ("red", "miniwob"):
         pins = pinned_paths.get(name)
         if pins is None:
@@ -394,9 +394,28 @@ def score_manifest(path: str | Path) -> dict:
         audits[name] = audit_codex(_resolve_root(pins["transcript"]), _resolve_root(pins["receipt"]),
                                    _resolve_root(pins["expected_pins"]), _resolve_root(pins["artifacts_dir"]),
                                    name, _resolve_root(pins["peer_receipt"]))
-        oracles[name] = _jsonl(_resolve_root(pins["oracle"]))
+        # A run that dies before writing its oracle is a MISSING SOURCE, not a scorer crash: this
+        # read used to raise FileNotFoundError straight out of the public entry point, handing the
+        # operator a stack trace where a verdict belongs (the exact misdiagnosis .claude/skills/
+        # diagnose-a-run exists to prevent). Fail closed through the same machinery every other
+        # missing source already uses -- `source_unreadable:*` -> INSUFFICIENT_DATA/
+        # INSUFFICIENT_SOURCE -- exactly as _verify_sources does for its six pinned artifacts.
+        # The two catches are deliberately NARROW and deliberately DISTINCT: OSError means the file
+        # could not be opened/read at all (absent, permissions, is-a-directory), while a decode
+        # error means the file IS there but its bytes are not the JSONL the scorer was promised --
+        # a half-written oracle from a killed run. Triage acts on those differently, so they must
+        # not collapse into one string. Everything else (TypeError, AttributeError, ...) still
+        # propagates: a bare `except Exception` here would hide a real scorer bug behind a
+        # plausible-looking "no oracle" verdict, which is worse than the crash being fixed.
+        try:
+            oracles[name] = _jsonl(_resolve_root(pins["oracle"]))
+        except OSError:
+            oracle_failures.append(f"source_unreadable:oracle:{name}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            oracle_failures.append(f"source_malformed:oracle:{name}")
     verified, source_failures = _verify_sources(manifest, audits)
-    return score(manifest, audits, oracles, verified, (source_failures or []) + path_failures)
+    return score(manifest, audits, oracles, verified,
+                 (source_failures or []) + path_failures + oracle_failures)
 
 
 def main() -> int:
