@@ -43,11 +43,13 @@ def _rom_state(tmp_path):
     return str(rom), str(state)
 
 
-def _args(tmp_path, out=None, allow_retake=None, test=True):
+def _args(tmp_path, out=None, allow_retake=None, test=True, mode="readiness_dev",
+          i_am_human=False):
     rom, state = _rom_state(tmp_path)
     return argparse.Namespace(rom=rom, state=state,
                               out=str(out) if out is not None else str(tmp_path / "out"),
-                              player="AutomatedSmokeTest", test=test, allow_retake=allow_retake)
+                              player="AutomatedSmokeTest", test=test, allow_retake=allow_retake,
+                              mode=mode, i_am_human=i_am_human)
 
 
 @pytest.fixture
@@ -108,7 +110,8 @@ def test_atomic_write_json_does_not_clobber_existing_file_on_crash(tmp_path, mon
 def test_build_metrics_schema_has_mode_and_retake_fields(tmp_path):
     rom, state = _rom_state(tmp_path)
     args = argparse.Namespace(rom=rom, state=state, out=str(tmp_path / "out"), player="David",
-                              test=False, allow_retake=None)
+                              test=False, allow_retake=None, mode="readiness_dev",
+                              i_am_human=False)
     metrics = m._build_metrics(
         args, rom_sha256="a" * 64, state_sha256="b" * 64, oracle_path=str(tmp_path / "oracle.jsonl"),
         wall_clock_s=12.5, press_count=42, success=True, failures=[],
@@ -131,7 +134,8 @@ def test_build_metrics_artifact_passes_frozen_verify_sources(tmp_path):
     rig-produced red_human artifact for the hand-authored one."""
     rom, state = _rom_state(tmp_path)
     args = argparse.Namespace(rom=rom, state=state, out=str(tmp_path / "out"), player="David",
-                              test=False, allow_retake=None)
+                              test=False, allow_retake=None, mode="readiness_dev",
+                              i_am_human=False)
     red_human = m._build_metrics(
         args, rom_sha256="a" * 64, state_sha256="b" * 64, oracle_path=str(tmp_path / "oracle.jsonl"),
         wall_clock_s=60, press_count=60, success=True, failures=[],
@@ -289,3 +293,267 @@ def test_retake_allowed_past_setup_failure_records_attempt_2_and_reason(fake_pyb
     assert metrics["retake_reason"] == "Docker died mid-capture, never scored"
     # the pre-existing canonical file (a genuinely different attempt) must be untouched
     assert json.loads((out / "human_metrics.json").read_text(encoding="utf-8"))["attempt_number"] == 1
+
+
+# ================================================================================================
+# --mode: the stamp and the output directory, both derived from ONE required flag.
+#
+# Until 2026-07-28 this rig hardcoded MODE = "readiness_dev" with no --mode flag at all, so every
+# artifact it could produce was stamped readiness_dev. eval/score_gate0.py::_verify_sources requires
+# that stamp to EQUAL the mode being scored, so prereg P1c ("a RED human baseline whose mode field
+# matches the mode being scored") was not merely undone -- it was unsatisfiable. The failure is
+# silent: it surfaces as human_metric_identity:red at SCORING, after a paid run is spent.
+# ================================================================================================
+
+import os
+from pathlib import Path
+
+import tools.capture_gate0_baseline_red as red
+
+
+def _parser():
+    return red.build_arg_parser()
+
+
+# ---- the flag itself ---------------------------------------------------------------------------
+
+def test_mode_is_required_and_has_no_default():
+    """NO DEFAULT, deliberately. A default of "readiness_dev" preserves exactly the trap being
+    fixed: someone capturing the v2 baseline omits the flag and produces an artifact the scorer
+    rejects, discovered only after the paid run."""
+    assert _parser().get_default("mode") is None
+    with pytest.raises(SystemExit):
+        _parser().parse_args([])
+
+
+def test_mode_choices_are_exactly_the_frozen_scorers_modes():
+    action = next(a for a in _parser()._actions if a.dest == "mode")
+    assert tuple(action.choices) == tuple(scorer.MODES)
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["--mode", "paid_gate3"])
+
+
+def test_mode_config_covers_exactly_the_scorers_modes():
+    """A mode the scorer knows but this rig has no output directory for would fail at run() with a
+    refusal instead of at argparse -- and a mode here the scorer does not know could produce an
+    artifact nothing can score. Bind the two sets."""
+    assert set(red.MODE_CONFIG) == set(scorer.MODES) == set(red.score_gate0_modes())
+
+
+def test_score_gate0_modes_reads_the_scorer_never_a_local_copy():
+    assert red.score_gate0_modes() is scorer.MODES
+
+
+# ---- per-mode output directories ----------------------------------------------------------------
+
+def test_readiness_dev_out_dir_is_byte_identical_to_the_removed_hardcode():
+    """The old unconditional REAL_OUT literal, written out longhand. readiness_dev's output path
+    must not move -- runs/gate0_human_baseline/red/human_metrics.json is banked and three source-pin
+    fixtures freeze its digest."""
+    removed_hardcode = os.path.normpath(str(red.ROOT / "runs" / "gate0_human_baseline" / "red"))
+    assert red.MODE_CONFIG["readiness_dev"]["real_out"] == removed_hardcode
+    assert red.REAL_OUT == removed_hardcode
+
+
+def test_each_mode_writes_its_own_directory_and_never_another_modes():
+    outs = {m: cfg["real_out"] for m, cfg in red.MODE_CONFIG.items()}
+    assert len(set(outs.values())) == len(outs), f"two modes share an output directory: {outs}"
+    as_posix = {m: o.replace("\\", "/") for m, o in outs.items()}
+    assert as_posix["readiness_dev"].endswith("runs/gate0_human_baseline/red")
+    assert as_posix["paid_gate0"].endswith("runs/gate0_paid_human_baseline/red")
+    assert as_posix["paid_gate0_v2"].endswith("runs/gate0_paid_v2_human_baseline/red")
+
+
+def test_out_defaults_to_the_modes_directory_not_a_hardwired_one(monkeypatch, tmp_path,
+                                                                 fake_pyboy_raises):
+    """--out is None at the parser and filled in by run() from the mode -- proven by watching where
+    a real run() call actually writes, not by reading the constant."""
+    target = tmp_path / "v2_out"
+    monkeypatch.setitem(red.MODE_CONFIG, "paid_gate0_v2", {"real_out": str(target)})
+    monkeypatch.setattr(red, "pinned_red_human_path",
+                        lambda mode: (target / "human_metrics.json").resolve())
+    args = _args(tmp_path, test=False, mode="paid_gate0_v2", i_am_human=True)
+    args.out = None
+    assert red.run(args) == 2                      # faked PyBoy still fails, as intended
+    assert args.out == str(target)
+    assert len(list(target.glob("human_metrics.INCOMPLETE_*.json"))) == 1
+
+
+# ---- the mode STAMP ------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
+def test_mode_is_stamped_from_args_never_hardwired(tmp_path, mode):
+    args = _args(tmp_path, mode=mode)
+    metrics = red._build_metrics(
+        args, rom_sha256="a" * 64, state_sha256="b" * 64, oracle_path=str(tmp_path / "o.jsonl"),
+        wall_clock_s=1.0, press_count=1, success=True, failures=[],
+        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+        attempt_number=1, retake_reason="", input_event_times=[])
+    assert metrics["mode"] == mode
+
+
+def test_a_v2_stamped_artifact_satisfies_the_frozen_identity_check(tmp_path):
+    """The whole point of P1c, pinned end to end: an artifact this rig produces under
+    --mode paid_gate0_v2 passes _verify_sources' (schema_version, arm, role, mode) identity check for
+    paid_gate0_v2, which the banked readiness_dev artifact does not."""
+    args = _args(tmp_path, mode="paid_gate0_v2")
+    metrics = red._build_metrics(
+        args, rom_sha256="a" * 64, state_sha256="b" * 64, oracle_path=str(tmp_path / "o.jsonl"),
+        wall_clock_s=233.288, press_count=271, success=True, failures=[],
+        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+        attempt_number=1, retake_reason="", input_event_times=[])
+    identity = (metrics["schema_version"], metrics["arm"], metrics["role"], metrics["mode"])
+    assert identity == (1, "red", "human", "paid_gate0_v2")
+
+
+# ---- held-out gating: a paid mode cannot be entered casually --------------------------------------
+
+@pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
+def test_held_out_mode_refused_without_the_acknowledgement(tmp_path, mode, monkeypatch,
+                                                           fake_pyboy_raises):
+    """THE gating test. A paid-mode capture produces the human denominator the 2.0x bar is measured
+    against; it must never happen by accident or from a script."""
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(out)})
+    args = _args(tmp_path, out=out, test=False, mode=mode, i_am_human=False)
+    assert red.run(args) == 2
+    # Refused BEFORE anything is created -- not merely refused after writing an artifact.
+    assert not out.exists()
+
+
+def test_held_out_modes_are_exactly_the_paid_modes():
+    assert red.HELD_OUT_MODES == frozenset(set(scorer.MODES) - {"readiness_dev"})
+
+
+def test_readiness_dev_needs_no_acknowledgement(tmp_path, fake_pyboy_raises):
+    """The gate must not leak onto the dev mode -- unchanged behaviour is the whole requirement."""
+    args = _args(tmp_path, test=False, mode="readiness_dev", i_am_human=False)
+    assert red.run(args) == 2                      # reaches (and fails at) faked PyBoy construction
+    incomplete = list((tmp_path / "out").glob("human_metrics.INCOMPLETE_*.json"))
+    assert len(incomplete) == 1
+    assert json.loads(incomplete[0].read_text(encoding="utf-8"))["mode"] == "readiness_dev"
+
+
+def test_cli_refuses_a_held_out_mode_without_the_acknowledgement():
+    """End to end through the real parser, not just run()."""
+    parsed = _parser().parse_args(["--mode", "paid_gate0_v2"])
+    assert parsed.i_am_human is False
+    assert red.run(parsed) == 2
+
+
+def test_unknown_mode_is_refused_by_run_even_if_argparse_is_bypassed(tmp_path):
+    args = _args(tmp_path, mode="paid_gate9")
+    assert red.run(args) == 2
+
+
+# ---- the fixture cross-check: validate and refuse, never derive ------------------------------------
+
+def _pins_pointing_at(tmp_path, mode, red_human_path):
+    pins = tmp_path / f"pins_{mode}.json"
+    pins.write_text(json.dumps({
+        "schema_version": 1, "mode": mode,
+        "artifact_paths": {"red_human": str(red_human_path)},
+    }), encoding="utf-8")
+    return pins
+
+
+def test_all_three_fixtures_currently_pin_the_same_banked_red_baseline():
+    """The finding this PR exists to expose, pinned mechanically rather than asserted in prose.
+
+    Every mode's artifact_paths.red_human resolves to the ONE banked readiness_dev artifact. That is
+    why the output directory is NOT derived from the pin (deriving would send a v2 capture straight
+    into a banked, triple-digest-frozen, append-only file) and why P1c additionally needs a fixture
+    re-point that no change to this rig can supply."""
+    resolved = {m: red.pinned_red_human_path(m) for m in scorer.MODES}
+    assert len(set(resolved.values())) == 1, resolved
+    only = next(iter(resolved.values()))
+    assert only.as_posix().endswith("runs/gate0_human_baseline/red/human_metrics.json")
+    # ...and it is exactly where readiness_dev writes, which is why readiness_dev is unaffected.
+    assert only == Path(red.MODE_CONFIG["readiness_dev"]["real_out"], "human_metrics.json").resolve()
+
+
+@pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
+def test_held_out_capture_refused_while_the_fixture_points_somewhere_else(tmp_path, mode,
+                                                                          monkeypatch,
+                                                                          fake_pyboy_raises):
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(out)})
+    monkeypatch.setitem(
+        scorer.SOURCE_PIN_FILES, mode,
+        _pins_pointing_at(tmp_path, mode, tmp_path / "elsewhere" / "human_metrics.json"))
+    args = _args(tmp_path, out=out, test=False, mode=mode, i_am_human=True)
+    assert red.run(args) == 2
+    assert not out.exists()          # refused before a single byte was written
+
+
+@pytest.mark.parametrize("mode", sorted(red.HELD_OUT_MODES))
+def test_held_out_capture_proceeds_once_the_fixture_points_here(tmp_path, mode, monkeypatch,
+                                                                fake_pyboy_raises):
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, mode, {"real_out": str(out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, mode,
+                        _pins_pointing_at(tmp_path, mode, out / "human_metrics.json"))
+    args = _args(tmp_path, out=out, test=False, mode=mode, i_am_human=True)
+    assert red.run(args) == 2        # reaches faked PyBoy construction: the guards all passed
+    incomplete = list(out.glob("human_metrics.INCOMPLETE_*.json"))
+    assert len(incomplete) == 1
+    assert json.loads(incomplete[0].read_text(encoding="utf-8"))["mode"] == mode
+
+
+def test_the_acknowledgement_does_not_bypass_the_fixture_cross_check(tmp_path, monkeypatch):
+    """--i-am-human is not a master key: it answers "is a human playing", not "will anything read
+    the result"."""
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, "paid_gate0_v2", {"real_out": str(out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2", tmp_path / "nope.json"))
+    assert red.require_fixture_points_here("paid_gate0_v2", str(out)) is not None
+
+
+def test_readiness_dev_is_exempt_from_the_fixture_cross_check(tmp_path, monkeypatch):
+    """Scoped to HELD_OUT_MODES on purpose: readiness_dev's baseline is captured, banked and already
+    pinned to exactly this file, so re-checking it protects nothing and would add a new way for a
+    legitimate --allow-retake to fail. Keeping it exempt is what makes the PR body's differential
+    come out IDENTICAL."""
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "readiness_dev",
+                        _pins_pointing_at(tmp_path, "readiness_dev", tmp_path / "wherever.json"))
+    assert red.require_fixture_points_here("readiness_dev", red.REAL_OUT) is None
+
+
+def test_fixture_cross_check_fails_closed_on_an_unreadable_fixture(tmp_path, monkeypatch):
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2", tmp_path / "does_not_exist.json")
+    msg = red.require_fixture_points_here("paid_gate0_v2", str(tmp_path / "out"))
+    assert msg is not None and "refusing" in msg
+
+
+def test_pinned_red_human_path_resolves_relative_entries_like_verify_sources(tmp_path, monkeypatch):
+    """_verify_sources resolves a relative artifact_paths entry against the SCORER's ROOT, not the
+    cwd. Two different resolutions of one pin is the drift class this workstream removes."""
+    monkeypatch.setitem(
+        scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+        _pins_pointing_at(tmp_path, "paid_gate0_v2",
+                          "runs/gate0_paid_v2_human_baseline/red/human_metrics.json"))
+    assert red.pinned_red_human_path("paid_gate0_v2") == (
+        scorer.ROOT / "runs" / "gate0_paid_v2_human_baseline" / "red"
+        / "human_metrics.json").resolve()
+
+
+# ---- the real-path guard is now per mode ----------------------------------------------------------
+
+def test_under_real_path_is_evaluated_against_the_modes_own_directory():
+    dev = red.MODE_CONFIG["readiness_dev"]["real_out"]
+    v2 = red.MODE_CONFIG["paid_gate0_v2"]["real_out"]
+    assert red._under_real_path(dev, dev) and not red._under_real_path(dev, v2)
+    assert red._under_real_path(v2, v2) and not red._under_real_path(v2, dev)
+    # the one-argument form still answers for readiness_dev (backward compatible)
+    assert red._under_real_path(dev)
+
+
+def test_test_mode_still_refuses_to_write_under_a_paid_modes_real_path(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    monkeypatch.setitem(red.MODE_CONFIG, "paid_gate0_v2", {"real_out": str(out)})
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2", out / "human_metrics.json"))
+    args = _args(tmp_path, out=out, test=True, mode="paid_gate0_v2", i_am_human=True)
+    assert red.run(args) == 2
+    assert not out.exists()

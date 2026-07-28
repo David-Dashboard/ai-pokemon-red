@@ -109,3 +109,117 @@ triage could be misled. This is the identical shape the pre-existing unpinned-ar
 in `score_manifest()` already produced, so it is inherited, not created here. Left alone
 deliberately: fixing it would mean touching `score()`, which this deviation exists to prove was not
 touched.
+
+---
+
+## D5 — P1c's named satisfaction method is incomplete: a fresh capture alone does not satisfy it
+
+**Landed by:** PR #195, `fix/gate0-red-capture-mode`.
+**Touches:** `tools/capture_gate0_baseline_red.py`, its tests, and `DAVID_BASELINES.md`. No fixture,
+no scorer, no `runs/` artifact, and **not** `reports/2026-07-25-gate0-v2-prereg.md`.
+
+**Why D5 and not D2/D3/D4:** D1 is on `main`; #188 claims **D2**, #191 claims **D3**, #192 claims
+**D4** — verified by reading this file on each branch head (`origin/fix/audit-verdict-not-gate-verdict`,
+`origin/fix/red-glitch-row-signature`, `origin/fix/gate0-launcher-mode`) on 2026-07-28. #193 and #194
+do not touch this file. D5 is the first uncontested slot; no collision. Append newest-last, so this
+section belongs after D4.
+
+### The rig change itself is NOT a deviation — the prereg pre-authorised it
+
+Stated plainly so the log is not read as claiming more than it should. Prereg `:264-269` already
+says:
+
+> If the capture tool cannot yet emit Red under that mode, extending it to do so is in-scope
+> plumbing for the P8/P9 batch
+
+That plumbing was simply never done — the P8/P9 batch landed as **#180** without it, and
+`tools/capture_gate0_baseline_red.py` still carried `MODE = "readiness_dev"  # the only mode this rig
+supports` with no `--mode` flag at all. Adding the flag **satisfies** a precondition. It is recorded
+here only for context; it is not the deviation.
+
+### The deviation: this rig now REFUSES a capture the prereg says should just work
+
+P1c does not leave its method open. It says (`:264-266`, emphasis original):
+
+> **The satisfaction method is named here, not left open: P1c is satisfied by a FRESH CAPTURE under
+> `--mode paid_gate0_v2`, producing a new artifact.**
+
+**That is not sufficient, and this PR makes the rig say so out loud instead of letting the gap pass.**
+All three source-pin fixtures pin `artifact_paths.red_human` at the SAME file —
+`runs/gate0_human_baseline/red/human_metrics.json`, the banked `readiness_dev` artifact — and all
+three freeze the same real digest `5144a5b3…` for it. Verified on `origin/main` (`322499f`) and
+pinned mechanically by
+`tests/test_capture_gate0_baseline_red.py::test_all_three_fixtures_currently_pin_the_same_banked_red_baseline`.
+
+So a fresh v2 capture has exactly two possible destinations, and the prereg's text sanctions neither:
+
+| destination | outcome |
+|---|---|
+| the pinned path (`runs/gate0_human_baseline/red/`) | **overwrites** an append-only banked artifact whose digest THREE fixtures freeze — breaking `readiness_dev` and `paid_gate0` source verification at the same time, and doing by `--out` exactly what `:266-269` forbids doing by hand-edit |
+| anywhere else | the artifact is correct and **nothing reads it**; `_verify_sources` still loads the banked `readiness_dev` file, still fails `human_metric_identity:red`, still yields `INSUFFICIENT_DATA` |
+
+**P1c therefore has a third step the prereg does not name: re-point `artifact_paths.red_human` (and
+re-freeze `artifact_sha256.red_human`) in `eval/fixtures/gate0_paid_v2_source_pins.json`.** PR #194's
+runbook reached the same conclusion independently ("a code change to the rig, a human replay by
+David, and a re-point + re-freeze of `artifact_paths.red_human`").
+
+This is the same shape of finding as **D4**: a `§0`/P-item that asserts its own completeness and is
+not complete. It is recorded, not silently worked around.
+
+### What changed, and the one deliberate behaviour difference
+
+One required `--mode` (choices read from `eval.score_gate0.MODES` itself, function-local import), no
+default — an unstated mode is a refusal, not a guess. It drives both mode-dependent values: the
+`mode` field stamped into `human_metrics.json`, and the output directory, from a per-mode
+`MODE_CONFIG` mirroring `tools/capture_gate0_baseline_miniwob.py`'s. Two guards, both on held-out
+modes only:
+
+1. **`--i-am-human`**, mirroring the MiniWoB rig. The rationale differs and the difference is
+   deliberate: there it protects held-out SEEDS (and the rig also suppresses the task utterance);
+   Red has no held-out seed family, its task text is public and printed in full in every mode, so
+   there is nothing to suppress. What it protects here is the ARTIFACT — a paid-mode
+   `human_metrics.json` is the denominator the `agent <= 2.0x human` bar is measured against.
+2. **The fixture cross-check** — refuse unless the mode's own source-pins fixture already points
+   `red_human` at the directory this capture writes to. **This is the deviation.** The prereg says a
+   fresh capture satisfies P1c; the rig now refuses that capture until the fixture re-point exists.
+   Refusing costs a `$0`, ~4-minute human replay. Not refusing costs the discovery at scoring, after
+   the paid run. The refusal message names the exact fixture field to edit and explicitly forbids the
+   two wrong workarounds (hand-editing the banked artifact; pointing `--out` at it).
+
+   **Validate and refuse, never derive** (#192's F2 lesson, applied to a write path): deriving the
+   output directory from the pin would send a v2 capture straight into the banked artifact — the
+   worse of the two rows in the table above.
+
+**`readiness_dev` is exempt from guard 2, and that scoping is load-bearing.** Its baseline is already
+captured, banked, and pinned to exactly the file it writes; re-checking protects nothing and would add
+a new way for a legitimate `--allow-retake` to fail. The exemption is what keeps that path untouched.
+
+### `readiness_dev` identity — measured, not asserted
+
+A throwaway differential harness (not committed) records what the tool **actually writes and where**:
+the effective output directory, `REAL_OUT`, the `_under_real_path` answers over a path matrix, the
+full `_build_metrics` payload, and — driving the real `run()` with `PyBoy` faked to raise, so no SDL2
+window is ever created — the exit code, stdout, stderr and **every file written (path and content)**
+across five scenarios: first attempt, `--test`, overwrite-refusal, `--allow-retake`, and stale-oracle
+archival. Repo root, temp dirs, unix timestamps and ISO timestamps are normalised so two worktrees
+are comparable; the harness was confirmed self-stable (two runs of the same tree hash equal).
+
+`origin/main` (`322499f`, no flag) vs this branch (`--mode readiness_dev`):
+
+```
+IDENTICAL
+b1a0c865931463d0adee8f19e43b998e4b8c1e11c909b46247128cb85131b3f3   (both sides)
+```
+
+The only recorded difference is the parsed argparse namespace, which gains `mode` and `i_am_human`
+and moves `--out`'s default out of argparse into `run()`. The **effective** output directory is
+byte-identical and is compared inside the hash above.
+
+### What this does NOT do
+
+It does not satisfy P1c. It supplies the first of three steps. It produces no capability evidence,
+touches no `runs/` artifact, and re-freezes nothing. It also leaves a **declared duplication**:
+`pinned_red_human_path()` re-implements #192's `pinned_artifact_path()` because #192 is unmerged (the
+symbol does not exist on `origin/main`) and `tools/gate0_appserver_arm.py` was off-limits to this
+change. Two resolutions of one pin is the drift class this workstream exists to remove — once both
+land, lift one shared helper and delete both.

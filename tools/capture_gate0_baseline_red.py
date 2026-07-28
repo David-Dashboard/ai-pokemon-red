@@ -18,14 +18,40 @@ Reuses, rather than reinvents:
     'a'=A, 's'=B, Enter=Start, Backspace=Select -- see human_play.py), same convention as the
     project's other human-play scripts (human_play.py, play_record.py).
 
+Three modes, selected with a REQUIRED `--mode` (see "Why --mode has no default" below):
+  * `readiness_dev` -- the readiness-phase capture. This is the mode the banked
+    `runs/gate0_human_baseline/red/human_metrics.json` was produced under, and its behaviour is
+    byte-identical to the pre-`--mode` rig.
+  * `paid_gate0` -- Gate 0 v1's paid mode.
+  * `paid_gate0_v2` -- Gate 0 v2's paid mode (reports/2026-07-25-gate0-v2-prereg.md P1c).
+
+Unlike Arm W, Red has NO held-out seed family: the design doc's "Red uses the same fixed start for
+agent and human" means every mode replays the SAME savestate against the SAME frozen predicate. So
+`--mode` here changes exactly two things -- the `mode` field stamped into `human_metrics.json` (which
+eval/score_gate0.py::_verify_sources requires to EQUAL the mode being scored) and which directory the
+artifact lands in. It does NOT change the task, the seeds, the predicate, or what David is shown.
+Both paid modes are still gated behind `--i-am-human`, for the reason in HELD_OUT_MODES' comment.
+
 Usage (see DAVID_BASELINES.md for the full walkthrough):
-    uv run python tools/capture_gate0_baseline_red.py
+    uv run python tools/capture_gate0_baseline_red.py --mode readiness_dev
+    uv run python tools/capture_gate0_baseline_red.py --mode paid_gate0_v2 --i-am-human
 
 Writes, on a DETECTED SUCCESS (oracle-only end-state, exactly eval.score_gate0._red_success):
-    runs/gate0_human_baseline/red/human_metrics.json   -- schema_version 1, arm=red, role=human,
-                                                           mode=readiness_dev, wall_clock_s,
-                                                           primitive_actions (+ provenance extras)
-    runs/gate0_human_baseline/red/oracle.jsonl          -- append-only watch-row trace (raw data law)
+    <out>/human_metrics.json   -- schema_version 1, arm=red, role=human, mode=<--mode>,
+                                   wall_clock_s, primitive_actions (+ provenance extras)
+    <out>/oracle.jsonl          -- append-only watch-row trace (raw data law)
+
+`<out>` defaults per mode (all gitignored under runs/, never committed) -- one directory PER MODE so
+a paid capture can never overwrite, or be confused with, the banked readiness_dev one:
+    readiness_dev -> runs/gate0_human_baseline/red/          (unchanged; the banked artifact)
+    paid_gate0    -> runs/gate0_paid_human_baseline/red/
+    paid_gate0_v2 -> runs/gate0_paid_v2_human_baseline/red/
+This mirrors tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG exactly. It is NOT derived from
+the mode's source-pins fixture, deliberately: all three fixtures currently pin `artifact_paths.
+red_human` at the readiness_dev path, so deriving the OUTPUT from the pin would make a v2 capture
+overwrite a banked artifact that three fixtures freeze by digest -- precisely what the prereg
+(:264-269) forbids when it requires "a FRESH CAPTURE ... producing a new artifact". The pin is used
+as a CROSS-CHECK instead (see require_fixture_points_here).
 
 An incomplete/quit/crashed attempt writes a distinctly-named
 `human_metrics.INCOMPLETE_<unix-ts>.json` instead of the canonical file, so a botched capture can
@@ -41,6 +67,16 @@ One cold attempt per task (the exam law -- see DAVID_BASELINES.md "Re-run rule")
 refuses to overwrite an existing canonical `human_metrics.json` unless `--allow-retake "<reason>"`
 is passed; the artifact then records `attempt_number` (1 for a first attempt) and `retake_reason`
 (empty for a first attempt).
+
+Why `--mode` has NO default (same decision as tools/gate0_appserver_arm.py's --mode, PR #192): the
+defect this argument closes is a SILENT one. Until 2026-07-28 this rig hardcoded
+`MODE = "readiness_dev"`, so every artifact it produced was stamped readiness_dev -- and
+`_verify_sources` (score_gate0.py, the `human_metric_identity:<arm>` check) rejects that under any
+paid mode, a failure discovered only at SCORING, after the paid run is spent. A default of
+`readiness_dev` would preserve exactly that trap for anyone who forgets the flag. The choices are
+read from `eval.score_gate0.MODES` itself (score_gate0_modes(), a function-local import matching
+tools/capture_gate0_baseline_miniwob.py's existing tools->eval idiom), so this rig can never offer a
+mode the scorer cannot score.
 """
 from __future__ import annotations
 
@@ -56,10 +92,34 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARM = "red"
-MODE = "readiness_dev"   # the only mode this rig supports; the paid-seed human replay (if Red ever
-                          # needs one -- Red has no held-out seed family, unlike MiniWoB) is out of
-                          # scope for this readiness-phase capture rig.
-REAL_OUT = os.path.normpath(str(ROOT / "runs" / "gate0_human_baseline" / "red"))
+# Per-mode output directory. Same shape and same purpose as
+# tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG -- the two rigs are peers and any divergence
+# between them is how the missing `--mode` survived here for a week after it landed there.
+# readiness_dev's entry is the exact literal this module used to hold as the unconditional REAL_OUT,
+# so that mode's output path is unchanged.
+MODE_CONFIG = {
+    "readiness_dev": {
+        "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_human_baseline" / "red")),
+    },
+    "paid_gate0": {
+        "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_paid_human_baseline" / "red")),
+    },
+    "paid_gate0_v2": {
+        "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_paid_v2_human_baseline" / "red")),
+    },
+}
+# Modes whose artifact becomes a PRE-REGISTERED GATE DENOMINATOR: they require --i-am-human and are
+# cross-checked against their own source-pins fixture before a single frame is emulated.
+#
+# The rationale differs from MiniWoB's and that difference is deliberate, not an oversight. There,
+# HELD_OUT_MODES protects held-out SEEDS (the rig also suppresses the task utterance for them). Red
+# has no held-out seed family at all -- the task text is public, printed in full, and identical in
+# every mode -- so there is nothing here to suppress. What --i-am-human protects on this arm is the
+# ARTIFACT: a paid-mode human_metrics.json is the denominator the `agent <= 2.0x human` bar is
+# measured against, and it must never be produced by a casual or scripted invocation.
+HELD_OUT_MODES = frozenset({"paid_gate0", "paid_gate0_v2"})
+# Backward-compatible alias: the DEV real path as a module constant, same as the MiniWoB rig exposes.
+REAL_OUT = MODE_CONFIG["readiness_dev"]["real_out"]
 # Rows sampled continuously (not one-per-keypress): the frozen predicate needs 10 CONSECUTIVE watch
 # rows showing a sustained battle exit, which idle/movement time must also be able to satisfy.
 SAMPLE_EVERY_FRAMES = 15   # ~0.25s at ~60fps
@@ -77,10 +137,83 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def _under_real_path(out: str) -> bool:
+def _under_real_path(out: str, real_out: str = REAL_OUT) -> bool:
     norm = os.path.normpath(os.path.abspath(out))
-    real = os.path.normpath(os.path.abspath(REAL_OUT))
+    real = os.path.normpath(os.path.abspath(real_out))
     return norm == real or norm.startswith(real + os.sep)
+
+
+def score_gate0_modes() -> dict:
+    """`eval.score_gate0.MODES` -- the frozen scorer's own mode map, read from the scorer and NEVER
+    re-declared here, so this rig cannot offer a mode the scorer cannot score.
+
+    Function-local import, matching tools/capture_gate0_baseline_miniwob.py's existing tools->eval
+    idiom (`from eval.score_gate0 import MODES` inside run()), so importing this module does not drag
+    in eval/."""
+    from eval.score_gate0 import MODES
+    return MODES
+
+
+def pinned_red_human_path(mode: str) -> Path:
+    """The absolute path `mode`'s source-pins fixture pins for `red_human`, resolved EXACTLY as
+    eval/score_gate0.py::_verify_sources resolves it -- relative entries against the scorer's own
+    ROOT, absolute ones left alone.
+
+    DUPLICATION, DECLARED: PR #192 adds an identical `pinned_artifact_path(mode, key)` to
+    tools/gate0_appserver_arm.py. Reusing it was the intent and is not possible here -- #192 is not
+    merged, so the symbol does not exist on `origin/main` (this branch's base), and that file is
+    off-limits to this change. Two resolutions of one pin is exactly the drift class this whole
+    workstream exists to remove, so this copy is a KNOWN TEMPORARY: once both land, lift one shared
+    helper and delete both. Flagged in the PR body, not left for a reader to discover."""
+    from eval.score_gate0 import ROOT as SCORER_ROOT, SOURCE_PIN_FILES
+    pins = json.loads(SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))
+    path = Path(pins["artifact_paths"]["red_human"])
+    return (path if path.is_absolute() else SCORER_ROOT / path).resolve()
+
+
+def require_fixture_points_here(mode: str, real_out: str) -> str | None:
+    """VALIDATE AND REFUSE: does `mode`'s own source-pins fixture actually point at the file this
+    capture is about to write? Returns a refusal message, or None if it does.
+
+    Without this the failure is silent and expensive in the way this project keeps getting caught by:
+    the capture succeeds, the artifact is perfect, and the scorer reads a DIFFERENT file -- the
+    banked readiness_dev one, whose `mode` is wrong -- so the verdict is `human_metric_identity:red`
+    -> INSUFFICIENT_DATA anyway, discovered only after the paid run.
+
+    Deriving the output directory from the pin instead would NOT fix that; it would reinstate a worse
+    defect (#192's F2 lesson). All three fixtures pin `red_human` at the SAME banked file today, so a
+    derived output would send a v2 capture straight into `runs/gate0_human_baseline/red/`, overwriting
+    an append-only artifact whose digest all three fixtures freeze -- breaking readiness_dev and
+    paid_gate0 scoring at the same time. Validate and refuse; never derive.
+
+    HELD-OUT MODES ONLY, and that scoping is deliberate rather than convenient: readiness_dev's
+    baseline is already captured, already banked, and its pin is already frozen to exactly this file,
+    so re-checking it at capture time protects nothing and would add a new way for a legitimate
+    --allow-retake to fail. It also keeps the readiness_dev path literally untouched by this change,
+    which is what the differential in the PR body proves."""
+    if mode not in HELD_OUT_MODES:
+        return None
+    target = Path(os.path.join(real_out, "human_metrics.json")).resolve()
+    try:
+        pinned = pinned_red_human_path(mode)
+    except Exception as exc:
+        return (f"refusing: cannot read {mode!r}'s source-pins fixture to confirm where the scorer "
+                f"will look for the Red human baseline ({exc}).")
+    if pinned != target:
+        return (
+            f"refusing: eval/score_gate0.py will read the {mode!r} Red human baseline from\n"
+            f"    {pinned}\n"
+            f"but this capture writes to\n"
+            f"    {target}\n"
+            f"so the artifact you are about to spend your time producing would never be scored.\n"
+            f"Fix the FIXTURE, not this rig, and not the banked artifact: set artifact_paths."
+            f"red_human in eval/fixtures/gate0_{'paid_v2' if mode == 'paid_gate0_v2' else 'paid'}"
+            f"_source_pins.json to the second path above (leaving artifact_sha256.red_human as its "
+            f"PENDING_ placeholder until this capture exists), in its own reviewed commit -- prereg "
+            f"P1c. Editing runs/gate0_human_baseline/red/human_metrics.json instead is explicitly "
+            f"forbidden (reports/2026-07-25-gate0-v2-prereg.md:264-269): it is append-only raw data "
+            f"and three fixtures freeze its digest.")
+    return None
 
 
 def _atomic_write_json(path: str, payload: dict) -> None:
@@ -113,7 +246,10 @@ def _build_metrics(args, *, rom_sha256: str, state_sha256: str, oracle_path: str
         "schema_version": 1,
         "arm": ARM,
         "role": "human",
-        "mode": MODE,
+        # Was the module-level constant MODE = "readiness_dev". eval/score_gate0.py::_verify_sources
+        # requires this to EQUAL the mode being scored, so a hardwired stamp makes every paid-mode
+        # capture void -- and only at scoring. Prereg P1c.
+        "mode": args.mode,
         "wall_clock_s": round(wall_clock_s, 3),
         "primitive_actions": press_count,
         "success": success,
@@ -146,6 +282,34 @@ def run(args, max_frames: int | None = None) -> int:
     the interactive loop so an in-process test can exercise the full boot/log/write path without a
     real window-close or Ctrl-C. It never presses a button; a capped run with zero human input simply
     writes an INCOMPLETE artifact, exactly like a human closing the window immediately would."""
+    # --- mode resolution + the two mode guards, before any file is touched -----------------------
+    # Same order and same shape as tools/capture_gate0_baseline_miniwob.py::run().
+    mode = getattr(args, "mode", None)
+    if mode not in MODE_CONFIG:
+        print(f"refusing: unknown --mode {mode!r} (must be one of {sorted(MODE_CONFIG)}).",
+              file=sys.stderr)
+        return 2
+    real_out = MODE_CONFIG[mode]["real_out"]
+    if args.out is None:
+        args.out = real_out
+
+    # Held-out law, this arm's version (see HELD_OUT_MODES): an explicit, un-default-able
+    # acknowledgement that a real human is about to play. Fires for EVERY paid-mode invocation,
+    # canonical path or not -- the sensitive thing is producing a paid-mode denominator at all, not
+    # just where it lands.
+    if mode in HELD_OUT_MODES and not getattr(args, "i_am_human", False):
+        print(f"refusing: --mode {mode} requires --i-am-human -- this captures the human "
+              "denominator the paid gate's `agent <= 2.0x human` bar is measured against; a "
+              "scripted or absent-minded invocation must never be able to produce it. Pass "
+              "--i-am-human only when a real human is about to play this task at the keyboard.",
+              file=sys.stderr)
+        return 2
+
+    refusal = require_fixture_points_here(mode, real_out)
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return 2
+
     if not os.path.exists(args.rom):
         print(f"ROM not found: {args.rom}", file=sys.stderr)
         return 2
@@ -154,13 +318,13 @@ def run(args, max_frames: int | None = None) -> int:
               "(and runs/gate0_readiness_2026-07-14/ receipts) for how to obtain it.", file=sys.stderr)
         return 2
 
-    if args.test and _under_real_path(args.out):
-        print(f"--test refuses to write under the real baseline path {REAL_OUT!r}; "
+    if args.test and _under_real_path(args.out, real_out):
+        print(f"--test refuses to write under the real baseline path {real_out!r}; "
               "pass a scratch --out.", file=sys.stderr)
         return 2
-    if not args.test and not _under_real_path(args.out):
+    if not args.test and not _under_real_path(args.out, real_out):
         print(f"warning: --out {args.out!r} is outside the canonical real baseline path "
-              f"{REAL_OUT!r} (fine for a manual dry run; DAVID_BASELINES.md uses the default).",
+              f"{real_out!r} (fine for a manual dry run; DAVID_BASELINES.md uses the default).",
               file=sys.stderr)
 
     # One cold attempt per task (the exam law): refuse to clobber an existing canonical artifact
@@ -366,19 +530,37 @@ def run(args, max_frames: int | None = None) -> int:
     return 0 if success else 1
 
 
-def main() -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # REQUIRED, NO DEFAULT -- see the module docstring's "Why --mode has no default". Choices come
+    # from the frozen scorer's own MODES map, never a list re-declared here.
+    ap.add_argument("--mode", required=True, choices=tuple(score_gate0_modes()),
+                     help="which pre-registered Gate 0 mode this capture belongs to; stamps "
+                          "human_metrics.json's `mode` field (which eval/score_gate0.py requires to "
+                          "equal the mode being scored) and selects the output directory. Both paid "
+                          "modes additionally require --i-am-human. No default: an unstated mode is "
+                          "an artifact the scorer rejects.")
     ap.add_argument("--rom", default=str(ROOT / "roms" / "PokemonRed.gb"))
     ap.add_argument("--state", default=str(ROOT / "runs" / "red_start.state"))
-    ap.add_argument("--out", default=REAL_OUT)
+    ap.add_argument("--out", default=None,
+                     help="defaults to the canonical real path for --mode (see module docstring).")
     ap.add_argument("--player", default="David")
+    ap.add_argument("--i-am-human", action="store_true", dest="i_am_human",
+                     help="required for every held-out mode (HELD_OUT_MODES: paid_gate0, "
+                          "paid_gate0_v2) -- explicit, non-default acknowledgement that a real human "
+                          "is about to play this task. A scripted invocation cannot satisfy this by "
+                          "accident.")
     ap.add_argument("--test", action="store_true",
                      help="throwaway smoke-test mode: refuses to write under the real baseline path")
     ap.add_argument("--allow-retake", metavar="REASON", default=None,
                      help="required to overwrite an existing canonical human_metrics.json -- state "
                           "why this is a legitimate re-take (a botched capture), not a rerun to "
                           "chase a better score.")
-    return run(ap.parse_args())
+    return ap
+
+
+def main() -> int:
+    return run(build_arg_parser().parse_args())
 
 
 if __name__ == "__main__":

@@ -53,8 +53,30 @@ docstring) or copy the one from an existing checkout/readiness run
 (`runs/gate0_readiness_2026-07-14/`).
 
 ```
-uv run python tools/capture_gate0_baseline_red.py
+uv run python tools/capture_gate0_baseline_red.py --mode readiness_dev
 ```
+
+`--mode` is **required and has no default** (2026-07-28), exactly like the MiniWoB rig's. It stamps
+`human_metrics.json`'s `mode` field -- which `eval/score_gate0.py` requires to equal the mode being
+scored -- and picks the output directory:
+
+| `--mode` | writes to | extra flag |
+|---|---|---|
+| `readiness_dev` | `runs/gate0_human_baseline/red/` | -- |
+| `paid_gate0` | `runs/gate0_paid_human_baseline/red/` | `--i-am-human` |
+| `paid_gate0_v2` | `runs/gate0_paid_v2_human_baseline/red/` | `--i-am-human` |
+
+Red has **no held-out seeds** (the design doc's "Red uses the same fixed start for agent and human"),
+so the task, the savestate and the predicate are identical in every mode -- you play exactly the same
+thing. `--i-am-human` is required for the paid modes anyway, because that artifact becomes the
+denominator the `agent <= 2.0x human` bar is measured against.
+
+A paid-mode capture also **refuses to start** unless that mode's source-pins fixture already points
+`artifact_paths.red_human` at the directory above. Today all three fixtures still point at
+`runs/gate0_human_baseline/red/`, so `--mode paid_gate0_v2` refuses until that re-point lands (prereg
+P1c). The refusal prints the exact fixture field to change. Do **not** work around it by pointing
+`--out` at the banked dev directory: that file is append-only raw data and three fixtures freeze its
+digest.
 
 What you'll see: a real PyBoy window opens straight into the fresh bedroom. The terminal prints the
 fresh party count (must read `0` -- if it doesn't, you've got the wrong savestate, Ctrl-C and fix
@@ -73,7 +95,8 @@ never changes the banked numbers. The window then **auto-closes itself a few sec
 (`COMPLETION_GRACE_SECONDS`) so you don't have to notice the message or react quickly; you can also
 close it yourself (or Ctrl-C) any time, including before completion, to finish early or abort.
 
-Writes to `runs/gate0_human_baseline/red/`:
+Writes to the `--mode` directory in the table above (`runs/gate0_human_baseline/red/` for
+`readiness_dev`):
 - `human_metrics.json` -- your wall-clock time and button-press count, frozen at detection (the
   exact fields `eval/score_gate0.py` reads for the human side of the `<=2.0x` Capability bar), plus
   `player`, `started_at`/`completed_at` (ISO 8601 UTC), `rom_sha256`/`savestate_sha256`,
