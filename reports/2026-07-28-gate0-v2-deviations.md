@@ -217,11 +217,13 @@ the place you are in"* are **kept verbatim**; the second is C7's entire defence 
 scope to touch.
 
 **No phrase in the brief points at ten**, and no digit is named. **But the floor this buys is 8
-rows, not the 24 first claimed here** — see the measured table below, which supersedes the
+settle rows, not the 24 first claimed here** — see the measured table below, which supersedes the
 arithmetic this amendment was written on. W1/W2 raise the floor from §5.3's 6 and remove the
-ceasing-to-move tail, both real improvements, and **still leave the worst compliant reading under
-the bar.** They are recorded as landed because they are strictly better than §5.3 and because W3/W4
-(which are load-bearing for Arm W) travel with them — **not** because they close C5.
+ceasing-to-move tail, both real improvements, and **still leave the worst compliant reading at
+`8 + w` — a band of 9-14 that straddles the bar rather than clearing it**, where `w` is an
+uncontrolled battle-wind-down term the brief cannot constrain (see the `8 + w` correction below).
+They are recorded as landed because they are strictly better than §5.3 and because W3/W4 (which are
+load-bearing for Arm W) travel with them — **not** because they close C5.
 
 #### W3 — `task,` deleted from the prohibition's trigger list
 
@@ -366,16 +368,76 @@ writes the only extra row.
 **The v1 agent worked this out.** It called `observe` **once in 142 tool calls** — the opening
 *"Begin by observing"* — and never again. Corrected table:
 
-| reading | rounds | rows | vs the ten-row window |
-|---|---|---|---|
-| a separate `observe` after each move (what this section previously assumed) | 12 | 24 | +14 |
-| **observation taken from the action result**, handful = 5 | 12 | **12** | **+2** |
-| handful = 4 | 10 | **10** | **tie, zero slack** |
-| **handful = 3** (ordinary English) | 8 | **8** | **FAIL** |
+| reading | rounds | **settle rows** |
+|---|---|---|
+| a separate `observe` after each move (what this section previously assumed) | 12 | 24 |
+| **observation taken from the action result**, handful = 5 | 12 | **12** |
+| handful = 4 | 10 | **10** |
+| **handful = 3** (ordinary English) | 8 | **8** |
 
-**The claimed 2.4× does not exist. The true design margin is 2 rows, and two compliant readings land
-at or under the bar.** *"A handful"* is 3-5 in ordinary English; the brief says only that a handful
-is *not enough*, so settling at four rounds is obedient, and the doubling gives eight.
+**The claimed 2.4× does not exist.** *"A handful"* is 3-5 in ordinary English; the brief says only
+that a handful is *not enough*, so settling at four rounds is obedient, and the doubling gives eight
+**settle** rows. **These are settle rows only — they are not the post-exit total the scorer counts.
+See the correction immediately below, which supersedes the "vs the ten-row window" verdicts this
+table previously carried.**
+
+#### Correction — the settle count is not the post-exit count. The term `w` was missing.
+
+**Withdrawn:** this section previously compared the settle-row figures above **directly** against the
+ten-row window and concluded *"the true design margin is 2 rows"*, with **8 = FAIL**, **10 = tie,
+zero slack**, **12 = +2**. Those four verdicts are withdrawn. They assume `exit_idx` lands on the
+first *settle* row. **It does not.**
+
+`_red_success` computes
+
+```python
+exit_idx = next((i for i in range(battle_idx + 1, max(battle_idx + 1, len(watches) - 9))
+                 if all(w.get("in_battle") == 0 for w in watches[i:i + 10])), None)
+```
+
+so `exit_idx` is the first row of the first ten-row run of `in_battle == 0` — i.e. **the first
+`in_battle == 0` row**, which is the start of the **battle wind-down**, not the start of settling.
+Every row the agent writes while clearing post-battle dialogue and re-orienting **already counts
+toward the ten**, before the settle routine has begun.
+
+**Measured in v1** (`runs/gate0_paid/red/world/oracle.jsonl`, 0-indexed watch rows, re-read
+2026-07-28):
+
+| rows | `in_battle` | `(x, y)` | map | what they are |
+|---|---|---|---|---|
+| … 430-433 | **2** | (5, 6) | 40 | in-battle dialogue — `a` presses, `patience_trail` `"ASH defeate…"` (432), `"GARY? WHAT? / Unbelievable! / I picked the wrong POKéMON!"` (433). **Before `exit_idx`; these do NOT count.** |
+| **434** | **0** | (5, 6) | 40 | `in_battle` has flipped, but the row is **still consuming battle text** — `patience_advances: 2`, `"ASH got ???? / for winning!"`. `action: "a"`. |
+| **435-437** | **0** | (5, 6) | 40 | three further `a` presses, `context: "overworld"`, no patience advances. Then the run ended. |
+
+**v1's post-exit tail is 4 rows** — not 4 rows of *settling*, 4 rows of wind-down and re-orientation,
+every one at the single tile `(5, 6)` on map 40. (Correcting the memo's attribution in passing:
+`"ASH defeate…"` and `"GARY? WHAT?"` are on rows 432-433, which read `in_battle == 2` and fall
+**before** `exit_idx`. Only `"ASH got ????"` — row 434 — is post-exit.)
+
+**So the honest worst case is `8 + w`,** where `w` is the number of rows between `in_battle` first
+reading 0 and the agent beginning to settle. `w ≥ 1` necessarily: the flip row itself is still
+clearing battle text, as row 434 shows. **`w` is not controllable and not pre-registerable** — it
+depends on how the agent clears the award dialogue, and the harness converts that at anywhere from
+16 : 1 (one `press_sequence` of sixteen `a`s → **1** row) to 1 : 1 (individual `press_button` calls),
+with `observe`'s patience auto-advance loop absorbing a variable number of text screens per row
+(6 advances on row 433, 2 on row 434). v1 measured **`w = 4`**.
+
+Over a realistic `w` of 1-6 the worst compliant reading lands at **9-14 rows** — **straddling the
+bar, not certainly under it.** At v1's own `w = 4` it lands at **12** and passes.
+
+**This does not rescue the brief, and it is not recorded as a rescue.** A one-shot, unrepeatable run
+against a spent seed block must not rest its margin on an uncontrolled ±3 term that no clause in the
+frozen document constrains. The recommendation below is unchanged, and so is its reasoning: the
+floor cannot be entrusted to a wording. **But "8 rows, certain FAIL" was overstated by one whole
+term, and an overstatement in the record is a defect whichever direction it points.**
+
+**The count that matters most here is not 8 and not `8 + w`; it is three.** This floor has now been
+computed three times and been wrong three times — **14**, then **24 / 2.4×**, now **8**. Contrary to
+how the first two were described, the errors are **not** all in one direction: the first two were
+optimistic about the margin, this one pessimistic. What they share is not a bias, it is a method —
+**every one of them was computed against a model of the harness instead of measured against the only
+run that exists.** The `+ w` term was sitting in `oracle.jsonl` the entire time. Treat any margin in
+this section as provisional until someone re-reads the rows.
 
 **Retraction — the "degenerate floor" framing was wrong.** This section previously wrote *"if the
 agent **disobeys** 'Observe again after every move'"* and called the resulting 12 rows a degenerate
@@ -412,25 +474,30 @@ tool-agnostically forbids batching (which the 16 : 1 `press_sequence` ratio othe
 > you have made enough of them, treat that judgement as the halfway point rather than the end —
 > carry on the same way for as many moves again, and only then stop settling."
 
-**Worst compliant reading: handful = 3 → smallest obedient count 4 → doubled → 8 rows.** The same
-miss, one revision later. The doubling has to become a tripling or a second doubling to clear ten,
-and *"carry on for as many again, and then once more for as many again after that"* collapses into a
-single emphatic doubling under an ordinary reading — back to 8. Every variant I could build fails
-one of three ways:
+**Worst compliant reading: handful = 3 → smallest obedient count 4 → doubled → 8 settle rows**, i.e.
+`8 + w` post-exit, a band of **9-14**. The doubling has to become a tripling or a second doubling to
+put the *settle* term alone past ten, and *"carry on for as many again, and then once more for as
+many again after that"* collapses into a single emphatic doubling under an ordinary reading — back
+to 8. Every variant below is quoted in **settle rows**; add `w` to each for the post-exit total, and
+note that doing so does not rescue any of them, because `w` is uncontrolled in every row of the
+table equally. Every variant I could build fails one of three ways:
 
-| variant | worst-case rows | why rejected |
+| variant | worst-case **settle rows** | why rejected |
 |---|---|---|
-| move-denominated floor + one doubling (above) | **8** | under the bar — v1's failure mode, third time |
+| move-denominated floor + one doubling (above) | **8** (`8 + w` → 9-14) | straddles the bar on an uncontrolled term — v1's failure mode, third time |
 | + a second doubling | 16 if read as two steps, **8** if collapsed | the margin rests on the reader not collapsing it |
 | raise the base: *"a handful is not enough, nor is twice that"* | 14 | *"twice a handful"* evaluates to **exactly the bar** at handful = 5 — the same on-the-bar coincidence *"several"* had |
 | a bigger quantifier word (*"dozens"*) | ≥ 24 | hands the agent a number in words; *"a dozen"* sits 2 above the bar |
 | keep the round unit, force *"a separate look"* | 16 | the margin rests on the agent performing an act the world makes redundant — **the exact behaviour already observed to fail**, 141 times in 142 |
 
-Every (A) either lands its worst case at 8-14, or introduces a number-phrase that evaluates on or
-near the bar, or rests its margin on a redundant act this model has already been seen to skip.
-**A margin of 2-4 rows on a one-shot, unrepeatable run against a spent seed block — computed by the
-third consecutive person to compute a margin here — is not a design margin.** The first two
-computations were 14 and 2.4×; both were wrong, in the same direction, for the same reason.
+Every (A) either lands its worst case on or around the bar once `w` is admitted, or introduces a
+number-phrase that evaluates on or near the bar, or rests its margin on a redundant act this model
+has already been seen to skip. **A margin that is 2-4 rows wide and sits on top of an uncontrolled
+±3 term, on a one-shot, unrepeatable run against a spent seed block — computed by the third
+consecutive person to compute a margin here — is not a design margin.** The first two computations
+were 14 and 2.4×, both optimistic; the third was 8-and-certain-FAIL, pessimistic. **The direction
+was never the defect. All three were computed against a model of the harness rather than measured
+against `runs/gate0_paid/red/`, which is where the missing `w` had been sitting the whole time.**
 
 **And the count matters.** (A) would be draft **three**, each written after a reviewer computed a
 miss, none of them after a run. The risk section below already concedes *"there is no principled
@@ -454,12 +521,25 @@ one-attempt rule, which no later fix returns.
 1. **A pure `observe`/`wait` drain converts a C5 failure into a C9 failure.** Neither tool changes
    `(x, y)`. `_red_success` computes `post = [(x, y) …] for watches[exit_idx:]` — **all** rows to
    end of file — and needs ≥ 2 distinct tiles. Measured on the only run that exists: v1's entire
-   post-battle tail is **4 rows, every one at `(5, 6)` on map 40 — one distinct tile**. Append any
-   number of forced observes to that trace and `exit_idx` becomes 434, C5 passes, and
-   `red_no_free_movement_after_exit` **fails**. That is §5.1's defect verbatim — *"The draft traded
-   one predicate clause for another and called it a fix"* — repeated at the harness level. **A v3
-   drain must move, not merely look**, which means the launcher performs game actions, which is a
-   materially heavier change than §11 budgeted for.
+   post-battle tail is **4 rows, every one at `(5, 6)` on map 40 — one distinct tile**. The tail is
+   in fact one tile for far longer than that: **distinct `(x, y)` over rows 392-437 — 46 rows — is
+   exactly `{(5, 6)}`, on map 40 throughout.** Append any number of forced observes to that trace and
+   `exit_idx` becomes 434, C5 passes, and `red_no_free_movement_after_exit` **fails**. That is §5.1's
+   defect verbatim — *"The draft traded one predicate clause for another and called it a fix"* —
+   repeated at the harness level. **A v3 drain must move, not merely look**, which means the launcher
+   performs game actions, which is a materially heavier change than §11 budgeted for.
+
+   **And real presses will move it — the `(x, y)` C9 reads is real RAM, not dead reckoning.**
+   Worth stating because the same tail invites the opposite conclusion: the `perceived` block on
+   every one of rows 434-437 carries `pose: [0, 0]`, `confidence: 0.2`, and row 435 even reports a
+   spurious `ego_motion: "east"` — the perceiver was in its **"Position lost"** state
+   (`core/perception_plugin.py:368`) for the whole tail. None of that reaches the scorer. `watch` is
+   populated from the emulator's memory directly — `world_mcp.py:189` sets
+   `{"x": 0xD362, "y": 0xD361, "map": 0xD35E, "party": 0xD163, …}`, and
+   `games/pokemon_red/memory_map.py:23-24` names those two *"player X tile within the current map"* /
+   *"player Y tile within the current map"*. So C9's one-tile reading is a true statement about the
+   player's position, not an artifact of a confused perceiver, and a drain that actually presses a
+   direction will register a second tile even while the perceiver stays lost.
 2. **The launcher has no channel to the world.** `build_docker_mcp_args` returns
    `docker run -i --rm …`: the world is a **stdio child of `codex`**, whose pipes `codex` owns.
    `run_gate0_arm_turn` speaks JSON-RPC to `codex app-server` and never to `gate0_world`; there is no
@@ -475,15 +555,71 @@ second turn's text lives in code, where an integer is permitted and cannot be re
 handful"*. Its costs are real and all of them are David's call:
 
 - one extra short turn's tokens (cached prefix; S-3 has ~400 tool calls of headroom);
-- **a taint decision**: whether an explicit count inside a post-hoc evidence-collection turn leaks
-  the predicate. It is worth arguing rather than assuming, and the argument is this — **C5, C7 and
-  C9 are evidence-quality clauses, not capability clauses.** The claim under test is C2/C3/C4:
-  obtain the starter, win the rival battle. Those are decided, and unfakeable, before the second
-  turn begins. C5 exists to confirm the RAM reading is a sustained real state rather than a one-tick
-  artifact; C9 to confirm the player is alive and free rather than frozen. **Asking the subject to
-  generate the evidence that its own result is trustworthy is the category error underneath both
-  failed drafts**, and it is the thing a harness is for.
+- **a taint decision**: whether an explicit count inside a second turn leaks the predicate. It is
+  worth arguing rather than assuming, and the argument is **§11 itself**. §11 does not merely
+  tolerate a harness-side floor; it **pre-registers one**, in advance of any result, as the
+  designated response to exactly this failure mode: *"v3 does **not** propose a third wording; it
+  moves the discipline into the harness (forcing a **fixed number** of extra `observe`/`wait`
+  round-trips after the model's `turn/completed`, in `run_gate0_arm_turn`)."* A fixed number, at the
+  launcher, chosen by us and not by the agent, is the pre-registered instrument. §11 also names its
+  price in the same breath — *"a scaffolding-side change to a safety-critical launcher —
+  `expected_launcher_sha256` re-pin plus its own adversarial review — and needs its own write-up"* —
+  so the cost is pre-registered too, and is paid, not waived.
+
+  **The proposal departs from §11's letter in mechanism only, and that departure is forced.** §11's
+  named mechanism assumes a launcher→world channel that does not exist (defect 2 above: the world is
+  a stdio child of `codex`, and `run_gate0_arm_turn` speaks only to `codex app-server`). A second
+  turn on the same `thread_id` is the nearest implementable realisation of *"a fixed number, imposed
+  by the harness, after `turn/completed`"* — same site, same timing, same authority, same price.
+  That is a deviation to be recorded and reviewed, not a reinterpretation of what is being measured.
 - an `expected_launcher_sha256` re-pin, its own plan/branch/adversarial review per §0.2 and §11.
+
+**Retraction — the "evidence-quality clauses" argument is withdrawn in full, and it was banned by the
+frozen document before it was written.**
+
+An earlier version of this bullet justified the second turn like this:
+
+> **C5, C7 and C9 are evidence-quality clauses, not capability clauses.** The claim under test is
+> C2/C3/C4: obtain the starter, win the rival battle. Those are decided, and unfakeable, before the
+> second turn begins. C5 exists to confirm the RAM reading is a sustained real state rather than a
+> one-tick artifact; C9 to confirm the player is alive and free rather than frozen. **Asking the
+> subject to generate the evidence that its own result is trustworthy is the category error
+> underneath both failed drafts**, and it is the thing a harness is for.
+
+**That is not a reading the frozen pre-registration permits.** It splits the nine clauses into a
+claim (C2/C3/C4) and scaffolding around it (C5/C7/C9), and then licenses harness assistance on the
+scaffolding on the ground that the claim was already settled. §2 forecloses every step of that:
+
+- **§2, D-1, verbatim:** *"`_red_success` returns any non-empty failure list. There is no partial
+  credit: the function returns `not failures` over a list that must be **empty**. **Satisfying eight
+  of the nine clauses in §5.4 is a FAIL.**"* There is no privileged subset. Nine of nine, or FAIL.
+- **§2's forbidden-interpretations list** bans, in advance and by name: *"failed only on a …
+  technicality it missed by N rows"* — **"a predicate clause is not a technicality; missing it is a
+  FAIL."* "Evidence-quality, not capability" is that banned framing with better manners: it is the
+  claim that missing C5 would not really be missing the thing under test.
+- **§2, S-1** defines Red success as `_red_success(...)` returning **exactly `(True, [])`** — the
+  empty list, not a list containing only evidence-quality entries.
+- **§9, H-a** puts C5 **and** C9 *together* forward as a **hypothesis under test**: *"Arm R's oracle
+  contains, after the trainer-battle exit, ≥10 consecutive rows with `in_battle == 0` **and** ≥2
+  distinct `(x, y)` pairs … the two clauses (C5, C9) that must now hold *together*."* A clause the
+  document nominates as a hypothesis is part of the claim by construction. It cannot simultaneously
+  be the scaffolding the claim is measured on.
+
+**Why it was wrong, not merely unsupported.** The argument was reverse-engineered from the
+conclusion. Having established that no wording closes C5, it made the gap acceptable by redefining
+C5 as not-really-the-claim — which is the same move as "we missed by N rows on a technicality",
+arrived at from the other end. §2 anticipated it and banned it **before any v2 number existed**,
+which is precisely when such bans are worth something. That it was written here anyway, inside the
+entry whose own subject is the p-hacking risk of tuning an intervention against predicted failure,
+is the sharpest available illustration of that risk.
+
+**What replaces it is stronger, and did not need inventing.** §11 already pre-registers a
+harness-imposed fixed count, at the launcher, with its price named. The escalation stands on a
+pre-registered instrument and a factual defect in that instrument's named mechanism — **not** on a
+re-reading of which clauses count. **Nothing above reclassifies any clause. C5, C7 and C9 remain
+capability clauses under test, and any one of them missing is a FAIL under D-1.** The taint question
+they were invoked to settle is genuinely open and is David's to decide on §11's terms; it is not
+dissolved by asserting that the clause at issue was never really the point.
 
 #### Does #193 still merge? Yes — and merging it cannot cause a launch
 
