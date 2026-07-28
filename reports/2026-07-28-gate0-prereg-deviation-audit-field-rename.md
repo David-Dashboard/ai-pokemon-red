@@ -92,6 +92,31 @@ tuples were repointed and its docstring updated. Verified read-only against the 
 that probe changes — the `reports/` freeze protects claims, and a claim's reproduction script that
 no longer runs protects nothing.
 
+**Correction (added after an independent review of this report).** An earlier revision of this
+section claimed the repaired probe "still print[s] `CONSTANCY_BREACH` with
+`['pin_mismatch:config_sha256', 'pin_mismatch:codex_mcp_list_sha256']`, matching
+`reports/2026-07-28-gate0-constancy-breach-addendum.md:73-74`." **The verdict reproduces; that
+specific failure list does not.** It was copied from the addendum's table rather than read off the
+run, which is exactly the "never claim a result you did not just observe" rule this repo runs on.
+What the probe actually prints today, both arms `CONSTANCY_BREACH`:
+
+```
+miniwob  Mode A: pin_mismatch: config_sha256, codex_mcp_list_sha256, tool_schema_sha256,
+                 world_image_id, host_code_sha256, image_code_sha256      (6)
+         Mode B: pin_mismatch: tool_schema_sha256, world_image_id,
+                 host_code_sha256, image_code_sha256                      (4)
+red      Mode A: pin_mismatch: config_sha256, codex_mcp_list_sha256, world_image_id,
+                 host_code_sha256, image_code_sha256                      (5)
+         Mode B: pin_mismatch: world_image_id, host_code_sha256, image_code_sha256   (3)
+```
+
+**This is not caused by PR #188** — the differential in §3 shows `origin/main`'s `audit()` and this
+branch's produce byte-identical failure lists. The extra entries are post-addendum fixture re-pins
+landing between the addendum and now: the #180 world-image rebuild moves `world_image_id` /
+`host_code_sha256` / `image_code_sha256`, and the P8 MiniWoB tool-surface repair moves
+`tool_schema_sha256` on that arm only. The addendum's own numbers were true against the tree it was
+written on; reproducing it byte-for-byte requires that tree, not this one.
+
 ## 6. Sources
 
 - `reports/2026-07-25-gate0-v2-prereg.md` §0.1, §6.3, §6.6 (frozen; read, not edited)

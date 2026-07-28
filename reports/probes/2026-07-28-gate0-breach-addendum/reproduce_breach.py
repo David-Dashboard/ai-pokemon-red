@@ -15,15 +15,18 @@ re-execution, no docker. Calls the FROZEN tools/check_gate0_codex.py::audit() tw
 READ THE `audit_overall` FIELD BELOW CORRECTLY. `audit()["audit_overall"]` is an INTERMEDIATE
 per-arm audit input, NOT the Gate-0 verdict (reports/2026-07-18-gate0-prereg.md:81-83 -- "do not
 quote them as the Gate 0 result"). "NO_GO_INSUFFICIENT_WAKES" is simply its terminal value for ANY
-clean run: check_gate0_codex.py:307-308 is the final `else` after the four failure-list branches,
-and wakes/wake_accounting are hardcoded literals at :318-319. The signal in Mode B is the FAILURE
-LISTS being empty, not that string. The real verdict is eval/score_gate0.py::score()["overall"],
-which does reach PASS/GO (score_gate0.py:370-371); it reads only the four failure lists and never
-gates on wake_accounting (deferred and non-gating since 2026-07-21, score_gate0.py:274-281).
+clean run: it is the final `else` of `check_gate0_codex.audit()`'s verdict chain, after the four
+failure-list branches, and `wakes`/`wake_accounting` are hardcoded literals in the dict that
+function returns. The signal in Mode B is the FAILURE LISTS being empty, not that string. The real
+verdict is `eval/score_gate0.py::score()["overall"]`, which does reach PASS/GO; it reads only the
+four failure lists and never gates on `wake_accounting` (deferred and non-gating since 2026-07-21).
 
 (The field was named plain `overall` when this probe was written; it was renamed to `audit_overall`
 because this very confusion recurred -- see tools/check_gate0_codex.py's module docstring. Only the
-key name and the drifted line numbers are updated here; no finding of this probe changes.)
+key name and these citations are updated here; no finding of this probe changes. The citations are
+now by IDENTIFIER, not line number, deliberately: the line-numbered versions went stale twice in
+one day -- once from the rename, once from a six-line docstring edit in the very PR that fixed the
+first one. Per the v2 prereg's own rule, "the quoted code and the named identifier win".)
 
 Run dirs are READ-ONLY here: nothing under runs/ is written, moved, or created. The
 resolved fixture is materialised into a scratch dir outside the repo.

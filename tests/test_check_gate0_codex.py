@@ -233,3 +233,11 @@ def test_audit_never_emits_a_bare_overall_key(tmp_path):
     result = _audit(_fixture(tmp_path))
     assert "overall" not in result
     assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    # Pin the whole emitted shape, not just the absent key: a future field named "overall",
+    # "verdict", or "result" would reintroduce the same collision, and schema_version must move
+    # if this dict's shape ever does again.
+    assert set(result) == {
+        "schema_version", "arm", "no_leak", "audit_overall", "wakes", "wake_accounting",
+        "peer_constancy", "token_usage", "token_usage_events", "primitive_action_events",
+        "leak_failures", "constancy_failures", "accounting_failures", "run_failures"}
+    assert result["schema_version"] == 3

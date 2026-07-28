@@ -21,10 +21,13 @@ THIS MODULE'S `audit_overall` IS NOT THE GATE 0 VERDICT -- DO NOT QUOTE IT AS ON
   exists so the next reader cannot make the same substitution by accident.
 - SAME RULE FOR `no_leak` AND `peer_constancy`, which both emit the literal string "PASS" and are
   therefore easier to misquote, not harder. They are per-CHECK results scoped to this one arm --
-  "the no-leak check passed", "the peer receipts agree" -- never a gate verdict, and nothing in
-  the repo reads either one. reports/2026-07-18-gate0-prereg.md:81-83 names `overall`, `no_leak`
-  AND `wake_accounting` together: "do not quote them as the Gate 0 result." Only the first was
-  renamed, because it was the one that collided with every real scorer's verdict field name.
+  "the no-leak check passed", "the peer receipts agree" -- never a gate verdict. No scorer gates
+  on either (neither name appears anywhere in eval/score_gate0.py), but both ARE quoted in banked
+  prose: reports/2026-07-24-gate0-armR-verdict.md:165 prints `"no_leak": "PASS"` on the same line
+  as `CONSTANCY_BREACH`. That is the misquote risk, live, in a banked verdict report.
+  reports/2026-07-18-gate0-prereg.md:81-83 names `overall`, `no_leak` AND `wake_accounting`
+  together: "do not quote them as the Gate 0 result." Only the first was renamed, because it was
+  the one that collided with every real scorer's verdict field name.
 """
 from __future__ import annotations
 
