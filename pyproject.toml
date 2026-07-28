@@ -32,4 +32,16 @@ package = false
 # to the same dotted module name as this repo's tests/test_contract_frozen.py and aborts
 # collection repo-wide ("import file mismatch"). Exclude the vendored tree; it is not
 # wired into this repo's test suite.
-norecursedirs = ["reports/_archive/embodiment-stone-layer-v0.2", "games/pokemon_red/_archive"]
+#
+# reports/probes/ holds one-off investigation scripts kept as evidence artifacts, not
+# suite tests. They are written ad-hoc, hardcode absolute paths, and boot emulators at
+# import time, so pytest importing one is actively destructive: 2026-07-28-mkds-lap-oracle/
+# poke_test.py matched the default *_test.py pattern, and on import it sys.path.insert'd
+# the primary checkout ahead of the worktree and booted DeSmuME, poisoning core.nds_emulator
+# and breaking tests/test_nds_touch_drag.py repo-wide. Probe dirs keep accumulating; exclude
+# the whole tree rather than policing 60+ ad-hoc filenames.
+norecursedirs = [
+    "reports/_archive/embodiment-stone-layer-v0.2",
+    "games/pokemon_red/_archive",
+    "reports/probes",
+]
