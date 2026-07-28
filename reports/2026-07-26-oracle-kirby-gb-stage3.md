@@ -9,7 +9,8 @@ Two independent legs:
    sampling on (`record.py --mode human --ram --watch ...`, **1,128 sampled rows across two recording
    segments**, run `runs/2026-07-28_kirby_stage3_human/`).
 2. **★ Causal** — writing `0xD03B` before a stage load *determines which stage loads*
-   (`evidence/causal_map.png`), and the value then survives 9,000 frames of live play untouched.
+   (`evidence/causal_map.png`), and the value then survives live play untouched — **9,000 frames** in
+   Float Islands (`==2`), **4,740 frames** in Bubbly Clouds (`==3`, to the title-screen reset).
 
 | stage | `0xD03B` | the four candidates | how established |
 |---|---|---|---|
@@ -93,6 +94,10 @@ values, HP and lives moving):
 | Float Islands | `{2}` | 0 | all `{1}` |
 | Bubbly Clouds | `{3}` → `0` at the end | 1 (the title-screen reset after lives ran out) | `{1}` → `0` at the same reset |
 
+The Bubbly Clouds run is the one exception to "9,000 frames": the `3` holds for **4,740 frames /
+159 sampled rows**, then lives run out and the title screen resets it. The two **9,000**-frame figures
+are the Float Islands (`==2`) hold and the Green Greens reverse-dissociation run below.
+
 **3. ★ The reverse dissociation — the strongest elimination evidence.** In the Green Greens run
 `0xD03B` reads `0` while all four candidates read `1`. They are **stale latches that do not track the
 current stage**: they say "past Stage 1" about a *history* that is no longer true of the *present*.
@@ -111,8 +116,9 @@ input-only Lololo kill was never achieved by the automation (see the retraction 
 What is **not** circular, and is the actual load-bearing evidence:
 - The game **chose Float Islands because of that value**. The write happened *before* the stage load;
   which stage loaded was the game's decision, not ours. A bystander byte cannot do that.
-- Across 9,000 frames of real play afterwards — deaths, respawns, room changes, a full life cycle —
-  **the game never overwrote the value**. If it were scratch space, it would have been clobbered.
+- Across thousands of frames of real play afterwards — 9,000 in Float Islands, 4,740 in Bubbly Clouds
+  — with deaths, respawns, room changes and a full life cycle, **the game never overwrote the value**.
+  If it were scratch space, it would have been clobbered.
 - **The four candidates stayed at `1` through a full stage load** into a stage that is neither Stage 1
   nor the stage they latched on.
 - `0xD03B` was **written only during setup, never during any measurement run** (`test1b.py` performs no
@@ -121,13 +127,48 @@ What is **not** circular, and is the actual load-bearing evidence:
 ⚠ **Still NOT wired, deliberately.** Editing `world_mcp.py` cascades into the frozen Gate-0
 host/image pins (same reason PR #138 is deferred). Wiring belongs in ONE batched PR with the other
 `watch = {}` worlds, timed with the next world-image rebuild.
+*(Update 2026-07-28: that batched PR happened — **PR #180 wired `stage: 0xD03B` and rebuilt/re-pinned
+both world images**. So "still not wired" is stale as of PR #180; the paragraph is kept because it is
+why the wiring was batched. It stays wired — see the retraction below, which is about a bound's
+status, not about the oracle.)*
 
-✅ **The former bound is now MET.** The 2026-07-26 version of this report required "confirm `0xD03B`
-reads `3` at the Stage-3 → Stage-4 boundary before wiring". That is done: `0xD03B` = `3` held across
-4,740 frames of live Bubbly Clouds (159 sampled rows), then through the CONTINUE prompt when lives
-ran out (still `3`),
-and only reset to `0` at the title screen. Five distinct stage values are now anchored (`0`–`4`), four
-of them causally. **The "one more anchor first" gate is discharged.**
+## ⚠⚠ RETRACTED — "THE STAGE-4 BOUND IS DISCHARGED" (retracted 2026-07-28, my FOURTH wrong claim here)
+
+**What I claimed** — here, in `HANDOFF.md`, and out loud when merging PR #173 — was that the
+2026-07-26 bound (*"confirm `0xD03B` reads `3` at the Stage-3 → Stage-4 boundary before wiring"*) was
+**MET**, and that the "one more anchor first" gate was **discharged**.
+
+**What is actually true: the Stage-3 → Stage-4 boundary was never crossed.** Nobody cleared Float
+Islands — not the automation, not the human run. What happened instead is a substitution: `0xD03B` was
+**written** to `3`, the game loaded Bubbly Clouds, and the value then **held for 4,740 frames of live
+play** (159 sampled rows of `test1b_v3.jsonl`, `t` 0 → 4,740), survived the CONTINUE prompt when lives
+ran out, and reset to `0` only at the title screen.
+
+**Why the substitution is still meaningful evidence — and why it does not satisfy the bound as
+written.** It is strong evidence about what the byte *does*: the game chose Bubbly Clouds *because of*
+the value, so `0xD03B` is demonstrably the stage selector, and 4,740 frames of untouched live play show
+the game does not treat it as scratch. But the bound was not asking what the byte selects. It existed
+to check that the byte **increments correctly on a real stage transition** — and a value we put there
+ourselves, however well it holds, cannot answer that. The increment has been observed **exactly once**
+(`1 → 2`, human run, file row 1082), not twice. Writing `3` and watching it stay `3` is a different
+measurement wearing the bound's clothes.
+
+**The bound is therefore STILL OPEN.** Precisely what discharges it: observe `0xD03B` transition
+`2 → 3` across a real Stage-3 → Stage-4 completion, **with no memory write anywhere in the run**. That
+requires actually clearing Float Islands, which has not been done.
+
+**What is NOT affected, so nobody over-reads this.** The finding stands and the oracle stays wired.
+The causal map (`0`–`4`, each value determining which stage the game loads), the 9,000-frame Float
+Islands hold, the 9,000-frame Green Greens reverse dissociation, and the elimination of the four
+latches are all independent of this bound. Five stage values are still anchored, four of them causally.
+This retraction is about **one bound's status**, not about `0xD03B`.
+
+⚠ **The claim propagated into `world_mcp.py` before it was caught, and is deliberately left there.**
+The `kirby_dreamland` registry comment says the byte was *"confirmed reading 4 at Stage 4"* — wrong
+twice over (`0xD03B` reads `3` at Stage 4, and nothing was confirmed at a boundary). `world_mcp.py` is
+**byte-pinned** by `eval/fixtures/gate0_expected_pins*.json` (`host_code_sha256` `b4ae7cf3…`), so even
+a comment-only edit breaks Gate-0 host/image parity and needs a world-image rebuild. Correct it in the
+next batched world PR, not in a documentation change.
 
 ⚠ **The one wiring caveat that remains — `0` is not a positive signal.** `0xD03B` reads `0` in genuine
 Green Greens, but it *also* reads `0` at cold boot before the game is initialised at all
@@ -173,16 +214,19 @@ verdict rests on.
 > useful part. **Its verdict is wrong.** Where a section's conclusion was overturned it carries its own
 > `SUPERSEDED` marker; read the header above for the current state.
 >
-> **THREE claims of mine have now been retracted in this document**, all the same failure mode — an
-> unvalidated screen-region detector turning a rendering artifact into a game event:
+> **FOUR claims of mine have now been retracted in this document.** The **fourth** is in the header
+> above and is a *different* failure mode — not a bad detector but a **bad discharge**: I accepted a
+> substituted measurement (write the byte, watch it hold) as satisfying a bound that asked for a real
+> boundary crossing. The other three are all one failure mode — an unvalidated screen-region detector
+> turning a rendering artifact into a game event:
 > 1. *"randomised search corrupts the game"* (the HUD "validity guard") — retracted 2026-07-26.
 > 2. *"savestates yield a frozen Kirby"* (the sprite-tile whitelist) — retracted 2026-07-26.
 > 3. *"the automation beat the Lololo boss"* (the boss-meter dark-pixel reader) — **retracted
 >    2026-07-28**; a blanked room-transition screen reads as an empty meter. The human beat Lololo;
 >    the hill-climb did not.
 >
-> All three retractions are kept in full below. They are the load-bearing part of this document's
-> honesty, and none of them affects the `0xD03B` verdict.
+> All three of those retractions are kept in full below. They are the load-bearing part of this
+> document's honesty, and none of the four affects the `0xD03B` verdict.
 
 Status: **$0 local probe only, offline PyBoy, NO LLM, NO Docker, NO paid run.** Worktree
 `probe/kirby-gb-stage3` (`../ai-pokemon-red-kirby3`). Continues
@@ -348,6 +392,10 @@ them.** The falsifying test was, as of 2026-07-26, unrun: reach Stage 3 and read
 came out **`0xD03B` = counter, the other four = latches** (header). The "do not wire" instruction still
 stands, but now for an entirely different reason: `world_mcp.py` edits cascade into the frozen Gate-0
 pins, and `0xD03B` still needs its Stage-3 → Stage-4 anchor.
+*(2026-07-28: this sentence's second half is the one that held up, and for a while it sat here
+contradicting the header, which had declared the same anchor discharged — see the retraction in the
+header. **The Stage-4 anchor bound is still OPEN.** The first half is superseded: PR #180 did wire the
+oracle, as part of the batched world rebuild that re-pins Gate-0.)*
 
 ## Rig improvements (the reusable part)
 

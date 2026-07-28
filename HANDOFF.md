@@ -8,7 +8,9 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
 _Last updated: 2026-07-28 (★ EX02 STAGE ORACLE FOUND: 0xD03B — CAUSAL, the byte the game reads to pick
-the stage; other 4 candidates eliminated as stale latches; NOT wired. Prior: attempt 2 — reached the END
+the stage; other 4 candidates eliminated as stale latches; wired in PR #180. ⚠ The Stage-3 → Stage-4
+boundary bound is **STILL OPEN** — I called it discharged and retracted that the same day, item 5.
+Prior: attempt 2 — reached the END
 of Castle Lololo and the Lololo BOSS via a verified warp-star sequence; candidates narrowed 8 → 5. $0.
 **THREE** of my own mechanism claims retracted, the third being "the automation beat Lololo" — it did
 not; David did.)_
@@ -29,13 +31,23 @@ not; David did.)_
 4. ⚠ **NOT WIRED, deliberately** — editing `world_mcp.py` cascades into the frozen Gate-0
    host/image pins (same reason PR #138 is deferred). Wire in ONE batched PR with the other
    `watch = {}` worlds at the next world-image rebuild.
-5. ✅ **Bound DISCHARGED (2026-07-28 follow-up probe).** The old gate — "confirm `0xD03B` reads `3` at
-   the Stage-3 → Stage-4 boundary before wiring" — is **met**, and the claim is now **CAUSAL**: writing
+   *(Stale as of PR #180: that batched PR landed and `stage: 0xD03B` IS wired, with both world images
+   rebuilt and Gate-0 re-pinned. Kept for the reason wiring was batched.)*
+5. ⚠ **Bound STILL OPEN — I wrongly called it DISCHARGED on 2026-07-28, RETRACTED the same day.**
+   The gate is *"confirm `0xD03B` reads `3` at the Stage-3 → Stage-4 boundary before wiring"*, and
+   **that boundary was never crossed** — nobody has cleared Float Islands. What I banked instead was a
+   substitution: `0xD03B` was **written** to `3`, Bubbly Clouds loaded, and the value **held 4,740
+   frames** of live play (159 sampled rows) and through the CONTINUE prompt. Real evidence that the
+   byte is the stage *selector*; **not** evidence that it *increments* on a real transition — that has
+   been seen exactly once (`1 → 2`, human run), not twice. **To discharge: observe `0xD03B` go `2 → 3`
+   across a genuine Stage-3 → Stage-4 completion with NO memory write. Requires actually clearing
+   Float Islands.** Retraction in full: `reports/2026-07-26-oracle-kirby-gb-stage3.md`.
+   **Unaffected — the oracle is sound and stays wired.** The claim is **CAUSAL**: writing
    `0xD03B` before a stage load *determines which stage loads* (0 Green Greens, 1 Castle Lololo,
    2 Float Islands, 3 Bubbly Clouds, 4 Mt. Dedede; no-write control loads Castle Lololo). Five values
-   anchored, four causally. `3` held ~4,700 frames of live Bubbly Clouds and through the CONTINUE
-   prompt. Strongest elimination result: the **reverse dissociation** — in 9,000 frames of live *Green
-   Greens* with `0xD03B`=0, all four candidates still read `1`. They are STALE latches.
+   anchored, four causally. Strongest elimination result: the **reverse dissociation** — in 9,000
+   frames of live *Green Greens* with `0xD03B`=0, all four candidates still read `1` (and 9,000 frames
+   of live *Float Islands* held `0xD03B`=2). They are STALE latches.
    ⚠ **NEW WIRING HAZARD:** `0` is NOT a positive "Green Greens" signal — it is also the uninitialized
    boot value (frame 10: `D03B=0 hp=0 lives=0`) and the post-game-over title screen. **A predicate keyed
    on `== 0` is unsafe; `>= 2` is meaningful.** Gate any read on the game actually being in play.
