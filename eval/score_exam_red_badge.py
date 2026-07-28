@@ -2,8 +2,9 @@
 
 Task (reports/2026-07-22-graduation-exam-v1-definition.md EX01, PR #129 -- v1-DRAFT, NOT frozen;
 task bars here are pending David's freeze of that PR): "From the fresh bedroom start, earn your
-first Gym Badge." End state: RAM oracle `badges` (0xD356, `world_mcp.py:177`, the SAME field
-`eval/score_gate0.py::_red_success` already reads) bit 0 flips 0->1 (Boulder Badge).
+first Gym Badge." End state: RAM oracle `badges` (0xD356, `world_mcp.py`'s
+`GAMES["pokemon_red"]["watch"]` at `:190`, the SAME field `eval/score_gate0.py::_red_success`
+already reads) bit 0 flips 0->1 (Boulder Badge).
 
 Reads only `oracle.jsonl` `watch` rows -- never the transcript, never a model self-report -- and
 mirrors `score_gate0.py::_red_success`'s fail-closed shape in full, not just the corrupt-row filter:
@@ -53,9 +54,15 @@ def _is_corrupt_glitch_row(watch: dict) -> bool:
 
     NOTE the argument is deliberately NOT "the call site runs after an exact `party` 0->1
     transition". That is true in `score_gate0.py::_red_success` but FALSE here: `_red_badge_success`
-    filters the ENTIRE watch list at `:76`, before `party_idx` exists at `:97`, and `:89` positively
-    REQUIRES `parties[0] == 0`, so the whole pre-starter prefix of every genuine trace has
-    `party == 0`. See reports/2026-07-28-gate0-v2-deviations.md D3."""
+    filters the ENTIRE watch list at its `kept = [...]` line (`:121`), before `party_idx` is computed
+    (`:148`), and its fresh-start guard `parties[0] != 0` (`:140`) positively REQUIRES
+    `parties[0] == 0`, so the whole pre-starter prefix of every genuine trace has `party == 0`.
+    See reports/2026-07-28-gate0-v2-deviations.md D3.
+
+    Every line number in this file's docstrings is against `794ee37` and was re-derived by locating
+    the SYMBOL, not copied from a review: the round-2 fix grew this function and moved all three of
+    these numbers once already, and the stale set (`:76`/`:97`/`:89`) shipped. Re-locate by symbol
+    before trusting any number here."""
     vals = [watch.get(k) for k in _WATCHED_KEYS]
     if any(isinstance(v, bool) or not isinstance(v, int) for v in vals):
         return False
@@ -79,8 +86,16 @@ def _plain_int(value: object) -> bool:
 
 
 def _malformed_row(watch: dict) -> bool:
-    """Any watched field PRESENT but not a plain int. Mirrors `score_gate0.py::_red_success`'s
-    helper of the same name, including the deliberate "absent (None) is not malformed" carve-out.
+    """Any watched field PRESENT but not a plain int. The SAME predicate as
+    `score_gate0.py::_red_success`'s helper of the same name, including the deliberate
+    "absent (None) is not malformed" carve-out -- but deliberately NOT the same SCOPE, and calling
+    the two "mirrors" hides the one thing worth checking. This scorer refuses on a malformed field in
+    ANY row of the whole trace; Gate 0 refuses only inside its safety span, and DROPS at `post`.
+    Three call sites, three dispositions, each picked by whichever direction is fail-closed there.
+    `_red_badge_success` has no narrower scope to refuse in: it filters the ENTIRE watch list before
+    `party_idx` exists, so every downstream clause reads that one whole-trace list -- the same
+    structural fact that made the PR #191 Major 2 argument false here.
+    See reports/2026-07-28-gate0-v2-deviations.md D3, "The two refusals are NOT mirrors".
 
     PR #191 re-review NEW-2. `_is_corrupt_glitch_row` returns False on such a row -- it cannot prove
     the row is the artifact, so it declines to drop it -- and this scorer then READ it. Only three of

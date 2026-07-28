@@ -145,6 +145,11 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
         # would suppress a real one), `post` DROPS it (that clause only fails for too few distinct
         # positions, so dropping can only cause it). A field that is absent (None) is not malformed:
         # the Gate 0 Red predicate has always tolerated partial watch dicts.
+        # A THIRD consumer, score_exam_red_badge.py::_malformed_row, is the same predicate at a
+        # WIDER scope -- it refuses on any row of the whole trace, because EX01 filters the entire
+        # watch list up front and has no narrower scope to refuse in. Same helper, three call sites,
+        # three dispositions; they are NOT mirrors. See the deviations file's D3, "The two refusals
+        # are NOT mirrors".
         return any(w.get(k) is not None and not _plain_int(w.get(k)) for k in watched_keys)
 
     safety_span = [w for w in watches[battle_idx:exit_idx + 10] if not _is_corrupt_glitch_row(w)]
@@ -165,10 +170,21 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
             # change erased because some unrelated field on the same row was untypeable.
             # `red_missing_player_hp_oracle` and not a new token: it is the span's existing REFUSAL
             # clause (prereg §5.4 C6) -- "this span's oracle row is not a readable RAM sample" -- and
-            # the frozen prereg's clause list must not grow. Unreachable from a well-formed run
-            # (`core/perception_plugin.py::_log_oracle` emits PyBoy ints); `origin/main` PASSes these
-            # inputs by dropping the row incidentally under `== 0`, so this is a false-FAIL-direction
-            # difference on input the writer cannot emit.
+            # the frozen prereg's clause list must not grow.
+            # UNREACHABLE FROM A WELL-FORMED RUN, at EVERY producer, not just the agent path. All
+            # THREE writers of a `watch` row build it by casting each read with `int()`, and `int()`
+            # returns exactly `int` -- never bool, float or str -- so none of them can emit a value
+            # that `_malformed_row` rejects:
+            #   - agent:  `core/perception_plugin.py::_log_oracle`      `int(self.emu.read(ad))`
+            #   - human:  `tools/capture_gate0_baseline_red.py::run.read_watch`   `int(rd(addr))`
+            #   - replay: `record.py::main.record`                      `int(pb.memory[ad])`
+            # The human one is named deliberately: it wrote the one genuine PASS trace and is what
+            # David re-runs to capture the v2 baseline, so it -- not `_log_oracle` -- is the path the
+            # question "can this refusal reject a real success?" is actually about. Citing only the
+            # agent path would leave that question formally open. (Human producer cited by SYMBOL
+            # only: that file is under concurrent edit and its line numbers move.)
+            # `origin/main` PASSes these inputs by dropping the row incidentally under `== 0`, so
+            # this is a false-FAIL-direction difference on input NO producer can emit.
             failures.append("red_missing_player_hp_oracle")
             break
         hi, lo = watch.get("party_hp_hi"), watch.get("party_hp_lo")

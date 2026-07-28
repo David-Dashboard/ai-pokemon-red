@@ -120,8 +120,22 @@ touched.
 
 **Landed by:** PR #191 on branch `fix/red-glitch-row-signature`.
 **Touches:** `eval/score_gate0.py::_red_success` (the `_is_corrupt_glitch_row` predicate, plus the
-type guards its widening made necessary at `post` and in the safety span) and the mirror in
+type guards its widening made necessary at `post` and in the safety span) and the counterpart in
 `eval/score_exam_red_badge.py` (EX01), plus twelve tests. No fixture, no pin, no other predicate.
+
+**Line-number convention (read this before trusting a number in this entry).** Every
+`eval/score_exam_red_badge.py` line number below is against this PR's **final head** and was
+re-derived by locating the **symbol**, not copied from a review. Each citation names the symbol as
+well as the number, so a reader who finds the two disagreeing should trust the symbol and re-locate.
+This is not decorative. Each of the three fix rounds on this PR grew these functions and moved every
+number in this entry: `:76`/`:97`/`:89`, `:121-122` and `:120` all shipped **stale** in the round-2
+head, and the `_miniwob_success` split line in the reproduce recipe below has now moved three times
+(`167` → `209` → `225`). The same defect recurred across four PRs on 2026-07-28.
+`tools/capture_gate0_baseline_red.py` is cited by **symbol with no line number at all**, because it
+is under concurrent edit. The single exception to all of this is the `:56` inside the §5.4 C8 block
+quote below: that is **verbatim frozen-prereg text** (`reports/2026-07-25-gate0-v2-prereg.md:689`)
+describing the *v1-era* scorer, and is reproduced unaltered on purpose — correcting a quotation would
+falsify it.
 
 **Timing, on the record:** this change is made **before any Gate 0 v2 run exists** — P1a/P1b/P1c/P2
 are all still open, no v2 agent attempt has been launched, and there is no v2 result of any kind to
@@ -177,11 +191,17 @@ predicate. Two reasons it was not sufficient to leave in place:
 mode**, where `0xD000-0xDFFF` is WRAM-bank-switched by **SVBK (`0xFF70`)**, and the ROM — being CGB
 code — drives SVBK deliberately (values 2–7 observed live). **Every** watched
 address — `0xD057`, `0xD163`, `0xD16C`, `0xD16D`, `0xD356`, `0xD35E`, `0xD361`, `0xD362`
-(`world_mcp.py` `GAMES["pokemon_red"]["watch"]`) — lies inside that banked window, and
-`core/perception_plugin.py::_log_oracle` builds the whole watch dict in one comprehension against
-one emulator state. So a stomped tick reads **all eight fields out of the wrong WRAM bank at once**,
-and the next sample is back on bank 1 — exactly the "sandwiched between identical, consistent
-neighbor rows" shape the original PR #121 comment described.
+(`world_mcp.py` `GAMES["pokemon_red"]["watch"]`) — lies inside that banked window, and **every**
+producer builds the whole watch dict in **one comprehension against one emulator state**:
+`core/perception_plugin.py::_log_oracle`, `tools/capture_gate0_baseline_red.py::run.read_watch` and
+`record.py::main.record` alike. So a stomped tick reads **all eight fields out of the wrong WRAM bank
+at once**, and the next sample is back on bank 1 — exactly the "sandwiched between identical,
+consistent neighbor rows" shape the original PR #121 comment described.
+
+Naming all three matters here and not only under NEW-1: the banked rows this entry rests on
+(`attempt1` row 624, `attempt2` rows 363 and 494) are in the **human** traces, so they were written
+by `capture_gate0_baseline_red.py`, not by `_log_oracle`. An argument scoped to the agent path would
+not have covered its own evidence.
 
 Offline reproduction (`roms/PokemonRed.gb`, PyBoy 2.7.0 headless, no paid run, no network).
 
@@ -285,11 +305,12 @@ failure. That argument is preserved and strengthened:
 >
 > That is true in `_red_success` — both call sites are downstream of `exit_idx`, which is downstream
 > of `party_idx` — and **false in `_red_badge_success`**, where the load-bearing half of the claim
-> was. `eval/score_exam_red_badge.py:76` filters the **entire** watch list; `party_idx` is not
-> computed until `:97`, and it is computed **from the already-filtered list**. Worse, `:89`
-> positively **requires** `parties[0] == 0`, so the entire pre-starter prefix of every genuine trace
-> has `party == 0` by construction — the opposite of what the argument asserted. The claim was not
-> merely unproven at that site, it was inverted.
+> was. `_red_badge_success`'s `kept = [...]` filter (`eval/score_exam_red_badge.py:121`) filters the
+> **entire** watch list; `party_idx` is not computed until its `party_idx = next(...)` line (`:148`),
+> and it is computed **from the already-filtered list**. Worse, the fresh-start guard
+> `parties[0] != 0` (`:140`) positively **requires** `parties[0] == 0`, so the entire pre-starter
+> prefix of every genuine trace has `party == 0` by construction — the opposite of what the argument
+> asserted. The claim was not merely unproven at that site, it was inverted.
 >
 > The conclusion survives, via the `badges != 0 ∧ party == 0` route above, which holds at **both**
 > call sites and does not depend on any call-site ordering. The wrong argument has been replaced in
@@ -305,7 +326,8 @@ failure. That argument is preserved and strengthened:
 The list above is about what the filter cannot *mask*. It is not the whole story for EX01, and the
 first draft's enumeration (genuine faint / genuine map change / genuine badge) was incomplete. There
 is a fourth EX01 clause the widening does newly suppress:
-`red_badge_bit_reverted_after_set` (`eval/score_exam_red_badge.py:121-122`). A delta row whose
+`red_badge_bit_reverted_after_set` — the `any(b is False for b in bits[transition_idx:])` clause
+(`eval/score_exam_red_badge.py:172-173`). A delta row whose
 residue byte is **even** reads `badges` bit-0 **clear**, which is exactly the revert signal, so
 dropping the row drops the revert. Constructed trace (reviewer's, reproduced):
 
@@ -319,8 +341,9 @@ this head   : (True, [])
 corrupt by exactly the argument above, and reading a corrupt row as evidence of a *real* badge revert
 is the same category error the filter exists to prevent. Suppressing it is the same call as
 suppressing the false `red_player_hp_reached_zero`. The reason it is called out rather than left
-implicit: `:120` documents that clause as catching "a savestate reload, a substituted row", i.e. not
-only RAM corruption, so a reader is entitled to know the corruption filter now sits in front of it.
+implicit: that clause's own comment (`:171`) documents it as catching "a savestate reload, a
+substituted row", i.e. not only RAM corruption, so a reader is entitled to know the corruption
+filter now sits in front of it.
 Both the PR's boot scan and the reviewer's observed only **odd** residue bytes (`1`, `3`), so a
 bit-0-clear residue is untested rather than impossible — if one is ever observed live, this is the
 clause to re-examine first.
@@ -350,13 +373,44 @@ Reproduced exactly:
 **Closed, not argued away**, because a false PASS on a graduation-exam scorer is the worst direction
 this file has. `origin/main`'s catch was accidental — one corruption catching another — and row 2
 shows the spurious-badge hole is **shared by both branches**; the widening only removed the accident.
-The fix refuses the untypeable row outright (`_malformed_row` in `eval/score_exam_red_badge.py`,
-mirroring `score_gate0.py`), which closes both rows at once, including the pre-existing one
-`origin/main` also had. **Refuse, not drop:** every clause in `_red_badge_success` only ever *adds* a
-failure, so dropping an untypeable row could suppress a real revert; refusing cannot.
+The fix refuses the untypeable row outright (`_malformed_row` in `eval/score_exam_red_badge.py`),
+which closes both rows at once, including the pre-existing one `origin/main` also had.
+**Refuse, not drop:** every clause in `_red_badge_success` only ever *adds* a failure, so dropping an
+untypeable row could suppress a real revert; refusing cannot.
 `red_badge_missing_or_invalid_oracle_field` is this scorer's existing refusal token for exactly this
 case — no new failure name. The **first** reason above (a live even-residue byte) is unaffected and
 still stands on its own.
+
+#### The two refusals are NOT mirrors — the scopes differ, deliberately
+
+Earlier drafts of this entry (and of the `_malformed_row` docstrings) described EX01's refusal as
+"mirroring `score_gate0.py`". **The helper is shared; the scope is not**, and saying "mirror"
+obscures the one difference a reviewer most needs to check:
+
+| | what it scans | refuses when |
+|---|---|---|
+| `_red_success` (Gate 0) | `watches[battle_idx : exit_idx+10]` — the **safety span only** | a malformed field appears on a row **inside the span** |
+| `_red_badge_success` (EX01) | `kept` — the **entire** post-filter watch list | a malformed field appears on **any row of the whole trace** |
+
+**The asymmetry is right, and it follows from the same structural difference that broke the Major 2
+argument above.** EX01 filters and validates the whole watch list up front, *before* `party_idx`
+exists, and every subsequent clause (`bits`, `parties`, `in_battles`, `party_idx`, `battle_idx`,
+`transition_idx`, the revert scan) reads from that one whole-trace list. There is no narrower scope
+available to refuse in — the whole list *is* the scope, so a whole-list refusal is the only
+fail-closed choice.
+
+`_red_success` is built the opposite way: its spans are computed *later*, and the span is the only
+place it **dereferences** a watched value into a substantive claim (`map` compared against
+`battle_map`; `hi`/`lo` shifted into `hp_values`). Everywhere else it only tests equality against
+fixed ints (`party != 0`, `in_battle == 2`, `in_battle == 0`), where a non-int simply fails to match
+and pushes toward a refusal token — already the fail-closed direction — and at `post` the same
+`_malformed_row` helper is used to **drop**, because there removing a row can only ever *cause*
+`red_no_free_movement_after_exit`. Widening Gate 0's refusal to the whole trace would therefore not
+buy safety; it would convert benign non-matches into hard refusals on rows the predicate never reads.
+
+So: one helper, three call sites, **three different dispositions** (EX01 whole-list refuse, Gate 0
+span refuse, Gate 0 `post` drop), each chosen by which direction is fail-closed at that site. That is
+the property to check when reading these two scorers side by side — not a symmetry that isn't there.
 
 ### `post` was fail-OPEN — the type guard, corrected (PR #191 review Major 1)
 
@@ -410,8 +464,30 @@ second distinct position that satisfies `red_no_free_movement_after_exit`.
 >
 > Direction and reach, stated plainly: on these inputs `origin/main` **PASSes** (it drops the row
 > incidentally under `== 0`) and this head now **refuses**, so this is a **false-FAIL-direction**
-> difference, on input `core/perception_plugin.py::_log_oracle` cannot emit. It is inert on
-> everything reachable — see the differential-fuzz row below.
+> difference, on input **no `watch` producer can emit**. It is inert on everything reachable — see
+> the differential-fuzz row below.
+>
+> **Scoping widened (third review).** This claim was previously written as "on input
+> `core/perception_plugin.py::_log_oracle` cannot emit" — which scopes it to the **agent** path only.
+> That is the wrong path to scope it to. The question a refusal has to answer is *"can it reject a
+> genuine success?"*, and the genuine successes are written by the **human baseline**:
+> `tools/capture_gate0_baseline_red.py` produced the one genuine PASS trace
+> (`gate0_red_human_attempt2_completion.jsonl`, `_red_success` → `(True, [])`) and is what David
+> re-runs to capture the v2 baseline. The claim is in fact **stronger** than it was written, and now
+> covers every producer — verified by reading all three:
+>
+> | producer | role | cast |
+> |---|---|---|
+> | `core/perception_plugin.py::_log_oracle` | agent | `int(self.emu.read(ad))` |
+> | `tools/capture_gate0_baseline_red.py::run.read_watch` | **human baseline** | `int(rd(addr))` |
+> | `record.py::main.record` | offline recorder | `int(pb.memory[ad])` |
+>
+> **The property that holds across all three: every watched value is produced by `int()`, and `int()`
+> returns exactly `int` — never `bool`, `float` or `str`.** So no producer can emit a value
+> `_malformed_row` rejects, and neither refusal (Gate 0's or EX01's) can fire on a genuinely captured
+> trace, agent or human. `capture_gate0_baseline_red.py` is cited by **symbol only, deliberately**:
+> it is under concurrent edit (a `--mode` flag is being added) and any line number here would be
+> stale on arrival.
 
 Reproduced on the standard success fixture with the last row's `x`/`y` left unmoved (so the run
 genuinely never moves) and **one** row appended past `exit_idx + 10`, i.e. never touching the safety
@@ -434,10 +510,31 @@ too *few* distinct positions, so removing rows can cause `red_no_free_movement_a
 suppress it, and no failure name not already in the frozen prereg's clause list is introduced. This
 also closes the pre-existing string-`"0"` hole that both branches had.
 
-**Honest scoping.** This needs a malformed watch value, and `core/perception_plugin.py::_log_oracle`
-emits PyBoy ints, so it is not reachable from a well-formed run today. It matters because this
-scorer's stated premise is tamper/corruption resistance, `post` was the only Red capability clause
-with zero type validation, and the first draft of this entry asserted the opposite property.
+**Also fixed, and previously unclaimed: `post` could CRASH the scorer on `origin/main`.** The third
+review surfaced this and the PR had not claimed it. `origin/main` builds `post` as a list of
+`(w.get("x"), w.get("y"))` tuples with no type validation and then calls `len(set(post))` — so an
+`x` or `y` that is *unhashable* (a list, a dict) does not produce a wrong verdict, it raises out of
+the public entry point:
+
+| input: one post-`exit_idx` row with `"x": [1, 2], "y": [3, 4]` | result |
+|---|---|
+| `origin/main` | **`TypeError: unhashable type: 'list'`** |
+| this head | `(False, ['red_no_free_movement_after_exit'])` |
+
+Measured directly against both revisions of `_red_success`, same trace. The `_plain_int` guard filters
+the row before the tuple ever reaches `set()`, so the head returns a verdict where `origin/main`
+returned a stack trace. This is the **same defect class D1 fixed** at `score_manifest`'s oracle read —
+handing the operator a traceback where a verdict belongs, which is precisely the misdiagnosis
+`.claude/skills/diagnose-a-run` exists to prevent — and it is closed here as a side effect of the type
+guard rather than by a new `except`.
+
+**Honest scoping.** All of this needs a malformed watch value, and no `watch` producer emits one:
+all three cast with `int()` (`core/perception_plugin.py::_log_oracle`,
+`tools/capture_gate0_baseline_red.py::run.read_watch`, `record.py::main.record` — see the widened
+scoping note in the NEW-1 block above). So none of it is reachable from a well-formed run today. It matters
+because this scorer's stated premise is tamper/corruption resistance, `post` was the only Red
+capability clause with zero type validation, and the first draft of this entry asserted the opposite
+property.
 
 ### Proof that no bar moved
 
@@ -454,14 +551,15 @@ Reproduce (LF-canonical, split at the `def _red_success` / `def _miniwob_success
 git show origin/main:eval/score_gate0.py | tr -d '\r' | sed -n '1,43p'    | sha256sum
 sed -n '1,43p'  eval/score_gate0.py      | tr -d '\r' | sha256sum
 git show origin/main:eval/score_gate0.py | tr -d '\r' | sed -n '102,$ p'  | sha256sum
-sed -n '209,$ p' eval/score_gate0.py     | tr -d '\r' | sha256sum
+sed -n '225,$ p' eval/score_gate0.py     | tr -d '\r' | sha256sum
 ```
 
-(`102` and `209` are the `def _miniwob_success` lines on `origin/main` and on this head; `44` is
+(`102` and `225` are the `def _miniwob_success` lines on `origin/main` and on this head; `44` is
 `def _red_success` on both. The un-hashed middle is `_red_success` plus its two blank separator lines
 and nothing else, so the two digests cover the whole file between them. Both digests re-derived
-unchanged after the PR #191 re-review fix round, which only grew `_red_success` — the head split line
-moved `167` → `209`.)
+unchanged after each PR #191 fix round; every round only grew `_red_success`, so the head split line
+has moved `167` → `209` → `225` while both digests stayed put. **Re-derive this split line by
+locating `def _miniwob_success`, never by reusing the number** — it has now moved three times.)
 
 So `MODES`, `SOURCE_PIN_FILES`, `MINIWOB_TASK`, `AUDIT_PATH_KEYS`, `_miniwob_success`,
 `_arm_metrics`, `_verify_audit_paths`, `_verify_sources`, the arm caps, and the leak → constancy →
@@ -509,6 +607,43 @@ the recipe above run against both branches on one machine, which is how the tabl
 two modes have no run artifacts on disk at all (`runs/gate0_readiness_dev/` and `runs/gate0_paid_v2/`
 do not exist), so their rows only pin that nothing *else* moved.
 
+**Confirmed by the third review, and worth naming precisely: `readiness_dev` and `paid_gate0_v2`
+reproduced exactly from a clean worktree; `paid_gate0` did not.** That is the expected result, and
+the reason is now pinned down rather than left as "environment-dependent":
+
+> **Running the root suite inside a git worktree CREATES `runs/gate0_paid/wake_boundary.json` in that
+> worktree, and that alone changes the `paid_gate0` digest.**
+
+`tools/gate0_appserver_arm.py::_finalize_real_run` writes
+`REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json"` (`ensure_wake_boundary_artifact`), and
+`REPO_ROOT` is `Path(__file__).resolve().parent.parent` — i.e. **the worktree root**, not the primary
+checkout. The two tests that exercise it
+(`tests/test_gate0_appserver_arm.py::test_finalize_real_run_writes_metrics_and_receipt_even_on_signature_mismatch`
+and `::test_finalize_real_run_success_path_still_resolves_pins_and_scores`) pass a `tmp_path`
+`out_dir`, but *this one path is REPO_ROOT-relative and escapes the tmp_path sandbox*. Observed
+directly: a worktree that never received any banked data ends up with `runs/gate0_paid/` containing
+exactly one file, `wake_boundary.json`, byte-identical to the primary checkout's
+(`9cddf29c4d8c778a71ee9517fe7d9393e7cf2d62a638f78c369a257c4b37b094`).
+
+The digest moves because the file's mere presence flips which token `_verify_sources` emits — the
+`paid_gate0` pin for this artifact is the literal placeholder
+`PENDING_NOT_YET_CAPTURED_wake_accounting_not_built`, so a present file can only ever mismatch it:
+
+| `runs/gate0_paid/wake_boundary.json` | token in `failures.source` |
+|---|---|
+| absent (clean worktree) | `source_unreadable:wake_boundary` |
+| present (after a root-suite run) | `source_hash:wake_boundary` |
+
+Measured, not inferred: `_verify_sources` called twice with only that artifact's path redirected,
+everything else identical. Different string in `failures["source"]` → different sorted-JSON verdict →
+different sha256. **`readiness` is `INSUFFICIENT_SOURCE` in both cases and the failure count is 8 in
+both, so no bar and no verdict moves** — only the absolute digest. This is exactly why the
+`origin/main` == head **equality** column is the load-bearing one and the absolute hex is not.
+
+*Operational consequence:* run the root suite in a worktree, not in the primary checkout, and do not
+compare a `paid_gate0` absolute digest across machines or across a suite run. `runs/` is read-only
+banked data; this stray write is a test-created artifact, not evidence.
+
 Per-trace predicate outputs on **every** committed Red trace:
 
 | trace | `_red_success` before → after | EX01 before → after |
@@ -543,7 +678,7 @@ argument.
 badge). Arm A is 20 000 clean traces, no artifact rows. Arm B is 60 000 traces poisoned with 1–3
 well-formed artifact rows at random positions — the residue shape
 `{x == y == map == badges == k, party == in_battle == hp_hi == hp_lo == 0}` for `k` in 0..7 (`k == 0`
-is the all-zero row), i.e. everything `_log_oracle` can emit under a wrong-bank sample. **Every value
+is the all-zero row), i.e. everything any `watch` producer can emit under a wrong-bank sample. **Every value
 is a plain int; no malformed value appears anywhere**, which is exactly why the fixes cannot show up
 here.
 
