@@ -14,6 +14,24 @@ self-report. Fail-closed: a wrong/missing `game_id`, a non-int `levels_completed
 counter -- a decrease means a corrupted or substituted oracle) is a hard refusal, never a guessed
 PASS.
 
+`game_id` matching -- FAMILY, not exact (fixed 2026-07-28; the previous exact `== "wa30"` test
+made PASS unreachable on every banked trace, which all carry `"wa30-ee6fef47"`). An ARC-AGI-3
+game_id is `<game key><-suffix>`: the docs' worked examples use the full `ls20-016295f7601e`
+while the public catalog and this repo's own flags name games by the bare 4-char key
+(`runs/arcagi3_probe/PROBE_REPORT.md` "Available game_ids"; `world_mcp.py --arc-game <game_id>
+(e.g. ls20)`). The oracle's `game_id` is the literal `--arc-game` flag value, not the API's
+response field (`world_mcp.py:2467-2469,2503`), so a run may legitimately be launched with
+either form. The suffix is stable per game, not per session -- the session identity is the
+separate `guid` (`core/arcagi3_world.py` reset/action), and the SAME `ee6fef47` is pinned in
+three launcher configs across two distinct experiments (`runs/brain_{arcagi3,skill_ab_armA,
+skill_ab_armB}/.mcp.json`) and appears in all six banked ARC oracle logs. Suffix length is not
+fixed (8 hex here vs 12 in the docs' `ls20-` example), so pinning the exact banked string would
+break this scorer on the next revision of the same game -- the same defect class being fixed.
+Accepted: `wa30` or `wa30-<suffix>`. Rejected: any other family (`ls20-...`), and any near-miss
+key (`wa300-...`, `wa3`). Rows must also agree with each other -- a log stitched from two
+different `wa30` builds is a substituted oracle, not a run.
+Banked game_id across every trace on disk as of 2026-07-28: `wa30-ee6fef47`.
+
 Usage: `uv run python -m eval.score_exam_arc_wa30 <oracle.jsonl>`
 """
 from __future__ import annotations
@@ -21,9 +39,15 @@ from __future__ import annotations
 from eval._exam_common import run_cli
 
 TASK_ID = "EX09"
-GAME_ID = "wa30"
+GAME_ID = "wa30"          # the game KEY/family; a full game_id is `wa30` or `wa30-<suffix>`
 LEVEL_TARGET = 3
 _VALID_STATES = {"NOT_FINISHED", "WIN", "GAME_OVER"}
+
+
+def _is_game_family(game_id: object) -> bool:
+    """True only for the `wa30` family: the bare key or `wa30-<suffix>`. The `-` is required so
+    a near-miss key (`wa300-...`) can never be mistaken for a suffixed `wa30`."""
+    return isinstance(game_id, str) and (game_id == GAME_ID or game_id.startswith(f"{GAME_ID}-"))
 
 
 def _arc_wa30_success(rows: list[dict]) -> tuple[bool, list[str]]:
@@ -31,8 +55,10 @@ def _arc_wa30_success(rows: list[dict]) -> tuple[bool, list[str]]:
         return False, ["arc_no_rows"]
 
     failures: list[str] = []
-    if any(row.get("game_id") != GAME_ID for row in rows):
+    if any(not _is_game_family(row.get("game_id")) for row in rows):
         failures.append("arc_wrong_game_id_row")
+    elif len({row["game_id"] for row in rows}) != 1:
+        failures.append("arc_inconsistent_game_id_rows")
 
     levels: list[int] = []
     for row in rows:

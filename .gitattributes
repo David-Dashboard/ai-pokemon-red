@@ -7,3 +7,8 @@
 # fixed for host_code_sha256.
 eval/fixtures/gate0_*.json text eol=lf
 eval/fixtures/gate0_*.jsonl text eol=lf
+
+# Verbatim byte-for-byte copy of a banked runs/ oracle log (see tests/test_score_exam_arc_wa30.py).
+# Its value as evidence is that it is EXACTLY what the world wrote; autocrlf rewriting it would
+# make the committed fixture differ from the artifact it is supposed to reproduce.
+eval/fixtures/arcagi3_wa30_banked/*.jsonl text eol=lf
