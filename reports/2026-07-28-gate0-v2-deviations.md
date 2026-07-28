@@ -109,6 +109,7 @@ triage could be misled. This is the identical shape the pre-existing unpinned-ar
 in `score_manifest()` already produced, so it is inherited, not created here. Left alone
 deliberately: fixing it would mean touching `score()`, which this deviation exists to prove was not
 touched.
+
 ---
 
 ## D6 — the PRE-REGISTERED INTERVENTION ITSELF was revised before the run (§5.3's task brief, four amendments)
