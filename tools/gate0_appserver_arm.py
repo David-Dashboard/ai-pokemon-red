@@ -150,7 +150,7 @@ import sys
 import time
 from pathlib import Path
 
-from tools.check_gate0_codex import SERVER, TOOLS, audit
+from tools.check_gate0_codex import SERVER, TOOLS, _expected_failures, audit
 from tools.gate0_appserver_client import build_turn_start_request, resolve_codex_path
 from tools.gate0_appserver_launch import (
     DEFAULT_TURN_END_METHODS,
@@ -615,6 +615,84 @@ def resolve_expected_pins(base_expected: dict, *, config_sha256: str, codex_mcp_
     resolved["config_sha256"] = config_sha256
     resolved["codex_mcp_list_sha256"] = codex_mcp_list_sha256
     return resolved
+
+
+def appserver_expected_pins_path(arm: str) -> Path:
+    """The committed expected-pins fixture `arm`'s app-server launches are audited against.
+
+    ONE declaration, read by both the pre-turn gate below and the post-turn `_finalize_real_run`.
+    Two spellings of this path would let the gate check a different file than the audit it exists
+    to predict, which would make the gate worse than useless -- it would say "safe to spend" about
+    a comparison nothing later performs."""
+    return REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json"
+
+
+def refuse_if_expected_pins_stale(receipt: dict, arm: str) -> None:
+    """REFUSE BEFORE THE MONEY, not after: run the post-turn expected-pins comparison NOW, against
+    the pre-turn handshake receipt, and exit non-zero without starting the paid turn if it fails.
+
+    THE DEFECT THIS CLOSES (PR #193 adversarial review). `resolve_expected_pins()` had exactly one
+    call site -- inside `_finalize_real_run`, i.e. AFTER `run_gate0_arm_turn` has already spent the
+    money -- so a launch against a stale fixture ran to completion, cost full price, and only then
+    reported `pin_mismatch:task_sha256` and voided. Under the v2 pre-registration's §10 one-attempt
+    rule a void attempt burns the held-out seed block, which no later fix can give back. That is
+    the concrete shape it would have taken today: prereg §6.1 items 1-4 (re-freezing the four
+    gate0_expected_pins fixtures onto the §5.3 task brief) are NOT yet done, so
+    `task_text_for(arm)` and every committed fixture currently disagree.
+
+    WHY THE CHECK IS EXACT, NOT AN APPROXIMATION. `_run_real` builds and writes the entire
+    handshake receipt before it opens the app-server client, and never mutates it afterwards --
+    `_finalize_real_run` re-reads that same file to hand to `audit()`. So every one of
+    check_gate0_codex.PIN_FIELDS is already fully determined here, and this function's verdict is
+    identical to the one the post-turn audit will reach. It is the same comparison, moved earlier;
+    it cannot refuse a launch the post-turn audit would have passed.
+
+    SCOPE: ALL 20 PIN_FIELDS, VIA THE FROZEN CHECKER, DELIBERATELY -- not `task_sha256` alone.
+    `task_sha256` is only today's instance of the defect; a stale `brain_config_sha256`,
+    `world_image_id`, `codex_version` or `tool_schema_sha256` pin burns the attempt in exactly the
+    same way, and eval/score_gate0.py's precedence chain turns ANY non-empty constancy list into
+    CONSTANCY_BREACH/NO_GO. Narrowing to one field would leave nineteen open doors onto the same
+    unrecoverable outcome. The comparison is delegated to the frozen
+    check_gate0_codex._expected_failures -- the very function the post-turn audit calls -- so there
+    is no second implementation to drift, and the refusal quotes the same `pin_mismatch:<field>`
+    strings an operator will see in the audit.
+
+    NOT WIDENED to `_receipt_shape_failures`: every check it makes is either hardcoded by
+    `build_handshake_receipt` (schema_version, readiness, paid_execution_enabled, auth_method,
+    critical_config_transport, mcp_servers_observed), already refused earlier in `_run_real`
+    (world image id, host/image parity, tool inventory), or strictly implied by a PIN_FIELD
+    comparison here. Adding it would be unreachable code, not extra safety.
+
+    NOT WIDENED to the mode's `audit_paths.<arm>.expected_pins` either. eval/score_gate0.py
+    re-audits the banked run against THAT file, which for both v1 and v2 source-pin fixtures is the
+    EXEC-path `gate0_expected_pins_{arm}.json`, not this app-server sibling -- a real divergence,
+    but a pre-existing one with `expected_pins_sha256` still `PENDING_NOT_YET_FROZEN`. Refusing
+    launches on it here would invent a new blocker out of a fixture question that is not this
+    launcher's to settle.
+
+    REAL RUNS ONLY: called from `_run_real`, never from `_run_dry_run`/`_run_seam_check`. Those are
+    $0 rehearsals; the dry run deliberately builds a synthetic receipt (stub codex, "DRY_RUN"
+    docker args) that cannot match a real pin and must not be blocked by one."""
+    base_expected = json.loads(appserver_expected_pins_path(arm).read_text(encoding="utf-8"))
+    resolved = resolve_expected_pins(
+        base_expected, config_sha256=receipt["config_sha256"],
+        codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
+    failures = _expected_failures(receipt, resolved)
+    if not failures:
+        return
+    detail = "; ".join(
+        f"{failure} (pinned {resolved.get(failure.split(':', 1)[1])!r}, "
+        f"this launch computed {receipt.get(failure.split(':', 1)[1])!r})"
+        if failure.startswith("pin_mismatch:") else failure
+        for failure in failures)
+    raise SystemExit(
+        f"refusing to start the paid turn: this launch's handshake receipt already disagrees with "
+        f"{appserver_expected_pins_path(arm)} on {len(failures)} pin(s) -- {detail}. "
+        "check_gate0_codex.audit() would report exactly these after the turn, and "
+        "eval/score_gate0.py would return CONSTANCY_BREACH/NO_GO, i.e. a full-price attempt that "
+        "is void on arrival and, under prereg §10's one-attempt rule, an unrecoverable seed block. "
+        "Nothing was launched and nothing was spent. Re-freeze the expected-pins fixture (prereg "
+        "§6.1 items 1-4) or fix the drift, then re-run.")
 
 
 def verify_launch_signature_unchanged(receipt: dict, out_dir: Path) -> None:
@@ -1189,8 +1267,7 @@ def _finalize_real_run(*, receipt: dict, receipt_path: Path, transcript_path: Pa
         # static fixture that can never match them -- only once the signature check above has
         # proven the on-disk config/mcp-list still match what the receipt recorded pre-turn.
         base_expected = json.loads(
-            (REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json")
-            .read_text(encoding="utf-8"))
+            appserver_expected_pins_path(arm).read_text(encoding="utf-8"))
         resolved_expected = resolve_expected_pins(
             base_expected, config_sha256=receipt["config_sha256"],
             codex_mcp_list_sha256=receipt["codex_mcp_list_sha256"])
@@ -1307,6 +1384,13 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
         host_code_sha256=host_code, image_code_sha256=image_code)
     receipt_path = out_dir / "handshake-receipt.json"
     _write_json(receipt_path, receipt)
+
+    # THE LAST $0 INSTANT. Everything above is local and free (docker inspect, `codex --version`,
+    # `codex mcp list`); everything below opens the app-server and spends. The receipt is complete
+    # and never mutated again, so the expected-pins comparison `_finalize_real_run` would run after
+    # the turn is already fully decided -- run it here instead and refuse rather than pay for a run
+    # that is void on arrival. See refuse_if_expected_pins_stale for why it covers all 20 pins.
+    refuse_if_expected_pins_stale(receipt, arm)
 
     watcher = SoftCapWatcher(ARM_SOFT_CREDIT_CAPS[arm], rate_pin)
     state: dict = {"client": None, "pid": None}
