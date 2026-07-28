@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODES = {
     "readiness_dev": (ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json", [0, 1, 2, 3, 4]),
     "paid_gate0": (ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json", [1000, 1001, 1002, 1003, 1004]),
-    # Gate 0 v2's FRESH held-out block (prereg §4.1/P9, reports/2026-07-25-gate0-v2-prereg-DRAFT.md).
+    # Gate 0 v2's FRESH held-out block (prereg §4.1/P9, reports/2026-07-25-gate0-v2-prereg.md).
     # Purely ADDITIVE: paid_gate0 above is byte-untouched, so the banked (void-as-printed) v1 result
     # stays scoreable exactly as it was. v2 needs its own seeds because 1000..1004 are SPENT — the v1
     # Arm W transcript, including the correct checkbox answers, is committed at
