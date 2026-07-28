@@ -110,6 +110,13 @@ best surviving lead (didn't decrement on that one wrong-way event). This session
      wrong-way decrement): it is reset by a stuck-timeout mechanic unrelated to genuine lap
      completion, so a bare "did this byte wrap to 0" test would false-positive on a stuck
      recovery, not just a wrong-way drive.
+   > **[FALSIFIED 2026-07-28 — PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`. Original text
+   > below left as written.]** The next two bullets are both wrong. `0x022C8094` reaches **3** and
+   > then **decrements to 1** (`0→1@f1920 →3@f6210 →1@f10200` on a zero-input coast), so neither
+   > "only values 0/1 were observed" nor "the non-decrement property is corroborated" survives. It
+   > is a checkpoint/respawn anchor, not a lap-adjacent counter. The real lap byte is a separate
+   > per-racer array (stride `0x8C`, base is per-race).
+
    - `0x022C8094` stayed flat at **1** across every one of these reset events in this session
      (multiple independent occurrences, not the single data point 07-23 had) — the
      non-decrement property is now corroborated, not just single-sampled. It also survived a
@@ -167,6 +174,10 @@ the difficulty is genuine navigation/physics difficulty on this course, not a ha
   measured on.
 - **`0x022C8358` as an independent second lead: not eliminated, but demoted to low-confidence**
   — plausible alternate explanation (another kart's struct copy) not yet ruled out.
+> **[SUPERSEDED 2026-07-28 — PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`.]** The bullet
+> below is resolved and negative: `0x022C8094` was driven past 1 (reaches 3) and **decrements**
+> back to 1. It is ELIMINATED as a lap oracle. The lap counter was found elsewhere entirely.
+
 - **`0x022C8094` beyond value 1: UNVERIFIED, not eliminated.** Everything checked (non-
   decrement across multiple new reset events, save/reload persistence) is consistent with it
   being the right lead. It simply was not driven far enough this session to observe a second

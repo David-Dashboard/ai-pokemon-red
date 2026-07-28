@@ -64,6 +64,9 @@ measuring the rig not the brain; VizDoom flagged off-limits without David's sign
    - **EX05 (MKDS)** needs a qualitatively different closed-loop, vision-guided driver, not just more
      scripted attempts — re-scope now to a checkpoint-level milestone (the corroborated
      `0x022C8094` byte) rather than hold the freeze open indefinitely.
+     **CORRECTION 2026-07-28 (PR #177):** the real lap oracle is FOUND, so this re-scope is moot — but
+     `0x022C8094` is NOT "corroborated": it both exceeds 1 and decrements (`0→1→3→1` observed), so do
+     not build a checkpoint milestone on it. See `reports/2026-07-28-oracle-mkds-lap-v3.md`.
    - **EX03 (Emerald)** has two stacked blockers (a real in-game starter-Pokémon quest, AND an oracle
      — outdoor `map_num` — now known unsafe, see item 10) — re-scope to the already-reached,
      already-interior-stable Birch's Lab `(map_group, map_num) = (2, 13)` instead of Oldale.
@@ -127,6 +130,10 @@ measuring the rig not the brain; VizDoom flagged off-limits without David's sign
       another kart's struct copy; the `0x022C8A2x`-`0x022C8A4x` cluster, now corroborated across two
       independent sessions); savestate-chaining (one emulator process per driving decision) proven
       drift-free by an exact full-replay match.
+      **SUPERSEDED 2026-07-28 (PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`):** lap oracle FOUND
+      (8-racer array, stride `0x8C`, base is per-race — `0x0236A7F2` for the banked savestate); and
+      `0x022C8094` is FALSIFIED, not "the best lead" — it reaches 3 and decrements (`0→1→3→1`), killing
+      both the "only values 0/1" and the non-decrement claims. EX05 still not wireable (no MKDS world key).
     - **Kirby GB** (#169): all 3 prior candidates (`0xD048`, `0xD052`, `0xD3EE`) ELIMINATED with
       direct evidence (`0xD048` never changes at all; `0xD052`/`0xD3EE` are volatile, dropping 5->1 on
       the death/continue event); 8 survivors pinned (`0xC057`, `0xC073`, `0xC07B`, `0xD03B`, `0xD19F`,

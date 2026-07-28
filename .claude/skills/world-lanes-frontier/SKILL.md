@@ -151,6 +151,11 @@ the number.
   event (one data point, unconfirmed lead). **Lap-count byte: NOT FOUND** — no "LAP 1/3 → LAP 2/3"
   transition was observed. Neither byte is wired into `GAMES["nds"]["watch"]`, still `{}`
   (`world_mcp.py:172`) — off the agent wire.
+  **UPDATED 2026-07-28 (PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`): lap byte FOUND** — an
+  8-racer array of stride `0x8C` whose base is **per-race** (`0x0236A7F2` for the banked savestate,
+  `0x0237BED2` in a fresh race) — and `0x022C8094` **does** decrement (`0→1→3→1` observed), falsifying
+  the "did not decrement" lead above. Still `{}` on the wire and deliberately so: MKDS has no world key
+  of its own (it rides `"nds"` via `--rom`), so a `watch` entry there would hit every NDS ROM.
 - **Live-state caveat, checked at edit time:** unlike the clean/idle state reported earlier this PR,
   `ai-pokemon-red-mkds` (branch `probe/mkds-lap-oracle`) now shows an untracked, in-progress probe
   directory — a lap-oracle hunt is active in a parallel worktree as of 2026-07-25. Re-run
