@@ -19,6 +19,12 @@ THIS MODULE'S `audit_overall` IS NOT THE GATE 0 VERDICT -- DO NOT QUOTE IT AS ON
   recurring: on 2026-07-28 a reviewer read `overall: NO_GO_INSUFFICIENT_WAKES` as the gate's
   ceiling and escalated that Gate 0 v2 was structurally unwinnable. It was false, and the rename
   exists so the next reader cannot make the same substitution by accident.
+- SAME RULE FOR `no_leak` AND `peer_constancy`, which both emit the literal string "PASS" and are
+  therefore easier to misquote, not harder. They are per-CHECK results scoped to this one arm --
+  "the no-leak check passed", "the peer receipts agree" -- never a gate verdict, and nothing in
+  the repo reads either one. reports/2026-07-18-gate0-prereg.md:81-83 names `overall`, `no_leak`
+  AND `wake_accounting` together: "do not quote them as the Gate 0 result." Only the first was
+  renamed, because it was the one that collided with every real scorer's verdict field name.
 """
 from __future__ import annotations
 
