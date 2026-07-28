@@ -199,8 +199,8 @@ ARM_TASK_SENTENCES = {
 # Pinned BY IMMUTABLE IMAGE ID (scout build-spec / eval/fixtures/gate0_expected_pins_*.json).
 ARM_IMAGE_TAGS = {"red": "gb-mcp-world", "miniwob": "miniwob-world"}
 ARM_IMAGE_IDS = {
-    "red": "sha256:106e2093e27b0e0a4e4e381e4238889818cd98508b1b95af4c32fed7a1b9f5d7",
-    "miniwob": "sha256:2e2d9151f230d7803468459eb46ccb097f3d65000aaa6c87214f1b234345b5df",
+    "red": "sha256:c889c344bd6442292ab8c8b63c4cbdadfc37b988a969f7629c71a268d6325d3e",
+    "miniwob": "sha256:ee12a2f0e54a798458568fea4730f770ede062956dd205afd7bf8290fa091ae4",
 }
 # Cheap-bar per-arm SOFT caps (reports/2026-07-18-gate0-prereg.md) -- informational warning only.
 # The single HARD kill ceiling stays tools/gate0_credit_breaker.LIMIT_NORMALIZED_CREDITS (250),
