@@ -7,9 +7,11 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-28 (★ EX02 STAGE ORACLE FOUND: 0xD03B, from a human Stage-3 run; other 4 candidates eliminated as latches; NOT wired. Prior: attempt 2 — reached the END of Castle Lololo
-and the Lololo BOSS via a verified warp-star sequence; candidates narrowed 8 → 5; Stage 3 still NOT
-reached, blocked on winning the boss fight. $0. TWO of my own mechanism claims retracted mid-session.)_
+_Last updated: 2026-07-28 (★ EX02 STAGE ORACLE FOUND: 0xD03B — CAUSAL, the byte the game reads to pick
+the stage; other 4 candidates eliminated as stale latches; NOT wired. Prior: attempt 2 — reached the END
+of Castle Lololo and the Lololo BOSS via a verified warp-star sequence; candidates narrowed 8 → 5. $0.
+**THREE** of my own mechanism claims retracted, the third being "the automation beat Lololo" — it did
+not; David did.)_
 
 **=>=> NEWEST (2026-07-28) - ★ EX02 STAGE ORACLE FOUND: `0xD03B`. HUNT ANSWERED. $0. =>=>**
 1. **`0xD03B` is Kirby's 0-indexed STAGE COUNTER** — reads `0` in Green Greens, `1` in Castle
@@ -27,9 +29,16 @@ reached, blocked on winning the boss fight. $0. TWO of my own mechanism claims r
 4. ⚠ **NOT WIRED, deliberately** — editing `world_mcp.py` cascades into the frozen Gate-0
    host/image pins (same reason PR #138 is deferred). Wire in ONE batched PR with the other
    `watch = {}` worlds at the next world-image rebuild.
-5. ⚠ **Bound:** three anchors (0/1/2), not a stress test. Confirm `0xD03B` reads `3` at the
-   Stage-3 → Stage-4 boundary before wiring. This lane has been burned three times by
-   too-few-anchors readings.
+5. ✅ **Bound DISCHARGED (2026-07-28 follow-up probe).** The old gate — "confirm `0xD03B` reads `3` at
+   the Stage-3 → Stage-4 boundary before wiring" — is **met**, and the claim is now **CAUSAL**: writing
+   `0xD03B` before a stage load *determines which stage loads* (0 Green Greens, 1 Castle Lololo,
+   2 Float Islands, 3 Bubbly Clouds, 4 Mt. Dedede; no-write control loads Castle Lololo). Five values
+   anchored, four causally. `3` held ~4,700 frames of live Bubbly Clouds and through the CONTINUE
+   prompt. Strongest elimination result: the **reverse dissociation** — in 9,000 frames of live *Green
+   Greens* with `0xD03B`=0, all four candidates still read `1`. They are STALE latches.
+   ⚠ **NEW WIRING HAZARD:** `0` is NOT a positive "Green Greens" signal — it is also the uninitialized
+   boot value (frame 10: `D03B=0 hp=0 lives=0`) and the post-game-over title screen. **A predicate keyed
+   on `== 0` is unsafe; `>= 2` is meaningful.** Gate any read on the game actually being in play.
 6. Also fixed: `record.py`'s `C` (checkpoint) hotkey wrote to `runs/<name>/` instead of the
    date-prefixed run dir, crashing the session with FileNotFoundError.
 
@@ -54,25 +63,30 @@ Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
    floors, whose door leads to the battlements; from there the game flies Kirby on a **warp star** into
    the **Lololo boss room** (boss meter = skull + 3 boxes replacing the score row). Verified
    frame-by-frame. `cont_boss2.state` is a banked, controllable boss-room arrival.
-5. **★ THE LOLOLO BOSS IS BEATEN** (`beat_lololo.py`, seed 600000 from `boss_fresh.state`): meter
-   72 → 0, Kirby alive hp 3. Three unlocks after 948 blind trials had landed ZERO damage: match
-   Kirby's HEIGHT to the ledge the block travels on before inhaling (he was inhaling into empty air
-   one ledge below); start at full HP (dying in the boss room respawns hp=6 AND resets the boss);
-   all 3 hits must land on ONE life. Control run — Kirby dying with no input leaves the meter at 72
-   — proves the drops were real hits.
-   **BUT THERE IS NO STAGE-CLEAR: Lololo here is a mid-stage encounter, not Castle Lololo's end.**
-   `advance.py` chained 5 further rooms (score 49960 → 53260); the five candidates read `1` in every
-   one. ⚠ That is NOT the answer — it is only evidence about rooms still inside Stage 2. Calling it
-   a latch now would repeat the too-few-anchors error this lane has made three times. VERDICT OPEN.
-   Also: input is ignored for a few hundred frames after the win — settle before acting or a room
-   looks like a dead end when it is not.
-6. **⚠ TWO OF MY OWN MECHANISM CLAIMS RETRACTED MID-SESSION, both banked then corrected:**
-   (a) "randomised search corrupts the game" — it does not; the missing score row is the boss/area
-   HUD, and I had built a "validity guard" encoding the assumption, after which 200 trials
+5. **⚠⚠ RETRACTED 2026-07-28 — "THE LOLOLO BOSS IS BEATEN" WAS FALSE.** The automation never beat
+   Lololo; `beat_lololo.py`'s "meter 72 → 0" was **Kirby walking through a door and the screen
+   blanking**. Verified by loading the banked states: `LOLOLO_WIN.state` and `post_boss_final.state`
+   render an **identical frame** (same screen MD5, 78 WRAM bytes apart) showing an ordinary corridor
+   with a normal `Sc: 49960` row — **not the boss room**. The meter box is a meter only while the boss
+   HUD is up; on a blanked frame it reads 0. The "control run" proved nothing (idling never blanks the
+   screen). **DAVID beat Lololo**, during the 2026-07-28 human run.
+   Consequently **also FALSE: "there is no stage-clear; Lololo is a mid-stage encounter."** Beating
+   Lololo **does** end Castle Lololo — the human's kill is followed by the warp-star flight straight
+   into the Stage-3 title card. The "input is ignored after the win" claim is withdrawn entirely (it
+   was never a post-win observation). The three "unlocks" are unvalidated hypotheses, not results.
+   ✅ What survives: the boss room *was* legitimately reached (`cont_boss2`/`boss_room_left`/
+   `boss_fresh` are genuine boss-room arrivals); `advance.py` did chain 5 rooms, but from a mid-Castle-
+   Lololo corridor, and the five candidates reading `1` through them is unaffected.
+6. **⚠ THREE OF MY OWN MECHANISM CLAIMS RETRACTED, all banked then corrected — and all ONE failure
+   mode:** (a) "randomised search corrupts the game" — it does not; the missing score row is the
+   boss/area HUD, and I had built a "validity guard" encoding the assumption, after which 200 trials
    "confirmed" it; (b) "savestates yield a frozen Kirby" — they do not; I had a hardcoded Kirby
    sprite-tile whitelist that missed his walk frames, and I was testing `right` while he stood against
-   the right wall. Both were settled in one run each by varying the suspected cause. **A guard built
-   on an unverified premise launders that premise into evidence — do not add one without deriving it.**
+   the right wall; (c) "the automation beat Lololo" — it did not; a fixed-box boss-meter reader scored
+   a blanked transition frame as an empty meter. **The pattern: an unvalidated fixed-screen-region
+   detector converts a rendering artifact into a game event.** Each was settled in one run by varying
+   the suspected cause or just looking at the frame. **A guard built on an unverified premise launders
+   that premise into evidence — do not add one without deriving it.**
 7. **NEXT (cheapest first):** (i) a human plays Castle Lololo's boss for ~2 minutes with RAM sampling
    on (the recorder already supports `"ram": true`) — this ends the hunt immediately; (ii) otherwise
    arrive at the boss with full HP and write a fight policy that reads the block position off the

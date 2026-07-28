@@ -27,7 +27,7 @@ for c, addr in COLS.items():
     print(f"  {c} = {addr}: values {sorted(set(v))}  transitions {len(t)}  at rows {t[:8]}")
 flip = [r["watch"]["c1"] for r in rows].index(2)
 print(f"  -> c1 flips 1->2 once at row {flip} (step {rows[flip]['step']}); {len(rows)-flip} rows "
-      f"follow. The boss kill is at row 1018, so the flip is 64 rows LATER (see report, Test 2).")
+      f"follow. Boss kill at row 1018 [NOT derivable here: read off run frames], so flip is 64 later.")
 
 print("\n== B. sustained live play per stage (test1b, 300 samples / 9,000 frames each) ==")
 for tag, stage in (("v0", "Green Greens"), ("v2", "Float Islands"), ("v3", "Bubbly Clouds")):

@@ -32,6 +32,10 @@ can re-derive the verdict from a clean checkout.
   is initialised**. This is why `== 0` is not a safe predicate.
 - `test2_continue.py`, `test2_boss_fresh.png` — the "stage index vs stages cleared" test. **It did not
   discriminate** (KDL's CONTINUE restarts the same stage); kept because a null result is a result.
+- `scan_states.py` — reads `0xD03B` out of every savestate in a directory. Used to establish that no
+  Stage-3 state existed anywhere (1,098 scanned, all `1` but one). ⚠ That scratchpad corpus is **not
+  committed** (`.gitignore:31` excludes `*.state`), so the script is auditable but the count is not
+  re-derivable here.
 
 - `verify.py` — re-derives everything log-based (Leg 1 + the `test1b` tables) from the committed files
   **alone**: no ROM, no savestate, no `ram.bin`. The causal leg needs the ROM and is not re-derivable
@@ -99,7 +103,7 @@ Actual output, 2026-07-28:
       c4 = 0xD3BA: values [1]  transitions 0  at rows []
       c5 = 0xD3CD: values [1]  transitions 0  at rows []
       band = 0xD052: values [1, 2, 3, 4, 5, 6, 7, 8, 9]  transitions 69  at rows [18, 21, 22, 25, 27, 28, 33, 34]
-      -> c1 flips 1->2 once at row 1082 (step 824); 46 rows follow. The boss kill is at row 1018, so the flip is 64 rows LATER (see report, Test 2).
+      -> c1 flips 1->2 once at row 1082 (step 824); 46 rows follow. Boss kill at row 1018 [NOT derivable here: read off run frames], so flip is 64 later.
 
     == B. sustained live play per stage (test1b, 300 samples / 9,000 frames each) ==
       Green Greens   D03B=[0] (0 transitions) | latches=[[1], [1], [1], [1]] | liveness: x takes 56 values, hp [0, 1, 2, 3, 4, 5, 6], lives [2, 3, 4, 5]

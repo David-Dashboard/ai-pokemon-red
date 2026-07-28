@@ -16,7 +16,7 @@ Two independent legs:
 | Green Greens (1) | `0` | all `1` when re-entered; all `0` at cold boot | causal write + sustained live play + fresh boot |
 | Castle Lololo (2) | `1` | all `1` | human run + causal write |
 | **Float Islands (3)** | **`2`** | all `1` | human run (the 1→2 flip) + causal write + 9,000 live frames |
-| Bubbly Clouds (4) | `3` | all `1` | causal write + 4,500 live frames + CONTINUE |
+| Bubbly Clouds (4) | `3` | all `1` | causal write + 4,740 live frames + CONTINUE |
 | Mt. Dedede (5) | `4` | — | causal write |
 
 ★ `0xD03B` = **STAGE INDEX (0-indexed), the byte the game itself reads.**
@@ -39,7 +39,7 @@ mapping, its empirical confirmation, and a re-derivation script that uses the co
   (`step 824`) and the **"STAGE 3 FLOAT ISLANDS" title card** is on screen at `step 828`, two sampled
   frames later — both panels are in `evidence/stage3_title_card.png`.
 - **It survives two deaths without moving** — the exact falsification that killed the 2026-07-23
-  candidates `0xD052`/`0xD3EE`. ⚠ This one rests on the **uncommitted** `ram.bin`: the committed JSONL
+  candidates `0xD052`/`0xD3EE`. ⚠ ⓤ This one rests on the **uncommitted** `ram.bin`: the committed JSONL
   has **no HP/lives/death column**. Offline, Kirby's HP byte (`0xD086`) reaches `0` around file rows
   ~414 and ~766 — both inside Stage 2 — and `c1` does not move across either.
 - The other four (`c2..c5`) are constant `1` across all 1,128 rows, *including inside Stage 3* — though
@@ -53,6 +53,14 @@ mapping, its empirical confirmation, and a re-derivation script that uses the co
 Three tests, all $0 offline PyBoy. Artifacts under
 `reports/probes/2026-07-26-kirby-gb-stage3/evidence/`; `verify.py` re-derives the log-based parts from
 the committed files alone.
+
+> **ⓤ = derived from an artifact that is NOT committed** (frames or `ram.bin` under `runs/`, or the
+> savestate scratchpad — `.gitignore:27` and `:31`). Marked so a reader never has to guess which numbers
+> a clean checkout can reproduce. None of the ⓤ figures is load-bearing for the verdict: the causal map
+> and the `test1b` tables carry it, and both are reproducible from committed files (the causal map needs
+> only the ROM). The ⓤ items are: the boss kill at file row 1018 (read off run frames), the Test 2
+> 64-step gap that rests on it, the `meter_darkpx` figures in retraction #3, the two-deaths falsification
+> (`ram.bin`), and the 1,098-savestate scan.
 
 **1. `0xD03B` DETERMINES which stage loads** (`causal_map.py`, `causal_map.png`). From a Castle Lololo
 state, write `0xD03B = V`, force a game over, take CONTINUE, and screenshot what loads:
@@ -68,6 +76,12 @@ state, write `0xD03B = V`, force a game over, take CONTINUE, and screenshot what
 
 This is the strongest result in the hunt. The game itself reads this byte to decide which stage to
 load, so it is a **stage selector/index**, not a bystander that happens to correlate.
+
+Two things make this cleaner than it looks. The **write precedes the load**, and the stage identity is
+read off the *rendered frame*, not off RAM — so there is no way for the measurement to assume its own
+conclusion. And `causal_map.py:40` re-asserts the value at the CONTINUE prompt "just in case": that
+line turns out to be a **no-op** — the game had never cleared the value, so the re-assert cannot be
+masking a reset. The single pre-load write is doing all the work.
 
 **2. Sustained hold across live play** (`test1b.py`, `test1b_v{0,2,3}.{jsonl,png}`). 300 samples over
 9,000 frames each, with liveness proven per run (Kirby controllable, `0xD051` taking many distinct
@@ -110,7 +124,8 @@ host/image pins (same reason PR #138 is deferred). Wiring belongs in ONE batched
 
 ✅ **The former bound is now MET.** The 2026-07-26 version of this report required "confirm `0xD03B`
 reads `3` at the Stage-3 → Stage-4 boundary before wiring". That is done: `0xD03B` = `3` held across
-4,500 frames of live Bubbly Clouds, then through the CONTINUE prompt when lives ran out (still `3`),
+4,740 frames of live Bubbly Clouds (159 sampled rows), then through the CONTINUE prompt when lives
+ran out (still `3`),
 and only reset to `0` at the title screen. Five distinct stage values are now anchored (`0`–`4`), four
 of them causally. **The "one more anchor first" gate is discharged.**
 
@@ -130,7 +145,7 @@ the same value. `test2_continue.py` / `test2_boss_fresh.png` ran it; the test is
 discriminating, and no conclusion is drawn from it.
 
 Weak supporting evidence for "index" that is *not* nothing: in the human run the boss kill is at file
-row **1018**, and `0xD03B` flips 1→2 at row **1082** — **64 record-steps later**, at the Stage-3 title
+row **1018** ⓤ, and `0xD03B` flips 1→2 at row **1082** — **64 record-steps later**, at the Stage-3 title
 card. A "stages cleared" counter should have incremented **at the kill**. It did not; it incremented
 when the next stage loaded. Real, but weak — a cleared-counter written slightly late would look the
 same. **The causal map is much stronger evidence for "selector/index" anyway**, and that is what the
@@ -138,9 +153,11 @@ verdict rests on.
 
 ### Two incidental findings worth recording
 
-- **No Stage-3 savestate existed anywhere before this.** A scan of all **1,098** savestates in the old
-  session scratchpad (`scan_states.py`) found `0xD03B` = 1 in every one but a single exception. The
-  hunt was never one savestate away from the answer; the sample genuinely did not exist.
+- **No Stage-3 savestate existed anywhere before this.** ⓤ `scan_states.py` (committed) read `0xD03B` out
+  of all **1,098** savestates in the session scratchpad and found `1` in every one but a single
+  exception. The hunt was never one savestate away from the answer; the sample genuinely did not exist.
+  ⚠ The scratchpad corpus is **not committed** (`.gitignore:31` excludes `*.state`), so the script is
+  auditable but the count is not re-derivable from this checkout.
 - **⚠ The human recording is NOT replayable.** `record.py --mode human` stores the **union** of buttons
   held across each 12-frame sampling window, not their timing (`record.py`, `_run_human`: `active` is a
   `set` accumulated over `args.sample_every` ticks). Replaying that button list diverges from the
@@ -209,8 +226,9 @@ needs several inhale-a-block-and-spit-it-back cycles; 300 fight-biased randomise
 minor hits (best score gain 400) but never won. So no Stage-2 → Stage-3 transition was observed **at
 this point in the session**, and the discriminating sample EX02 needs did not yet exist. This is a much
 better place to be stuck than PR #169's (which never left the first corridor), and the remaining gap is
-one won boss fight. *(The fight was won later the same session — see "★★ THE LOLOLO FIGHT IS WON" below
-— and the sample itself came from David's human run on 2026-07-28; see the header.)*
+one won boss fight. *(The automation never won it — see the retraction "THE LOLOLO FIGHT IS WON" below.
+David beat Lololo himself during the 2026-07-28 human run, and that is where the sample came from; see
+the header.)*
 
 ⚠ **RETRACTED — "savestates yield a frozen Kirby" was my second wrong mechanism claim here.** I
 reported that savestate-chaining produced a Kirby who could not move horizontally. It did not. Two
@@ -414,7 +432,7 @@ score row restored. So `post_boss_final` is also not the far end of the "5 furth
 **Why I believed it — the same error, a third time.** `beat_lololo.py` reads the boss meter as *dark
 pixels in x 44-80, y 128-136*. That region is only a meter **while the boss HUD is up**; in a normal
 room it holds the `Sc:`/`KIRBY` text, and on a **blanked screen it reads 0**. Measured on the human
-run's own frames:
+run's own frames ⓤ:
 
     step 752 (boss room, boss at 1 box):  meter_darkpx =  24
     step 760 (boss dead, score row back): meter_darkpx =  81
@@ -453,7 +471,7 @@ Everything in this subsection described a state that was never post-win. Struck,
 
 - ❌ *"There is no stage-clear sequence... Lololo here is a mid-stage encounter, not Castle Lololo's
   final boss."* **FALSE.** The human run shows the real thing: the boss HUD is up at steps 752-756,
-  the score row returns at step 760 (the kill, file row 1018, with the stage-clear bonus), Kirby exits,
+  the score row returns at step 760 (the kill, file row 1018 ⓤ, with the stage-clear bonus), Kirby exits,
   and by step 776 he is on the **warp-star flight over the sky** — which lands in the Stage-3 title
   card at step 828. **Beating Lololo DOES end Castle Lololo.** I concluded the opposite from a state
   where the boss had never been fought.
@@ -548,7 +566,8 @@ halves are wrong and are struck.** The first re-asserted the *"randomised search
 claim that this very document had already **RETRACTED** — see "The false alarm, recorded because the
 reasoning error is the useful part" above: the states were legitimate and the HUD "validity guard"
 laundered my own error into apparent confirmation. The second was overtaken later the same session:
-the boss was reached, and beaten.
+the boss room **was** reached (`cont_boss2`/`boss_room_left`/`boss_fresh`, all verified genuine). It was
+**not** beaten by the automation — see retraction #3. David beat Lololo himself on 2026-07-28.
 
 ⚠ The paid-brain option (let the agent play it) would also produce a genuine brain-capability
 datapoint, but it needs a pre-registration first per gate-methodology, and the one existing datapoint
