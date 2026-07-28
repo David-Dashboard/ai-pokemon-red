@@ -1,4 +1,6 @@
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +19,7 @@ _REPO_ROOT = Path(scorer.__file__).resolve().parents[1]
 # every banked row carries "wa30-ee6fef47", so EX09 could only ever return FAIL_CAPABILITY
 # ["arc_wrong_game_id_row"], refusing on identity before it looked at play at all.
 _BANKED_ORACLE = _REPO_ROOT / "eval" / "fixtures" / "arcagi3_wa30_banked" / "run1_L1of9_oracle.jsonl"
+_BANKED_SOURCES = _BANKED_ORACLE.parent / "SOURCES.md"
 _BANKED_GAME_ID = "wa30-ee6fef47"
 
 
@@ -60,6 +63,20 @@ def test_wrong_game_id_row_refused():
     ok, failures = _arc_wa30_success(rows)
     assert not ok
     assert "arc_wrong_game_id_row" in failures
+
+
+# --- fixture provenance --------------------------------------------------------------------------
+
+def test_banked_fixture_matches_recorded_digest():
+    """The fixture is a byte copy of a gitignored `runs/` log, and `_log_oracle` APPENDS -- so a
+    re-copy after the source grew would silently swap the evidence. SOURCES.md is the single
+    recorded digest; this asserts the committed bytes still hash to it. Deliberately does NOT
+    compare against the source path: `runs/` is gitignored and absent from a clean checkout."""
+    recorded = re.search(r"\b([0-9a-f]{64})\b", _BANKED_SOURCES.read_text(encoding="utf-8"))
+    assert recorded, f"no sha256 recorded in {_BANKED_SOURCES}"
+    actual = hashlib.sha256(_BANKED_ORACLE.read_bytes()).hexdigest()
+    assert actual == recorded.group(1), (
+        f"{_BANKED_ORACLE.name} drifted from the digest recorded in SOURCES.md: {actual}")
 
 
 # --- game_id identity, exercised against the REAL banked log -------------------------------------
