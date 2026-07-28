@@ -7,21 +7,32 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-28, DAY CLOSE (TWELVE PRs merged, main `13e4592`, **$0 — no model turn launched
-today**; PR #181 is APPROVED BUT HELD, deliberately. The Gate-0 v2 pre-registration is **FROZEN ON MERGE**
-(#162); the EX02 Kirby stage oracle `0xD03B` is causally established (#173) **and now WIRED** (#180) —
-⚠ **but its Stage-3 → Stage-4 boundary bound is STILL OPEN**: it was called discharged and RETRACTED the
-same day (#183), the fourth retraction on this hunt. Four oracle hunts banked (EX02 FOUND, EX04
-candidate-not-settled, EX05 found-but-address-moves, EX03 NOT FOUND); the MiniWoB human-baseline rig is
-repaired (#174) and both world images were genuinely rebuilt + re-pinned (#180). The two banked paid
-Gate-0 arms remain **VOID** (#175) — the cause is proven benign and that does not un-void them.)_
+_Last updated: 2026-07-28, TRUE DAY CLOSE (**SIXTEEN** PRs merged, main `e0ceb9b`, **$0 — no model turn
+launched today**). **READ THESE FOUR LINES BEFORE ANYTHING ELSE:**_
+1. _**The graduation exam is 5/10 scorable, up from 4/10** — `eval/score_exam_kirby_stage3.py` (EX02) is a
+   REAL scorer as of #186, bar `stage >= 3`. It is scorable but **not currently passable** (see LATE
+   LANDINGS)._
+2. _**Capability evidence in this project is still ZERO.** Both banked paid Gate-0 arms remain **VOID**
+   (#175) — proven-benign cause does not un-void them. Everything merged today was measurement apparatus._
+3. _**PR #181 is APPROVED BUT HELD, not merged. PR #188 is OPEN and unreviewed.** Two open PRs, not zero._
+4. _**Next two jobs, in this order: (1) re-freeze prereg items 1-2; (2) recompute #181's two digests and
+   merge it.** The old "#1 = the `source_unreadable:oracle` scorer fix" is DONE — #187 landed it._
 
-**=>=> NEWEST (2026-07-28, day close) - TWELVE PRs MERGED (#181 HELD); GATE-0 v2 PREREG FROZEN; EX02 ORACLE WIRED BUT ITS STAGE-4 BOUND RETRACTED BACK OPEN; $0. =>=>**
+_Also standing: the Gate-0 v2 pre-registration is **FROZEN ON MERGE** (#162); the EX02 Kirby stage oracle
+`0xD03B` is causally established (#173) and WIRED (#180) — ⚠ **but its Stage-3 → Stage-4 boundary bound is
+STILL OPEN** (called discharged and RETRACTED the same day, #183, the fourth retraction on this hunt).
+Four oracle hunts banked (EX02 FOUND, EX04 candidate-not-settled, EX05 found-but-address-moves, EX03 NOT
+FOUND); the MiniWoB human-baseline rig is repaired (#174) and both world images were genuinely rebuilt +
+re-pinned (#180)._
 
-**Merged today, main = `13e4592`. TWELVE PRs:** #129, #174, #175, #173, #176, #177, #178, #179, #162,
-#180, then #184 and #183 late. **PR #181 is APPROVED BUT HELD, deliberately — see LATE LANDINGS.** (An
-earlier draft of this block said "ten PRs, zero open"; #183/#184 landed after it was written, and #181 was
-opened and held. Corrected here rather than left standing.)
+**=>=> NEWEST (2026-07-28, TRUE day close) - SIXTEEN PRs MERGED; EXAM NOW 5/10 SCORABLE (#186); GATE-0 v2 LAUNCH BLOCKER CLEARED (#187); #181 HELD AND #188 OPEN; CAPABILITY EVIDENCE STILL ZERO; $0. =>=>**
+
+**Merged today, main = `e0ceb9b`. SIXTEEN PRs:** #129, #174, #175, #173, #176, #177, #178, #179, #162,
+#180, then #184, #183, #182, #185, #187 and #186. **PR #181 is APPROVED BUT HELD, deliberately, and PR
+#188 is OPEN and unreviewed — see LATE LANDINGS.** (This count has been revised twice: an early draft said
+"ten PRs, zero open", a later one "twelve". Both were written before the day's last PRs landed. #138 is
+**not** in the sixteen — GitHub marks it merged against #180's own commit `b890d8c`, so it is counted
+inside #180.)
 
 1. **DONE — #129 graduation exam v1 merged, and the merge is explicitly NOT THE FREEZE.** The document
    (`reports/2026-07-22-graduation-exam-v1-definition.md`) opens with a banner: *"⚠ MERGING THIS PR DOES
@@ -30,9 +41,11 @@ opened and held. Corrected here rather than left standing.)
    scorers' existence. It was merged for ONE reason: eight `eval/score_exam_*.py` files on `main` cited
    the doc BY FILENAME while the doc did not exist on `main` — a dangling reference (verified: the doc's
    only add-commit `68e369f` was not an ancestor of pre-merge main `4f37848`, while all 8 scorers were).
-   **Still 4/10 scorable and NO pass bar** (`:291-293` "pass bar not yet set"; `:300` "the bar MUST be set
-   BEFORE any exam attempt is run"). 4 real scorers (EX01/EX07/EX08/EX09), 4 `ORACLE_PENDING` stubs that
-   `return 1` (EX02/EX03/EX04/EX05), 2 with no scorer file at all (EX06/EX10).
+   **NO pass bar** (`:291-293` "pass bar not yet set"; `:300` "the bar MUST be set
+   BEFORE any exam attempt is run"). *(⚠ **This item said "still 4/10 scorable" — SUPERSEDED the same day
+   by #186: it is now 5/10.** 5 real scorers (EX01/**EX02**/EX07/EX08/EX09), **3** `ORACLE_PENDING` stubs
+   that `return 1` (EX03/EX04/EX05), 2 with no scorer file at all (EX06/EX10). Verified by listing
+   `eval/score_exam_*.py` and grepping `ORACLE_PENDING`. "Merged is not frozen" is unchanged.)*
 2. **DONE — #162 Gate-0 v2 pre-registration FROZEN ON MERGE**, `reports/2026-07-25-gate0-v2-prereg.md`
    (filename still carries `2026-07-25`; body rewritten end-to-end 2026-07-28). `:24-28`: *"Status:
    FROZEN ON MERGE — 2026-07-28 … Merging this commit **is** the freeze"*; `:1018`: *"cite it, satisfy
@@ -73,7 +86,11 @@ opened and held. Corrected here rather than left standing.)
    not reached; the increment has been observed exactly once (`1 → 2`, human run), and the bound asks for
    a second. Values `3` and `4` have never been produced by the game unforced. **Wiring hazard stands: `0` is also
    the uninitialized boot value and the post-game-over title screen — a predicate keyed on `== 0` is
-   unsafe; `>= 2` is meaningful.**
+   unsafe; any bar of the form `>= n` for `n >= 1` is meaningful.** ⚠ **Do NOT read the `>= 2` figure that
+   appears in this file's older blocks and in `world_mcp.py:255` as EX02's BAR. It is not.** EX02's bar is
+   **`stage >= 3`** (#186), because the exam definition words the task as *"advancing PAST Stage 3"* and
+   `0xD03B` is 0-indexed, so past Stage 3 == Bubbly Clouds == 3. `>= 2` would score merely REACHING Float
+   Islands as clearing it.
 7. **DONE — #180 batched world change + full image rebuild + Gate-0 re-pin.** (a) **The EX02 oracle IS
    NOW WIRED**: `world_mcp.py:256` carries `"watch": {"hp": 0xD086, "stage": 0xD03B}`. (b) Two ROM-generic
    carrier keys were SPLIT OUT — `mkds` (`:181-185`) and `gba_generic` (`:209-213`), both `"watch": {}`,
@@ -143,7 +160,66 @@ opened and held. Corrected here rather than left standing.)
   **3**, and nothing was confirmed at a Stage-4 boundary at all (see #183). **Anyone wiring a Stage-4
   predicate off that comment will key it on `== 4` and be wrong.** Not fixable in isolation:
   `world_mcp.py` is byte-pinned by `eval/fixtures/gate0_expected_pins*.json`, so a comment edit breaks
-  Gate-0 parity and forces another image rebuild — **queued for the next batched world PR.**
+  Gate-0 parity and forces another image rebuild — **queued for the next batched world PR.** ⚠ **The same
+  comment block also says at `:255` "Only `>= 2` is meaningful (Stage 3 == index 2)" — true as a wiring
+  hazard note, and it is exactly what seeded the wrong-bar near-miss recorded below. Fix both lines in
+  that same batched PR.**
+
+**LATEST LANDINGS — the four PRs that merged after the block above was written (#182, #185, #187, #186):**
+- **#182 — the session-wrap PR that WROTE the block above.** Everything above it is as of `13e4592`; this
+  section is what changed after.
+- **#185 — the three stale `-DRAFT` prereg path references are FIXED.** `eval/score_gate0.py`,
+  `eval/fixtures/gate0_paid_v2_source_pins.json` and `tools/capture_gate0_baseline_miniwob.py` now cite
+  `reports/2026-07-25-gate0-v2-prereg.md`. Comments/docstrings only, no predicate touched. **The only
+  remaining mention of the old name is inside the frozen prereg itself (`:1022`), which is correct — the
+  frozen document is not edited.** This closes item 20 below.
+- **★ #186 — `eval/score_exam_kirby_stage3.py` IS NOW A REAL SCORER. THE EXAM IS 5/10 SCORABLE.** It is no
+  longer an `ORACLE_PENDING` stub. Read the file's own docstring before touching it; the load-bearing
+  facts:
+  - **The bar is `stage >= 3`, and that number comes from the TASK TEXT, not from the evidence.** The exam
+    definition words EX02's end state as *"advancing PAST Stage 3"*; `0xD03B` is 0-indexed, so past Stage 3
+    is Bubbly Clouds == **3**. ⚠ **An earlier revision of this PR used `>= 2` because I briefed the
+    implementer with that constant** — I had internalised "the oracle reads 2 at Float Islands" and never
+    re-read the task. `>= 2` scores merely REACHING Stage 3 as CLEARING it. It was caught only because the
+    implementer flagged it as a deviation instead of complying.
+  - **EX02 is scorable but NOT currently passable, and that is not a defect.** The `2 → 3` increment has
+    **never** been observed in natural play: every `3` on record was WRITTEN to memory, and the only
+    game-made increment ever seen is `1 → 2`, once. **David's own banked human run
+    (`runs/2026-07-28_kirby_stage3_human/`) reached Float Islands only — index `2` — so it fails this bar**
+    (and is unusable anyway: it predates the wiring, so its oracle rows carry `c1`..`c5` columns, not
+    `stage`/`hp`; the scorer correctly refuses it rather than guessing).
+  - ⛔ **A PASS here MUST NOT be read as discharging the Stage-3 → Stage-4 bound.** The bound is still open
+    and still needs Float Islands actually cleared with no memory write. A PASS would be the first natural
+    observation of the increment — worth inspecting on its own, not a substitute for the bound's evidence.
+  - Predicate shape, for anyone extending it: ≥2 CONSECUTIVE rows at `stage >= 3`, ≥1 `hp >= 1` row inside
+    that stretch, and ≥1 earlier row below the bar. The streak is computed over `stage` **alone** —
+    **#186's review found that an `hp`-in-every-row version scored `[3@hp5, 3@hp0, 3@hp5]` (a genuine clear
+    with one sampled death) as FAIL.** That was found by CONSTRUCTING the input a real run would produce,
+    not by reading the diff. Pinned as `tests/test_score_exam_kirby_stage3.py::test_sampled_death_inside_the_streak_does_not_break_it`.
+- **★ #187 — A GATE-0 v2 LAUNCH BLOCKER IS CLEARED (this was item 17b, the old "next job #1").**
+  `eval/score_gate0.py::score_manifest()` no longer raises an unhandled `FileNotFoundError` on a missing
+  `oracle.jsonl`; it now emits `source_unreadable:oracle:<arm>` (`OSError` — absent/unopenable) or
+  `source_malformed:oracle:<arm>` (`JSONDecodeError`/`UnicodeDecodeError` — bytes do not decode), both into
+  `failures["source"]` (`eval/score_gate0.py:419-424`). **Deliberately still crashes** on an oracle whose
+  lines are valid JSON of the wrong SHAPE — shape is a claim about content, and quietly converting it would
+  let a structurally-wrong trace masquerade as an absent one.
+- **NEW FILE: `reports/2026-07-28-gate0-v2-deviations.md` — the deviation log for the frozen v2 prereg.**
+  It was created because the prereg's closing law (`:1018-1019`, *"cite it, satisfy it, or report a
+  deviation from it — but do not revise it to fit a result"*) had **nowhere to land** — no deviation log,
+  launch report or amendment file existed for the v2 document. **Entry D1** records #187's post-freeze
+  scorer edit, with proof that lines 1-386 and `score()` are byte-identical to the frozen commit `208d211`
+  and that no predicate, threshold, cap, pass bar or precedence step moved. ⚠ **Precedent gap worth
+  knowing: PR #180 satisfied precondition P8 earlier the same day and recorded no deviation anywhere** —
+  there was a precedent for doing the work but not for keeping the record. **Append future deviations
+  here, newest last; do not start a third file.** (#188, still open, proposes a second one-off deviation
+  report — fold it into this log on merge.)
+- **⚠ #188 IS OPEN AND UNREVIEWED — the day did NOT end with one open PR.** Branch
+  `fix/audit-verdict-not-gate-verdict`, +258/-191 across `tools/check_gate0_codex.py`,
+  `tools/gate0_appserver_arm.py`, `tools/gate0_wake_boundary.py` and four test/report files. It renames
+  `audit()`'s `overall` key to `audit_overall` and deletes the unreachable `build_agent_metrics`.
+  **`eval/score_gate0.py` is untouched.** ⚠ **SEQUENCING: it edits `tools/gate0_appserver_arm.py`, so that
+  blob's hash moves — P4's `expected_launcher_sha256` re-freeze must be computed AFTER #188 merges, which
+  also sequences the held #181.** Judge it on its merits; do not merge it because this file mentions it.
 
 **OPERATIONAL FACTS a future session most needs (verified this session, quote these not the folklore):**
 10. **The `watch` contract, precisely.** It is `watch: Optional[dict]` (`core/perception_plugin.py:74`),
@@ -196,18 +272,20 @@ opened and held. Corrected here rather than left standing.)
     wrong directory.
 
 **PENDING / NOT DONE (explicit):**
-16. **`eval/score_exam_kirby_stage3.py` is STILL an `ORACLE_PENDING` stub that returns 1.** The address is
-    wired into the world; the SCORER predicate is not written. **EX02 is not scorable today** — the exam
-    is still 4/10, and #180 did not change that.
+16. ~~**`eval/score_exam_kirby_stage3.py` is STILL an `ORACLE_PENDING` stub that returns 1.**~~
+    **✅ DONE — SUPERSEDED BY #186 the same day.** It is a real scorer, bar `stage >= 3`, and **the exam is
+    5/10 scorable**. See LATEST LANDINGS above for the bar's provenance and for why a PASS would not
+    discharge the Stage-4 bound.
 17. **`gate0_paid_v2_source_pins.json`'s `expected_pins_sha256` is NOT frozen** — both arms read the literal
     `PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin`. **Fails closed by design,
     and that failure mode is a FEATURE, not debt: the placeholder is what yields a clean
     `INSUFFICIENT_DATA`.** PR #181 does the freeze, is **APPROVED but deliberately HELD** on prereg §6.2
     (items 1-2 are still v1 `task_sha256`) — see LATE LANDINGS for both hold reasons.
-17b. **BLOCKER FOR THE NEXT SESSION, and it must land BEFORE #181:** a ~2-line
-    `try/except → source_unreadable:oracle:<arm>` fix in the scorer, so that once the v2 pins are cleared
-    a dead run yields a **verdict** instead of a stack trace. It changes scorer SEMANTICS and affects
-    `readiness_dev` identically, so it needs **its own reviewed PR** — do not smuggle it into #181.
+17b. ~~**BLOCKER FOR THE NEXT SESSION, and it must land BEFORE #181:** the
+    `try/except → source_unreadable:oracle:<arm>` scorer fix.~~ **✅ DONE — #187 landed it in its own
+    reviewed PR, with the deviation recorded in `reports/2026-07-28-gate0-v2-deviations.md` (D1).** It is
+    no longer a blocker and no longer the next job. #181's hold now rests on reason (a) alone — items 1-2
+    must be re-frozen first — plus #188's launcher-hash sequencing.
 18. **The MiniWoB paid human baseline is STILL NOT CAPTURED** (prereg P1a). The rig blocker is resolved;
     this now waits only on David playing five episodes. `runs/gate0_paid_v2_human_baseline/miniwob/` does
     not exist on this machine at all. P1b (freeze `artifact_sha256.miniwob_human`) and P2
@@ -216,29 +294,56 @@ opened and held. Corrected here rather than left standing.)
     bug.** The prereg froze at 01:12 saying P8 NOT DONE; #180 merged at 01:55 and performed the repair +
     rebuild + re-pin. Per `:1018` this is **reported as a deviation satisfying the precondition** — the
     frozen document is NOT to be edited to match.
-20. **Three merged files still cite the prereg's old `-DRAFT` filename** — `eval/score_gate0.py:16` (a `#`
-    comment), `eval/fixtures/gate0_paid_v2_source_pins.json:2` (inside `_comment`), and
-    `tools/capture_gate0_baseline_miniwob.py:12` (a module docstring). **Verified non-load-bearing**: no
-    hash covers any of them, none feeds a predicate or a file-open. Cosmetic only.
+20. ~~**Three merged files still cite the prereg's old `-DRAFT` filename.**~~ **✅ DONE — #185.** All three
+    now cite `reports/2026-07-25-gate0-v2-prereg.md`. The one surviving `-DRAFT` mention is inside the
+    frozen prereg (`:1022`) and stays there by law.
+21. **STILL OPEN, and it is the last one anyone tends to forget: nothing in this project has produced
+    capability evidence.** Both banked paid Gate-0 arms are VOID; the 24/100 scorecard is not capability
+    evidence; the graduation exam has never been ATTEMPTED, only made partly scorable. Every one of the
+    sixteen PRs today was measurement apparatus. Do not let "5/10 scorable" read as "5/10 passed".
 
-**=> NEXT — the first two are fixed in this order, do not reorder them:**
-**(1)** Land the **`try/except → source_unreadable:oracle:<arm>` scorer fix** in its own reviewed PR
-(item 17b). **(2)** Re-freeze prereg **items 1-2** (still v1 `task_sha256`) — that is what unblocks
-**#181**, which is approved and waiting. Only then merge #181.
-Then: **(3)** Re-check the v2 six-checkbox seed measurement against the REBUILT image. The draw is frozen
-and binding; `_measured_against.world_image_id` in the v2 pins records `sha256:8bb3358e…`, the
+**=> NEXT — REWRITTEN AT TRUE DAY CLOSE. Steps (a)-(g) are the launch path for the Gate-0 v2 paid run and
+are ORDERED; do not reorder them.** *(The previous version of this list opened with the scorer fix — #187
+did that — and closed with "write the EX02 scorer keyed on `>= 2`" — #186 did that, and `>= 2` was the
+WRONG bar. Both are struck, not left standing.)*
+
+**(a)** **Re-freeze prereg items 1-2** — `eval/fixtures/gate0_expected_pins_{red,miniwob}.json`'s
+`task_sha256` (`:29` in each) still carry the **v1** values (`306751c3…b7c4` / `845638c8…12d1`). Prereg
+§6.1 items 1-4, `:774-786`.
+**(b)** **Recompute #181's two digests (8a/8b) and merge it.** §6.2 (`:787-806`) requires 8a/8b to be
+computed **after** P8's rebuild **and after** items 1-2 are re-frozen. ⚠ **Also sequence against #188** —
+it moves `tools/gate0_appserver_arm.py`'s hash, which P4 item 9 pins. Until then the `PENDING_…`
+placeholders are a **working tripwire**, not debt: they are what makes a pre-run v2 score return a clean
+`INSUFFICIENT_DATA`.
+**(c)** **Preconditions P1a / P1b / P1c and P2.** P1a is the human-gated one — **David plays five MiniWoB
+episodes**; the rig is repaired and `runs/gate0_paid_v2_human_baseline/miniwob/` does not exist yet. P1b
+freezes `artifact_sha256.miniwob_human`. **P1c is the Red arm's human baseline** — currently
+`mode: readiness_dev`, which is why `human_metric_identity:red` is masked; **it must precede or accompany
+P5.** P2 regenerates `runs/gate0_live_breaker/live_breaker_dry_run_trip.json` byte-exactly.
+**(d)** **The paid Gate-0 v2 run.**
+**(e)** **David replays the same five seeds AFTER the agent run**, under **`--mode paid_gate0_v2`** — never
+`paid_gate0`, which would refuse the P9 seeds, capture on the spent 1000-1004 and write to the wrong
+directory (prereg `:220-230`: the mode string is *"load-bearing, not cosmetic"*). Prereg §4.1 **step 5**
+(`:597-600`); ⚠ there is no "§4.1.5" — do not cite one.
+**(f)** **Freeze `artifact_sha256.miniwob_human`.**
+**(g)** **Score.**
+
+**Alongside, not blocking:** **(h)** Re-check the v2 six-checkbox seed measurement against the REBUILT
+image. The draw is frozen and binding; `_measured_against.world_image_id` records `sha256:8bb3358e…`, the
 **pre-rebuild** image the 5/5/2/2/6 counts were measured on — **deliberate provenance, not a stale pin to
-"fix"**. Prereg `:72-79` is explicit: a disagreement *"is a finding to report against P8's rebuild — not a
-licence to re-draw."* **(4)** Work the remaining preconditions in the prereg's own order —
-**P8 → P9 → P1a → P1b → P1c → P2 → P3/P4 → P5/P6 → P7** — with P1a (David plays five episodes) the only
-one that needs a human. **(5)** Write the EX02 scorer predicate so `0xD03B` buys a scorable exam task,
-keyed on `>= 2`, never on `== 0`. **(6)** Next batched world PR: fix the wrong `world_mcp.py:250` comment
-(it will mislead anyone writing a Stage-4 predicate). **(7)** David's calls, unchanged: the exam pass bar
-(#129 merged but NOT frozen), and VizDoom held-out sign-off. **Not on this list: discharging the Stage-4
-bound** — that needs somebody to actually clear Float Islands, and no shortcut substitutes for it.
+"fix"** (prereg `:72-79`: a disagreement *"is a finding to report against P8's rebuild — not a licence to
+re-draw."*). **(i)** Next batched world PR: fix BOTH wrong comments in `world_mcp.py` — `:250`
+("confirmed reading 4 at Stage 4") and `:255` ("Only `>= 2` is meaningful"). **(j)** Review #188 on its
+merits. **(k)** David's calls, unchanged: the exam pass bar (#129 merged but NOT frozen), and VizDoom
+held-out sign-off.
+
+⛔ **Not on this list, and no shortcut substitutes for either: discharging the Stage-3 → Stage-4 bound**
+(needs somebody to actually clear Float Islands, no memory write), **and treating any of the above as
+capability evidence** (see PENDING item 21).
 
 **Paid ledger today (2026-07-28): $0.** No model turn was launched — no `claude -p`, no codex turn, no new
-directory under `runs/gate0_paid*`. All twelve PRs are documentation, offline emulator probes (PyBoy / mgba
+directory under `runs/gate0_paid*` (re-verified at true day close: `13e4592..e0ceb9b` touches no path under
+`runs/`). All sixteen PRs are documentation, scorers and tests, offline emulator probes (PyBoy / mgba
 savestate sweeps / DeSmuME), and a local Docker image rebuild. Running total is unchanged from the banked
 2026-07-23/24 Gate-0 spend of $1.4455 + the $0.08 M1 ping. **Note on LEDGER.md:** it is still armed but
 frozen at its 2026-07-21 Gate-0 readiness slice and was NOT updated by this or several prior sessions —
@@ -267,9 +372,9 @@ item 5 below carries the corrected version; the bound is STILL OPEN.)_
    `watch = {}` worlds at the next world-image rebuild.
    *(Stale as of PR #180: that batched PR landed and `stage: 0xD03B` IS wired at `world_mcp.py:256`
    (`"watch": {"hp": 0xD086, "stage": 0xD03B}`), with both world images rebuilt and Gate-0 re-pinned,
-   and PR #138 riding along by branch point. Kept for the reason wiring was batched. ⚠ **But
-   `eval/score_exam_kirby_stage3.py` is still an `ORACLE_PENDING` stub returning 1 — the address is
-   wired, the scorer PREDICATE is not written, so EX02 is still NOT scorable.**)*
+   and PR #138 riding along by branch point. Kept for the reason wiring was batched. ⚠ **The
+   "`eval/score_exam_kirby_stage3.py` is still an `ORACLE_PENDING` stub" clause that stood here is now
+   FALSE — #186 wrote the predicate the same day, bar `stage >= 3`, and the exam is 5/10 scorable.**)*
 5. ⚠ **Bound STILL OPEN — I wrongly called it DISCHARGED on 2026-07-28, RETRACTED the same day.**
    The gate is *"confirm `0xD03B` reads `3` at the Stage-3 → Stage-4 boundary before wiring"*, and
    **that boundary was never crossed** — nobody has cleared Float Islands. What I banked instead was a
@@ -287,7 +392,9 @@ item 5 below carries the corrected version; the bound is STILL OPEN.)_
    of live *Float Islands* held `0xD03B`=2). They are STALE latches.
    ⚠ **NEW WIRING HAZARD:** `0` is NOT a positive "Green Greens" signal — it is also the uninitialized
    boot value (frame 10: `D03B=0 hp=0 lives=0`) and the post-game-over title screen. **A predicate keyed
-   on `== 0` is unsafe; `>= 2` is meaningful.** Gate any read on the game actually being in play.
+   on `== 0` is unsafe.** Gate any read on the game actually being in play. *(⚠ This item originally ended
+   "`>= 2` is meaningful". True as a hazard note, and it is the phrase that later got briefed to an
+   implementer as EX02's BAR. **EX02's bar is `stage >= 3`** — see the NEWEST block.)*
 6. Also fixed: `record.py`'s `C` (checkpoint) hotkey wrote to `runs/<name>/` instead of the
    date-prefixed run dir, crashing the session with FileNotFoundError.
 
@@ -297,6 +404,8 @@ Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
 1. **EX02 IS STILL `ORACLE_PENDING` AND NOTHING WAS WIRED.** `eval/score_exam_kirby_stage3.py`
    untouched, still `return 1`. No `world_mcp.py` / fixture / pinned-Gate-0-file / held-out edit. $0
    throughout (offline PyBoy, no paid call, no Docker).
+   *(⚠ **Both halves of this are SUPERSEDED as of 2026-07-28** — #180 wired the address and #186 wrote the
+   scorer. Kept as the accurate record of what was true on 2026-07-26.)*
 2. **★ CANDIDATE LIST NARROWED 8 → 5.** `0xC057`, `0xC073`, `0xC07B` are **ELIMINATED**: measured over
    60 sampled intervals of ordinary play at constant score, `0xC057` takes {1,32,33} and the other two
    take {0,1} — they vary *within* Stage 2. PR #169's "all 8 move in perfect lockstep" holds only for
@@ -342,7 +451,7 @@ Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
    tilemap. Read the 5 candidates on the far side: any reading `2` = real stage counter, EX02 oracle
    found; all staying `1` = latch, hunt restarts on a different byte.
 
-**=>=> PRIOR (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
+**=>=> PRIOR (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE [SUPERSEDED — 5/10 SINCE #186, 2026-07-28]; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
 1. **DONE — 6 PRs merged this phase, all $0, docs-only, main now `561ea62`:** #166 (de-rot
    `world-lanes-frontier` + 2 canon docs — `cheapness-skill-compilation/SKILL.md` and
    `reports/2026-07-05-northstar-capability-map.md`), #167 (MKDS A/B v2 design, DRAFT/NOT
