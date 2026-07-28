@@ -93,6 +93,14 @@ them would have silently passed EX02 the moment Kirby left Green Greens.
   *confirm `0xD03B` reads `3` at the Stage-3 → Stage-4 boundary before wiring.* Since EX02's
   success condition IS "advance past Stage 3," the exact transition the task depends on is the
   one still unobserved.
+  *(Amended 2026-07-28, twice-stale in opposite directions. PR #173 and PR #180 are now MERGED and
+  `stage: 0xD03B` IS wired into `world_mcp.py`'s `watch` — so "OPEN and unmerged / nothing is wired"
+  above is stale. But `0xD03B` **has** since been observed reading `3` — by **writing** the byte and
+  watching Bubbly Clouds load and hold for 4,740 frames, **not** by crossing the boundary. PR #173
+  claimed that discharged the bound; **that claim is RETRACTED** — the bound asks for a real
+  `2 → 3` transition with no memory write, which needs Float Islands actually cleared. **The bound
+  stands OPEN and this bullet's substance is still correct.**
+  See `reports/2026-07-26-oracle-kirby-gb-stage3.md`.)*
 
 This lane has been burned three times by too-few-anchors readings (Cave Noire `0xD389`, Emerald
 outdoor `map_num`, PR #169's own lockstep claim). Treat `0xD03B` as the best lead, not as the
