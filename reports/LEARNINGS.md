@@ -6,6 +6,53 @@ across games → reality, no ROM/privileged state, **cheap** (minimal API). Pok�
 
 ---
 
+## 2026-07-28 (latest) — Superseding stale text IN PLACE is a correctness task, not tidiness
+- **What:** a ten-PR day (#129, #162, #173-#180 minus #172; main `b890d8c`). Twice in one session a
+  merged document was left asserting something the same day's later work had falsified — and the
+  second leak was into `HANDOFF.md`, the continuity spine itself (its 2026-07-28 block still said the
+  EX02 oracle was "NOT WIRED, deliberately" hours after PR #180 wired it). Cost: `$0`, no model turn.
+- **The finding:** appending a newer, truer block does NOT neutralize an older false one. A fresh
+  session reads top-down and stops at the first confident sentence that answers its question; a
+  forward-looking directive ("wire this later", "David must still decide X") in a demoted block is the
+  dangerous kind, because it reads as an instruction rather than as history. The same failure shape
+  appeared in code artifacts: a merged report carried a copy-pasteable `watch` dict of falsified
+  addresses under a neutral "Proposed registry wiring" heading.
+- **Method note:** supersede at the point of the false claim, not only at the top of the file. Dated
+  status blocks may stay as history; forward-looking directives must be struck where they sit. For code
+  fences, put the retraction INSIDE the fence (`# RETRACTED — falsified <date>`) so a blind copy-paste
+  carries the warning with it — a banner above the block does not travel with the copied text.
+
+## 2026-07-28 — A proven-benign cause does not un-void a banked result; a frozen doc going stale is correct
+- **What:** an addendum (PR #175) proved the `CONSTANCY_BREACH` on both banked paid Gate-0 arms was
+  benign — pins compared against literal placeholder strings, with the launcher fix landing after both
+  runs. Separately, the Gate-0 v2 pre-registration froze on merge (PR #162, 01:12) and PR #180 (01:55)
+  then satisfied its P8 precondition, leaving the frozen document's own status column stale.
+- **The finding:** both instincts to "fix" these are wrong. Knowing the cause was benign is precisely
+  the circumstance the pre-registration exists to defeat — a pre-registration that can be reinterpreted
+  once the result is known is decorative. And a frozen document whose status column ages is not a bug:
+  the contract is *"cite it, satisfy it, or report a deviation from it — but do not revise it to fit a
+  result."*
+- **Method note:** bank the void, record the benign cause next to it, and report precondition progress
+  as a deviation log OUTSIDE the frozen document. Also scope the diagnosis precisely: "2 of 20 pins were
+  placeholders" was exact for the launcher's `audit_overall` path but incomplete for the scorer path,
+  which had a third, non-placeholder cause. State which consumer a failure count belongs to.
+
+## 2026-07-28 — Two silent-failure surfaces: an ambiguous wire format, and a swallowed oracle read
+- **What:** the MiniWoB `press_key` field takes an INDEX into `allowed_keys` while the tool description
+  promised a NAME (PR #174; a banked paid run had lost its `Tab` and `Enter` presses to it). Separately,
+  the `watch` oracle read at `core/perception_plugin.py:302-306` sits inside `except Exception: pass`.
+- **The finding:** for `press_key` there is **no safe resolution order** — index-first breaks every digit
+  keypress, name-first breaks a caller passing 0/3/5/7/9 (which are `<Enter>`/`<Backspace>`/`<Tab>`/
+  `<ArrowUp>`/`<ArrowDown>`), because `'0'`-`'9'` are themselves key names. For `watch`, a value form
+  that RAISES is swallowed and the world presents as "has no oracle" — but the likelier mis-wiring, a
+  valid-but-WRONG in-range address, raises nothing and emits confidently wrong ground truth instead.
+  One bad name also suppresses every other watched field on that row, since it is one comprehension in
+  one `try`.
+- **Method note:** when two encodings are mutually ambiguous, delete the ambiguity at the source rather
+  than picking a precedence — the merged fix accepts names only and refuses raw indices with an
+  explaining error. And never treat "no oracle rows" as evidence a world lacks an oracle; distinguish
+  *swallowed*, *absent*, and *wrong* before drawing any conclusion from missing watch data.
+
 ## 2026-07-13 (latest) - Readiness must prove effective state, not declared intent
 - **What:** PR #111's first review blocked the Codex Gate 0 launcher on project-trust dependence,
   self-declared receipts, mutable Docker tags, and an unenforced spend promise. Cost: `$0`; no model or
