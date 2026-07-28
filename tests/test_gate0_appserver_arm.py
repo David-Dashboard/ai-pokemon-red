@@ -16,6 +16,7 @@ import tools.gate0_appserver_arm as arm_mod
 from tools.gate0_appserver_arm import (
     ARM_IMAGE_IDS,
     ARM_SOFT_CREDIT_CAPS,
+    COMMON_TASK_SUFFIX,
     HARD_CREDIT_CAP,
     LAUNCH_INVOCATION_DEPENDENT_MARKER,
     MultiCallStubAppServerPeer,
@@ -452,11 +453,118 @@ def test_brain_config_toml_matches_the_frozen_pin():
         "ab7e54c1785f5d8be4352bbe0f85edb37cda68cf56df2128d61df025c1041fc3")
 
 
+# The load-bearing clauses of the Gate-0 v2 task brief, with the predicate clause §5.4/§5.5 ties
+# each one to. The first three are still reports/2026-07-25-gate0-v2-prereg.md §5.3 verbatim; the
+# rest are the D6 amendments (reports/2026-07-28-gate0-v2-deviations.md), which the frozen document
+# cannot carry because it must not be edited. Dropping any of them silently reverts part of the
+# intervention the whole v2 attempt exists to test, so pin them by name as well as by digest below.
+V2_LOAD_BEARING_CLAUSES = {
+    # §5.4 C5 red_no_sustained_battle_exit (observes -> rows) AND C9
+    # red_no_free_movement_after_exit (moves -> distinct tiles), fed by the same behaviour.
+    "settle_by_moving_locally": "alternate observing with small local moves around your "
+                                "current position",
+    # §5.4 C7 red_map_changed_during_battle_exit_span -- the clause that keeps the settle
+    # behaviour from walking the autopilot through a door.
+    "stay_in_place": "without leaving the place you are in",
+    # §5.5 Arm W terminal-row ordering: acting on a finished MiniWoB episode appends another
+    # oracle row for the same (episode, seed) and hard-fails it. Instruction-only containment
+    # for episodes 0-3, so the prohibition must survive verbatim in the brief itself.
+    "no_action_on_a_finished_episode": "Confirming is looking, not doing",
+    # D6/W5. Was "do not click, type, press a key, or otherwise act on a finished episode again",
+    # which named three of check_gate0_codex.TOOLS["miniwob"] almost verbatim and was exactly the
+    # row-writing subset of that surface. Tool-agnostic and strictly wider, so no weaker.
+    "no_action_on_a_finished_episode_acts": "take no further action on it — send it no further "
+                                            "input of any kind",
+    # D6/W1+W2. THE C5 MARGIN. §5.3's stop condition could only be satisfied by ceasing to move,
+    # so its terminating tail was observation-only and its entire margin was the word "several"
+    # (two rows per round against a ten-row window: five rounds hit the bar exactly, four missed).
+    # These three sentences are what replace it -- a round unit, a floor above a handful, a
+    # refusal to stop at first quiet, and a doubling rule.
+    # WORST-CASE YIELD IS 8 ROWS, NOT 24: every World.call branch already appends one
+    # plugin.observe(), so a move and "the observation that follows it" are ONE row unless the
+    # agent issues a redundant second observe tool call (v1 issued one in 142). At handful=3 the
+    # floor is 4 rounds doubled = 8, UNDER the ten-row window. See deviation D6's measured
+    # row-yield table: this amendment narrows the miss, it does not close it, and the launch
+    # decision is escalated rather than re-worded a third time.
+    "settle_round_unit": "one move and the observation that follows it are one round",
+    "settle_floor_above_a_handful": "a handful of rounds is not enough",
+    "settle_does_not_stop_at_first_quiet": "stopping the first time nothing new appears is not "
+                                           "enough either",
+    "settle_doubling_rule": "treat that judgement as the halfway point rather than the end",
+    # D6/W4. Arm W's five episodes cannot advance without reset_episode, which the §5.3 prohibition
+    # did not exempt. MiniWobSession.call handles it ABOVE the _exhausted guard and _log_oracle
+    # fires AFTER _advance_pinned_seed, so the row lands on the NEW episode. Scoped to a FINISHED
+    # episode on purpose: an early reset makes _advance_pinned_seed log done=True/abandoned=True
+    # against the current one and hard-fails it.
+    "reset_to_next_episode_is_allowed": "Starting the next episode is not acting on the "
+                                        "finished one",
+}
+# D6/W3: "task," is GONE from the prohibition's trigger list -- in Arm R it fired at the same
+# instant as the settle instruction and forbade a button press, Red's only local move. The trigger
+# must still name an episode (Arm W's protection) and must NOT name a task.
+V2_PROHIBITION_TRIGGER = "once the environment reports that an episode or an input is finished"
+
+
+@pytest.mark.parametrize("name,clause", sorted(V2_LOAD_BEARING_CLAUSES.items()))
+def test_task_brief_pins_the_load_bearing_clauses(name, clause):
+    assert clause in COMMON_TASK_SUFFIX, name
+    # The suffix is shared verbatim by both arms, so every clause reaches both TASK.md files.
+    for arm in ("red", "miniwob"):
+        assert clause in task_text_for(arm), (name, arm)
+
+
+def test_the_prohibition_trigger_names_an_episode_and_not_a_task():
+    """D6/W3, asserted in both directions so a future edit cannot quietly put "task" back."""
+    assert V2_PROHIBITION_TRIGGER in COMMON_TASK_SUFFIX
+    assert "an episode, task, or input is finished" not in COMMON_TASK_SUFFIX
+
+
+def test_the_brief_leaks_no_digit_and_no_oracle_vocabulary():
+    """Prereg §5.6's own taint rule, run mechanically over the amended text (D6 re-ran it).
+
+    §5.6's "No tool named" claim was already false of §5.3 -- `click` is verbatim a
+    check_gate0_codex.TOOLS["miniwob"] entry -- which is why the MiniWoB action verbs are gone
+    from the brief and are asserted absent here.
+    """
+    low = COMMON_TASK_SUFFIX.lower()
+    assert not any(ch.isdigit() for ch in COMMON_TASK_SUFFIX)
+    for token in ("in_battle", "ram", "hp", "party", "oracle", "row", "score", "tile", "battle",
+                  "map", "watch", "exit", "jsonl", "predicate", "threshold"):
+        assert token not in low, token
+    # Every tool of either arm EXCEPT `observe`, which is the one act the brief must name: it is
+    # the blessed "looking" act, it writes no MiniWoB row, and §5.6's own permitted-vocabulary
+    # list already contains "observing". Naming any of the others -- all of which act on the
+    # world, and in MiniWoB all of which write a row -- is the leak D6/W5 closed.
+    for tool in sorted(set(checker.TOOLS["miniwob"] + checker.TOOLS["red"]) - {"observe"}):
+        assert tool not in low, tool
+    # ...and the near-paraphrases of the three MiniWoB action tools that §5.3 spelled out.
+    for verb in ("click", "type_text", "type a", "press a key", "keystroke"):
+        assert verb not in low, verb
+
+
 @pytest.mark.parametrize("arm,expected_sha", [
-    ("red", "306751c34627f6d5c6a8c94ac2f714e358f0dcbc5867866c273e434de7f4b7c4"),
-    ("miniwob", "845638c874df2f2de2adaebdd1d6c9318c689a46d0032fa76a9393e1e47512d1"),
+    ("red", "aa8f1a7a4e409d03c42843e622df896fdc61c7ff8a74d51905defdcbfcb06d88"),
+    ("miniwob", "24e4d9b27aa8277c8e2d35639c3b1d0bc53d7343a3b00efa46c34ba79daae440"),
 ])
 def test_task_text_matches_the_frozen_pin(arm, expected_sha):
+    """v2 values, recomputed from task_text_for() after the D6 amendments to §5.3's suffix.
+
+    They supersede 9adb98f8.../ba1549d4..., which pinned the un-amended §5.3 text; both moved
+    again because COMMON_TASK_SUFFIX reaches both arms (prereg §6.1). §6.1's re-freeze must copy
+    THESE values, not the earlier pair.
+
+    NOT yet mirrored into eval/fixtures/gate0_expected_pins_{red,miniwob}{,.appserver}.json --
+    those four still hold the v1 digests (306751c3... / 845638c8...) on purpose. Re-freezing
+    them is prereg §6.1 items 1-4, a separate reviewed commit that must land before any paid v2
+    launch.
+
+    Until it does, `_run_real` refuses BEFORE the paid turn with
+    `pin_mismatch:task_sha256` -- see refuse_if_expected_pins_stale and the pre-turn tests below.
+    (This sentence originally claimed the same refusal without the "before" being true: when it
+    was written there was no pre-turn gate at all, resolve_expected_pins() ran only inside
+    _finalize_real_run, and a stale-fixture launch spent the money, completed, and voided at
+    scoring -- PR #193 adversarial review.)
+    """
     import hashlib
     assert hashlib.sha256(task_text_for(arm).encode("utf-8")).hexdigest() == expected_sha
 
@@ -836,8 +944,7 @@ def test_docker_image_inspect_id_fails_closed_on_nonzero_exit(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _load_real_appserver_fixture(arm):
-    path = arm_mod.REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}.appserver.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(arm_mod.appserver_expected_pins_path(arm).read_text(encoding="utf-8"))
 
 
 def test_resolve_expected_pins_substitutes_only_the_two_launch_dependent_fields():
@@ -984,6 +1091,240 @@ def test_verify_launch_signature_unchanged_fails_loud_when_mcp_list_drifted(tmp_
                "codex_mcp_list_sha256": "0" * 64}  # stale/wrong
     with pytest.raises(SystemExit, match="launch signature mismatch"):
         verify_launch_signature_unchanged(receipt, tmp_path)
+
+
+
+# ---------------------------------------------------------------------------
+# THE PRE-TURN PIN GATE -- refuse before the money, not after (PR #193 adversarial review).
+#
+# Before this, resolve_expected_pins() had exactly ONE call site: inside _finalize_real_run, i.e.
+# AFTER run_gate0_arm_turn had already spent. A launch against a stale expected-pins fixture ran to
+# completion, cost full price, and only then reported pin_mismatch:* and voided -- burning the v2
+# held-out seed block under prereg §10's one-attempt rule, which no later fix returns.
+# ---------------------------------------------------------------------------
+
+_ALL_FOUR_PIN_FIXTURES = [("red", ""), ("red", ".appserver"),
+                          ("miniwob", ""), ("miniwob", ".appserver")]
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "prereg §6.1 items 1-4 (re-freeze the four gate0_expected_pins fixtures onto the task text "
+    "this module's own task_text_for() renders) are NOT done. RE-FREEZE ONTO THAT, NOT onto the "
+    "§5.3 brief verbatim and NOT onto any digest quoted in an older PR body: §5.3 was amended by "
+    "deviation D6 (reports/2026-07-28-gate0-v2-deviations.md), so the §5.3-verbatim digests "
+    "9adb98f8.../ba1549d4... are dead. Compute the value, never transcribe it. Until they land "
+    "the fixtures hold the v1 task digests and this code "
+    "renders the current ones, so this equality is FALSE -- reported as xfail rather than as a failure "
+    "because a red test on the merged branch would block every PR queued behind #193. strict=True "
+    "is the tripwire: the moment §6.1 lands this XPASSes, pytest turns an unexpected pass into a "
+    "FAILURE, and whoever re-froze the pins must delete this marker. This is the fixture->code "
+    "link the suite did not have."))
+@pytest.mark.parametrize("arm,suffix", _ALL_FOUR_PIN_FIXTURES)
+def test_the_expected_pins_fixtures_pin_the_task_text_this_code_renders(arm, suffix):
+    import hashlib
+    path = arm_mod.REPO_ROOT / "eval" / "fixtures" / f"gate0_expected_pins_{arm}{suffix}.json"
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    assert fixture["task_sha256"] == hashlib.sha256(
+        task_text_for(arm).encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_the_pre_turn_gate_catches_todays_real_stale_task_pin(arm):
+    """The other half of that link, and this half is GREEN today: feeding the gate a receipt built
+    from the REAL committed fixture plus the REAL task_text_for() is refused for as long as the two
+    genuinely disagree. Unlike the xfail above this asserts the SAFETY property, so it never needs
+    flipping -- it self-skips once §6.1 removes the drift it is watching."""
+    import hashlib
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt["task_sha256"] = hashlib.sha256(task_text_for(arm).encode("utf-8")).hexdigest()
+    if receipt["task_sha256"] == base["task_sha256"]:
+        pytest.skip("§6.1 has landed: fixture and code agree, so there is no stale pin to catch.")
+    with pytest.raises(SystemExit, match="pin_mismatch:task_sha256"):
+        arm_mod.refuse_if_expected_pins_stale(receipt, arm)
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_the_pre_turn_gate_passes_a_receipt_that_genuinely_matches_the_fixture(arm):
+    # Not vacuous in the other direction either: an honest launch is NOT refused.
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    assert arm_mod.refuse_if_expected_pins_stale(receipt, arm) is None
+
+
+@pytest.mark.parametrize("field,bad", [("brain_config_sha256", "9" * 64),
+                                        ("planned_model", "gpt-wrong"),
+                                        ("world_image_id", "sha256:" + "0" * 64),
+                                        ("codex_version", "codex-cli 0.0.0")])
+def test_the_pre_turn_gate_covers_every_pin_field_not_only_task_sha256(field, bad):
+    """The deliberate scope decision, asserted rather than asserted-in-prose. task_sha256 is only
+    today's instance: any stale PIN_FIELD makes eval/score_gate0.py return CONSTANCY_BREACH/NO_GO
+    and burns the attempt identically, so the gate delegates to the frozen
+    check_gate0_codex._expected_failures over all 20 -- one comparison, no second implementation."""
+    arm = "red"
+    base = _load_real_appserver_fixture(arm)
+    receipt = {f: base[f] for f in checker.PIN_FIELDS}
+    receipt["config_sha256"] = "1" * 64
+    receipt["codex_mcp_list_sha256"] = "2" * 64
+    receipt[field] = bad
+    with pytest.raises(SystemExit, match=f"pin_mismatch:{field}"):
+        arm_mod.refuse_if_expected_pins_stale(receipt, arm)
+
+
+def _stub_every_paid_and_external_edge(monkeypatch, tmp_path, arm):
+    """Everything _run_real touches before the turn, replaced in-process. Returns (spy, codex path);
+    the spy records whether the paid turn was ever opened."""
+    code_hashes = {"/app/world_mcp.py": "a" * 64, "/app/core/miniwob_world.py": "b" * 64}
+    fake_codex = tmp_path / "codex.exe"
+    fake_codex.write_bytes(b"stub-codex-binary")
+    monkeypatch.setattr(arm_mod, "load_credit_rate_pin", lambda path, model: dict(_RATE_PIN))
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "seed_codex_auth", lambda home, source: "stub-auth")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                        lambda docker_path, image_ref: ARM_IMAGE_IDS[arm])
+    monkeypatch.setattr(arm_mod, "git_blob_sha256", lambda root, rel: code_hashes["/app/" + rel])
+    monkeypatch.setattr(arm_mod, "docker_image_code_hashes",
+                        lambda docker_path, image_id: dict(code_hashes))
+    monkeypatch.setattr(arm_mod, "docker_tools_list",
+                        lambda docker_path, mcp_args: [{"name": t} for t in TOOLS[arm]])
+    monkeypatch.setattr(arm_mod, "codex_mcp_list_json",
+                        lambda codex_path, codex_home, overrides: "{}")
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *a, **kw: _FakeCompleted(stdout="codex-cli 0.144.3\n"))
+
+    spy = {"turn_started": False, "client_opened": False, "credit_guard_built": False}
+
+    def _no_client(*a, **kw):
+        spy["client_opened"] = True
+        raise AssertionError("the paid app-server client was opened -- money would be at risk")
+
+    def _no_turn(*a, **kw):
+        spy["turn_started"] = True
+        raise AssertionError("the paid turn was started -- money would have been spent")
+
+    class _NoGuard:
+        result: dict = {}
+
+        def __init__(self, *a, **kw):
+            spy["credit_guard_built"] = True
+
+        def start(self):
+            pass
+
+        def observe(self, message):
+            pass
+
+        def finish(self):
+            pass
+
+        def join(self, timeout=None):
+            pass
+
+    monkeypatch.setattr(arm_mod, "ObservingGate0Client", _no_client)
+    monkeypatch.setattr(arm_mod, "run_gate0_arm_turn", _no_turn)
+    monkeypatch.setattr(arm_mod, "LiveCreditGuard", _NoGuard)
+    return spy, fake_codex
+
+
+def _real_run_args(tmp_path, arm, fake_codex):
+    """A Namespace built directly, not via build_arg_parser(): _run_real is what is under test here,
+    and going around the parser keeps this proof independent of which flags are required."""
+    import argparse
+    return argparse.Namespace(
+        arm=arm, model="gpt-5.6-sol", mode="paid_gate0",
+        credit_rate_pin=str(tmp_path / "rate-pin.json"), codex_path=str(fake_codex),
+        codex_home=str(tmp_path / "codex-home"), codex_auth_source=None,
+        wall_clock_s=60.0, stall_timeout_s=60.0, human_metrics_path=None)
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_run_real_refuses_before_opening_the_paid_turn_when_a_pin_is_stale(tmp_path, monkeypatch,
+                                                                          arm):
+    """THE EXECUTED PROOF, not a reading of the source. Drive _run_real itself with every external
+    edge stubbed and confirm the refusal lands while the paid turn is still unopened.
+
+    Position in the sequence, asserted by artifact rather than by line number: the pre-turn
+    handshake receipt IS on disk, so the gate fires at the very END of the free phase with the
+    complete receipt in hand -- not early, on a partial guess. Meanwhile transcript.jsonl,
+    run-receipt.json, agent_metrics.json and expected-pins.resolved.json -- everything produced at
+    or after the turn -- are all absent, and the client/turn/credit-guard spies never tripped.
+
+    The mismatch is forced rather than taken from the current freeze state, so this keeps proving
+    the ORDERING after prereg §6.1 lands and today's real task_sha256 drift disappears."""
+    spy, fake_codex = _stub_every_paid_and_external_edge(monkeypatch, tmp_path, arm)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    stale = dict(_load_real_appserver_fixture(arm))
+    stale["task_sha256"] = "7" * 64
+    stale_path = tmp_path / f"stale_pins_{arm}.json"
+    stale_path.write_text(json.dumps(stale), encoding="utf-8")
+    monkeypatch.setattr(arm_mod, "appserver_expected_pins_path", lambda a: stale_path)
+
+    with pytest.raises(SystemExit) as excinfo:
+        arm_mod._run_real(_real_run_args(tmp_path, arm, fake_codex), out_dir)
+
+    message = str(excinfo.value)
+    assert "refusing to start the paid turn" in message
+    assert "pin_mismatch:task_sha256" in message
+    assert "Nothing was launched and nothing was spent." in message
+    assert spy == {"turn_started": False, "client_opened": False, "credit_guard_built": False}
+    assert (out_dir / "handshake-receipt.json").is_file()
+    for produced_at_or_after_the_turn in ("transcript.jsonl", "run-receipt.json",
+                                          "agent_metrics.json", "expected-pins.resolved.json"):
+        assert not (out_dir / produced_at_or_after_the_turn).exists(), \
+            produced_at_or_after_the_turn
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_run_real_reaches_the_paid_turn_when_the_pins_agree(tmp_path, monkeypatch, arm):
+    """The control for the test above: with a matching fixture, _run_real gets PAST the gate and
+    into the turn. Without this, "no turn started" would be satisfied by a gate that refuses
+    everything, and the proof would be worthless."""
+    spy, fake_codex = _stub_every_paid_and_external_edge(monkeypatch, tmp_path, arm)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    def _matching_pins(a):
+        receipt = json.loads((out_dir / "handshake-receipt.json").read_text(encoding="utf-8"))
+        pins = {f: receipt[f] for f in checker.PIN_FIELDS}
+        pins["schema_version"] = 2
+        pins["config_sha256"] = LAUNCH_INVOCATION_DEPENDENT_MARKER
+        pins["codex_mcp_list_sha256"] = LAUNCH_INVOCATION_DEPENDENT_MARKER
+        path = tmp_path / f"matching_pins_{a}.json"
+        path.write_text(json.dumps(pins), encoding="utf-8")
+        return path
+    monkeypatch.setattr(arm_mod, "appserver_expected_pins_path", _matching_pins)
+
+    # _no_client raises AssertionError, which is exactly "the gate let us through to the spend".
+    with pytest.raises(AssertionError, match="money would be at risk"):
+        arm_mod._run_real(_real_run_args(tmp_path, arm, fake_codex), out_dir)
+    assert spy["client_opened"] is True
+
+
+@pytest.mark.parametrize("arm", ["red", "miniwob"])
+def test_dry_run_is_exempt_from_the_pre_turn_pin_gate(tmp_path, arm):
+    """--dry-run is a $0 rehearsal that deliberately builds a synthetic receipt (stub codex binary,
+    "DRY_RUN" docker args) which can never match a real pin, so the gate must not reach it. Today's
+    fixtures really are mid-freeze, which makes this a live check rather than a hypothetical."""
+    exit_code, out_dir = _run_dry(tmp_path, arm=arm)
+    assert exit_code == 0
+    assert (out_dir / "agent_metrics.json").is_file()
+
+
+def test_seam_check_is_exempt_from_the_pre_turn_pin_gate(tmp_path, monkeypatch):
+    import argparse
+    monkeypatch.setattr(arm_mod, "resolve_docker_path", lambda: "docker")
+    monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
+                        lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
+    out_dir = tmp_path / "seam"
+    out_dir.mkdir()
+    args = argparse.Namespace(arm="red", mode="paid_gate0", with_tools_list=False)
+    assert arm_mod._run_seam_check(args, out_dir)["ok"] is True
 
 
 # ---------------------------------------------------------------------------
