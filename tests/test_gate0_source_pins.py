@@ -117,6 +117,7 @@ def test_host_code_sha256_matches_the_real_repo_git_blobs():
 @pytest.mark.parametrize("mode,seed_fixture", [
     ("readiness_dev", "gate0_miniwob_dev_seeds.json"),
     ("paid_gate0", "gate0_miniwob_paid_seeds.json"),
+    ("paid_gate0_v2", "gate0_miniwob_paid_v2_seeds.json"),
 ])
 def test_source_pins_manifest_exists_where_the_scorer_expects_it(mode, seed_fixture):
     path = scorer.SOURCE_PIN_FILES[mode]
@@ -129,6 +130,7 @@ def test_source_pins_manifest_exists_where_the_scorer_expects_it(mode, seed_fixt
 @pytest.mark.parametrize("mode,seed_fixture", [
     ("readiness_dev", "gate0_miniwob_dev_seeds.json"),
     ("paid_gate0", "gate0_miniwob_paid_seeds.json"),
+    ("paid_gate0_v2", "gate0_miniwob_paid_v2_seeds.json"),
 ])
 def test_frozen_seed_hash_matches_the_real_seed_fixture(mode, seed_fixture):
     pins = _load(scorer.SOURCE_PIN_FILES[mode])
@@ -143,7 +145,7 @@ def test_expected_pins_sha256_matches_the_real_expected_pins_files(mode):
         assert pins["expected_pins_sha256"][arm] == _sha256(EXPECTED_PINS_PATHS[arm])
 
 
-@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
 def test_audit_paths_shape_is_complete_for_both_arms(mode):
     pins = _load(scorer.SOURCE_PIN_FILES[mode])
     for arm in ("red", "miniwob"):
@@ -154,7 +156,7 @@ def test_audit_paths_shape_is_complete_for_both_arms(mode):
         assert entry["expected_pins"] == f"eval/fixtures/gate0_expected_pins_{arm}.json"
 
 
-@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
 def test_artifact_paths_has_all_six_required_keys(mode):
     pins = _load(scorer.SOURCE_PIN_FILES[mode])
     required = ("red_agent", "red_human", "miniwob_agent", "miniwob_human",
@@ -179,7 +181,7 @@ def test_verify_audit_paths_accepts_a_manifest_pointing_at_the_real_pins(mode):
     assert set(resolved) == {"red", "miniwob"}
 
 
-@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
 def test_verify_sources_reports_only_the_still_open_gaps(mode):
     # Precondition 3 closes seed/pins hashing regardless of machine state. The four artifacts
     # owned by other/still-open workstreams (human baselines' numbers, the agent attempt) and
@@ -200,13 +202,99 @@ def test_verify_sources_reports_only_the_still_open_gaps(mode):
                             "reports/2026-07-19-gate0-live-breaker-dry-run.md for the committed copy")
 class TestLiveBreakerArtifactLocallyPresent:
     def test_hash_pin_matches_the_local_file(self):
-        for mode in ("readiness_dev", "paid_gate0"):
+        for mode in ("readiness_dev", "paid_gate0", "paid_gate0_v2"):
             pins = _load(scorer.SOURCE_PIN_FILES[mode])
             assert pins["artifact_sha256"]["live_breaker"] == _sha256(LIVE_BREAKER_PATH)
 
-    @pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+    @pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
     def test_verify_sources_finds_no_live_breaker_failure(self, mode):
         failures = scorer._verify_sources({"mode": mode, "arms": {}}, {})[1]
         assert "source_hash:live_breaker" not in failures
         assert "source_unreadable:live_breaker" not in failures
         assert "live_breaker_artifact" not in failures
+
+
+# ---------------------------------------------------------------------------------------------
+# paid_gate0_v2 -- Gate 0 v2's fresh held-out block (prereg §4.1/P9). The mode is purely ADDITIVE:
+# every assertion here is about v2, plus one that nails paid_gate0 down byte-for-byte.
+# ---------------------------------------------------------------------------------------------
+
+V2_SEEDS = [417545, 662948, 660918, 981149, 558952]
+
+
+def test_paid_gate0_is_unchanged_by_the_v2_addition():
+    """The banked v1 result must stay scoreable exactly as it was. If a future edit reaches into
+    paid_gate0's seed list, seed fixture, or pins fixture, this fails before anything subtler does."""
+    seed_path, seeds = scorer.MODES["paid_gate0"]
+    assert seeds == [1000, 1001, 1002, 1003, 1004]
+    assert seed_path == ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json"
+    assert scorer.SOURCE_PIN_FILES["paid_gate0"] == (
+        ROOT / "eval" / "fixtures" / "gate0_paid_source_pins.json")
+    assert _load(scorer.SOURCE_PIN_FILES["paid_gate0"])["frozen_seed_sha256"] == _sha256(seed_path)
+
+
+def test_v2_seed_block_reproduces_the_pre_registered_derivation():
+    """prereg §4.1.1's published formula, re-walked from scratch. Positions 0-3 are the first four
+    accepted candidates; position 4 is §4.1.2's mandated replacement -- the next accepted candidate
+    that renders six checkboxes (558952, measured empirically at i=8; 751969/824167/567613 at
+    i=5..7 were accepted by the base filter but passed over as 5/3/2-checkbox layouts)."""
+    def candidate(i):
+        return int.from_bytes(hashlib.sha256(f"gate0-v2-armW:{i}".encode()).digest()[:4], "big") % 1_000_000
+
+    accepted = []
+    for i in range(9):
+        c = candidate(i)
+        if c in range(0, 5) or c in range(1000, 1005) or c in accepted:
+            continue
+        accepted.append(c)
+    assert accepted[:4] == V2_SEEDS[:4]
+    assert accepted[4] == 189410, "the pre-replacement 5th draw, replaced per §4.1.2"
+    assert candidate(8) == V2_SEEDS[4] == 558952
+
+
+def test_v2_seeds_are_fresh_distinct_and_scorer_pinned():
+    seed_path, seeds = scorer.MODES["paid_gate0_v2"]
+    assert seeds == V2_SEEDS
+    assert json.loads(seed_path.read_text(encoding="utf-8")) == V2_SEEDS
+    # Distinct: duplicates would collide in _miniwob_success's per-episode `seed` row filter and
+    # corrupt both episodes' row sets (prereg §4.1.1).
+    assert len(set(seeds)) == 5
+    # Fresh: disjoint from the dev seeds and from the SPENT v1 paid block.
+    assert not set(seeds) & set(scorer.MODES["readiness_dev"][1])
+    assert not set(seeds) & set(scorer.MODES["paid_gate0"][1])
+
+
+def test_v2_expected_pins_hashes_are_pending_and_fail_closed():
+    """The v2 expected-pins digests are not knowable until prereg P8 rebuilds the world image and P4
+    re-freezes items 1-9, so they carry PENDING placeholders -- never a fabricated or copied hash.
+    _verify_audit_paths must refuse the arm rather than accept the placeholder."""
+    pins = _load(scorer.SOURCE_PIN_FILES["paid_gate0_v2"])
+    manifest = {"mode": "paid_gate0_v2", "arms": {}}
+    for arm in ("red", "miniwob"):
+        value = pins["expected_pins_sha256"][arm]
+        assert value.startswith("PENDING_")
+        assert len(value) != 64, "a placeholder must never be mistakable for a real sha256"
+        entry = dict(pins["audit_paths"][arm])
+        oracle = entry.pop("oracle")
+        manifest["arms"][arm] = {"codex_audit": entry, "oracle": oracle}
+    resolved, failures = scorer._verify_audit_paths(manifest)
+    assert resolved == {}
+    assert sorted(failures) == ["expected_pins_hash_pin_missing:miniwob",
+                                "expected_pins_hash_pin_missing:red"]
+
+
+def test_v2_pending_artifact_hashes_are_never_valid_sha256():
+    pins = _load(scorer.SOURCE_PIN_FILES["paid_gate0_v2"])
+    for key, value in pins["artifact_sha256"].items():
+        if value.startswith("PENDING_"):
+            assert len(value) != 64, f"{key} placeholder must not look like a real digest"
+
+
+def test_v2_output_tree_is_separate_from_v1_everywhere():
+    """A v2 artifact must never land where v1's pins look, or vice versa."""
+    v1, v2 = (_load(scorer.SOURCE_PIN_FILES[m]) for m in ("paid_gate0", "paid_gate0_v2"))
+    for key in ("red_agent", "miniwob_agent", "miniwob_human", "wake_boundary"):
+        assert v1["artifact_paths"][key] != v2["artifact_paths"][key]
+    for arm in ("red", "miniwob"):
+        for key in ("transcript", "receipt", "artifacts_dir", "peer_receipt", "oracle"):
+            assert v1["audit_paths"][arm][key] != v2["audit_paths"][arm][key]

@@ -1,0 +1,49 @@
+{
+  "_comment": "Gate 0 v2 pre-registration precondition P9 (reports/2026-07-25-gate0-v2-prereg-DRAFT.md 4.1) -- the paid_gate0_v2-mode source-pins manifest eval/score_gate0.py::SOURCE_PIN_FILES['paid_gate0_v2'] expects. Same shape as gate0_paid_source_pins.json, pointing at the v2 attempt's own runs/gate0_paid_v2/<arm>/ output tree and its own FRESH held-out seed block. Exists because seeds 1000..1004 are SPENT (prereg 4: the v1 Arm W transcript with the correct checkbox answers is committed at reports/2026-07-24-gate0-paired-verdict/oracle.jsonl and is greppable), so a v2 attempt on them could not be reported as held-out generalization. paid_gate0 is untouched by this file -- the v1 result stays scoreable exactly as banked.",
+  "schema_version": 1,
+  "mode": "paid_gate0_v2",
+  "frozen_seed_sha256": "4ede74d3110a067c2e5e625b65c1992b4c7d25ad8788f80b8c1ec053e1392172",
+  "_source_frozen_seed_sha256": "sha256 of eval/fixtures/gate0_miniwob_paid_v2_seeds.json ([417545,662948,660918,981149,558952]) as committed on this branch, matching eval.score_gate0.MODES['paid_gate0_v2'][0]. LF-canonical bytes (identical to the git blob): .gitattributes pins eval/fixtures/gate0_*.json to eol=lf, so every checkout on every platform materializes these exact bytes. DERIVATION (prereg 4.1.1, published formula, no post-hoc selection): candidate(i) = int.from_bytes(sha256(f'gate0-v2-armW:{i}'.encode()).digest()[:4],'big') % 1000000, walking i=0,1,2,...; a candidate is accepted only if it is not in {0..4} (dev seeds), not in {1000..1004} (spent), and not already accepted (no duplicates -- two identical seeds would collide in _miniwob_success's per-episode `row.get('seed') == seed` filter and corrupt both episodes' row sets). i=0..4 gave 417545/662948/660918/981149/189410, all accepted with zero rejections. Prereg 4.1.2 then BINDS the set to contain at least one six-checkbox layout (the layout P8 repairs, and the only one on which H-e is testable); an empirical reset-only render of all five in the miniwob-mcp-world image measured 5/5/2/2/3 checkboxes -- no six -- so per 4.1.2 the walk continued and the LAST accepted seed (189410) was REPLACED by the next accepted candidate that renders six: i=5 -> 751969 (5 boxes, passed over), i=6 -> 824167 (3, passed over), i=7 -> 567613 (2, passed over), i=8 -> 558952 (SIX, accepted). Final set 417545/662948/660918/981149/558952, checkbox counts 5/5/2/2/6, all distinct.",
+  "artifact_paths": {
+    "red_agent": "runs/gate0_paid_v2/red/agent_metrics.json",
+    "red_human": "runs/gate0_human_baseline/red/human_metrics.json",
+    "miniwob_agent": "runs/gate0_paid_v2/miniwob/agent_metrics.json",
+    "miniwob_human": "runs/gate0_paid_v2_human_baseline/miniwob/human_metrics.json",
+    "wake_boundary": "runs/gate0_paid_v2/wake_boundary.json",
+    "live_breaker": "runs/gate0_live_breaker/live_breaker_dry_run_trip.json"
+  },
+  "_source_artifact_paths": "red_human: SAME file as readiness_dev and paid_gate0 -- Red has no dev/paid seed split (reports/2026-07-13-minimum-north-star-gate-0-design.md:273, 'Red uses the same fixed start for agent and human') and DAVID_BASELINES.md names only this one path for Red. KNOWN, PRE-EXISTING, NOT INTRODUCED HERE: that artifact carries `mode: \"readiness_dev\"`, and score_gate0._verify_sources():278 requires the human artifact's `mode` to EQUAL the scoring mode -- so `human_metric_identity:red` fails under paid_gate0 today and fails identically under paid_gate0_v2. It is a source failure (INSUFFICIENT_DATA), fail-closed, and is prereg P1's problem to resolve, not this fixture's to paper over. miniwob_human: the v2 held-out human replay, captured by tools/capture_gate0_baseline_miniwob.py --mode paid_gate0_v2 --i-am-human, which reads the fresh seeds from the frozen score_gate0.MODES manifest and mechanically refuses both the dev and the v1-paid seed lists. Per prereg 4.1.5 + design doc:273-276 that replay happens ONLY AFTER the agent's v2 Arm W artifacts are banked; the hash below stays PENDING until then. red_agent/miniwob_agent/wake_boundary: the v2 attempt is not run; paths mirror tools/run_gate0_codex.ps1's OutputDir convention under runs/gate0_paid_v2/<arm>/ (prereg P3). live_breaker: SAME real artifact as both existing modes -- the breaker mechanism's correctness does not depend on which seed block is in play.",
+  "artifact_sha256": {
+    "red_agent": "PENDING_NOT_YET_CAPTURED_v2_attempt_not_run",
+    "red_human": "5144a5b36a29453c5f07ceba8336f3752055e0437e80f50d61418d61be686264",
+    "miniwob_agent": "PENDING_NOT_YET_CAPTURED_v2_attempt_not_run",
+    "miniwob_human": "PENDING_NOT_YET_CAPTURED_v2_seed_human_replay_not_run",
+    "wake_boundary": "PENDING_NOT_YET_CAPTURED_wake_accounting_not_built",
+    "live_breaker": "27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734"
+  },
+  "_source_artifact_sha256": "Placeholders are inert by construction, exactly as in the two existing fixtures: eval.score_gate0._verify_sources() hits FileNotFoundError reading the path before it ever compares the hash, so these strings are never actually checked -- and none is a valid 64-hex sha256, so none can ever accidentally satisfy the check either. NO HASH HERE IS FABRICATED. The two real values are copied from no receipt: they are the digests of files that exist on disk today. red_human: the SAME digest gate0_paid_source_pins.json and gate0_readiness_dev_source_pins.json carry, because artifact_paths.red_human above points at the exact same file (David's cold attempt-1 Option-A reconstruction, 233.288s/271 actions, reports/2026-07-21-gate0-red-baseline-reconstruction.md, PR #123). live_breaker: real, deterministic, platform-independent -- no wall-clock timestamp in the content, LF-forced write, regenerable byte-exactly from tools/gate0_credit_breaker.py (reports/2026-07-19-gate0-live-breaker-dry-run.md).",
+  "audit_paths": {
+    "red": {
+      "transcript": "runs/gate0_paid_v2/red/transcript.jsonl",
+      "receipt": "runs/gate0_paid_v2/red/handshake-receipt.json",
+      "expected_pins": "eval/fixtures/gate0_expected_pins_red.json",
+      "artifacts_dir": "runs/gate0_paid_v2/red",
+      "peer_receipt": "runs/gate0_paid_v2/miniwob/handshake-receipt.json",
+      "oracle": "runs/gate0_paid_v2/red/world/oracle.jsonl"
+    },
+    "miniwob": {
+      "transcript": "runs/gate0_paid_v2/miniwob/transcript.jsonl",
+      "receipt": "runs/gate0_paid_v2/miniwob/handshake-receipt.json",
+      "expected_pins": "eval/fixtures/gate0_expected_pins_miniwob.json",
+      "artifacts_dir": "runs/gate0_paid_v2/miniwob",
+      "peer_receipt": "runs/gate0_paid_v2/red/handshake-receipt.json",
+      "oracle": "runs/gate0_paid_v2/miniwob/world/oracle.jsonl"
+    }
+  },
+  "_source_audit_paths": "Same OutputDir/launch/world layout contract as the other two modes, under runs/gate0_paid_v2/<arm> (prereg P3) -- so a real launch with -OutputDir runs/gate0_paid_v2/<arm> lines up with zero renaming. expected_pins point at the SAME two non-appserver files paid_gate0 points at, deliberately: this fixture copies the established pattern rather than inventing a new one. Whether the paid modes should instead point at gate0_expected_pins_*.appserver.json is a real open question raised by PR #162's defect 2, and is NOT silently decided here.",
+  "expected_pins_sha256": {
+    "red": "PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin",
+    "miniwob": "PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin"
+  },
+  "_source_expected_pins_sha256": "DELIBERATELY PENDING, not an oversight, and deliberately NOT a copy of the other two fixtures' values. Both existing fixtures carry red=ff00540b58704039d4da437ab677eb094f7a688d72f06a70148ee6fdfb850a82 / miniwob=5d34c5ca56df78de3621001b6a8adb66eff51a72f5f51c9d14e1df8d65aa3870 -- verified this session as the TRUE current digests of eval/fixtures/gate0_expected_pins_red.json and gate0_expected_pins_miniwob.json. They are identical across the two files because both pin the SAME two target files, not because either was copied. Writing those values here would (a) state a commitment this pre-registration has not made, since prereg P8 rebuilds the world image and P4 re-freezes items 1-9, so BOTH target files change content before a v2 launch, and (b) add a THIRD independent copy of the same two digests, widening the existing coupling hazard: a single edit to either target file already silently invalidates two fixtures at once. eval.score_gate0._verify_audit_paths() requires a 64-char string, so each placeholder fail-closes to `expected_pins_hash_pin_missing:<arm>` -> INSUFFICIENT_DATA/INSUFFICIENT_SOURCE, which is the correct pre-launch verdict. FREEZE PROCEDURE (P4, a separate reviewed commit): after P8's rebuild, recompute sha256 of each expected-pins file and replace both placeholders -- and re-check the other two fixtures in the same commit, since they pin the same targets."
+}
