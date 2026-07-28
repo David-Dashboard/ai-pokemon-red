@@ -423,7 +423,9 @@ def test_score_manifest_missing_or_corrupt_oracle_is_a_verdict_not_a_crash(monke
     # Launch blocker: score_manifest() read each arm's pinned oracle.jsonl unguarded, so a run that
     # died before writing it raised FileNotFoundError straight out of the public entry point --
     # a stack trace where a verdict belongs. Both arms are driven in one call to prove the two
-    # cases stay DISTINGUISHABLE: red's oracle is absent, miniwob's is present but not JSONL.
+    # caught cases stay DISTINGUISHABLE: red's oracle is absent, miniwob's is present but its bytes
+    # do not decode. Decodable-but-wrong-shaped content is deliberately NOT caught and still
+    # crashes in the predicates -- see the comment on the try/except in score_manifest().
     expected_pins = tmp_path / "expected-pins.json"
     expected_pins.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
     corrupt_oracle = tmp_path / "corrupt-oracle.jsonl"

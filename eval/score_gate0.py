@@ -400,13 +400,22 @@ def score_manifest(path: str | Path) -> dict:
         # diagnose-a-run exists to prevent). Fail closed through the same machinery every other
         # missing source already uses -- `source_unreadable:*` -> INSUFFICIENT_DATA/
         # INSUFFICIENT_SOURCE -- exactly as _verify_sources does for its six pinned artifacts.
-        # The two catches are deliberately NARROW and deliberately DISTINCT: OSError means the file
-        # could not be opened/read at all (absent, permissions, is-a-directory), while a decode
-        # error means the file IS there but its bytes are not the JSONL the scorer was promised --
-        # a half-written oracle from a killed run. Triage acts on those differently, so they must
-        # not collapse into one string. Everything else (TypeError, AttributeError, ...) still
-        # propagates: a bare `except Exception` here would hide a real scorer bug behind a
-        # plausible-looking "no oracle" verdict, which is worse than the crash being fixed.
+        # EXACTLY TWO conditions are caught, and they are deliberately DISTINCT because triage acts
+        # on them differently:
+        #   OSError                            -> the path could not be opened/read AT ALL (absent,
+        #                                         permissions, is-a-directory). Points at plumbing.
+        #   JSONDecodeError/UnicodeDecodeError -> the file IS there but its BYTES do not decode as
+        #                                         JSONL (half-written by a killed run, truncated
+        #                                         mid-line, wrong encoding). The partial trace may
+        #                                         still be worth reading.
+        # Nothing else is caught, and that is a deliberate limit, not an oversight. An oracle whose
+        # lines decode as valid JSON but are the WRONG SHAPE (e.g. `5\n7\n` -- ints, not objects)
+        # still crashes downstream in _red_success with AttributeError, because that is a claim
+        # about CONTENT, and content is what the predicates exist to judge; quietly converting it
+        # into "no oracle" would let a structurally-wrong trace masquerade as an absent one. A bare
+        # `except Exception` here would do exactly that AND hide real scorer bugs behind a
+        # plausible-looking verdict -- worse than the crash being fixed. See
+        # core/perception_plugin.py:302-306 for the swallow this is refusing to duplicate.
         try:
             oracles[name] = _jsonl(_resolve_root(pins["oracle"]))
         except OSError:
