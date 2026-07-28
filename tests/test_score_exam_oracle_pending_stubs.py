@@ -1,6 +1,9 @@
-"""One test file covering all four ORACLE_PENDING stub scorers (EX02/EX03/EX04/EX05) -- each stub
+"""One test file covering the remaining ORACLE_PENDING stub scorers (EX03/EX04/EX05) -- each stub
 is intentionally trivial (no oracle to read yet), so this just pins: always refuses, never PASS,
-exits nonzero, and cites its module docstring's TODO rather than a fabricated address."""
+exits nonzero, and cites its module docstring's TODO rather than a fabricated address.
+
+EX02 (`score_exam_kirby_stage3`) left this list once its `stage` @ 0xD03B oracle was wired and its
+predicate written -- it is a real scorer now, covered by tests/test_score_exam_kirby_stage3.py."""
 import json
 import subprocess
 import sys
@@ -8,12 +11,10 @@ from pathlib import Path
 
 import eval.score_exam_emerald_oldale as emerald
 import eval.score_exam_kirby_gba_level1 as kirby_gba
-import eval.score_exam_kirby_stage3 as kirby_stage3
 import eval.score_exam_mkds_lap as mkds
 
-_REPO_ROOT = Path(kirby_stage3.__file__).resolve().parents[1]
+_REPO_ROOT = Path(emerald.__file__).resolve().parents[1]
 _STUBS = [
-    (kirby_stage3, "EX02", "eval.score_exam_kirby_stage3"),
     (emerald, "EX03", "eval.score_exam_emerald_oldale"),
     (kirby_gba, "EX04", "eval.score_exam_kirby_gba_level1"),
     (mkds, "EX05", "eval.score_exam_mkds_lap"),

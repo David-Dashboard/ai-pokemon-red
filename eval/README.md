@@ -28,9 +28,10 @@ investigation probes live in [`_archive/`](_archive/) (kept for the record, not 
 ## Graduation-exam v1 scorers (reports/2026-07-22-graduation-exam-v1-definition.md, **PR #129 —
 v1-DRAFT, NOT yet frozen**; task bars below finalize once David freezes that PR)
 Scorable-now tasks (working oracle today) — `score_exam_red_badge` (EX01) ·
-`score_exam_miniwob_focus_text` (EX07) · `score_exam_miniwob_click_checkboxes` (EX08) ·
-`score_exam_arc_wa30` (EX09). ORACLE_PENDING stubs (no address yet — refuse, never fabricate) —
-`score_exam_kirby_stage3` (EX02) · `score_exam_emerald_oldale` (EX03) ·
+`score_exam_kirby_stage3` (EX02, `stage` @ 0xD03B; scores REACHING Stage 3 — see its docstring's
+task-bar deviation note) · `score_exam_miniwob_focus_text` (EX07) ·
+`score_exam_miniwob_click_checkboxes` (EX08) · `score_exam_arc_wa30` (EX09). ORACLE_PENDING stubs
+(no address yet — refuse, never fabricate) — `score_exam_emerald_oldale` (EX03) ·
 `score_exam_kirby_gba_level1` (EX04) · `score_exam_mkds_lap` (EX05). Index:
 reports/2026-07-23-exam-scorers.md. Shared plumbing (imported, not run directly): `_exam_common`
 (fail-closed jsonl loader + CLI wrapper), `_exam_miniwob_common` (the EX07/EX08 success predicate).
