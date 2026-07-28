@@ -137,11 +137,37 @@ deviation being reported.
   to say which files §6's twenty pin items touch — it is scoping the re-freeze work, not issuing a
   prohibition. The prohibition in that bullet attaches to `eval/score_gate0.py`, which PR #188 does
   not touch.
-- **§0.1 asks for exactly this change.** The same frozen document records the 2026-07-28 false
-  escalation — a reviewer read `audit()`'s `overall: NO_GO_INSUFFICIENT_WAKES` as the gate's ceiling
-  and concluded Gate 0 v2 was structurally unwinnable — and names the dead `build_agent_metrics`
-  (`:311-329`) as evidence of the trap. `:180-182` calls that trap "worth a separate cleanup PR;
-  **out of scope here, and not a v2 blocker**". PR #188 is that cleanup PR.
+- **§0.1 asks for the deletion — not the rename, and not the exit-code change.** An earlier
+  revision of this entry said "§0.1 asks for exactly this change." It does not, and this is the
+  permanent record, so the distinction is drawn here in full rather than left to a reader's
+  goodwill.
+
+  **What §0.1 does ask for.** The same frozen document records the 2026-07-28 false escalation — a
+  reviewer read `audit()`'s `overall: NO_GO_INSUFFICIENT_WAKES` as the gate's ceiling and concluded
+  Gate 0 v2 was structurally unwinnable — and names the dead `build_agent_metrics` (`:311-329`) as
+  evidence of the trap. `:180-182`, in full:
+
+  > The dead `PASS` branch and the unreachable `build_agent_metrics` are a standing trap that has
+  > now misled at least one reviewer into declaring the gate unwinnable. Worth a separate cleanup
+  > PR; **out of scope here, and not a v2 blocker.**
+
+  That names a **deletion** — the dead `PASS` branch and the unreachable function — and it names it
+  as a recommendation, not a precondition (§0.1 is flagged non-blocking in its own heading and
+  again at `:109`). PR #188 performs that deletion.
+
+  **What §0.1 does not ask for.** The **rename** `overall` → `audit_overall` is this PR's own
+  proposal. `:175-176` states a reading discipline and nothing more — "`audit()`'s `overall` must
+  never be quoted as the gate verdict (D-7). The authority is
+  `eval/score_gate0.py::score()["overall"]`" — and requests no code change to enforce it. (That
+  `D-7` is the prereg's own failure-mode list at `:419`, not an entry in this file.) The same
+  discipline was already written down at `reports/2026-07-18-gate0-prereg.md:81-83` and did not
+  hold; moving it into the identifier is **this PR's judgement** about how to make it hold, and it
+  should be reviewed as a proposal on its merits, not as a frozen instruction being carried out.
+
+  **The exit-code change cut against §0.1 rather than being asked for by it.** It, too, was this
+  PR's own proposal, and `:177-179` records the always-non-zero exit as a *fact about the CLI*, not
+  a defect to repair — so shipping it would have falsified the frozen text. It was dropped before
+  merge; see the next section.
 - **Line-number drift is pre-authorised.** §"Line-number citations are anchored to a commit"
   anchors every `tools/check_gate0_codex.py:N` citation to `208d211` and states that where a
   citation and the quoted code disagree, the quoted code and the named identifier win.
