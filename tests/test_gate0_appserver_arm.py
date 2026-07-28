@@ -49,9 +49,10 @@ _RATE_PIN = {
 # End-to-end --dry-run: manifest-shaped artifact set with the right keys.
 # ---------------------------------------------------------------------------
 
-def _run_dry(tmp_path, arm="red", call_count=3, scenario="completes"):
+def _run_dry(tmp_path, arm="red", call_count=3, scenario="completes",
+             mode="paid_gate0"):
     out_dir = tmp_path / "out"
-    argv = ["--arm", arm, "--out-dir", str(out_dir), "--dry-run",
+    argv = ["--arm", arm, "--mode", mode, "--out-dir", str(out_dir), "--dry-run",
             "--call-count", str(call_count), "--scenario", scenario]
     exit_code = main(argv)
     return exit_code, out_dir
@@ -113,7 +114,7 @@ def test_one_attempt_guard_refuses_a_second_run_in_the_same_out_dir(tmp_path):
     exit_code, out_dir = _run_dry(tmp_path)
     assert exit_code == 0
     with pytest.raises(SystemExit, match="one-attempt guard"):
-        main(["--arm", "red", "--out-dir", str(out_dir), "--dry-run"])
+        main(["--arm", "red", "--mode", "paid_gate0", "--out-dir", str(out_dir), "--dry-run"])
 
 
 def test_refuse_if_already_completed_is_a_noop_when_out_dir_is_fresh(tmp_path):
@@ -133,7 +134,7 @@ def test_one_attempt_guard_catches_a_crashed_after_spending_run_with_no_agent_me
         encoding="utf-8")
     assert not (out_dir / "agent_metrics.json").exists()  # the exact hole the review found
     with pytest.raises(SystemExit, match="one-attempt guard"):
-        main(["--arm", "red", "--out-dir", str(out_dir), "--dry-run"])
+        main(["--arm", "red", "--mode", "paid_gate0", "--out-dir", str(out_dir), "--dry-run"])
     with pytest.raises(SystemExit, match="one-attempt guard"):
         refuse_if_already_completed(out_dir)
 
@@ -146,7 +147,8 @@ def test_seam_check_is_exempt_from_the_one_attempt_guard(tmp_path, monkeypatch):
     monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
                          lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
     for _ in range(2):
-        exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+        exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                          "--out-dir", str(out_dir), "--seam-check"])
         assert exit_code == 0
 
 
@@ -490,7 +492,7 @@ def test_world_config_toml_sets_generous_timeouts_for_the_lazy_boot_world_server
 
 def test_build_docker_mcp_args_red_uses_the_pinned_mounts_and_game(tmp_path):
     args = build_docker_mcp_args("red", ARM_IMAGE_IDS["red"], tmp_path / "world",
-                                  repo_root=tmp_path)
+                                  repo_root=tmp_path, mode="paid_gate0")
     assert args[0:5] == ["run", "-i", "--rm", "--network", "none"]
     assert ARM_IMAGE_IDS["red"] in args
     assert "--game" in args and args[args.index("--game") + 1] == "pokemon_red"
@@ -500,7 +502,7 @@ def test_build_docker_mcp_args_red_uses_the_pinned_mounts_and_game(tmp_path):
 
 def test_build_docker_mcp_args_miniwob_uses_the_pinned_seeds_file(tmp_path):
     args = build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
-                                  repo_root=tmp_path)
+                                  repo_root=tmp_path, mode="paid_gate0")
     assert "--game" in args and args[args.index("--game") + 1] == "miniwob_click_checkboxes"
     assert any("seeds.json,readonly" in a for a in args)
     assert "--keep-frames" not in args
@@ -509,7 +511,7 @@ def test_build_docker_mcp_args_miniwob_uses_the_pinned_seeds_file(tmp_path):
 def test_build_docker_mcp_args_rejects_unknown_arm(tmp_path):
     with pytest.raises(ValueError):
         build_docker_mcp_args("chess", "sha256:" + "0" * 64, tmp_path / "world",
-                               repo_root=tmp_path)
+                               repo_root=tmp_path, mode="paid_gate0")
 
 
 def test_build_docker_mcp_args_world_mount_source_is_absolute_for_a_relative_world_dir():
@@ -521,7 +523,8 @@ def test_build_docker_mcp_args_world_mount_source_is_absolute_for_a_relative_wor
     rel_world = Path("runs/gate0_paid/red/world")
     assert not rel_world.is_absolute()
     for arm in ("red", "miniwob"):
-        args = build_docker_mcp_args(arm, ARM_IMAGE_IDS[arm], rel_world, repo_root=Path("."))
+        args = build_docker_mcp_args(arm, ARM_IMAGE_IDS[arm], rel_world, repo_root=Path("."),
+                                     mode="paid_gate0")
         world_mount = next(a for a in args if "target=/app/world" in a)
         src = world_mount.split("source=", 1)[1].rsplit(",target=", 1)[0]
         assert os.path.isabs(src), f"{arm}: world mount source not absolute: {src!r}"
@@ -548,41 +551,47 @@ def test_resolve_isolated_codex_home_is_absolute_for_a_relative_out_dir():
 
 def test_model_required_for_a_real_run(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "red", "--out-dir", str(tmp_path / "out")])
+        main(["--arm", "red", "--mode", "paid_gate0", "--out-dir", str(tmp_path / "out")])
 
 
 def test_model_latest_alias_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "red", "--model", "gpt-5.6-sol-latest", "--out-dir", str(tmp_path / "out"),
+        main(["--arm", "red", "--mode", "paid_gate0",
+              "--model", "gpt-5.6-sol-latest", "--out-dir", str(tmp_path / "out"),
               "--credit-rate-pin", str(tmp_path / "pin.json")])
 
 
 def test_credit_rate_pin_required_for_a_real_run(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "red", "--model", "gpt-5.6-sol", "--out-dir", str(tmp_path / "out")])
+        main(["--arm", "red", "--mode", "paid_gate0",
+              "--model", "gpt-5.6-sol", "--out-dir", str(tmp_path / "out")])
 
 
 def test_credit_rate_pin_rejected_for_dry_run(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "red", "--out-dir", str(tmp_path / "out"), "--dry-run",
+        main(["--arm", "red", "--mode", "paid_gate0",
+              "--out-dir", str(tmp_path / "out"), "--dry-run",
               "--credit-rate-pin", str(tmp_path / "pin.json")])
 
 
 def test_stall_timeout_may_only_tighten_never_loosen(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "red", "--out-dir", str(tmp_path / "out"), "--dry-run",
+        main(["--arm", "red", "--mode", "paid_gate0",
+              "--out-dir", str(tmp_path / "out"), "--dry-run",
               "--stall-timeout-s", "999999"])
 
 
 def test_wall_clock_may_only_tighten_never_loosen(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "red", "--out-dir", str(tmp_path / "out"), "--dry-run",
+        main(["--arm", "red", "--mode", "paid_gate0",
+              "--out-dir", str(tmp_path / "out"), "--dry-run",
               "--wall-clock-s", "999999"])
 
 
 def test_unknown_arm_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
-        main(["--arm", "chess", "--out-dir", str(tmp_path / "out"), "--dry-run"])
+        main(["--arm", "chess", "--mode", "paid_gate0",
+              "--out-dir", str(tmp_path / "out"), "--dry-run"])
 
 
 def test_validate_args_forces_out_dir_absolute(tmp_path, monkeypatch):
@@ -595,7 +604,8 @@ def test_validate_args_forces_out_dir_absolute(tmp_path, monkeypatch):
     from pathlib import Path
     monkeypatch.chdir(tmp_path)
     parser = arm_mod.build_arg_parser()
-    args = parser.parse_args(["--arm", "red", "--out-dir", "relative_out", "--dry-run"])
+    args = parser.parse_args(["--arm", "red", "--mode", "paid_gate0",
+                              "--out-dir", "relative_out", "--dry-run"])
     assert not Path(args.out_dir).is_absolute()
     arm_mod._validate_args(parser, args)
     assert Path(args.out_dir).is_absolute()
@@ -621,7 +631,8 @@ def test_main_with_a_relative_out_dir_still_resolves_the_world_mount_absolutely(
         return [{"name": t} for t in TOOLS["red"]]
     monkeypatch.setattr(arm_mod, "docker_tools_list", _fake_tools_list)
 
-    exit_code = main(["--arm", "red", "--out-dir", "relative_out2", "--seam-check",
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", "relative_out2", "--seam-check",
                        "--with-tools-list"])
     assert exit_code == 0
     world_mount = next(a for a in captured_mcp_args["value"] if "target=/app/world" in a)
@@ -703,7 +714,8 @@ def test_seam_check_passes_when_image_id_matches_the_pin(tmp_path, monkeypatch):
     monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
                          lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
     out_dir = tmp_path / "out"
-    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", str(out_dir), "--seam-check"])
     assert exit_code == 0
     result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
     assert result["ok"] is True
@@ -715,7 +727,8 @@ def test_seam_check_fails_when_image_id_does_not_match_the_pin(tmp_path, monkeyp
     monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
                          lambda docker_path, image_ref: "sha256:" + "0" * 64)
     out_dir = tmp_path / "out"
-    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", str(out_dir), "--seam-check"])
     assert exit_code == 1
     result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
     assert result["ok"] is False
@@ -726,7 +739,8 @@ def test_seam_check_fails_closed_when_docker_is_unavailable(tmp_path, monkeypatc
         raise RuntimeError("docker executable not found on PATH")
     monkeypatch.setattr(arm_mod, "resolve_docker_path", _boom)
     out_dir = tmp_path / "out"
-    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", str(out_dir), "--seam-check"])
     assert exit_code == 1
 
 
@@ -742,7 +756,8 @@ def test_seam_check_with_tools_list_uses_the_mocked_handshake_never_real_docker(
     monkeypatch.setattr(subprocess, "run", _boom)
 
     out_dir = tmp_path / "out"
-    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check",
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", str(out_dir), "--seam-check",
                        "--with-tools-list"])
     assert exit_code == 0
     result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
@@ -764,7 +779,8 @@ def test_seam_check_with_tools_list_writes_a_reproducible_mcp_tools_json_and_has
     monkeypatch.setattr(arm_mod, "docker_tools_list", lambda docker_path, mcp_args: tools)
 
     out_dir = tmp_path / "out"
-    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check",
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", str(out_dir), "--seam-check",
                        "--with-tools-list"])
     assert exit_code == 0
 
@@ -785,7 +801,8 @@ def test_seam_check_without_tools_list_writes_no_mcp_tools_json_or_hash(tmp_path
     monkeypatch.setattr(arm_mod, "docker_image_inspect_id",
                          lambda docker_path, image_ref: ARM_IMAGE_IDS["red"])
     out_dir = tmp_path / "out"
-    exit_code = main(["--arm", "red", "--out-dir", str(out_dir), "--seam-check"])
+    exit_code = main(["--arm", "red", "--mode", "paid_gate0",
+                      "--out-dir", str(out_dir), "--seam-check"])
     assert exit_code == 0
     assert not (out_dir / "mcp-tools.json").exists()
     result = json.loads((out_dir / "seam_check.json").read_text(encoding="utf-8"))
@@ -993,9 +1010,10 @@ def test_verify_launch_signature_unchanged_fails_loud_when_mcp_list_drifted(tmp_
 # sees transcript.raw_appserver.jsonl on disk from the start of the turn).
 # ---------------------------------------------------------------------------
 
-def _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path, human_path):
+def _finalize_kwargs(out_dir, receipt, receipt_path, transcript_path, human_path,
+                     mode="paid_gate0"):
     return dict(receipt=receipt, receipt_path=receipt_path, transcript_path=transcript_path,
-                out_dir=out_dir, arm="red", wall_clock_s=12.0, credits_result={},
+                out_dir=out_dir, arm="red", mode=mode, wall_clock_s=12.0, credits_result={},
                 rate_pin=_RATE_PIN, watcher=SoftCapWatcher(soft_cap=100.0, rate_pin=None),
                 auth_note="test", model="gpt-5.6-sol", human_path=human_path)
 
@@ -1054,3 +1072,160 @@ def test_finalize_real_run_success_path_still_resolves_pins_and_scores(tmp_path,
     assert run_receipt["audit_overall"] != "LAUNCH_SIGNATURE_MISMATCH"
     assert (out_dir / "agent_metrics.json").is_file()
     assert result["run_receipt"] == run_receipt
+
+
+# ---------------------------------------------------------------------------
+# --mode: ONE flag, THREE derivations (seed manifest / agent_metrics stamp / wake-boundary path).
+#
+# Before this, all three were hardwired to Gate 0 v1: build_docker_mcp_args mounted the SPENT
+# 1000..1004 seeds, _finalize_real_run stamped mode="paid_gate0" (which
+# eval/score_gate0.py::_verify_sources fails as `agent_metric_identity:<arm>` for any other mode),
+# and wake_boundary.json was written into runs/gate0_paid/ regardless of --out-dir. A v2 attempt
+# launched through it would have been void at scoring -- after the money was spent.
+# ---------------------------------------------------------------------------
+
+def _seed_mount_source(args):
+    from pathlib import Path
+    mount = next(a for a in args if "target=/app/seeds.json" in a)
+    return Path(mount.split("source=", 1)[1].rsplit(",target=", 1)[0])
+
+
+def test_mode_is_required_and_has_no_default(tmp_path):
+    # David's explicit decision: NO default. A default of "paid_gate0" would preserve exactly the
+    # trap being fixed -- omit the flag on a v2 launch, get a full-price run on spent seeds.
+    parser = arm_mod.build_arg_parser()
+    assert parser.get_default("mode") is None
+    with pytest.raises(SystemExit):
+        main(["--arm", "miniwob", "--out-dir", str(tmp_path / "out"), "--dry-run"])
+
+
+def test_mode_choices_are_exactly_the_frozen_scorers_modes():
+    from eval.score_gate0 import MODES
+    action = next(a for a in arm_mod.build_arg_parser()._actions if a.dest == "mode")
+    assert tuple(action.choices) == tuple(MODES)
+    with pytest.raises(SystemExit):
+        arm_mod.build_arg_parser().parse_args(
+            ["--arm", "miniwob", "--mode", "paid_gate3", "--out-dir", "x", "--dry-run"])
+
+
+def test_paid_gate0_v2_mounts_the_v2_seed_file_and_never_the_spent_block(tmp_path):
+    # THE test this whole change exists for.
+    args = build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
+                                 mode="paid_gate0_v2")
+    src = _seed_mount_source(args)
+    assert src.name == "gate0_miniwob_paid_v2_seeds.json"
+    seeds = json.loads(src.read_text(encoding="utf-8"))
+    assert seeds == [417545, 662948, 660918, 981149, 558952]
+    # The spent v1 block must be nowhere near a v2 launch, by file NAME or by contents.
+    assert seeds != [1000, 1001, 1002, 1003, 1004]
+    assert not any("gate0_miniwob_paid_seeds.json" in a for a in args)
+
+
+def test_readiness_dev_mounts_the_dev_seed_file(tmp_path):
+    args = build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
+                                 mode="readiness_dev")
+    src = _seed_mount_source(args)
+    assert src.name == "gate0_miniwob_dev_seeds.json"
+    assert json.loads(src.read_text(encoding="utf-8")) == [0, 1, 2, 3, 4]
+
+
+def test_paid_gate0_seed_mount_is_byte_identical_to_the_removed_hardcode(tmp_path):
+    # Proof that the paid_gate0 code path is unchanged in behaviour: the rendered docker argv is
+    # equal, element for element, to what the old literal
+    # `repo_root / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json"` produced.
+    old_seeds = arm_mod.REPO_ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json"
+    world = tmp_path / "world"
+    expected = ["run", "-i", "--rm", "--network", "none",
+                "--mount", f"type=bind,source={old_seeds},target=/app/seeds.json,readonly",
+                "--mount", f"type=bind,source={world.resolve()},target=/app/world",
+                ARM_IMAGE_IDS["miniwob"], "--game", "miniwob_click_checkboxes",
+                "--seeds-file", "/app/seeds.json", "--out", "/app/world"]
+    assert build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], world,
+                                 mode="paid_gate0") == expected
+
+
+def test_arm_red_docker_args_are_identical_across_every_mode(tmp_path):
+    # Arm R takes a pinned savestate, not seeds -- so --mode drives seed selection and nothing else
+    # reaches Red's docker line. (This is why there is no separate --seeds flag: one flag, three
+    # derivations, nothing to get out of sync.)
+    from eval.score_gate0 import MODES
+    rendered = {m: build_docker_mcp_args("red", ARM_IMAGE_IDS["red"], tmp_path / "world",
+                                         repo_root=tmp_path, mode=m) for m in MODES}
+    assert len(set(map(tuple, rendered.values()))) == 1
+
+
+def test_launch_refuses_a_seed_manifest_that_disagrees_with_the_scorer(tmp_path, monkeypatch):
+    # The root-cause guard: the launcher re-reads the manifest it is about to mount and refuses if
+    # its contents differ from eval.score_gate0.MODES' exact list. Makes launcher/scorer
+    # disagreement impossible rather than merely absent today.
+    import eval.score_gate0 as scorer
+    tampered = tmp_path / "tampered_seeds.json"
+    tampered.write_text(json.dumps([1000, 1001, 1002, 1003, 1004]), encoding="utf-8")
+    monkeypatch.setitem(scorer.MODES, "paid_gate0_v2",
+                        (tampered, [417545, 662948, 660918, 981149, 558952]))
+    with pytest.raises(SystemExit, match="does not match the frozen"):
+        build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
+                              mode="paid_gate0_v2")
+
+
+def test_launch_refuses_an_unreadable_seed_manifest(tmp_path, monkeypatch):
+    import eval.score_gate0 as scorer
+    monkeypatch.setitem(scorer.MODES, "paid_gate0_v2", (tmp_path / "gone.json", [1]))
+    with pytest.raises(SystemExit, match="unreadable"):
+        build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
+                              mode="paid_gate0_v2")
+
+
+def _finalize_for_mode(tmp_path, monkeypatch, mode):
+    out_dir = tmp_path / "attempt" / "red"
+    out_dir.mkdir(parents=True)
+    transcript_path = out_dir / "transcript.jsonl"
+    transcript_path.write_text("", encoding="utf-8")
+    receipt = {"config_sha256": "0" * 64, "codex_mcp_list_sha256": "0" * 64,
+               "world_image_id": "sha256:" + "a" * 64}
+    receipt_path = out_dir / "handshake-receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    monkeypatch.setattr(arm_mod, "verify_launch_signature_unchanged", lambda receipt, out_dir: None)
+    monkeypatch.setattr(arm_mod, "audit",
+                        lambda *a, **k: {"overall": "PASS", "primitive_action_events": 7})
+    monkeypatch.setattr(arm_mod, "resolve_expected_pins", lambda base, **k: dict(base))
+    arm_mod._finalize_real_run(**_finalize_kwargs(out_dir, receipt, receipt_path, transcript_path,
+                                                  tmp_path / "missing_human.json", mode=mode))
+    return out_dir
+
+
+@pytest.mark.parametrize("mode", ["paid_gate0", "paid_gate0_v2", "readiness_dev"])
+def test_finalize_stamps_the_declared_mode_not_a_hardwired_one(tmp_path, monkeypatch, mode):
+    # eval/score_gate0.py::_verify_sources requires agent_metrics.json's `mode` to EQUAL the mode
+    # being scored (`agent_metric_identity:<arm>`), so a hardwired stamp voids every non-v1 run.
+    out_dir = _finalize_for_mode(tmp_path, monkeypatch, mode)
+    metrics = json.loads((out_dir / "agent_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["mode"] == mode
+
+
+def test_finalize_writes_the_wake_boundary_beside_the_out_dir_not_into_runs_gate0_paid(
+        tmp_path, monkeypatch):
+    banked = arm_mod.REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json"
+    banked_before = banked.exists()
+    out_dir = _finalize_for_mode(tmp_path, monkeypatch, "paid_gate0_v2")
+    assert (out_dir.parent / "wake_boundary.json").is_file()
+    assert not (out_dir / "wake_boundary.json").exists()
+    # runs/ is append-only and this launcher has no business touching it uninvited.
+    assert banked.exists() == banked_before
+
+
+def test_wake_boundary_path_matches_each_modes_pinned_artifact_path():
+    # Pure path arithmetic against the committed source-pins fixtures: for the pre-registered
+    # --out-dir convention (<attempt>/<arm>), out_dir.parent lands EXACTLY where each mode's
+    # source pins say wake_boundary.json lives -- including reproducing v1's removed hardcode.
+    root = arm_mod.REPO_ROOT
+    pin_files = {"paid_gate0": ("gate0_paid", "gate0_paid_source_pins.json"),
+                 "paid_gate0_v2": ("gate0_paid_v2", "gate0_paid_v2_source_pins.json")}
+    for mode, (attempt, fixture) in pin_files.items():
+        pins = json.loads((root / "eval" / "fixtures" / fixture).read_text(encoding="utf-8"))
+        for arm in ("red", "miniwob"):
+            derived = (root / "runs" / attempt / arm).parent / "wake_boundary.json"
+            assert derived == root / pins["artifact_paths"]["wake_boundary"], mode
+    # And explicitly: v1's derived path IS the literal the fix removed.
+    assert ((root / "runs" / "gate0_paid" / "red").parent / "wake_boundary.json"
+            == root / "runs" / "gate0_paid" / "wake_boundary.json")
