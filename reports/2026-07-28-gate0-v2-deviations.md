@@ -305,10 +305,10 @@ failure. That argument is preserved and strengthened:
 >
 > That is true in `_red_success` — both call sites are downstream of `exit_idx`, which is downstream
 > of `party_idx` — and **false in `_red_badge_success`**, where the load-bearing half of the claim
-> was. `_red_badge_success`'s `kept = [...]` filter (`eval/score_exam_red_badge.py:121`) filters the
-> **entire** watch list; `party_idx` is not computed until its `party_idx = next(...)` line (`:148`),
+> was. `_red_badge_success`'s `kept = [...]` filter (`eval/score_exam_red_badge.py:123`) filters the
+> **entire** watch list; `party_idx` is not computed until its `party_idx = next(...)` line (`:150`),
 > and it is computed **from the already-filtered list**. Worse, the fresh-start guard
-> `parties[0] != 0` (`:140`) positively **requires** `parties[0] == 0`, so the entire pre-starter
+> `parties[0] != 0` (`:142`) positively **requires** `parties[0] == 0`, so the entire pre-starter
 > prefix of every genuine trace has `party == 0` by construction — the opposite of what the argument
 > asserted. The claim was not merely unproven at that site, it was inverted.
 >
@@ -327,7 +327,7 @@ The list above is about what the filter cannot *mask*. It is not the whole story
 first draft's enumeration (genuine faint / genuine map change / genuine badge) was incomplete. There
 is a fourth EX01 clause the widening does newly suppress:
 `red_badge_bit_reverted_after_set` — the `any(b is False for b in bits[transition_idx:])` clause
-(`eval/score_exam_red_badge.py:172-173`). A delta row whose
+(`eval/score_exam_red_badge.py:174-175`). A delta row whose
 residue byte is **even** reads `badges` bit-0 **clear**, which is exactly the revert signal, so
 dropping the row drops the revert. Constructed trace (reviewer's, reproduced):
 
@@ -341,7 +341,7 @@ this head   : (True, [])
 corrupt by exactly the argument above, and reading a corrupt row as evidence of a *real* badge revert
 is the same category error the filter exists to prevent. Suppressing it is the same call as
 suppressing the false `red_player_hp_reached_zero`. The reason it is called out rather than left
-implicit: that clause's own comment (`:171`) documents it as catching "a savestate reload, a
+implicit: that clause's own comment (`:173`) documents it as catching "a savestate reload, a
 substituted row", i.e. not only RAM corruption, so a reader is entitled to know the corruption
 filter now sits in front of it.
 Both the PR's boot scan and the reviewer's observed only **odd** residue bytes (`1`, `3`), so a

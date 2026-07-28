@@ -54,15 +54,17 @@ def _is_corrupt_glitch_row(watch: dict) -> bool:
 
     NOTE the argument is deliberately NOT "the call site runs after an exact `party` 0->1
     transition". That is true in `score_gate0.py::_red_success` but FALSE here: `_red_badge_success`
-    filters the ENTIRE watch list at its `kept = [...]` line (`:121`), before `party_idx` is computed
-    (`:148`), and its fresh-start guard `parties[0] != 0` (`:140`) positively REQUIRES
+    filters the ENTIRE watch list at its `kept = [...]` line (`:123`), before `party_idx` is computed
+    (`:150`), and its fresh-start guard `parties[0] != 0` (`:142`) positively REQUIRES
     `parties[0] == 0`, so the whole pre-starter prefix of every genuine trace has `party == 0`.
     See reports/2026-07-28-gate0-v2-deviations.md D3.
 
-    Every line number in this file's docstrings is against `794ee37` and was re-derived by locating
-    the SYMBOL, not copied from a review: the round-2 fix grew this function and moved all three of
-    these numbers once already, and the stale set (`:76`/`:97`/`:89`) shipped. Re-locate by symbol
-    before trusting any number here."""
+    Every line number in this file's docstrings is against the PR #191 head that introduced this
+    paragraph, and was re-derived by locating the SYMBOL rather than copied from a review. A bare
+    commit hash is deliberately NOT quoted here: it cannot be written before the commit that would
+    make it true, and a wrong-but-specific hash is worse than none. The numbers are known to go
+    stale -- each PR #191 fix round grew this function and moved all three, and the stale set
+    (`:76`/`:97`/`:89`) shipped once already. RE-LOCATE BY SYMBOL before trusting any number here."""
     vals = [watch.get(k) for k in _WATCHED_KEYS]
     if any(isinstance(v, bool) or not isinstance(v, int) for v in vals):
         return False
