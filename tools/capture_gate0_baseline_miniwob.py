@@ -445,7 +445,8 @@ def main() -> int:
                      help="defaults to the frozen seed manifest for --mode.")
     ap.add_argument("--player", default="David")
     ap.add_argument("--i-am-human", action="store_true", dest="i_am_human",
-                     help="required for --mode paid_gate0 -- explicit, non-default acknowledgement "
+                     help="required for every held-out mode (HELD_OUT_MODES: paid_gate0, "
+                          "paid_gate0_v2) -- explicit, non-default acknowledgement "
                           "that a real human is about to replay the held-out seeds. A scripted "
                           "invocation cannot satisfy this by accident.")
     ap.add_argument("--allow-retake", metavar="REASON", default=None,
