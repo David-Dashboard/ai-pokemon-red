@@ -36,6 +36,11 @@ ticks once then stays flat, unlike `0x8090`'s second tick" — and of this sessi
 autopilot attempt (blind stall-recovery bursts drove it backwards, `0x8090` ticked 0→3 then
 dropped to 1 with no lap change on screen, "LAP 1/3" throughout).
 
+> **[PARTLY FALSIFIED 2026-07-28 — PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`.]** The
+> `0x022C8090` reading below stands. The `0x022C8094` reading does not: it **does** decrement
+> (`0→1→3→1`), so it is not a "furthest checkpoint reached" or lap-adjacent counter. The lap
+> counter is a per-racer array elsewhere in RAM (stride `0x8C`, base is per-race).
+
 **Corrected semantics**: `0x022C8090` = checkpoint-index-within-lap, bidirectional
 (increments forward, decrements/resets on confirmed wrong-way). `0x022C8094` did not
 decrement on the same wrong-way event — a more promising, NOT-yet-confirmed lead for a
@@ -47,6 +52,11 @@ covering more track than the original hunt, a full lap was not completed before 
 was time-boxed. No RAM diff was taken at a lap boundary because no lap boundary occurred.
 
 ## Best lead for the next attempt
+> **[RESOLVED 2026-07-28 — PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`.]** Lead 1 below was
+> chased and is dead (`0x022C8094` decrements). The lap byte was found by a different route
+> entirely: let the 7 CPU racers lap on their own and sweep all of RAM for monotone counters —
+> no driving required.
+
 1. `0x022C8094`'s wrong-way-resistant behavior (1 data point) — worth a dedicated bracket:
    drive to a wrong-way trigger, RAM-diff around it, confirm it truly never decrements.
 2. The original report's unpursued "second, uncorrelated one-time-event" cluster

@@ -167,6 +167,29 @@ platforming pass (or a save-state placed just before the goal door, if one exist
 scratch history — none was found among the reused `kirby/*.state` checkpoints, all of which sit
 strictly before or at this session's own stopping point).
 
+> ### CORRECTION (2026-07-28, added by the #176 hunt — do not delete)
+>
+> **The "stuck point" above is misdiagnosed.** What this report calls "a stationary dark object,
+> likely a Gordo-type hazard" at score 2800 is the room's **stage EXIT DOOR** — a black arch ringed
+> with sparkles, sitting immediately to Kirby's **left**, with Kirby having walked past it to the
+> level's right boundary. It is entered with **`up` while standing aligned with it**; the eliminated
+> list above (ground-level `right`, jumps at various heights/arcs, crouching `down`) does not include
+> `up`, so the door was never actually tried.
+>
+> Established, not asserted: loading *this report's own banked state*
+> (`gbaexam0725_kirby/gr7.state`) and walking left 22–34 frames then pressing `up` transitions the
+> room every time; 14–18 frames does not. Screenshots, both committed under
+> `reports/probes/2026-07-28-kirby-gba-level-oracle/evidence/`:
+> `01_stage1-1_exit_door_adjacent.png` (the object, zoomed, unmistakably a doorway) and
+> `02_door1_entered_new_room.png` (the room after entering it).
+>
+> Consequence: **Level 1-1 was cleared** in #176 from this exact checkpoint, and the "obstacle is a
+> genuinely hard scripted-play problem, mirroring the GB precedent" reading in the section above does
+> not hold for *this* obstacle. The rest of this report — the `score`/`world` re-verification, the
+> `A`-vs-`B` finding, and the Emerald hunt — is unaffected and stands.
+>
+> Full result: `reports/2026-07-28-kirby-gba-level-oracle.md` (PR #176).
+
 ## What was eliminated (both hunts)
 
 - Emerald: static-NPC route block is not resolved by waiting, by re-approaching, by talking vs.

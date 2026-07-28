@@ -7,11 +7,93 @@ seam, generalization from primitives, System-2→System-1 skill compilation, the
 
 > **Scope split (2026-07-04):** HANDOFF is the **cross-session narrative** — what we're building, where we are, and what's next across days. Ephemeral **current-run task state** (the single task in flight + its checkboxes) lives in `LEDGER.md`, which the ledger hooks re-inject after every compaction and gate the Stop on; keep task checkboxes there, not here. HANDOFF = durable story; LEDGER = current run.
 
-_Last updated: 2026-07-25 (POST-GATE-0 LANE PHASE closed — 6 PRs merged, $0, docs-only; the exam is
-only 4/10 scorable; all 4 oracle hunts hit a play-capability wall, four different capability classes,
-measuring the rig not the brain; VizDoom flagged off-limits without David's sign-off.)_
+_Last updated: 2026-07-28 (★ EX02 STAGE ORACLE FOUND: 0xD03B — CAUSAL, the byte the game reads to pick
+the stage; other 4 candidates eliminated as stale latches; NOT wired. Prior: attempt 2 — reached the END
+of Castle Lololo and the Lololo BOSS via a verified warp-star sequence; candidates narrowed 8 → 5. $0.
+**THREE** of my own mechanism claims retracted, the third being "the automation beat Lololo" — it did
+not; David did.)_
 
-**=>=> NEWEST (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
+**=>=> NEWEST (2026-07-28) - ★ EX02 STAGE ORACLE FOUND: `0xD03B`. HUNT ANSWERED. $0. =>=>**
+1. **`0xD03B` is Kirby's 0-indexed STAGE COUNTER** — reads `0` in Green Greens, `1` in Castle
+   Lololo, **`2` in Float Islands**. Found from a HUMAN run (David played Castle Lololo to its end
+   and into Stage 3 with `record.py --mode human --ram --watch`, 1,128 steps,
+   `runs/2026-07-28_kirby_stage3_human/`).
+2. **The other four candidates are LATCHES and are ELIMINATED**: `0xD19F`, `0xD3A9`, `0xD3BA`,
+   `0xD3CD` all stay `1` *inside Stage 3*. They encode "past Stage 1" only. A wired oracle on any of
+   them would have silently passed EX02 the moment Kirby left Green Greens. (`0xC057/0xC073/0xC07B`
+   were eliminated earlier the same session — they vary WITHIN Stage 2.) So PR #169's 8 → 1.
+3. **Verified against the full 8KB WRAM dump, all 1,128 steps** (not just sampled oracle rows):
+   `0xD03B` takes only {1,2}, changes exactly once, on the frame adjacent to the "STAGE 3 FLOAT
+   ISLANDS" title card, and **survives two deaths** (steps 414, 766) — the exact falsification that
+   killed the 2026-07-23 candidates.
+4. ⚠ **NOT WIRED, deliberately** — editing `world_mcp.py` cascades into the frozen Gate-0
+   host/image pins (same reason PR #138 is deferred). Wire in ONE batched PR with the other
+   `watch = {}` worlds at the next world-image rebuild.
+5. ✅ **Bound DISCHARGED (2026-07-28 follow-up probe).** The old gate — "confirm `0xD03B` reads `3` at
+   the Stage-3 → Stage-4 boundary before wiring" — is **met**, and the claim is now **CAUSAL**: writing
+   `0xD03B` before a stage load *determines which stage loads* (0 Green Greens, 1 Castle Lololo,
+   2 Float Islands, 3 Bubbly Clouds, 4 Mt. Dedede; no-write control loads Castle Lololo). Five values
+   anchored, four causally. `3` held ~4,700 frames of live Bubbly Clouds and through the CONTINUE
+   prompt. Strongest elimination result: the **reverse dissociation** — in 9,000 frames of live *Green
+   Greens* with `0xD03B`=0, all four candidates still read `1`. They are STALE latches.
+   ⚠ **NEW WIRING HAZARD:** `0` is NOT a positive "Green Greens" signal — it is also the uninitialized
+   boot value (frame 10: `D03B=0 hp=0 lives=0`) and the post-game-over title screen. **A predicate keyed
+   on `== 0` is unsafe; `>= 2` is meaningful.** Gate any read on the game actually being in play.
+6. Also fixed: `record.py`'s `C` (checkpoint) hotkey wrote to `runs/<name>/` instead of the
+   date-prefixed run dir, crashing the session with FileNotFoundError.
+
+**=>=> PRIOR (2026-07-26) - EX02 KIRBY STAGE-3 HUNT #2: REACHED THE CASTLE LOLOLO BOSS; CANDIDATES 8 -> 5; STILL NO STAGE-3 SAMPLE. $0, PROBE ONLY. =>=>**
+Branch `probe/kirby-gb-stage3` (worktree `../ai-pokemon-red-kirby3`), report
+`reports/2026-07-26-oracle-kirby-gb-stage3.md`. Continues PR #169.
+1. **EX02 IS STILL `ORACLE_PENDING` AND NOTHING WAS WIRED.** `eval/score_exam_kirby_stage3.py`
+   untouched, still `return 1`. No `world_mcp.py` / fixture / pinned-Gate-0-file / held-out edit. $0
+   throughout (offline PyBoy, no paid call, no Docker).
+2. **★ CANDIDATE LIST NARROWED 8 → 5.** `0xC057`, `0xC073`, `0xC07B` are **ELIMINATED**: measured over
+   60 sampled intervals of ordinary play at constant score, `0xC057` takes {1,32,33} and the other two
+   take {0,1} — they vary *within* Stage 2. PR #169's "all 8 move in perfect lockstep" holds only for
+   the five `0xD0xx`/`0xD3xx` bytes; it never sampled a diverging state. **Live list:
+   `0xD03B, 0xD19F, 0xD3A9, 0xD3BA, 0xD3CD`**, all still `1` in every legitimate Stage-2 state, still
+   indistinguishable from a "past Stage 1" latch.
+3. **PR #169 CORRECTED on two bytes:** `0xD051`/`0xD3ED` is Kirby's X within the area (rises on
+   `right`, falls on `left`, still when idle) and `0xD052`/`0xD3EE` is a vertical band index. PR #169
+   eliminated them as "volatile, drops to 1 around the death/continue event" — right verdict, wrong
+   reason (respawn *relocates* Kirby).
+4. **Reached the end of Castle Lololo.** The way on is NOT the water room (a structural dead end — its
+   upper/lower divider row is solid along the room's entire scrolled length) but the corridor's UPPER
+   floors, whose door leads to the battlements; from there the game flies Kirby on a **warp star** into
+   the **Lololo boss room** (boss meter = skull + 3 boxes replacing the score row). Verified
+   frame-by-frame. `cont_boss2.state` is a banked, controllable boss-room arrival.
+5. **⚠⚠ RETRACTED 2026-07-28 — "THE LOLOLO BOSS IS BEATEN" WAS FALSE.** The automation never beat
+   Lololo; `beat_lololo.py`'s "meter 72 → 0" was **Kirby walking through a door and the screen
+   blanking**. Verified by loading the banked states: `LOLOLO_WIN.state` and `post_boss_final.state`
+   render an **identical frame** (same screen MD5, 78 WRAM bytes apart) showing an ordinary corridor
+   with a normal `Sc: 49960` row — **not the boss room**. The meter box is a meter only while the boss
+   HUD is up; on a blanked frame it reads 0. The "control run" proved nothing (idling never blanks the
+   screen). **DAVID beat Lololo**, during the 2026-07-28 human run.
+   Consequently **also FALSE: "there is no stage-clear; Lololo is a mid-stage encounter."** Beating
+   Lololo **does** end Castle Lololo — the human's kill is followed by the warp-star flight straight
+   into the Stage-3 title card. The "input is ignored after the win" claim is withdrawn entirely (it
+   was never a post-win observation). The three "unlocks" are unvalidated hypotheses, not results.
+   ✅ What survives: the boss room *was* legitimately reached (`cont_boss2`/`boss_room_left`/
+   `boss_fresh` are genuine boss-room arrivals); `advance.py` did chain 5 rooms, but from a mid-Castle-
+   Lololo corridor, and the five candidates reading `1` through them is unaffected.
+6. **⚠ THREE OF MY OWN MECHANISM CLAIMS RETRACTED, all banked then corrected — and all ONE failure
+   mode:** (a) "randomised search corrupts the game" — it does not; the missing score row is the
+   boss/area HUD, and I had built a "validity guard" encoding the assumption, after which 200 trials
+   "confirmed" it; (b) "savestates yield a frozen Kirby" — they do not; I had a hardcoded Kirby
+   sprite-tile whitelist that missed his walk frames, and I was testing `right` while he stood against
+   the right wall; (c) "the automation beat Lololo" — it did not; a fixed-box boss-meter reader scored
+   a blanked transition frame as an empty meter. **The pattern: an unvalidated fixed-screen-region
+   detector converts a rendering artifact into a game event.** Each was settled in one run by varying
+   the suspected cause or just looking at the frame. **A guard built on an unverified premise launders
+   that premise into evidence — do not add one without deriving it.**
+7. **NEXT (cheapest first):** (i) a human plays Castle Lololo's boss for ~2 minutes with RAM sampling
+   on (the recorder already supports `"ram": true`) — this ends the hunt immediately; (ii) otherwise
+   arrive at the boss with full HP and write a fight policy that reads the block position off the
+   tilemap. Read the 5 candidates on the far side: any reading `2` = real stage counter, EX02 oracle
+   found; all staying `1` = latch, hunt restarts on a different byte.
+
+**=>=> PRIOR (2026-07-25) - POST-GATE-0 LANE PHASE: EXAM IS 4/10 SCORABLE; 4 ORACLE HUNTS BANKED (ALL NOT-FOUND, DIFFERENT CAPABILITY WALLS); VIZDOOM HELD-OUT FLAGGED. $0, DOCS ONLY. =>=>**
 1. **DONE — 6 PRs merged this phase, all $0, docs-only, main now `561ea62`:** #166 (de-rot
    `world-lanes-frontier` + 2 canon docs — `cheapness-skill-compilation/SKILL.md` and
    `reports/2026-07-05-northstar-capability-map.md`), #167 (MKDS A/B v2 design, DRAFT/NOT
@@ -64,6 +146,9 @@ measuring the rig not the brain; VizDoom flagged off-limits without David's sign
    - **EX05 (MKDS)** needs a qualitatively different closed-loop, vision-guided driver, not just more
      scripted attempts — re-scope now to a checkpoint-level milestone (the corroborated
      `0x022C8094` byte) rather than hold the freeze open indefinitely.
+     **CORRECTION 2026-07-28 (PR #177):** the real lap oracle is FOUND, so this re-scope is moot — but
+     `0x022C8094` is NOT "corroborated": it both exceeds 1 and decrements (`0→1→3→1` observed), so do
+     not build a checkpoint milestone on it. See `reports/2026-07-28-oracle-mkds-lap-v3.md`.
    - **EX03 (Emerald)** has two stacked blockers (a real in-game starter-Pokémon quest, AND an oracle
      — outdoor `map_num` — now known unsafe, see item 10) — re-scope to the already-reached,
      already-interior-stable Birch's Lab `(map_group, map_num) = (2, 13)` instead of Oldale.
@@ -127,6 +212,10 @@ measuring the rig not the brain; VizDoom flagged off-limits without David's sign
       another kart's struct copy; the `0x022C8A2x`-`0x022C8A4x` cluster, now corroborated across two
       independent sessions); savestate-chaining (one emulator process per driving decision) proven
       drift-free by an exact full-replay match.
+      **SUPERSEDED 2026-07-28 (PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`):** lap oracle FOUND
+      (8-racer array, stride `0x8C`, base is per-race — `0x0236A7F2` for the banked savestate); and
+      `0x022C8094` is FALSIFIED, not "the best lead" — it reaches 3 and decrements (`0→1→3→1`), killing
+      both the "only values 0/1" and the non-decrement claims. EX05 still not wireable (no MKDS world key).
     - **Kirby GB** (#169): all 3 prior candidates (`0xD048`, `0xD052`, `0xD3EE`) ELIMINATED with
       direct evidence (`0xD048` never changes at all; `0xD052`/`0xD3EE` are volatile, dropping 5->1 on
       the death/continue event); 8 survivors pinned (`0xC057`, `0xC073`, `0xC07B`, `0xD03B`, `0xD19F`,
@@ -138,6 +227,15 @@ measuring the rig not the brain; VizDoom flagged off-limits without David's sign
     - **Kirby GBA** (#170): `world@0x02006014` (constant `=1`) and `score@0x02006020` re-verified
       under CONTINUOUS live play (stronger than prior disconnected snapshots); `A` (not `B`) confirmed
       as the jump/float button, `B` eliminated as having no effect without an inhale target.
+    - **Kirby GBA** (#176, 2026-07-28): #170's "Gordo-type hazard at score 2800" was the stage EXIT
+      DOOR (enter with `up` when aligned) — **stage 1-1 is now cleared** and stage 1-2 reachable.
+      EX04 candidate `0x030023ec` (u8, IWRAM) = **"most recently entered stage"**, 0 in 1-1 / 1 in
+      1-2, NOT a latch and NOT confirmed as a counter (only 2 values reachable; 1-3 needs 1-2
+      cleared). **Wiring caveat:** it reads 0 on the world map — i.e. exactly where the agent lands
+      on clearing 1-1 — and 1 on the GAME OVER menu, so only `any(row == 1)` over the whole run is a
+      safe "cleared 1-1" predicate; end-of-run or on-map sampling reads 0 on a successful run. Also
+      note it survives the uniqueness sweep only when game-over frames group with stage 1-2
+      (`reports/2026-07-28-kirby-gba-level-oracle.md`, `.../probes/.../groups.md`).
     - **Emerald** (#170): Birch's Lab interior newly pinned at `(map_group, map_num) = (2, 13)`; the
       outdoor `map_num` instability found (item 10); the Route 101 NPC gate identified as a hard
       game-design blocker, not a navigation puzzle, tested and eliminated five different ways

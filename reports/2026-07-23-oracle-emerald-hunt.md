@@ -1,7 +1,20 @@
 # Emerald (GBA) RAM oracle hunt — $0, offline
 
+> ## ⚠ CORRECTION 2026-07-28 — DO NOT COPY THE `watch` BLOCK IN THIS REPORT
+> Three of the four addresses below were falsified by
+> `reports/2026-07-28-emerald-oldale-oracle.md`:
+> * `map_num = 0x0203735C` is **not** a map id — it is `gObjectEvents[0].initialCoords.x`, the x
+>   the player *entered* the current map at (four values measured for one outdoor Littleroot).
+> * `map_group = 0x02037340` is **not** `mapGroup` — it reads 2 in every Littleroot map.
+> * `y = 0x02037364` is **not** the live y — it is `previousCoords.x`, a lagging mirror.
+> Only `x = 0x02037360` survives, and as a **u16** (`y` is `0x02037362`). The real map identity is
+> `mapNum 0x02037359`, `mapGroup 0x0203735A`, `regionMapSectionId 0x0203732C`.
+> The "**FOUND** (verified live)" verdict below stands only for the *method*, not for these
+> addresses. See the correction note at the "Proposed registry wiring" block.
+
 Fills the gap flagged in `2026-07-22-graduation-exam-v1-definition.md` (EX03): `emerald_gba`'s
-registry `watch` is `{}` — no GBA world has an oracle wired yet. **FOUND** (verified live).
+registry `watch` is `{}` — no GBA world has an oracle wired yet. **FOUND** (verified live)
+— ***superseded, see the correction note above.***
 
 ## Harness / ROM
 Drove `core.gba_emulator.GBAEmulator` (mgba) directly via a throwaway script (session scratchpad
@@ -67,7 +80,15 @@ Savestates + raw `.bin` EWRAM dumps + screenshots for every step are in this ses
 sequence above against the same ROM copy and mgba build.
 
 ## Proposed registry wiring (PROPOSE ONLY — not wired into `world_mcp.py`)
+
+> ⚠ **RETRACTED 2026-07-28 — DO NOT PASTE THIS BLOCK ANYWHERE.** `map_group`, `map_num` and `y`
+> are all wrong (see the correction note at the top of this file). Pasting it into `world_mcp.py`
+> would wire three falsified addresses. The corrected equivalents live in
+> `reports/2026-07-28-emerald-oldale-oracle.md` §1 — and note that `x`/`y` are u16, which the
+> byte-only `watch` reader cannot express without a hi/lo split.
+
 ```python
+# RETRACTED — falsified 2026-07-28, kept only as a record of what was proposed.
 "emerald_gba": {
     ...,
     "watch": {"map_group": 0x02037340, "map_num": 0x0203735C,

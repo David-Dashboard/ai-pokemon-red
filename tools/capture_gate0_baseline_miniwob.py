@@ -1,6 +1,6 @@
 """Gate 0 Arm W human-baseline capture rig (MiniWoB click-checkboxes).
 
-Two modes, selected with `--mode`:
+Three modes, selected with `--mode`:
   * `readiness_dev` (the default) -- DEV seeds 0..4, a readiness estimate only.
   * `paid_gate0` -- the HELD-OUT seeds `eval.score_gate0.MODES["paid_gate0"]` pins (1000..1004),
     the paid gate's actual human denominator for the MiniWoB arm. Sanctioned use is post-Arm-W-only:
@@ -8,6 +8,15 @@ Two modes, selected with `--mode`:
     before -- see DAVID_BASELINES.md's warning box and reports/2026-07-13-minimum-north-star-
     gate-0-design.md:273-276). `--mode paid_gate0` additionally requires `--i-am-human` (see below)
     -- a scripted stand-in must never be able to produce this artifact.
+  * `paid_gate0_v2` -- Gate 0 v2's FRESH held-out block, `eval.score_gate0.MODES["paid_gate0_v2"]`
+    (reports/2026-07-25-gate0-v2-prereg-DRAFT.md §4.1/P9). Identical contract to `paid_gate0` in
+    every respect (--i-am-human required, utterance suppressed, post-Arm-W-only ordering); it exists
+    because 1000..1004 are SPENT -- the v1 Arm W transcript, correct answers and all, is committed
+    at reports/2026-07-24-gate0-paired-verdict/oracle.jsonl. Writes to its own output directory so a
+    v2 capture can never overwrite or be confused with the v1 one.
+
+`paid_gate0` behaviour is UNCHANGED by the v2 addition -- the two held-out modes share their guards
+via HELD_OUT_MODES, and each resolves to its own seeds file and its own output directory.
 
 HARD LAW: this script only launches episodes, times, records, and writes artifacts. It never picks a
 click/type/key action -- every action comes from David, typed at the terminal after he has LOOKED AT
@@ -46,18 +55,20 @@ eval.score_gate0._miniwob_success):
     <out>/oracle.jsonl         -- MiniWobSession's own oracle writer
     <out>/ep<N>_step<K>.png    -- what David was shown at each decision
 
-`<out>` defaults per mode (both gitignored under runs/, never committed):
+`<out>` defaults per mode (all gitignored under runs/, never committed):
     readiness_dev -> runs/gate0_human_baseline/miniwob/
     paid_gate0    -> runs/gate0_paid_human_baseline/miniwob/  (the exact path
                      eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names)
+    paid_gate0_v2 -> runs/gate0_paid_v2_human_baseline/miniwob/  (likewise, for
+                     eval/fixtures/gate0_paid_v2_source_pins.json)
 
 An incomplete/quit attempt writes `human_metrics.INCOMPLETE_<unix-ts>.json` instead of the canonical
 file (see DAVID_BASELINES.md's re-run rule).
 
-HELD-OUT LAW: seeds 1000..1004 must never be exposed to a dev/build process -- this script is
-parameterized and CI-tested only against DEV seeds or a mocked env (tests/
-test_capture_gate0_baseline_miniwob.py's _FakeEnv), never against the real paid manifest through a
-real MiniWoB env. In `--mode paid_gate0`, the task utterance/page text is deliberately NOT printed
+HELD-OUT LAW: the held-out seed blocks (1000..1004, and v2's) must never be exposed to a dev/build
+process -- this script is parameterized and CI-tested only against DEV seeds or a mocked env (tests/
+test_capture_gate0_baseline_miniwob.py's _FakeEnv), never against a real paid manifest through a
+real MiniWoB env. In a held-out mode, the task utterance/page text is deliberately NOT printed
 to stdout (screenshots are still popped open locally for David to look at and act on -- that is the
 whole point of the rig -- but nothing about their content is echoed to a log). Seed cross-
 contamination is refused mechanically: the seeds-file content must match
@@ -108,9 +119,9 @@ OPERATOR_HINT = ("The page SCROLLS: if Submit renders below the 160x177 viewport
                  "then re-read the new screenshot, everything has moved up ~39px.")
 PRESS_KEY_RESOLUTION = "name->index (agent received raw-name passthrough)"
 
-# Per-mode defaults. paid_gate0's real_out is the EXACT path
-# eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names -- keep in sync if
-# that fixture ever moves. Both live under the repo-wide gitignored runs/ (never committed).
+# Per-mode defaults. Each paid mode's real_out is the EXACT path its own source-pins fixture's
+# artifact_paths.miniwob_human names (gate0_paid_source_pins.json / gate0_paid_v2_source_pins.json)
+# -- keep in sync if either fixture ever moves. All live under the repo-wide gitignored runs/.
 MODE_CONFIG = {
     "readiness_dev": {
         "seeds_file": ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json",
@@ -120,7 +131,15 @@ MODE_CONFIG = {
         "seeds_file": ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json",
         "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_paid_human_baseline" / "miniwob")),
     },
+    "paid_gate0_v2": {
+        "seeds_file": ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_v2_seeds.json",
+        "real_out": os.path.normpath(str(ROOT / "runs" / "gate0_paid_v2_human_baseline" / "miniwob")),
+    },
 }
+# Modes whose seed block is HELD-OUT: they require --i-am-human and never echo task/page text. Adding
+# a mode to MODE_CONFIG without adding it here would silently downgrade both protections, so the two
+# guards below read this set rather than comparing against a single literal mode name.
+HELD_OUT_MODES = frozenset({"paid_gate0", "paid_gate0_v2"})
 # Backward-compatible alias: existing tests/tooling reference the DEV real path as a module constant.
 REAL_OUT = MODE_CONFIG[DEFAULT_MODE]["real_out"]
 
@@ -223,9 +242,9 @@ def run(args, prompt: Callable[[str], str] = input,
     # only fires for the real canonical path -- this fires for EVERY paid_gate0 invocation,
     # canonical path or not, since the sensitive part is running the held-out seeds at all, not
     # just where the artifact lands).
-    if mode == "paid_gate0" and not getattr(args, "i_am_human", False):
-        print("refusing: --mode paid_gate0 requires --i-am-human -- this captures the held-out-seed "
-              "(1000..1004) human replay; a scripted invocation must never be able to produce this "
+    if mode in HELD_OUT_MODES and not getattr(args, "i_am_human", False):
+        print(f"refusing: --mode {mode} requires --i-am-human -- this captures a held-out-seed "
+              "human replay; a scripted invocation must never be able to produce this "
               "artifact. Pass --i-am-human only when a real human is about to play these 5 episodes "
               "interactively, AFTER the paid agent's Arm W attempt is already banked.",
               file=sys.stderr)
@@ -312,8 +331,8 @@ def run(args, prompt: Callable[[str], str] = input,
     # pixels via the popped-open screenshot (the point of the rig), but nothing about their content
     # is echoed to stdout/logs. readiness_dev keeps the plain utterance print (DEV seeds are not
     # sensitive; this is unchanged from before --mode existed).
-    if mode == "paid_gate0":
-        print("Task (from the environment): [suppressed in --mode paid_gate0 -- look at the "
+    if mode in HELD_OUT_MODES:
+        print(f"Task (from the environment): [suppressed in --mode {mode} -- look at the "
               "popped-open screenshot for the real instructions]")
         print(f"5 fresh HELD-OUT episodes. Every screenshot is saved to {args.out}/ and popped "
               "open for you.")
@@ -415,17 +434,19 @@ def run(args, prompt: Callable[[str], str] = input,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--mode", choices=sorted(MODE_CONFIG), default=DEFAULT_MODE,
-                     help="readiness_dev (DEV seeds 0-4, the default) or paid_gate0 (the HELD-OUT "
-                          "seeds 1000-1004 -- the paid gate's actual MiniWoB human denominator; "
-                          "requires --i-am-human, and is only sanctioned AFTER Arm W's paid attempt "
-                          "is banked).")
+                     help="readiness_dev (DEV seeds 0-4, the default), paid_gate0 (the v1 HELD-OUT "
+                          "seeds 1000-1004) or paid_gate0_v2 (Gate 0 v2's fresh HELD-OUT block). "
+                          "Both paid modes are the paid gate's actual MiniWoB human denominator, "
+                          "require --i-am-human, and are only sanctioned AFTER that attempt's Arm W "
+                          "is banked.")
     ap.add_argument("--out", default=None,
                      help="defaults to the canonical real path for --mode (see module docstring).")
     ap.add_argument("--seeds-file", default=None,
                      help="defaults to the frozen seed manifest for --mode.")
     ap.add_argument("--player", default="David")
     ap.add_argument("--i-am-human", action="store_true", dest="i_am_human",
-                     help="required for --mode paid_gate0 -- explicit, non-default acknowledgement "
+                     help="required for every held-out mode (HELD_OUT_MODES: paid_gate0, "
+                          "paid_gate0_v2) -- explicit, non-default acknowledgement "
                           "that a real human is about to replay the held-out seeds. A scripted "
                           "invocation cannot satisfy this by accident.")
     ap.add_argument("--allow-retake", metavar="REASON", default=None,
