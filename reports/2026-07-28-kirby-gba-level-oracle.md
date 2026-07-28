@@ -10,10 +10,16 @@ constraint (edits to `world_mcp.py` cascade into the frozen Gate-0 pins).
 
 **Candidate found, NOT confirmed as a counter.** `0x030023ec` (u8, IWRAM) reads **0** in every
 observed stage-1-1 state and **1** in every observed stage-1-2 state, is the **only** index-shaped
-address in either RAM region with that behaviour, and holds across 222 samples spanning ~15,700
-frames of ordinary play — but only **TWO distinct values were reachable**, so the task's own
-three-anchor rule is **not met**: a 1-bit "you are not in the level's first stage" flag is not
-excluded.
+address in either RAM region with that behaviour, and holds across 222 hand-checked samples
+(457/457 of the full corpus) spanning ~15,700 frames of ordinary play — but only **TWO distinct
+values were reachable**, so the task's own three-anchor rule is **not met**: a 1-bit "you are not in
+the level's first stage" flag is not excluded.
+
+Two bounds, both found by adversarial review of the first revision of this report and both now
+load-bearing: the value means **"most recently entered stage"**, not "stage you are inside" (it
+reads 1 on the GAME OVER menu — an earlier revision of the trace table got this backwards), and it
+survives the uniqueness sweep **only** when game-over frames are grouped with stage 1-2. Grouping
+them the other way leaves zero survivors in all of RAM.
 
 ## Game and ROM
 
@@ -64,9 +70,10 @@ eliminated `right`, jumps at varied heights, and `down`. Loading that exact bank
 (`gbaexam0725_kirby/gr7.state`) and zooming shows the object is the room's **exit door** — a black
 arch ringed with sparkles — sitting immediately to Kirby's **left**, with Kirby having walked past
 it to the level's right boundary (evidence `01_...png`). Doors are entered with **`up` while
-standing aligned with them**; the prior hunt tried `down` but never `up` at that spot, and its one
-`up` test was from a position ~20px off. Walking left 22–34 frames then `up` transitions the room
-every time (`02_...png`); 14–18 frames does not.
+standing aligned with them**; #170's own list of what it eliminated at that spot is "ground-level
+`right`, jumping at various heights/arcs, and crouching (`down`)" — `up` is absent from it. Walking
+left 22–34 frames then `up` transitions the room every time (`02_...png`); 14–18 frames does not,
+so the door has a narrow alignment window either way.
 
 With that, stage 1-1 was played to completion for the first time in this project: 3 doors, the goal
 door, the star/goal sequence, and the `LEVEL 1: VEGETABLE VALLEY` world map
@@ -104,8 +111,19 @@ transition claimed above was confirmed by looking at the frame.
 | Vegetable Valley map, immediately after clearing 1-1 | map | **0** |
 | Vegetable Valley map, after a GAME OVER → CONTINUE | map | **0** |
 | **stage 1-1 re-entered from the map after clearing it** | in-stage | **0** |
+| post-continue `LEVEL 1: VEGETABLE VALLEY` title card | title card | **0** |
 | stage 1-2 (entry, mid-stage, deep rooms, mini-boss arena) | in-stage | **1** |
-| GAME OVER screen | menu | **0** |
+| **GAME OVER menu, after dying in stage 1-2** | menu | **1** |
+
+> **Correction (2026-07-28, post-review).** An earlier revision of this table claimed the GAME OVER
+> screen reads **0**. That was **wrong** — it came from reading `b1_r25.state`, which is the
+> *post-continue level title card*, and mislabelling it "GAME OVER screen". The actual GAME OVER
+> menu frames (`b1_r18`–`b1_r23`, the ones in `evidence/07_gameover_continue.png` and
+> `evidence/08_gameover_frames_read_1.png`) all read **1**. Re-verified two ways: savestate
+> file-offset reads of all six, and the frame-by-frame `b1_r17`→`b1_r25` sequence, which shows the
+> value flipping 1→0 only at `b1_r24`, the fade back to the world map. The corrected reading is
+> **"the most recently entered stage"**, not "the stage you are currently inside" — see
+> "What is NOT established" §4.
 
 The **re-entry row is the load-bearing one**: it eliminates the "past the first level" latch the task
 warns about. A latch set by clearing 1-1 would still read 1 when 1-1 is replayed; this reads 0 again.
@@ -114,23 +132,38 @@ map *after* the clear.
 
 ### Uniqueness — the whole of both RAM regions, at three widths
 
-Sweeping IWRAM + EWRAM for every address constant across 23 "should be 0" states (all stage-1-1
-states incl. the post-clear replay, the goal sequence, both map states, the game-over screen) and
-constant-but-different across 21 "should be 1" states (stage 1-2 across four independent
-playthroughs incl. the mini-boss arena):
+Exact group membership is committed in `reports/probes/2026-07-28-kirby-gba-level-oracle/groups.md`
+so these counts are checkable, not merely reproducible in spirit. Three groups:
 
-| width | addresses surviving | with an index-shaped `[0, 1]` signature |
-|---|---|---|
-| u8 | **4** | **1** — `0x030023ec` |
-| u16 | 3 | 1 — `0x030023ec` |
-| u32 | 2 | 1 — `0x030023ec` |
+- **S11** (23 states, all read 0) — 5 distinct rooms of stage 1-1, the goal sequence, both world-map
+  states, the stage-1-1 replay *after* clearing it, and the post-continue title card.
+- **S12** (21 states, all read 1) — stage 1-2 across four independent playthroughs incl. the
+  mini-boss arena.
+- **GO** (6 states, all read 1) — the GAME OVER menu after dying in stage 1-2.
 
-The other three u8 survivors are the three non-zero bytes of a single 32-bit field at `0x03006b28`
-(`0x1600` → `0x1200`), not an index. So `0x030023ec` is **the unique index-shaped address in 288 KB
-of RAM** under these anchors. For contrast: with only the two in-stage groups and no map/replay/
-game-over states in the zero group, 402 u8 addresses survive — most of them one-way
-"has-been-initialised" latches. Adding scenes from *later* in the session to the zero group is what
-collapses 402 → 4.
+Because the GAME OVER menu reads **1**, which side it belongs on is a real modelling choice, and the
+answer differs sharply. **Both designs are reported:**
+
+| design | zero side | one side | u8 | u16 | u32 | index-shaped `[0,1]` |
+|---|---|---|---|---|---|---|
+| **A** — GO grouped with stage 1-2 ("most recently entered stage") | S11 | S12 + GO | **4** | **3** | **2** | **1** — `0x030023ec` |
+| **B** — GO grouped with the zero side ("game over is not in a stage") | S11 + GO | S12 | **0** | **0** | **0** | none |
+
+**Design B kills the candidate — and every other address.** Zero survivors across 288 KB of RAM at
+all three widths means no address anywhere behaves that way: "game over is not in a stage" is simply
+not a distinction this game's RAM draws. That is a **bound on the candidate, stated plainly**:
+`0x030023ec` survives *only* under the Design-A reading, and anyone wiring it must accept that
+reading. It is not a disqualification, but it is not free either.
+
+Under Design A the three non-candidate u8 survivors are `0x03006b29` and `0x03006b2b` (bytes 1 and 3
+of the 32-bit field at `0x03006b28`, `0x1600` → `0x1200`) plus `0x03006b2c` (byte 0 of the
+**adjacent** field at `0x03006b2c`) — two neighbouring struct fields, not one, and neither
+index-shaped. (An earlier revision said "three non-zero bytes of a single 32-bit field at
+`0x03006b28`"; that was wrong — `0x03006b2c` is outside that word.)
+
+For contrast: with only the two in-stage groups and no map/replay/title-card states in the zero
+group, 402 u8 addresses survive — most of them one-way "has-been-initialised" latches. Adding scenes
+from *later* in the session to the zero group is what collapses 402 → 4.
 
 ### Sustained hold — 222 samples, not 4 frames
 
@@ -145,6 +178,10 @@ read:
 
 222/222 consistent, spanning emulator frames 7,670 → 23,414 (~15,700 frames, ~4.4 min of gameplay),
 across room changes, deaths, damage, a game-over/continue, and a mini-boss fight.
+
+Widening to **every savestate on disk** (all 457, no grouping, no cherry-picking) the tally is
+**255 × `1` / 202 × `0`** — still exactly two values, never a third. The 222-sample figure above is
+the conservative subset restricted to states whose scene was individually eyeballed.
 
 ## What is NOT established — read this before trusting the address
 
@@ -163,11 +200,34 @@ across room changes, deaths, damage, a game-over/continue, and a mini-boss fight
    game-over) leaves **888 u8 candidates** — no identification. This design cannot exclude one-way
    initialisation latches, because the before-group is by construction all early states. Reported as
    NOT-FOUND rather than guessed.
-4. **Consequence for the EX04 scorer.** Even if `0x030023ec` is confirmed, `== 1` means "currently
-   inside stage 1-2", which entails 1-1 was cleared but is **not** true at the moment of clearing —
-   it is 0 on the map right after the goal. A scorer built on it would require the agent to clear
-   1-1 *and then enter* 1-2. That is a stricter task than EX04 as written, and is a decision for
-   whoever freezes the exam, not for this probe.
+4. **Consequence for the EX04 scorer — WHEN you sample is load-bearing.** (Corrected post-review;
+   also lifted into the PR body and `HANDOFF.md`, because a wiring session that reads only the PR
+   would otherwise miss it.)
+
+   The correct reading is **"the most recently entered stage"**, *not* "the stage you are currently
+   inside" — it still reads 1 on the GAME OVER menu after dying in 1-2, when Kirby is inside no
+   stage at all. Two consequences, and they pull in opposite directions:
+
+   - **The good half.** `== 1` is still *sound evidence that 1-1 was cleared*, because stage 1-2's
+     map node cannot be entered until stage 1 is cleared. The inference "value is 1 ⇒ the agent
+     entered 1-2 ⇒ the agent cleared 1-1" holds on every state observed, including the game-over
+     frames.
+   - **The dangerous half.** The byte is **not a latch** — it returns to 0 on the world map, which
+     is exactly where the agent lands the instant it clears 1-1. So a "did the agent clear 1-1"
+     predicate built on it is **sampling-time dependent**, and a scorer that polls at the wrong
+     moment reads 0 on a run that genuinely succeeded.
+
+   | predicate | verdict |
+   |---|---|
+   | `any(row == 1 for row in the whole run's oracle log)` | **SAFE** — monotone in evidence; one sighting of 1 anywhere proves 1-2 was entered, hence 1-1 cleared. This is the predicate to wire. |
+   | sampled **at end of run** only | **UNSAFE** — reads 0 if the run ends on the world map, on the title card, or before re-entering a stage |
+   | sampled **on the world map** | **UNSAFE** — always 0 there, including immediately after the clear |
+   | sampled **once, at the moment 1-1 is cleared** | **UNSAFE** — 0 at the goal sequence *and* 0 on the map afterwards; the clear itself is never marked |
+   | `== 1` read as "currently inside stage 1-2" | **WRONG** — also true on the GAME OVER menu |
+
+   Note what the SAFE predicate actually scores: "cleared 1-1 **and then entered** 1-2". That is
+   strictly stronger than EX04 as written, and whether to accept it is a decision for whoever
+   freezes the exam, not for this probe.
 
 ### Alternative hypotheses this hunt could NOT exclude
 
@@ -186,8 +246,9 @@ across room changes, deaths, damage, a game-over/continue, and a mini-boss fight
 
 Scripts: `reports/probes/2026-07-28-kirby-gba-level-oracle/`
 (`kgba_drive.py`, `run_kgba.sh`, `kgba_ram.py`). Curated frames: `.../evidence/`.
-Savestates (443 of them) live in this session's throwaway scratch dir, per convention — not
-committed, not under `runs/`.
+**Exact group membership for every count above: `.../groups.md`.**
+Savestates (457 of them) live in this session's throwaway scratch dir, per convention — not
+committed, not under `runs/`; `groups.md` names the ones each count depends on.
 
 ```
 # drive (WSL): wsl.exe -e bash run_kgba.sh --plan /mnt/c/.../plan.json
