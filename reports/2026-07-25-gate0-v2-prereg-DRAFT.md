@@ -42,17 +42,18 @@ these open produces an unscorable or void artifact and wastes the attempt.
 
 | # | Precondition | State verified 2026-07-28 | Blocks |
 |---|---|---|---|
-| **P1** | `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` exists | **MISSING.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json`, a partial `oracle.jsonl`, `oracle.attempt1_1785174570.jsonl`, and frames `ep0_step0.png`…`ep1_step8.png` — an abandoned capture. | Any `score_manifest()` verdict, **both arms** |
+| **P1a** | `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` **captured** on the P9 seeds | **NOT DONE.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json` and an abandoned capture's frames. The rig blocker is **resolved** (PR #174); this now waits only on David playing the episodes. | Any `score_manifest()` verdict, **both arms** |
+| **P1b** | `artifact_sha256.miniwob_human` **frozen** to that file's real digest, in its own reviewed commit | **NOT DONE.** Still the literal `PENDING_NOT_YET_CAPTURED_…`, which `eval/score_gate0.py:255` compares against the real digest — capture alone does **not** clear the gate. | Any `score_manifest()` verdict, **both arms** |
 | **P2** | `runs/gate0_live_breaker/live_breaker_dry_run_trip.json` exists and hashes to `27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734` | **MISSING** — `runs/gate0_live_breaker/` does not exist in the primary checkout. v1 banked `source_unreadable:live_breaker` + `live_breaker_artifact` for exactly this. Regenerable byte-exactly from `tools/gate0_credit_breaker.py`. | Any `score_manifest()` verdict |
-| **P3** | A fresh output directory, with `artifact_paths` / `audit_paths` re-pointed to it | **NOT DONE.** All twelve pinned paths in `eval/fixtures/gate0_paid_source_pins.json` point into `runs/gate0_paid/…`, which v1 already occupies. `runs/` is append-only raw data; v2 must not write there. | The whole attempt |
-| **P4** | The four `task_sha256` pins and the four `expected_pins_sha256` cascade values re-frozen (§6) | **NOT DONE** (this document does not edit fixtures). | Launch audit + scoring |
-| **P5** | A mechanical post-run hash-freeze step for the run-produced artifacts (§6, items 11–12) | **NOT PRE-REGISTERED ANYWHERE UNTIL NOW.** See §6. | Any `score_manifest()` verdict |
+| **P3** | A fresh output directory — **`runs/gate0_paid_v2/<arm>/`** — with all 18 `artifact_paths` / `audit_paths` strings re-pointed to it | **NOT DONE.** All twelve pinned paths in `eval/fixtures/gate0_paid_source_pins.json` point into `runs/gate0_paid/…`, which v1 already occupies. `runs/` is append-only raw data; v2 must not write there. | The whole attempt |
+| **P4** | The four `task_sha256` pins, the four `expected_pins_sha256` cascade values, **and `gate0_signature.appserver.json`'s `expected_launcher_sha256` + `frozen_commit`** re-frozen (§6, items **1-9**) | **NOT DONE** (this document does not edit fixtures). | Launch audit + scoring |
+| **P5** | A mechanical post-run hash-freeze step for the run-produced artifacts (§6, item 11; item 12 is P1b) | **NOT PRE-REGISTERED ANYWHERE UNTIL NOW.** See §6. | Any `score_manifest()` verdict |
 | **P6** | `sha256(eval/fixtures/gate0_miniwob_paid_seeds.json)` recomputed **from the tree that will score**, == `263aaed17ee653c8b32e608d88ed1b8d29d6a424d29ce2e123671b56df159e63` | Matches in a clean LF checkout (recomputed this session). v1 nonetheless banked `frozen_seed_hash`, so the scoring tree materialized CRLF. Check, do not assume. | Any `score_manifest()` verdict |
 | **P7** | Adversarial review of **this** document, posted on the PR | Not done for this rewrite. | Launch decision |
 | **P8** | **MiniWoB tool-surface interface repair, rebuilt into the world image and re-pinned** (§3, §0.2) | **NOT DONE.** `world_mcp.py:405-407` promises a key NAME the code cannot accept; `world_mcp.py:391-397` calls y>176 "unreachable" without mentioning that the page scrolls. | Arm W being a fair test at all |
 | **P9** | **Fresh MiniWoB held-out seeds**, drawn and hash-committed before the run (§4.1) | **NOT DONE.** 1000-1004 are spent (§4). **Requires an additive edit to `eval/score_gate0.py::MODES` — see §0.2.** | Arm W as held-out evidence |
 
-**Priority order:** P8 → P9 → P1 → P2 → P3/P4 → P5/P6 → P7. P8 comes first because P1's human
+**Priority order:** P8 → P9 → P1a → P1b → P2 → P3/P4 → P5/P6 → P7. P8 comes first because P1a's human
 baseline and P9's seed draw are both downstream of it: capturing a denominator against the broken
 interface, or drawing seeds before the image is re-pinned, wastes the work.
 
@@ -131,11 +132,21 @@ Corroborated by two committed tests: `tests/test_score_gate0.py::test_pass_matri
 `::test_wake_cap_alone_no_longer_blocks_pass` (`:220-224`, asserting `overall == "PASS"` and
 `wake_accounting["status"] == "DEFERRED"` in the same test).
 
-**And the gate has already been observed discriminating on performance, not artifacts.** v1's two
-arms failed on real capability — Arm R `red_no_sustained_battle_exit`, Arm W
+**But be precise about what v1 demonstrated: the PREDICATES discriminated; the GATE did not.** v1's
+two arms did produce real capability outcomes — Arm R `red_no_sustained_battle_exit`, Arm W
 `miniwob_episode_1_terminal_not_success` (seed 1001, reward 0.667)
-(`reports/2026-07-24-gate0-paired-verdict.md`). Those are agent-behaviour outcomes; the harness
-distinguished them from each other and from the pin failures.
+(`reports/2026-07-24-gate0-paired-verdict.md`). Those are genuine agent-behaviour facts, and they are
+what §5's brief is designed against. **They are not gate verdicts.** `score()` never reached the
+capability tier: 6 `pin_mismatch` entries short-circuited at `constancy`, and behind them sat **20
+source failures** that would have short-circuited at `source` regardless
+(`reports/2026-07-28-gate0-constancy-breach-addendum.md`; `HANDOFF.md:186-193`).
+
+**The fact that makes P1 blocking, stated explicitly:** the addendum's Mode B reproduction shows
+that with the pin chain cleaned, both arms' `audit()` failure lists go **empty** — and the run
+*still* cannot reach a capability verdict, because the source tier is unsatisfied. A clean pin chain
+plus a missing human baseline yields `INSUFFICIENT_DATA` / `INSUFFICIENT_SOURCE`, not a capability
+result. Fixing pins is necessary and nowhere near sufficient; **P1 is what stands between this gate
+and a scorable answer.**
 
 **Non-blocking observations, recorded so the next reader does not re-derive them:**
 
@@ -170,17 +181,39 @@ both arms, so this is not an Arm-W-only problem: it makes the *entire* Gate 0 un
 capability no matter how well the agent plays either world. Any pre-registration whose "if both
 arms PASS" branch does not carry this as a precondition is describing an unreachable state.
 
-The artifact is produced by `tools/capture_gate0_baseline_miniwob.py --mode paid_gate0
---i-am-human` and by a real human only (`:202-205` refuses the mode without the flag; `:291-292`
-suppresses the task utterance to protect the held-out seeds). **An unresolved rig contradiction is
-currently blocking that capture** — the Submit control renders outside the clickable viewport band
-on 6-checkbox layouts (`world_mcp.py:2199-2204` rejects any click below the viewport rather than
-silently clamping), yet the banked Arm W run completed all five episodes. That contradiction must
-be resolved before the capture is attempted, or the resulting denominator is not trustworthy.
-Tracked separately; **not** in scope for this document.
+**P1 is nothing but blocking. Nothing in this document de-blocks it, and nothing may.** v2 is a
+paired attempt scored end-to-end by `score_manifest()` (§3), so the gate above fires on the whole
+run.
 
-Under §3's Arm-R-only scope, P1 stops blocking *this* attempt (which is not scored through
-`score_manifest()` at all — see §3) but remains blocking for **any** Gate 0 verdict, ever.
+**The rig contradiction that used to block the capture is RESOLVED and merged (PR #174, on `main`).**
+The capture is now a matter of David playing five episodes:
+
+- `press_key` takes an **index into `allowed_keys`**, and the human rig now resolves names to
+  indices — the same defect that still stands on the agent-facing path (§3, P8).
+- A 6-checkbox layout puts Submit at y=180, outside the 177px clickable band; **two `ArrowDown`
+  presses scroll it to y=150**, where it clicks. The contradiction was a missing scroll step, not an
+  unreachable control.
+- An end-to-end dry run captured **5/5 episodes, `success: true`, in 178 s.**
+
+The artifact is produced by `tools/capture_gate0_baseline_miniwob.py --mode paid_gate0
+--i-am-human`, by a real human only (`:202-205` refuses the mode without the flag; `:291-292`
+suppresses the task utterance to protect the held-out seeds). It must be captured on the **P9 seeds**,
+**after** the agent's artifacts are banked, on the **repaired** interface (§4.1 step 4).
+
+**P1 has TWO steps, and capturing the artifact alone does not satisfy the scorer.** The dry run
+proved this. Even with the file present, `eval/score_gate0.py:255` compares
+`artifact_sha256.miniwob_human` against the file's real digest — and that pin is still the literal
+`PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`, which no real digest can equal. A
+completed capture with an unchanged pin yields `source_hash:miniwob_human` instead of
+`source_unreadable:miniwob_human` — the same `INSUFFICIENT_DATA` / `INSUFFICIENT_SOURCE` verdict,
+one line further down. So:
+
+- **P1a — capture.** Produce `runs/gate0_paid_human_baseline/miniwob/human_metrics.json`.
+- **P1b — freeze the hash.** Set `artifact_sha256.miniwob_human` in the P9 mode's source-pins fixture
+  to that file's real SHA-256, **in its own separate, reviewed commit**, and record the value in the
+  verdict report. Mechanical and non-discretionary (hash exactly what was captured, change nothing
+  else), but it is a distinct step and skipping it silently reproduces the failure it is meant to
+  fix.
 
 ---
 
@@ -280,21 +313,22 @@ its evidence. Nothing in it can un-void v1.
 Stated before any v2 number exists, in terms a hostile reader can check mechanically from the
 on-disk artifacts with the unedited `eval/score_gate0.py`.
 
-**These conditions bite.** The verdict is a function of agent behaviour: `eval/score_gate0.py::
+**These conditions bite — but only once the source tier is satisfied.** `eval/score_gate0.py::
 score()` emits `PASS`/`GO` on a clean input and `FAIL_CAPABILITY` on a failing predicate (§0.1,
-demonstrated at `$0`), and v1's two arms already failed on real capability rather than harness
-artifacts. A v2 run can genuinely disconfirm.
+demonstrated at `$0`), so the verdict *is* a function of agent behaviour. v1 never got that far: its
+predicates discriminated, its gate did not (§0.1). Every condition below is reachable **only** with
+P1a+P1b done; without them the run prints `INSUFFICIENT_DATA` no matter how the agent plays.
 
 **v2 SUCCEEDS if and only if all six hold. Any single miss is a FAIL.**
 
 | ID | Check | Mechanical test |
 |---|---|---|
-| **S-1** | Red predicate clean | `_red_success(_jsonl("<v2out>/red/world/oracle.jsonl"))` returns exactly `(True, [])` |
-| **S-2** | MiniWoB predicate clean | `_miniwob_success(_jsonl("<v2out>/miniwob/world/oracle.jsonl"), <P9 seeds>)` returns exactly `(True, [])` — i.e. `reward == 1.0` on **all five** fresh seeds |
+| **S-1** | Red predicate clean | `_red_success(_jsonl("runs/gate0_paid_v2/red/world/oracle.jsonl"))` returns exactly `(True, [])` |
+| **S-2** | MiniWoB predicate clean | `_miniwob_success(_jsonl("runs/gate0_paid_v2/miniwob/world/oracle.jsonl"), <P9 seeds>)` returns exactly `(True, [])` — i.e. `reward == 1.0` on **all five** fresh seeds |
 | **S-3** | Capability sub-bars, both arms | Red: `wall_clock_s <= 466.576` (= `2 × 233.288`) **and** `primitive_actions <= 542` (= `2 × 271`). MiniWoB: same `2×` rule against the P1 human baseline captured on the P9 seeds. |
 | **S-4** | No leak, no constancy failure, both arms | `audit()` returns empty `leak_failures` **and** empty `constancy_failures` for each arm |
 | **S-5** | Cheap, frozen caps | Red `<= $5.00`/`125cr`; MiniWoB `<= $2.00`/`50cr`; combined `<= $7.00`/`175cr`; `<= 250cr` hard breaker |
-| **S-6** | Attempt integrity | Exactly one launch per arm; artifacts written to the §0-P3 fresh directory; no `runs/` file overwritten |
+| **S-6** | Attempt integrity | Exactly one launch per arm; artifacts written to `runs/gate0_paid_v2/<arm>/` (P3); no `runs/` file overwritten |
 
 The whole gate is one verdict: `score_manifest()` must print `overall: PASS` / `readiness: GO`.
 Both arms must clear; there is no per-arm PASS.
@@ -348,8 +382,8 @@ combined verdict** and `_miniwob_success` requires `reward == 1.0` on **all five
 That reasoning was sound but rested on a premise that has since been falsified: it treated the
 0.667 as an unexplained capability miss that v2 had no mechanism to address.
 
-**It is substantially a defect in the world's own tool surface — one that actively misinformed the
-agent.** Verified by direct code reading this session:
+**The 0.667 has an identified interface cause: a defect in the world's own tool surface that
+actively misinformed the agent.** Verified by direct code reading this session:
 
 1. **`press_key` promises a key NAME and cannot accept one.** `_MINIWOB_KEY_TOOL`
    (`world_mcp.py:405-407`) describes the argument as *"a single keyboard key (e.g. \"Enter\",
@@ -395,9 +429,10 @@ a bug we can fix. With P8 done, v2 is scored end-to-end by `score_manifest()` in
   own argument type is world/perceiver work, not brain work — `core/contracts.py`, the brain, and
   the tool *contract shape* are untouched (**architecture-and-seam**). What changes is a description
   string and, if the argument is made name-accepting, a resolution step inside the world adapter.
-- **It is not "fixing the world until the agent passes".** The test is whether the repaired
-  interface matches what its own schema always claimed. If Arm W still fails after P8, that failure
-  is a genuine capability result and banks as one.
+- **The check against "fixing the world until the agent passes" is H-e plus §11, not an assurance.**
+  P8 gets exactly one attempt to be the explanation: if Arm W fails any predicate clause after the
+  repair, that banks as a genuine capability result and no further environment fix may be proposed
+  for this arm (§11). The repair is bounded in advance; that boundary is the safeguard.
 
 ---
 
@@ -419,9 +454,11 @@ Three consequences, all binding:
 
 1. Any future Arm W attempt intended as held-out evidence needs a **new seed block**, pre-registered
    and frozen before it is looked at.
-2. The **human** replay of `1000..1004` (P1) is *not* affected — it is the denominator for the
-   already-banked agent artifacts, and the ordering it must respect (human after agent) is
-   satisfied. It stays required.
+2. **The human denominator moves with the seeds.** P1a is captured on the **P9 seeds**, not on
+   `1000..1004` — `_arm_metrics` compares the agent's wall-clock/actions against the human's on the
+   *same* task instances, so a denominator drawn from spent seeds would not describe the run being
+   scored. (A replay of `1000..1004` would still be a legitimate denominator for v1's banked
+   artifacts, but v1 is void and is not being re-scored.)
 3. The v1 Arm W artifacts remain the only held-out MiniWoB evidence this project has, and they are
    attached to a **void** attempt (§1). The honest statement of the MiniWoB position is therefore:
    *no valid held-out MiniWoB capability evidence exists, and the seeds that would have produced it
@@ -430,28 +467,47 @@ Three consequences, all binding:
 **This argues for new seeds, not for dropping the arm** (§3). Spent seeds are a reason to draw
 fresh ones; they are not a reason to abandon the Generality axis.
 
-### 4.1 How the fresh seeds are drawn, committed, and kept unseen (P9)
+### 4.1 How the fresh seeds are drawn and committed (P9)
 
-The point of the procedure is that the seeds are **fixed before anyone can see how the agent does
-on them**, and **verifiable afterwards** — without being readable in a merged file in advance.
+**What this procedure does and does not buy.** It prevents **post-hoc selection** — nobody can look
+at how the agent did and then choose which seeds "count". It does **not** keep the seeds secret: the
+formula below is published here, so anyone can compute the list. Secrecy is not the property being
+bought, and the earlier claim that it was is withdrawn. The protection comes from the **formula being
+fixed in a merged document before the run**, not from the hash.
 
-1. **Draw.** Five seeds from a documented deterministic procedure, recorded in full in the run's
-   verdict report: `seeds = [int.from_bytes(sha256(f"gate0-v2-armW:{i}".encode()).digest()[:4], "big") % 1_000_000 for i in range(5)]`,
-   rejecting any collision with `{0..4}` (dev) or `{1000..1004}` (spent) and re-drawing at the next
-   index. Deterministic, so any reviewer can reproduce the exact list afterwards and confirm nothing
-   was re-rolled to taste.
-2. **Commit before the run, without publishing.** Only the **SHA-256 of the seed file's LF-canonical
-   bytes** goes into this pre-registration and the source-pins fixture before launch. The seed list
-   itself is not written into any merged file until the run is launched. A hash commitment fixes the
-   seeds irrevocably while keeping them out of anything the agent or a brief author could read.
-3. **Freeze at launch.** The seed file is written, its hash checked against the pre-committed value,
-   and `frozen_seed_sha256` in the new mode's source-pins fixture set to it. A mismatch aborts the
-   launch — no re-draw, no substitution.
-4. **Human replay after.** The paid-seed human baseline (P1) is captured on these seeds **only after**
-   the agent's artifacts are banked, per the design doc's ordering
+1. **Draw — deterministic and fully published.**
+   `candidate(i) = int.from_bytes(sha256(f"gate0-v2-armW:{i}".encode()).digest()[:4], "big") % 1_000_000`,
+   walking `i = 0, 1, 2, …` and **accepting** a candidate only if it is not in `{0..4}` (dev), not in
+   `{1000..1004}` (spent), and **not already accepted** (no duplicates — two identical seeds would
+   collide in `_miniwob_success`'s per-episode `row.get("seed") == seed` filter and corrupt both
+   episodes' row sets). A rejected candidate is skipped and the walk continues at `i+1`; **the
+   replacement does not inherit the rejected candidate's position** — positions are assigned in
+   acceptance order. Stop at five accepted seeds.
+2. **6-checkbox requirement — binding, not optional.** The accepted set **must contain at least one
+   seed that renders six checkboxes**, since that is the layout P8 repairs and the only layout on
+   which H-e is testable. Determine each candidate's checkbox count by instantiating the task at that
+   seed **without playing it** (`$0`, no model call, no reward observed), and if the first five
+   accepted seeds contain none, continue the walk and **replace the last accepted seed** with the
+   next accepted candidate that does. Record the walk in full — every `i`, every candidate, every
+   accept/reject and why — in the verdict report, so the list is reproducible and the replacement is
+   auditable. A rule applied by formula is not post-hoc selection; a rule invented afterwards would
+   be.
+3. **Commit the hash before the run.** Compute the SHA-256 of the seed file's LF-canonical bytes and
+   **write that literal 64-hex value into this document and into the P9 source-pins fixture before
+   launch.** Until that value is actually written here, this pre-registration commits to nothing on
+   seeds — the placeholder below must be replaced, not left as prose.
+
+   > `frozen_seed_sha256` (P9): `__________________________________________________________________`
+   > — **UNSET. Filling this in is part of P9; the document is not frozen on seeds until it is.**
+
+4. **Freeze at launch.** Write the seed file, check its hash against the committed value, and set
+   `frozen_seed_sha256` in the new mode's source-pins fixture. A mismatch aborts the launch — no
+   re-draw, no substitution.
+5. **Human replay after (P1a).** The paid-seed human baseline is captured on these seeds **only
+   after** the agent's artifacts are banked, per the design doc's ordering
    (`reports/2026-07-13-minimum-north-star-gate-0-design.md:273-276`), and using the **repaired**
-   interface so that agent and human face the same world.
-5. **One shot.** These seeds are spent the moment the agent plays them, exactly as 1000-1004 were.
+   interface so that agent and human face the same world. Then its hash is frozen (P1b).
+6. **One shot.** These seeds are spent the moment the agent plays them, exactly as 1000-1004 were.
    A v3 needs another block.
 
 ---
@@ -492,7 +548,7 @@ it a fix. That defect is the reason this document was rewritten.
 - **`primitive_actions` counts MCP tool calls, not autopilot steps** —
   `tools/check_gate0_codex.py:251-258` increments `primitive_action_events` once per
   `mcp_tool_call` item. One `explore` = one primitive action, whatever it does internally. The
-  settle behaviour is therefore nearly free against S-2.
+  settle behaviour is therefore nearly free against S-3.
 - **In MiniWoB, `observe` / `read_region` / `whats_changed` write NO oracle row** — they return at
   `world_mcp.py:2164-2169`, above the logging block. Only `click` / `type_text` / `press_key` /
   `reset_episode` append a row (`:2229-2230`, `:2182-2183`). This asymmetry is what makes the Arm W
@@ -537,9 +593,9 @@ cannot change the behaviour that determines it, and v1's own trace already satis
 | C3 | `red_first_party_transition_not_exactly_0_to_1` | `:44-46` | **Unaffected.** Same as C2 — the *first* party change must be `0→1`, which a fresh start plus one starter produces. The suffix does not encourage acquiring anything before the starter ("without beginning any new objective" cuts the other way). v1 satisfied it. |
 | C4 | `red_no_trainer_battle_after_party_acquisition` | `:47-51` | **Unaffected.** The task sentence still requires winning the first rival battle. v1 satisfied it (`in_battle == 2`, rows 391-433). |
 | C5 | `red_no_sustained_battle_exit` | `:52-56` | **THE v1 MISS. Satisfied by construction.** Needs some `i ∈ [battle_idx+1, len(watches)−10]` with `watches[i:i+10]` all `in_battle == 0`. One row per `observe` (5.2), so this needs ≥10 further `observe` calls after the battle ends. "keep working the world for a further stretch — alternate observing with small local moves … until several consecutive observations show nothing further changing" produces exactly that; a single `explore` call alone produces ~41. v1 produced 4. |
-| C6 | `red_missing_player_hp_oracle` | `:70-78` | **Unaffected.** Requires `party_hp_hi`/`party_hp_lo` present as ints `0..255` on every non-corrupt row of `watches[battle_idx : exit_idx+10]`. Both are in the frozen watch spec (`world_mcp.py:176-178`, `0xD16C`/`0xD16D`). A brief cannot change which RAM addresses are sampled. |
+| C6 | `red_missing_player_hp_oracle` | `:70-78` | **Newly exposed, low risk.** Requires `party_hp_hi`/`party_hp_lo` present as ints `0..255` on every non-corrupt row of `watches[battle_idx : exit_idx+10]`. Both are in the frozen watch spec (`world_mcp.py:176-178`, `0xD16C`/`0xD16D`), and a brief cannot change which RAM addresses are sampled — but the span only exists once `exit_idx` does, so **v1 never evaluated this clause** and it is unproven in practice, not proven safe. |
 | C7 | `red_map_changed_during_battle_exit_span` | `:80-82` | **Satisfied by the "without leaving the place you are in" guard.** `map` must equal `battle_map` on every row from `battle_idx` through `exit_idx+9`. This is the clause the settle instruction *newly* puts at risk: an unconstrained "wander around" would walk the autopilot through the lab door within the first ten post-exit observes and fail here. The brief forbids leaving the current place and forbids starting anything new. Note the constraint binds only through `exit_idx+9`; the brief deliberately does **not** say so — stating the boundary would leak the predicate's shape. |
-| C8 | `red_player_hp_reached_zero` | `:83-84` | **Unaffected.** `min(hp) > 0` over the same span. The settle behaviour is local movement in the interior the battle ended in and explicitly starts no new objective, so it opens no new encounter. v1 satisfied it. |
+| C8 | `red_player_hp_reached_zero` | `:83-84` | **Newly exposed — a genuine new risk, NOT "unaffected".** `min(hp) > 0` over `watches[battle_idx : exit_idx+10]`. The settle behaviour starts no new encounter, so a real faint is unlikely — but the span is scanned from `battle_idx`, i.e. **through the whole battle**, and the corruption filter only drops rows where *every* watched field is 0. **Any mid-battle row with `party_hp_hi == party_hp_lo == 0` that is not the full all-zero signature fires this clause.** v1 returned at `:56` before `exit_idx` existed, so this clause was **never evaluated** — "v1 satisfied it" would be false. If C8 appears in v2's failure list, check the raw rows for a transient zero-HP sample before concluding the agent fainted. |
 | C9 | `red_no_free_movement_after_exit` | `:85-88` | **THE CLAUSE THE OLD DRAFT WOULD HAVE BROKEN. Satisfied.** `post = [(x,y) for w in watches[exit_idx:] …]` needs `len(set(post)) >= 2`. Pure observation leaves `(x,y)` constant and fails this. "small local moves around your current position" changes `(x,y)` while `in_battle` stays `0`; any autopilot step both observes and moves, so C5 and C9 are fed by the same action. |
 
 **Are the clauses mutually satisfiable? Yes — this is not a scorer bug.** C5 constrains only
@@ -564,19 +620,20 @@ before `reset_episode` appends a further row for that same `(episode, seed)`**. 
 - if it carries `done is False`, the terminal is no longer the last row → `miniwob_episode_N_terminal_not_last_row`.
 
 **Either way that episode hard-fails.** A settle instruction phrased as "keep acting after you think
-you're done" is therefore not inert for Arm W — it is potentially fatal to it. Two things contain
-the risk in the v2 wording, and one does not:
+you're done" is therefore not inert for Arm W — it is potentially fatal to it. Exactly **one**
+mechanical containment exists, and it only covers the end of the run:
 
-- **Contained (end of run):** after the fifth terminal, `_advance_pinned_seed` sets `_exhausted`
+- **Contained (end of run only):** after the fifth terminal, `_advance_pinned_seed` sets `_exhausted`
   (`world_mcp.py:2074-2077`), after which `call()` returns the refusal at `:2187-2189` **before**
   `_log_oracle` — post-exhaustion attempts cannot append a row.
-- **Contained (wording):** *"If the environment states that the episode, task, or input is over …
-  stop acting on it immediately"*. This is readable from a legal tool result: `observe`'s own status
-  line says "Episode over — call reset_episode to start a fresh one." (`world_mcp.py:2099-2102`).
-  That is environment-provided status already on the wire, not oracle leakage.
-- **NOT contained:** an agent that applies the settle rule *per episode* rather than to the whole
-  five-episode task, between episodes 0-3, can still poison an episode. This is a named,
-  pre-registered risk of the v2 wording (D-4), not a discovery to be made afterwards.
+- **NOT contained (episodes 0-3):** between episodes the environment does **not** refuse. The
+  suffix's *"If the environment rejects further input, stop immediately"* clause therefore does
+  nothing here — 5.5's own analysis is that the environment returns a normal
+  `[click (x,y) -> ok]` and silently logs the damaging row. **Only the explicit prohibition in 5.3
+  holds**, and it holds by instruction alone, with no mechanical backstop. An agent that applies the
+  settle rule *per episode* rather than to the whole five-episode task can still poison episodes 0-3.
+  This is a named, pre-registered risk of the v2 wording (D-4, H-f), not a discovery to be made
+  afterwards.
 
 **This is why the prohibition is in the brief text itself (5.3), not merely in this analysis.** An
 agent cannot discover this rule from the environment: acting on a finished episode returns a normal
@@ -667,9 +724,9 @@ scored at all. All four were live in v1's banked failure list.
 
 | # | Item | Problem | Required action |
 |---|---|---|---|
-| 10 | `gate0_paid_source_pins.json` `artifact_paths` (6 strings) + `audit_paths` (12 strings) | All point into `runs/gate0_paid/…`, occupied by v1 and append-only. | Re-point every one to the §0-P3 fresh directory. `_verify_audit_paths` refuses any manifest path that is not literally the pinned string, so this is not optional. |
+| 10 | `gate0_paid_source_pins.json` `artifact_paths` (6 strings) + `audit_paths` (12 strings) | All point into `runs/gate0_paid/…`, occupied by v1 and append-only. | Re-point every one to `runs/gate0_paid_v2/<arm>/` (P3). `_verify_audit_paths` refuses any manifest path that is not literally the pinned string, so this is not optional. |
 | 11 | `artifact_sha256.red_agent`, `.miniwob_agent`, `.wake_boundary` | Still `PENDING_NOT_YET_CAPTURED_…`. The fixture's own comment calls these "inert by construction" because the files do not exist — **that stops being true the moment the run produces them**, at which point the placeholder becomes an active mismatch. v1 banked `source_hash:red_agent`, `source_hash:miniwob_agent`, `source_hash:wake_boundary` for exactly this. | **Pre-registered mechanical post-run step (P5):** immediately after the run and *before* any scoring, compute the sha256 of each produced artifact, write it into the fixture, and record both the value and the timestamp in the verdict report. This is integrity binding, not interpretation — it is non-discretionary and its inputs are fixed by the run. Any deviation from "hash exactly what the run produced, change nothing else" is a protocol breach. |
-| 12 | `artifact_sha256.miniwob_human` | `PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`. | Blocked on P1. Freeze from the produced artifact once it exists. |
+| 12 | `artifact_sha256.miniwob_human` | `PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`. `eval/score_gate0.py:255` compares it against the real digest, so **capturing the file is not enough** — an unfrozen pin turns `source_unreadable` into `source_hash`, same verdict. | **P1b:** freeze from the produced artifact, in its own separate reviewed commit. |
 | 13 | `artifact_paths.live_breaker` | Target file missing from the primary checkout (P2). | Regenerate, verify hash `27538b25…`. |
 | 14 | `frozen_seed_sha256` | v1 banked `frozen_seed_hash` despite the pin matching in a clean LF checkout. | P6: recompute from the exact tree that will score. |
 
@@ -780,11 +837,11 @@ Both arms. v1 cost `$0.41589` / `10.397275` credits (Red) and `$1.02958` / `25.7
 - **H-d:** costs stay within §8's numbers — Red `<= $1.00`/`25cr`, MiniWoB `<= $1.60`/`40cr`,
   combined `<= $2.60`/`65cr`.
 - **H-e (Arm W, the P8 test):** with the repaired interface, the agent successfully reaches and
-  clicks Submit on **6-checkbox** layouts — observable as `reward == 1.0` on any P9 seed that renders
-  six checkboxes, and, in the transcript, as at least one successful `press_key` call. **H-e is the
-  falsifiable form of §3's claim that the 0.667 was an interface defect.** If Arm W still fails on a
-  6-checkbox layout after P8, that diagnosis was wrong and the failure banks as a genuine capability
-  result — §3's reasoning does not get a second appeal.
+  clicks Submit on the **6-checkbox** layout — observable as `reward == 1.0` on the 6-checkbox seed
+  that §4.1 step 2 **requires** the draw to contain, and, in the transcript, as at least one
+  successful `press_key` call. **H-e is the falsifiable form of §3's claim that the 0.667 was an
+  interface defect, and it is binding, not conditional** — the draw rule guarantees the test case
+  exists, so H-e can never be vacuous.
 - **H-f:** no episode fails on `miniwob_episode_N_terminal_count` or `_terminal_not_last_row` —
   i.e. the 5.3 prohibition held and the settle instruction did not corrupt an episode.
 
@@ -822,10 +879,13 @@ Both arms. v1 cost `$0.41589` / `10.397275` credits (Red) and `$1.02958` / `25.7
   One tightening iteration is permitted, stating in advance which direction and why.
 - **If v2 fails a DIFFERENT way** — do not assume the brief is still the problem. Run
   **diagnose-a-run** against the raw artifacts first.
-- **If Arm W fails on a 6-checkbox layout after P8** (H-e falsified) — §3's interface diagnosis was
-  wrong. Bank it as a genuine capability FAIL. v3 does **not** get to re-diagnose the same episode a
-  third time; the escalation is to the design doc's own shelf (*"MiniWoB cannot identify/check the
-  named targets: the static-UI named layer is the critical path"*), not to another environment fix.
+- **If Arm W fails ANY predicate clause after P8** — not merely on the 6-checkbox seed — §3's
+  interface diagnosis has had its one attempt and does not get a second appeal. Bank it as a genuine
+  capability FAIL. **No further environment or tool-surface fix may be proposed for this arm**; the
+  escalation is to the design doc's own shelf (*"MiniWoB cannot identify/check the named targets:
+  the static-UI named layer is the critical path"*). Restricting the no-appeal rule to 6-checkbox
+  failures would leave every other failure mode open to another round of world-fixing, which is the
+  exact ratchet this rule exists to stop.
 - **If Arm W fails on `terminal_count` / `terminal_not_last_row`** (H-f falsified) — the settle
   instruction damaged the arm. That is a brief defect, not a capability result: the wording must be
   narrowed before any further Arm W spend.
