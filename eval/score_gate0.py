@@ -386,7 +386,7 @@ def score(manifest: dict, audits: dict[str, dict], oracles: dict[str, list[dict]
 def score_manifest(path: str | Path) -> dict:
     manifest = json.loads(Path(path).read_text(encoding="utf-8"))
     pinned_paths, path_failures = _verify_audit_paths(manifest)
-    audits, oracles = {}, {}
+    audits, oracles, oracle_failures = {}, {}, []
     for name in ("red", "miniwob"):
         pins = pinned_paths.get(name)
         if pins is None:
@@ -394,9 +394,37 @@ def score_manifest(path: str | Path) -> dict:
         audits[name] = audit_codex(_resolve_root(pins["transcript"]), _resolve_root(pins["receipt"]),
                                    _resolve_root(pins["expected_pins"]), _resolve_root(pins["artifacts_dir"]),
                                    name, _resolve_root(pins["peer_receipt"]))
-        oracles[name] = _jsonl(_resolve_root(pins["oracle"]))
+        # A run that dies before writing its oracle is a MISSING SOURCE, not a scorer crash: this
+        # read used to raise FileNotFoundError straight out of the public entry point, handing the
+        # operator a stack trace where a verdict belongs (the exact misdiagnosis .claude/skills/
+        # diagnose-a-run exists to prevent). Fail closed through the same machinery every other
+        # missing source already uses -- `source_unreadable:*` -> INSUFFICIENT_DATA/
+        # INSUFFICIENT_SOURCE -- exactly as _verify_sources does for its six pinned artifacts.
+        # EXACTLY TWO conditions are caught, and they are deliberately DISTINCT because triage acts
+        # on them differently:
+        #   OSError                            -> the path could not be opened/read AT ALL (absent,
+        #                                         permissions, is-a-directory). Points at plumbing.
+        #   JSONDecodeError/UnicodeDecodeError -> the file IS there but its BYTES do not decode as
+        #                                         JSONL (half-written by a killed run, truncated
+        #                                         mid-line, wrong encoding). The partial trace may
+        #                                         still be worth reading.
+        # Nothing else is caught, and that is a deliberate limit, not an oversight. An oracle whose
+        # lines decode as valid JSON but are the WRONG SHAPE (e.g. `5\n7\n` -- ints, not objects)
+        # still crashes downstream in _red_success with AttributeError, because that is a claim
+        # about CONTENT, and content is what the predicates exist to judge; quietly converting it
+        # into "no oracle" would let a structurally-wrong trace masquerade as an absent one. A bare
+        # `except Exception` here would do exactly that AND hide real scorer bugs behind a
+        # plausible-looking verdict -- worse than the crash being fixed. See
+        # core/perception_plugin.py:302-306 for the swallow this is refusing to duplicate.
+        try:
+            oracles[name] = _jsonl(_resolve_root(pins["oracle"]))
+        except OSError:
+            oracle_failures.append(f"source_unreadable:oracle:{name}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            oracle_failures.append(f"source_malformed:oracle:{name}")
     verified, source_failures = _verify_sources(manifest, audits)
-    return score(manifest, audits, oracles, verified, (source_failures or []) + path_failures)
+    return score(manifest, audits, oracles, verified,
+                 (source_failures or []) + path_failures + oracle_failures)
 
 
 def main() -> int:

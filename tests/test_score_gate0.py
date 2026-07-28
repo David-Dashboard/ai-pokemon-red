@@ -419,6 +419,47 @@ def test_score_manifest_rejects_substituted_expected_pins_and_oracle(monkeypatch
     assert any(f.startswith("audit_path_mismatch:miniwob:") for f in result["failures"]["source"])
 
 
+def test_score_manifest_missing_or_corrupt_oracle_is_a_verdict_not_a_crash(monkeypatch, tmp_path):
+    # Launch blocker: score_manifest() read each arm's pinned oracle.jsonl unguarded, so a run that
+    # died before writing it raised FileNotFoundError straight out of the public entry point --
+    # a stack trace where a verdict belongs. Both arms are driven in one call to prove the two
+    # caught cases stay DISTINGUISHABLE: red's oracle is absent, miniwob's is present but its bytes
+    # do not decode. Decodable-but-wrong-shaped content is deliberately NOT caught and still
+    # crashes in the predicates -- see the comment on the try/except in score_manifest().
+    expected_pins = tmp_path / "expected-pins.json"
+    expected_pins.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+    corrupt_oracle = tmp_path / "corrupt-oracle.jsonl"
+    corrupt_oracle.write_text('{"episode": 0, "seed": 0, "done": tru', encoding="utf-8")
+
+    def _pinned(oracle):
+        return {"transcript": str(tmp_path / "transcript.jsonl"),
+                "receipt": str(tmp_path / "receipt.json"),
+                "expected_pins": str(expected_pins),
+                "artifacts_dir": str(tmp_path / "artifacts"),
+                "peer_receipt": str(tmp_path / "peer-receipt.json"),
+                "oracle": oracle}
+
+    pinned = {"red": _pinned(str(tmp_path / "absent" / "oracle.jsonl")),
+              "miniwob": _pinned(str(corrupt_oracle))}
+    expected_hash = hashlib.sha256(expected_pins.read_bytes()).hexdigest()
+    pins_path = tmp_path / "pins.json"
+    pins_path.write_text(json.dumps({
+        "schema_version": 1, "mode": "readiness_dev", "audit_paths": pinned,
+        "expected_pins_sha256": {"red": expected_hash, "miniwob": expected_hash},
+    }), encoding="utf-8")
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "readiness_dev", pins_path)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"mode": "readiness_dev", "arms": {
+        arm: {"codex_audit": {k: v for k, v in pins.items() if k != "oracle"},
+              "oracle": pins["oracle"]}
+        for arm, pins in pinned.items()}}), encoding="utf-8")
+
+    result = scorer.score_manifest(manifest_path)
+    assert "source_unreadable:oracle:red" in result["failures"]["source"]
+    assert "source_malformed:oracle:miniwob" in result["failures"]["source"]
+
+
 def test_code_sha256_hashes_canonical_git_blob_not_dirty_worktree_bytes(tmp_path):
     # PR #114 review finding: host_code_sha256/image_code_sha256 hashed raw working-tree bytes,
     # which differ by machine/OS line-ending config (CRLF vs LF) even for byte-identical tracked
