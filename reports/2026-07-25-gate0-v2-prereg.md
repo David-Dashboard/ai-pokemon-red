@@ -21,13 +21,25 @@ Two things were settled during the rewrite and are recorded so they are not re-l
   first (**P8**) and runs **fresh seeds** (**P9**), keeping the paired structure — at the cost of a
   larger precondition list and an Arm W that is **not comparable to v1's** (§3.1).
 
-**Status: DRAFT — FOR DAVID. $0, docs only.** This document proposes a change; it does not make
-one. No fixture, scorer, predicate, or pinned file is edited by this document. No paid run is
+**Status: FROZEN ON MERGE — 2026-07-28. $0, docs only.** Merging this commit **is** the freeze:
+from that point the protocol, metrics, pass bar, disconfirmation conditions (§2), seed block and
+`frozen_seed_sha256` (§4.1.3) are fixed, and no part of this document may be reinterpreted once a v2
+number exists. It is not a draft, and it must not be described as one after merge — a
+pre-registration that can be waved off as provisional when the result is unwelcome is decorative.
+This document proposes a change; it does not make one. No fixture, scorer, predicate, or pinned file is edited by this document. No paid run is
 launched by writing it. Paid runs are now authorized in general, which is exactly why this
 document must be freezable before it is used: it is on the critical path, not hypothetical.
 
 **Authorization boundary (safety-invariants law 1, gate-methodology §3):** the DECISION to spend
 is David's. This pre-reg earns the right to be reviewed, not the right to run.
+
+**Line-number citations are anchored to a commit, not to whatever `main` looks like later.** Every
+`eval/score_gate0.py:N` / `tools/check_gate0_codex.py:N` reference in this document is against
+**`208d211`** (the commit that last modified the scorer, adding the `paid_gate0_v2` mode). Line
+numbers drift; the SHA does not. A hostile reader checking §2's conditions should
+`git show 208d211:eval/score_gate0.py`. Where a citation and the quoted code disagree, **the quoted
+code and the named identifier win** — every citation here also names the function and the failure
+string, so nothing depends on the number alone.
 
 **Reading order:** §0 is a list of blocking preconditions. If any is unmet at launch time, the
 run is void by construction and must not be launched. §2 states, before any number exists, what
@@ -42,21 +54,30 @@ these open produces an unscorable or void artifact and wastes the attempt.
 
 | # | Precondition | State verified 2026-07-28 | Blocks |
 |---|---|---|---|
-| **P1a** | `runs/gate0_paid_human_baseline/miniwob/human_metrics.json` **captured** on the P9 seeds | **NOT DONE.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json` and an abandoned capture's frames. The rig blocker is **resolved** (PR #174); this now waits only on David playing the episodes. | Any `score_manifest()` verdict, **both arms** |
+| **P1a** | `runs/gate0_paid_v2_human_baseline/miniwob/human_metrics.json` **captured** on the P9 seeds via `--mode paid_gate0_v2 --i-am-human` | **NOT DONE.** The directory holds only `human_metrics.INCOMPLETE_1785175245.json` and an abandoned capture's frames. The rig blocker is **resolved** (PR #174); this now waits only on David playing the episodes. | Any `score_manifest()` verdict, **both arms** |
 | **P1c** | A **RED** human baseline whose `mode` field matches the mode being scored | **NOT DONE.** `runs/gate0_human_baseline/red/human_metrics.json` carries `mode: "readiness_dev"` (verified), so `_verify_sources:278-279` yields `human_metric_identity:red` under `paid_gate0`/`paid_gate0_v2`. **Currently masked** — `red_agent`'s hash mismatch hits `continue` at `:257`, so the identity block is skipped; it fires the moment P5 succeeds. | Any `score_manifest()` verdict, **both arms** |
-| **P1b** | `artifact_sha256.miniwob_human` **frozen** to that file's real digest, in its own reviewed commit | **NOT DONE.** Still the literal `PENDING_NOT_YET_CAPTURED_…`, which `eval/score_gate0.py:255` compares against the real digest — capture alone does **not** clear the gate. | Any `score_manifest()` verdict, **both arms** |
+| **P1b** | `artifact_sha256.miniwob_human` **frozen** to that file's real digest, in its own reviewed commit | **NOT DONE.** Still the literal `PENDING_NOT_YET_CAPTURED_v2_seed_human_replay_not_run`, which `eval/score_gate0.py:255` compares against the real digest — capture alone does **not** clear the gate. | Any `score_manifest()` verdict, **both arms** |
 | **P2** | `runs/gate0_live_breaker/live_breaker_dry_run_trip.json` exists and hashes to `27538b256bfdf276af91d4533b83247361ddbe470c5682b8addd58bda340e734` | **MISSING** — `runs/gate0_live_breaker/` does not exist in the primary checkout. v1 banked `source_unreadable:live_breaker` + `live_breaker_artifact` for exactly this. Regenerable byte-exactly from `tools/gate0_credit_breaker.py`. | Any `score_manifest()` verdict |
-| **P3** | A fresh output directory — **`runs/gate0_paid_v2/<arm>/`** — with all 18 `artifact_paths` / `audit_paths` strings re-pointed to it | **NOT DONE.** All twelve pinned paths in `eval/fixtures/gate0_paid_source_pins.json` point into `runs/gate0_paid/…`, which v1 already occupies. `runs/` is append-only raw data; v2 must not write there. | The whole attempt |
+| **P3** | v2 writes to **`runs/gate0_paid_v2/<arm>/`**, addressed through **`eval/fixtures/gate0_paid_v2_source_pins.json`** | **DONE (PR #179, `d8d968c`).** That fixture already carries all 18 v2 paths. **`gate0_paid_source_pins.json` must NOT be re-pointed** — §0.2 requires `paid_gate0` stay byte-untouched so v1's banked artifacts remain scoreable exactly as printed. | The whole attempt |
 | **P4** | The four `task_sha256` pins, the four `expected_pins_sha256` cascade values, **and `gate0_signature.appserver.json`'s `expected_launcher_sha256` + `frozen_commit`** re-frozen (§6, items **1-9**) | **NOT DONE** (this document does not edit fixtures). | Launch audit + scoring |
 | **P5** | A mechanical post-run hash-freeze step for the run-produced artifacts (§6, item 11; item 12 is P1b) | **NOT PRE-REGISTERED ANYWHERE UNTIL NOW.** See §6. | Any `score_manifest()` verdict |
 | **P6** | The P9 seed file's sha256 recomputed **from the tree that will score**, == `4ede74d3110a067c2e5e625b65c1992b4c7d25ad8788f80b8c1ec053e1392172` | **Check, do not assume.** v1 banked `frozen_seed_hash` on the equivalent check because its scoring tree materialized CRLF. Getting `0e1861d3…` instead means exactly that. | Any `score_manifest()` verdict |
 | **P7** | Adversarial review of **this** document, posted on the PR | Not done for this rewrite. | Launch decision |
 | **P8** | **MiniWoB tool-surface interface repair, rebuilt into the world image and re-pinned** (§3, §0.2) | **NOT DONE.** `world_mcp.py:405-407` promises a key NAME the code cannot accept; `world_mcp.py:391-397` calls y>176 "unreachable" without mentioning that the page scrolls. | Arm W being a fair test at all |
-| **P9** | **Fresh MiniWoB held-out seeds**, drawn and hash-committed before the run (§4.1) | **DRAWN, NOT CLOSED.** Block `[417545, 662948, 660918, 981149, 558952]`, `frozen_seed_sha256` `4ede74d3…2172` (PR #179, recomputed here). **Closes only when BOTH #179 and this document merge** — the fixture is the numbers, this document is the formula (§4.1.3). Still **requires an additive edit to `eval/score_gate0.py::MODES` — see §0.2.** | Arm W as held-out evidence |
+| **P9** | **Fresh MiniWoB held-out seeds**, drawn and hash-committed before the run (§4.1) | **DRAWN, NOT CLOSED.** Block `[417545, 662948, 660918, 981149, 558952]`, `frozen_seed_sha256` `4ede74d3…2172` (PR #179, recomputed here). **Closes only when BOTH #179 and this document merge** — the fixture is the numbers, this document is the formula (§4.1.3). The additive `MODES` entry is **DONE** (`208d211`). | Arm W as held-out evidence |
 
-**Priority order:** P8 → P9 → P1a → P1b → P1c → P2 → P3/P4 → P5/P6 → P7. P8 comes first because P1a's human
-baseline and P9's seed draw are both downstream of it: capturing a denominator against the broken
-interface, or drawing seeds before the image is re-pinned, wastes the work.
+**Priority order:** P8 → P9 → P1a → P1b → P1c → P2 → P3/P4 → P5/P6 → P7. P8 comes first because
+P1a's human baseline must be captured against the repaired interface — a denominator measured on the
+broken one describes a different world than the run being scored.
+
+**P8-before-P9 refers to the MEASUREMENT, never to the DRAW — this is not an instruction to
+re-draw.** The draw is **done, frozen, and binding**: the block `[417545, 662948, 660918, 981149,
+558952]` and `frozen_seed_sha256` are recorded in §4.1.3 and committed in PR #179. What remains
+downstream of P8 is the *6-checkbox measurement*, which is a property of the world image (§4.1.2).
+If a post-P8 re-measurement disagrees about which of these five renders six checkboxes, **that is a
+finding to report against P8's rebuild — not a licence to re-draw.** §4.1.2 forbids re-drawing after
+seeing a measurement; that is precisely the post-hoc selection the whole procedure exists to
+prevent.
 
 ### 0.2 The two preconditions that need code changes — flagged, not made here
 
@@ -165,9 +186,9 @@ and a scorable answer.**
 
 ### P1 in detail — the source gate that fires before capability is evaluated
 
-`eval/fixtures/gate0_paid_source_pins.json:11` points `miniwob_human` at
-`runs/gate0_paid_human_baseline/miniwob/human_metrics.json`; `:20` pins its hash as
-`PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`. With the file absent,
+`eval/fixtures/gate0_paid_v2_source_pins.json` points `miniwob_human` at
+`runs/gate0_paid_v2_human_baseline/miniwob/human_metrics.json` and pins its hash as
+`PENDING_NOT_YET_CAPTURED_v2_seed_human_replay_not_run`. With the file absent,
 `_verify_sources` raises inside its `try` and appends `source_unreadable:miniwob_human`
 (`eval/score_gate0.py:249-260`). `failures["source"]` is then non-empty, and `score()`'s
 precedence chain returns at **`eval/score_gate0.py:353-354`**:
@@ -196,15 +217,22 @@ The capture is now a matter of David playing five episodes:
   unreachable control.
 - An end-to-end dry run captured **5/5 episodes, `success: true`, in 178 s.**
 
-The artifact is produced by `tools/capture_gate0_baseline_miniwob.py --mode paid_gate0
---i-am-human`, by a real human only (`:202-205` refuses the mode without the flag; `:291-292`
-suppresses the task utterance to protect the held-out seeds). It must be captured on the **P9 seeds**,
-**after** the agent's artifacts are banked, on the **repaired** interface (§4.1 step 4).
+The artifact is produced by **`tools/capture_gate0_baseline_miniwob.py --mode paid_gate0_v2
+--i-am-human`**, by a real human only (the tool refuses the mode without the flag and suppresses the
+task utterance to protect the held-out seeds). It must be captured on the **P9 seeds**, **after** the
+agent's artifacts are banked, on the **repaired** interface (§4.1 step 5).
+
+**The mode string is load-bearing, not cosmetic.** `capture_gate0_baseline_miniwob.py` cross-checks
+the seeds it is about to play against `MODES[<mode>]`'s exact list, and PR #179 (merged, `d8d968c`)
+routes `paid_gate0_v2` → `runs/gate0_paid_v2_human_baseline/miniwob/`. Running `--mode paid_gate0`
+would therefore **refuse the P9 seeds and capture on the spent 1000-1004**, into the wrong directory
+— producing a denominator that describes neither the run being scored nor a valid held-out block.
+Use `paid_gate0_v2`.
 
 **P1 has TWO steps, and capturing the artifact alone does not satisfy the scorer.** The dry run
 proved this. Even with the file present, `eval/score_gate0.py:255` compares
 `artifact_sha256.miniwob_human` against the file's real digest — and that pin is still the literal
-`PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`, which no real digest can equal. A
+`PENDING_NOT_YET_CAPTURED_v2_seed_human_replay_not_run`, which no real digest can equal. A
 completed capture with an unchanged pin yields `source_hash:miniwob_human` instead of
 `source_unreadable:miniwob_human` — the same `INSUFFICIENT_DATA` / `INSUFFICIENT_SOURCE` verdict,
 one line further down. So:
@@ -231,10 +259,17 @@ agent run exists and its hash is frozen** — i.e. exactly when P5 succeeds. Fix
 start for agent and human"* means the underlying play need not be redone for held-out reasons — but
 the artifact must be produced under the correct mode rather than hand-edited, since `runs/` is
 append-only raw data and editing a banked artifact to satisfy a scorer is exactly the move this
-pre-registration exists to forbid. **Whether that means a fresh capture or a tool change is a
-decision for the P8/P9 batch, not for this document.**
+pre-registration exists to forbid.
 
-- **P1a — capture.** Produce `runs/gate0_paid_human_baseline/miniwob/human_metrics.json`.
+**The satisfaction method is named here, not left open: P1c is satisfied by a FRESH CAPTURE under
+`--mode paid_gate0_v2`, producing a new artifact.** Not by editing
+`runs/gate0_human_baseline/red/human_metrics.json`, not by hand-writing a `mode` field, and not by
+any change that makes the scorer accept a `readiness_dev` artifact for a `paid_gate0_v2` run. If the
+capture tool cannot yet emit Red under that mode, extending it to do so is in-scope plumbing for the
+P8/P9 batch — but the *output* must still be a freshly captured artifact carrying the correct mode.
+
+- **P1a — capture.** Produce `runs/gate0_paid_v2_human_baseline/miniwob/human_metrics.json`
+  with `--mode paid_gate0_v2 --i-am-human`.
 - **P1b — freeze the hash.** Set `artifact_sha256.miniwob_human` in the P9 mode's source-pins fixture
   to that file's real SHA-256, **in its own separate, reviewed commit**, and record the value in the
   verdict report. Mechanical and non-discretionary (hash exactly what was captured, change nothing
@@ -540,8 +575,15 @@ fixed in a merged document before the run**, not from the hash.
    - **`frozen_seed_sha256` = `4ede74d3110a067c2e5e625b65c1992b4c7d25ad8788f80b8c1ec053e1392172`**
      — the LF-canonical bytes, equal to the git blob. The CRLF variant would be `0e1861d3…`; if the
      scoring tree ever produces that value, the checkout materialized CRLF and P6 has failed.
-   - **`558952` is the H-e test case.** If it is ever dropped or substituted, H-e becomes vacuous and
-     §3's interface diagnosis goes untested.
+   - **`558952` is the H-e test case** (checkbox counts of the final block: `5/5/2/2/6`). If it is
+     ever dropped or substituted, H-e becomes vacuous and §3's interface diagnosis goes untested.
+   - **The measurement environment §4.1.2 requires is recorded** in
+     `eval/fixtures/gate0_paid_v2_source_pins.json`'s `_measured_against` block:
+     `miniwob-mcp-world sha256:8bb3358e1421…`, miniwob `1.0`, selenium `4.21.0`,
+     gymnasium `0.29.0`, measured `2026-07-28`, reset-only render, no `env.step()`, no reward read.
+     That block also states the binding rule in the fixture's own words, so the fixture and this
+     document agree: a post-P8 re-measurement that disagrees is a finding against the rebuild, never
+     a licence to re-draw.
 
    **P9 does NOT close when PR #179 merges.** §4.1's protection comes from *the formula being fixed
    in a merged document before the run* — PR #179 is the **fixture**; **this document is the
@@ -753,6 +795,15 @@ Files 1 and 2 are **content-hash-pinned**, so editing them invalidates the pins 
 | 6 | `eval/fixtures/gate0_paid_source_pins.json` | `expected_pins_sha256.miniwob` (`:46`) | `5d34c5ca56df78de3621001b6a8adb66eff51a72f5f51c9d14e1df8d65aa3870` |
 | 7 | `eval/fixtures/gate0_readiness_dev_source_pins.json` | `expected_pins_sha256.red` | `ff00540b…50a82` (**identical** — same target file) |
 | 8 | `eval/fixtures/gate0_readiness_dev_source_pins.json` | `expected_pins_sha256.miniwob` | `5d34c5ca…a3870` (**identical**) |
+| **8a** | **`eval/fixtures/gate0_paid_v2_source_pins.json`** | `expected_pins_sha256.red` | **`PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin`** |
+| **8b** | **`eval/fixtures/gate0_paid_v2_source_pins.json`** | `expected_pins_sha256.miniwob` | **`PENDING_NOT_YET_FROZEN_awaiting_prereg_P8_world_image_rebuild_and_P4_repin`** |
+
+**8a and 8b are the pins that actually gate v2** — six values across three files, not four across
+two. PR #179 deliberately left them `PENDING_NOT_YET_FROZEN_…` pending P8's rebuild and P4's re-pin.
+`_verify_audit_paths` refuses the arm on `expected_pins_hash_pin_missing` for any value that is not
+64 hex characters, so **v2 cannot score at all until 8a and 8b hold real digests.** They are last in
+the ordering, not optional: they must be computed *after* P8's rebuild and *after* items 1-2 are
+re-frozen.
 
 **7 and 8 are the trap.** `gate0_readiness_dev_source_pins.json` hash-pins the *same two files* as
 the paid manifest. Editing 1 and 2 for a paid v2 silently breaks `readiness_dev` scoring unless 7
@@ -773,7 +824,7 @@ scored at all. All four were live in v1's banked failure list.
 
 | # | Item | Problem | Required action |
 |---|---|---|---|
-| 10 | `gate0_paid_source_pins.json` `artifact_paths` (6 strings) + `audit_paths` (12 strings) | All point into `runs/gate0_paid/…`, occupied by v1 and append-only. | Re-point every one to `runs/gate0_paid_v2/<arm>/` (P3). `_verify_audit_paths` refuses any manifest path that is not literally the pinned string, so this is not optional. |
+| 10 | `gate0_paid_v2_source_pins.json` `artifact_paths` (6) + `audit_paths` (12) | v2 needs its own 18 path strings; `gate0_paid_source_pins.json`'s point into `runs/gate0_paid/…`, which v1 occupies and which is append-only. | **Already satisfied by PR #179's v2 fixture (P3).** Do **not** edit `gate0_paid_source_pins.json` — §0.2 keeps `paid_gate0` byte-untouched. `_verify_audit_paths` refuses any manifest path that is not literally the pinned string, so the v2 manifest must quote the v2 fixture's strings exactly. |
 | 11 | `artifact_sha256.red_agent`, `.miniwob_agent`, `.wake_boundary` | Still `PENDING_NOT_YET_CAPTURED_…`. The fixture's own comment calls these "inert by construction" because the files do not exist — **that stops being true the moment the run produces them**, at which point the placeholder becomes an active mismatch. v1 banked `source_hash:red_agent`, `source_hash:miniwob_agent`, `source_hash:wake_boundary` for exactly this. | **Pre-registered mechanical post-run step (P5):** immediately after the run and *before* any scoring, compute the sha256 of each produced artifact, write it into the fixture, and record both the value and the timestamp in the verdict report. This is integrity binding, not interpretation — it is non-discretionary and its inputs are fixed by the run. Any deviation from "hash exactly what the run produced, change nothing else" is a protocol breach. |
 | 12 | `artifact_sha256.miniwob_human` | `PENDING_NOT_YET_CAPTURED_paid_seed_human_replay_tool_not_built`. `eval/score_gate0.py:255` compares it against the real digest, so **capturing the file is not enough** — an unfrozen pin turns `source_unreadable` into `source_hash`, same verdict. | **P1b:** freeze from the produced artifact, in its own separate reviewed commit. |
 | 13 | `artifact_paths.live_breaker` | Target file missing from the primary checkout (P2). | Regenerate, verify hash `27538b25…`. |
@@ -950,7 +1001,7 @@ Both arms. v1 cost `$0.41589` / `10.397275` credits (Red) and `$1.02958` / `25.7
 
 ## 12. Is this document freezable?
 
-**The document is freezable, and the last hole in it is now filled.** Every metric, predicate, bar,
+**This document is freezable now, and merging it freezes it.** Every metric, predicate, bar,
 and disconfirmation condition is fixed and mechanically checkable before any v2 number exists, and
 none can be re-read favourably afterwards. The pass bar is one the scorer can actually print
 (§0.1, demonstrated at `$0`). The seed block and its hash are recorded in §4.1.3, so merging this
@@ -963,8 +1014,15 @@ its own plan, branch, and adversarial review (§0.2), plus one world-image rebui
 re-freeze (§6.5). That is real engineering, not bookkeeping — but it is the honest price of Arm W
 being a fair test rather than a banked interface defect.
 
-Freeze this document, complete P1a-P9 in the priority order given in §0, then launch. Do not launch
-with any precondition open.
+Merge this document to freeze it, complete P1a-P9 in the priority order given in §0, then launch.
+Do not launch with any precondition open. After merge, this is a frozen pre-registration: cite it,
+satisfy it, or report a deviation from it — but do not revise it to fit a result.
+
+**Known stale references, to fix separately:** this file was renamed from
+`…-gate0-v2-prereg-DRAFT.md`, so three already-merged files still cite the old path —
+`eval/score_gate0.py:16`, `eval/fixtures/gate0_paid_v2_source_pins.json:2`, and
+`tools/capture_gate0_baseline_miniwob.py:12`. All three are comments; none affects any hash or
+predicate. Left untouched deliberately so this PR stays docs-only.
 
 ## Sources
 
