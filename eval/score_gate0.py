@@ -13,12 +13,22 @@ ROOT = Path(__file__).resolve().parents[1]
 MODES = {
     "readiness_dev": (ROOT / "eval" / "fixtures" / "gate0_miniwob_dev_seeds.json", [0, 1, 2, 3, 4]),
     "paid_gate0": (ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json", [1000, 1001, 1002, 1003, 1004]),
+    # Gate 0 v2's FRESH held-out block (prereg §4.1/P9, reports/2026-07-25-gate0-v2-prereg-DRAFT.md).
+    # Purely ADDITIVE: paid_gate0 above is byte-untouched, so the banked (void-as-printed) v1 result
+    # stays scoreable exactly as it was. v2 needs its own seeds because 1000..1004 are SPENT — the v1
+    # Arm W transcript, including the correct checkbox answers, is committed at
+    # reports/2026-07-24-gate0-paired-verdict/oracle.jsonl and is greppable by any agent with repo
+    # access, so a re-attempt on them could not be reported as held-out generalization.
+    "paid_gate0_v2": (ROOT / "eval" / "fixtures" / "gate0_miniwob_paid_v2_seeds.json",
+                      [417545, 662948, 660918, 981149, 558952]),
 }
 SOURCE_PIN_FILES = {
     "readiness_dev": ROOT / "eval" / "fixtures" / "gate0_readiness_dev_source_pins.json",
     "paid_gate0": ROOT / "eval" / "fixtures" / "gate0_paid_source_pins.json",
+    "paid_gate0_v2": ROOT / "eval" / "fixtures" / "gate0_paid_v2_source_pins.json",
 }
-# The one MiniWoB task Gate 0 pins for both modes (dev seeds 0-4, paid seeds 1000-1004) — see
+# The one MiniWoB task Gate 0 pins for every mode (dev seeds 0-4, paid seeds 1000-1004, paid-v2 the
+# §4.1-derived fresh block) — see
 # reports/2026-07-13-minimum-north-star-gate-0-design.md "MiniWoB click-checkboxes".
 MINIWOB_TASK = "click-checkboxes"
 # score_manifest()'s caller-supplied per-arm paths that must be bound to a frozen pin, never

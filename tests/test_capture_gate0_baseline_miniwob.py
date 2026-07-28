@@ -438,3 +438,109 @@ def test_unknown_mode_refused(tmp_path):
     rc = m.run(args)
     assert rc == 2
     assert not (tmp_path / "out").exists()
+
+
+# ---------------------------------------------------------------------------------------------
+# --mode paid_gate0_v2 (Gate 0 v2's FRESH held-out block -- prereg §4.1/P9). Same _FakeEnv-only
+# discipline as the paid_gate0 block above: the rig's PLUMBING is exercised, never a real MiniWoB
+# env for a held-out seed. The v2 seed *numbers* are committed in
+# eval/fixtures/gate0_miniwob_paid_v2_seeds.json; what must never leak into a dev/build process is
+# the rendered task CONTENT for them, which these tests never touch.
+# ---------------------------------------------------------------------------------------------
+
+import eval.score_gate0 as _scorer
+
+V2_SEEDS = tuple(_scorer.MODES["paid_gate0_v2"][1])
+
+
+def test_v2_mode_config_matches_the_scorer_and_its_source_pins():
+    """A silent drift here would make a real v2 capture land somewhere score_gate0's source-pin
+    verification never looks."""
+    cfg = m.MODE_CONFIG["paid_gate0_v2"]
+    assert cfg["seeds_file"] == _scorer.MODES["paid_gate0_v2"][0]
+    assert cfg["real_out"].replace("\\", "/").endswith("runs/gate0_paid_v2_human_baseline/miniwob")
+    pins = json.loads(_scorer.SOURCE_PIN_FILES["paid_gate0_v2"].read_text(encoding="utf-8"))
+    assert pins["artifact_paths"]["miniwob_human"] == \
+        "runs/gate0_paid_v2_human_baseline/miniwob/human_metrics.json"
+    # distinct from BOTH other modes, in both directions
+    for other in ("readiness_dev", "paid_gate0"):
+        assert cfg["real_out"] != m.MODE_CONFIG[other]["real_out"]
+        assert cfg["seeds_file"] != m.MODE_CONFIG[other]["seeds_file"]
+        assert not m._under_real_path(cfg["real_out"], m.MODE_CONFIG[other]["real_out"])
+        assert not m._under_real_path(m.MODE_CONFIG[other]["real_out"], cfg["real_out"])
+
+
+def test_v2_is_registered_as_a_held_out_mode():
+    assert m.HELD_OUT_MODES == frozenset({"paid_gate0", "paid_gate0_v2"})
+    assert set(m.MODE_CONFIG) - m.HELD_OUT_MODES == {"readiness_dev"}
+
+
+def test_v2_mode_dry_run_five_episode_success_writes_conformant_artifact(fake_env_cls, tmp_path):
+    """The artifact's `mode` MUST be paid_gate0_v2 -- eval/score_gate0.py's _verify_sources requires
+    the human artifact's mode to EQUAL the scoring mode, else `human_metric_identity:miniwob`."""
+    args = _args(tmp_path, seeds=V2_SEEDS, mode="paid_gate0_v2", i_am_human=True)
+    answers = iter(["click 10 10"] * 5)
+    rc = m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None)
+    assert rc == 0
+
+    metrics = json.loads((tmp_path / "out" / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["mode"] == "paid_gate0_v2"
+    assert (metrics["schema_version"], metrics["arm"], metrics["role"]) == (1, "miniwob", "human")
+    assert metrics["success"] is True
+    assert metrics["expected_seeds"] == list(V2_SEEDS)
+    assert metrics["wall_clock_s"] >= 0 and metrics["primitive_actions"] > 0
+    # PR #174's fields survive the v2 addition (built on, not reverted or duplicated).
+    assert metrics["operator_hint"] == m.OPERATOR_HINT
+    assert metrics["press_key_resolution"] == m.PRESS_KEY_RESOLUTION
+    oracle_rows = [json.loads(line) for line in (tmp_path / "out" / "oracle.jsonl").read_text().splitlines()]
+    assert {row["seed"] for row in oracle_rows} == set(V2_SEEDS)
+
+
+def test_v2_mode_refuses_without_i_am_human(fake_env_cls, tmp_path):
+    args = _args(tmp_path, seeds=V2_SEEDS, mode="paid_gate0_v2", i_am_human=False)
+    rc = m.run(args, prompt=lambda _msg: (_ for _ in ()).throw(AssertionError("must not prompt")),
+               opener=lambda _path: None)
+    assert rc == 2
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("wrong_seeds", [(0, 1, 2, 3, 4), (1000, 1001, 1002, 1003, 1004)])
+def test_v2_mode_refuses_cross_contamination_from_either_other_block(fake_env_cls, tmp_path,
+                                                                     wrong_seeds):
+    args = _args(tmp_path, seeds=wrong_seeds, mode="paid_gate0_v2", i_am_human=True)
+    assert m.run(args) == 2
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+def test_other_modes_refuse_the_v2_seed_manifest(fake_env_cls, tmp_path, mode):
+    """The v2 block must never satisfy a v1/dev capture either -- the guard is symmetric."""
+    args = _args(tmp_path, seeds=V2_SEEDS, mode=mode, i_am_human=True)
+    assert m.run(args) == 2
+    assert not (tmp_path / "out").exists()
+
+
+def test_v2_mode_test_flag_refuses_real_baseline_path(tmp_path):
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(json.dumps(list(V2_SEEDS)), encoding="utf-8")
+    args = argparse.Namespace(out=m.MODE_CONFIG["paid_gate0_v2"]["real_out"],
+                              seeds_file=str(seeds_file), player="x", test=True,
+                              allow_retake=None, mode="paid_gate0_v2", i_am_human=True)
+    assert m.run(args) == 2
+
+
+def test_v2_mode_default_out_and_seeds_file_when_omitted(tmp_path):
+    args = argparse.Namespace(out=None, seeds_file=None, player="x", test=True, allow_retake=None,
+                              mode="paid_gate0_v2", i_am_human=True)
+    m.run(args)
+    assert args.out == m.MODE_CONFIG["paid_gate0_v2"]["real_out"]
+    assert args.seeds_file == str(m.MODE_CONFIG["paid_gate0_v2"]["seeds_file"])
+
+
+def test_v2_mode_never_prints_task_utterance(fake_env_cls, tmp_path, capsys):
+    args = _args(tmp_path, seeds=V2_SEEDS, mode="paid_gate0_v2", i_am_human=True)
+    answers = iter(["click 10 10"] * 5)
+    assert m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None) == 0
+    out = capsys.readouterr().out
+    assert "Select the indicated checkboxes" not in out
+    assert "suppressed in --mode paid_gate0_v2" in out
