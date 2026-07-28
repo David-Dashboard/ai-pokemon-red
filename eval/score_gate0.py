@@ -171,10 +171,10 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
             # `red_missing_player_hp_oracle` and not a new token: it is the span's existing REFUSAL
             # clause (prereg §5.4 C6) -- "this span's oracle row is not a readable RAM sample" -- and
             # the frozen prereg's clause list must not grow.
-            # UNREACHABLE FROM A WELL-FORMED RUN, at EVERY producer, not just the agent path. All
-            # THREE writers of a `watch` row build it by casting each read with `int()`, and `int()`
-            # returns exactly `int` -- never bool, float or str -- so none of them can emit a value
-            # that `_malformed_row` rejects:
+            # UNREACHABLE FROM A WELL-FORMED RUN, at EVERY producer on this path, not just the agent
+            # one. All THREE writers that can produce a POKEMON RED GATE 0 oracle row build the
+            # `watch` dict by casting each read with `int()`, and `int()` returns exactly `int` --
+            # never bool, float or str -- so none of them can emit a value `_malformed_row` rejects:
             #   - agent:  `core/perception_plugin.py::_log_oracle`      `int(self.emu.read(ad))`
             #   - human:  `tools/capture_gate0_baseline_red.py::run.read_watch`   `int(rd(addr))`
             #   - replay: `record.py::main.record`                      `int(pb.memory[ad])`
@@ -183,8 +183,16 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
             # question "can this refusal reject a real success?" is actually about. Citing only the
             # agent path would leave that question formally open. (Human producer cited by SYMBOL
             # only: that file is under concurrent edit and its line numbers move.)
+            # SCOPED TO THE RED PATH ON PURPOSE (PR #191 review round 4, Nit 3): "all three writers
+            # of a `watch` row" is FALSE repo-wide. reports/probes/2026-07-25-gba-exam/gba_drive.py,
+            # .../2026-07-28-emerald-oldale-oracle/edrive.py and
+            # .../2026-07-28-kirby-gba-level-oracle/kgba_drive.py all write `watch` rows from an
+            # UNCAST read_width(), whose u8 branch is a bare emu.read(addr). They are GBA-only probe
+            # drivers and cannot produce a Game Boy Pokemon Red trace, so they cannot reach this
+            # predicate; the claim is scoped rather than dropped, because an unscoped universal that
+            # is false is the same defect class as the corrections recorded in the deviations file.
             # `origin/main` PASSes these inputs by dropping the row incidentally under `== 0`, so
-            # this is a false-FAIL-direction difference on input NO producer can emit.
+            # this is a false-FAIL-direction difference on input no Red Gate 0 producer can emit.
             failures.append("red_missing_player_hp_oracle")
             break
         hi, lo = watch.get("party_hp_hi"), watch.get("party_hp_lo")

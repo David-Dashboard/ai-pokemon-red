@@ -1,7 +1,8 @@
 # Gate 0 v2 — deviations from the frozen pre-registration (2026-07-28)
 
 Deviation log for `reports/2026-07-25-gate0-v2-prereg.md`, which is **frozen on merge**. Its
-closing law, verbatim (`:1019`):
+closing law, verbatim (`:1018-1019` — the sentence starts on `:1018`; the earlier `:1019` was off by
+one):
 
 > After merge, this is a frozen pre-registration: cite it, satisfy it, or report a deviation from
 > it — but do not revise it to fit a result.
@@ -127,10 +128,25 @@ type guards its widening made necessary at `post` and in the safety span) and th
 `eval/score_exam_red_badge.py` line number below is against this PR's **final head** and was
 re-derived by locating the **symbol**, not copied from a review. Each citation names the symbol as
 well as the number, so a reader who finds the two disagreeing should trust the symbol and re-locate.
-This is not decorative. Each of the three fix rounds on this PR grew these functions and moved every
+This is not decorative. Each of the fix rounds on this PR grew these functions and moved every
 number in this entry: `:76`/`:97`/`:89`, `:121-122` and `:120` all shipped **stale** in the round-2
-head, and the `_miniwob_success` split line in the reproduce recipe below has now moved three times
-(`167` → `209` → `225`). The same defect recurred across four PRs on 2026-07-28.
+head, and the `_miniwob_success` split line in the reproduce recipe below has moved **three times
+within this PR** — `126` (`eff5746`) → `167` (`24e27f2`) → `209` (`794ee37`) → `225` (`5e37385`,
+unchanged at `bef7797`) — four times counting `origin/main`'s `102`. The same defect recurred across
+four PRs on 2026-07-28.
+
+> **The chain itself shipped incomplete, and the round-4 review's correction of it was also wrong.**
+> Earlier drafts wrote the chain as `167` → `209` → `225`, silently dropping the first PR head's
+> `126`. Review round 4 read that three-value chain and concluded the count should be *"two moves —
+> three only if you count `origin/main`'s `102` → `167`, which isn't in the chain"*. There is no
+> `102` → `167` move: `origin/main` is `102`, the PR's first commit `eff5746` is `126`, and `126` →
+> `167` is a separate move. So *"three times"* was right for the wrong reason and the **chain** was
+> what was defective. Re-derived by running `git show <rev>:eval/score_gate0.py | grep -n '^def
+> _miniwob_success'` over **every** commit in `origin/main..bef7797`, which is the only way to get
+> this right. It is the first line-number defect in this entry introduced by a *reviewer* rather than
+> by the author — the same lesson as everything below, now in both directions: **do not reason about
+> a number, re-derive it.**
+
 `tools/capture_gate0_baseline_red.py` is cited by **symbol with no line number at all**, because it
 is under concurrent edit. The single exception to all of this is the `:56` inside the §5.4 C8 block
 quote below: that is **verbatim frozen-prereg text** (`reports/2026-07-25-gate0-v2-prereg.md:689`)
@@ -298,7 +314,7 @@ failure. That argument is preserved and strengthened:
   `..._a_real_map_change`) pass unchanged, and a new test re-proves the property against the widened
   predicate specifically.
 
-> **CORRECTION (PR #191 review Major 2).** The first draft of this entry argued something different
+> **CORRECTION #1 (PR #191 review Major 2).** The first draft of this entry argued something different
 > and **false**: that "every call site consults it only *after* an exact `party` 0→1 transition has
 > been established (`party_idx` in `_red_success`; the identical corroboration in
 > `_red_badge_success`)", so every genuine row in scope has `party >= 1`.
@@ -401,12 +417,93 @@ fail-closed choice.
 
 `_red_success` is built the opposite way: its spans are computed *later*, and the span is the only
 place it **dereferences** a watched value into a substantive claim (`map` compared against
-`battle_map`; `hi`/`lo` shifted into `hp_values`). Everywhere else it only tests equality against
-fixed ints (`party != 0`, `in_battle == 2`, `in_battle == 0`), where a non-int simply fails to match
-and pushes toward a refusal token — already the fail-closed direction — and at `post` the same
-`_malformed_row` helper is used to **drop**, because there removing a row can only ever *cause*
-`red_no_free_movement_after_exit`. Widening Gate 0's refusal to the whole trace would therefore not
-buy safety; it would convert benign non-matches into hard refusals on rows the predicate never reads.
+`battle_map`; `hi`/`lo` shifted into `hp_values`). The span guard catches any non-int that reaches
+one of those dereferences, and at `post` the same `_malformed_row` helper is used to **drop**,
+because there removing a row can only ever *cause* `red_no_free_movement_after_exit`. Gate 0's
+refusal is **not** widened to the whole trace, and the reason is **scope, not safety**: post-freeze,
+on input no Gate 0 Red producer can emit, pre-existing identically on `origin/main`, and outside what
+this PR is for. The pre-span clauses are **not** type-safe, and the paragraph that used to claim they
+were is corrected immediately below.
+
+> **CORRECTION #3, on the correction on the correction (PR #191 review round 4, Major).** (The three
+> corrections are numbered by the order they were *written*, not the order they appear: #1 is under
+> "Why this cannot mask a real failure" above, #2 is under "`post` was fail-OPEN" below. The table at
+> the end of this block lays all three out together — that table, not this correction, is the point.)
+> The paragraph above previously read: *"Everywhere else it only tests equality against fixed ints
+> (`party != 0`, `in_battle == 2`, `in_battle == 0`), where **a non-int simply fails to match and
+> pushes toward a refusal token — already the fail-closed direction** … **Widening Gate 0's refusal
+> to the whole trace would therefore not buy safety**; it would convert benign non-matches into hard
+> refusals on rows the predicate never reads."* **That was false, and measurably so.** In Python
+> `False == 0` and `0.0 == 0`, so a `bool` or a `float` does not fail to match — it matches, and it
+> matches on the **passing** side.
+>
+> Measured on the standard success fixture (`tests/test_score_gate0.py::_red()`), mutating **row 0
+> only** — index 0, outside the safety span, which on that fixture starts at `battle_idx == 2`:
+>
+> | row 0 `party` | head `bef7797` | `origin/main` (`322499f`) |
+> |---|---|---|
+> | `1` (a genuine non-fresh start) | `(False, ['red_not_fresh_party_zero'])` | same |
+> | `False` | **`(True, [])`** | same |
+> | `0.0` | **`(True, [])`** | same |
+> | `"0"` (str — control) | `(False, ['red_not_fresh_party_zero'])` | same |
+> | `None` (control) | `(False, ['red_not_fresh_party_zero'])` | same |
+>
+> A non-int outside the span turns a refusal into a **clean PASS**. That is fail-**OPEN**, and it
+> happens at `_red_success`'s very first clause — `if not watches or watches[0].get("party") != 0`,
+> `eval/score_gate0.py:47` at `bef7797` — which is the *exact* clause the deleted sentence named.
+> The claim is true only for `str` and `None` (rows 4-5); it is exactly backwards for the two types
+> `==` treats as equal to `0`. And a whole-trace refusal — EX01's scope, the widening the sentence
+> argued against — **does** catch both: the real helper,
+> `eval/score_exam_red_badge.py::_malformed_row`, returns `True` on that row for `False`, `0.0` and
+> `"0"` alike. So *"widening would not buy safety"* is contradicted by the code as it now stands.
+>
+> The `in_battle == 0` half has the same shape. Mutating **every** `in_battle == 0` → `False` on the
+> same fixture: `origin/main` returns **`(True, [])`**, a clean PASS, and this head returns
+> `(False, ['red_missing_player_hp_oracle', 'red_no_free_movement_after_exit'])`. The head does fail —
+> but via the **span refusal this PR adds**, not because a comparison "failed to match". The stated
+> mechanism was doing none of the work at either site.
+>
+> **Scope, stated plainly so this is not over-read.** Pre-existing on `origin/main` (column 3 is
+> identical throughout), unreachable from any real capture (every Gate 0 Red `watch` producer
+> `int()`-casts — see the table under NEW-1), and **this PR changes none of it**. It is **not a
+> regression, not a blocker, and not grounds to move the predicate post-freeze.** What changes is only
+> the *justification*: the reason not to widen is **out of scope, unreachable, pre-existing on both
+> branches** — all three true — and **not** a fail-closed property the code does not have.
+
+> **THE PATTERN, which is the finding worth more than the correction.** This is the **third** false
+> safety argument in this PR. Commit attribution below was re-derived with `git grep` over every
+> commit in `origin/main..bef7797`, not recalled:
+>
+> | # | the false safety claim | first written in | corrected in | why it was false |
+> |---|---|---|---|---|
+> | 1 | the widened filter is safe because the call site sits *after* `party_idx` proved a `0→1` transition, so every genuine row has `party >= 1` | `eff5746` — the original widening | `24e27f2` (review Major 2) | true at Gate 0's call site, **false** at EX01's, which filters the whole list *before* `party_idx` exists — and whose `parties[0] != 0` guard *requires* the opposite |
+> | 2 | a kept malformed row is already fail-closed in the safety span, because it *"hits the `hi`/`lo` `isinstance` checks and raises `red_missing_player_hp_oracle`"* | `24e27f2` — **the very commit that corrected #1** | `794ee37` (re-review NEW-1) | true for 2 of the 8 watched fields; for the other six the span instead emitted two *substantive* claims from a row it had explicitly declined to type |
+> | 3 | outside the span *"a non-int simply fails to match and pushes toward a refusal token"*, so widening *"would not buy safety"* | `5e37385` — **the same fix round that corrected #2** | here (round 4 Major) | `False == 0` and `0.0 == 0`; it is fail-**OPEN** at `_red_success`'s first clause, and widening *would* close it |
+>
+> So #2 and #3 were each authored *inside the round that fixed the one before*; only #1 shipped with
+> the original change. **Two of the three survived multiple adversarial reviews** before anyone
+> executed them — #1 through a full round, #2 *inherited* from the previous round's text rather than
+> invented fresh, and wrong both times. That is the part that matters: review-by-reading did not catch
+> any of the three, and review-by-reading is what this project mostly does.
+>
+> The shape is identical in all three, and it is not carelessness. Each was **derived from the code's
+> structure by reading it**, each was locally plausible, and each was **stated as a universal over a
+> domain the author had only checked one point of**. #1 generalised from one call site to two. #2
+> generalised from two watched fields to eight. #3 generalised from `str`/`None`, where it is true, to
+> `bool`/`float`, where the language says otherwise. In every case the *true* version was narrower and
+> would have been enough.
+>
+> **The rule this buys, for whoever writes the next safety argument in this file.** A sentence of the
+> form *"X is safe because Y"* is not finished until Y has been **executed over the whole domain it
+> quantifies over** — every call site, every watched field, every type that can inhabit the slot,
+> *including the ones `==` treats as equal to the value being tested for*. Until then, write the weaker
+> sentence. In all three cases here the weaker sentence was available, true, and sufficient: **out of
+> scope, unreachable, pre-existing on both branches.** A weaker true claim costs this document
+> nothing. An argument-shaped false one costs it the next session, which cites the paragraph instead
+> of re-measuring — which is precisely how #2 got inherited across rounds. And note the failure mode
+> this PR has now demonstrated **twice in a row**: **the text written to fix a false safety argument
+> is where the next one appears.** Treat a correction block as the highest-risk paragraph in the
+> file, not the safest.
 
 So: one helper, three call sites, **three different dispositions** (EX01 whole-list refuse, Gate 0
 span refuse, Gate 0 `post` drop), each chosen by which direction is fail-closed at that site. That is
@@ -464,8 +561,8 @@ second distinct position that satisfies `red_no_free_movement_after_exit`.
 >
 > Direction and reach, stated plainly: on these inputs `origin/main` **PASSes** (it drops the row
 > incidentally under `== 0`) and this head now **refuses**, so this is a **false-FAIL-direction**
-> difference, on input **no `watch` producer can emit**. It is inert on everything reachable — see
-> the differential-fuzz row below.
+> difference, on input **no Gate 0 Red `watch` producer can emit**. It is inert on everything
+> reachable — see the differential-fuzz row below.
 >
 > **Scoping widened (third review).** This claim was previously written as "on input
 > `core/perception_plugin.py::_log_oracle` cannot emit" — which scopes it to the **agent** path only.
@@ -474,7 +571,8 @@ second distinct position that satisfies `red_no_free_movement_after_exit`.
 > `tools/capture_gate0_baseline_red.py` produced the one genuine PASS trace
 > (`gate0_red_human_attempt2_completion.jsonl`, `_red_success` → `(True, [])`) and is what David
 > re-runs to capture the v2 baseline. The claim is in fact **stronger** than it was written, and now
-> covers every producer — verified by reading all three:
+> covers every producer **that can write a Pokémon Red Gate 0 oracle row** — verified by reading all
+> three:
 >
 > | producer | role | cast |
 > |---|---|---|
@@ -483,11 +581,26 @@ second distinct position that satisfies `red_no_free_movement_after_exit`.
 > | `record.py::main.record` | offline recorder | `int(pb.memory[ad])` |
 >
 > **The property that holds across all three: every watched value is produced by `int()`, and `int()`
-> returns exactly `int` — never `bool`, `float` or `str`.** So no producer can emit a value
-> `_malformed_row` rejects, and neither refusal (Gate 0's or EX01's) can fire on a genuinely captured
-> trace, agent or human. `capture_gate0_baseline_red.py` is cited by **symbol only, deliberately**:
-> it is under concurrent edit (a `--mode` flag is being added) and any line number here would be
-> stale on arrival.
+> returns exactly `int` — never `bool`, `float` or `str`.** So no producer *on this path* can emit a
+> value `_malformed_row` rejects, and neither refusal (Gate 0's or EX01's) can fire on a genuinely
+> captured Red trace, agent or human. `capture_gate0_baseline_red.py` is cited by **symbol only,
+> deliberately**: it is under concurrent edit (a `--mode` flag is being added) and any line number
+> here would be stale on arrival.
+>
+> > **SCOPED ON PURPOSE (review round 4, Nit 3) — the unscoped version is false repo-wide.** "All
+> > three writers of a `watch` row" is **not** a true statement about this repository. At least three
+> > further writers exist and **none** of them casts:
+> > `reports/probes/2026-07-25-gba-exam/gba_drive.py`,
+> > `reports/probes/2026-07-28-emerald-oldale-oracle/edrive.py` and
+> > `reports/probes/2026-07-28-kirby-gba-level-oracle/kgba_drive.py` all build `rec["watch"]` from an
+> > uncast `read_width(emu, addr, width)`, whose `u8` branch is a bare `emu.read(addr)`. A seventh,
+> > `record.py`'s `meta.json` writer, emits a `watch` map of **address strings** (`f"0x{ad:04X}"`) —
+> > not an oracle row at all. The three probe drivers are **GBA-only** and cannot produce a Game Boy
+> > Pokémon Red trace, so none of them can reach `_red_success` or `_red_badge_success`, and the
+> > claim holds at the scope the safety argument actually needs. It is scoped explicitly rather than
+> > deleted, because **an unscoped universal that happens to be false is the exact defect class the
+> > three corrections in this entry are about** — and stating it unscoped would have made it a
+> > fourth.
 
 Reproduced on the standard success fixture with the last row's `x`/`y` left unmoved (so the run
 genuinely never moves) and **one** row appended past `exit_idx + 10`, i.e. never touching the safety
@@ -528,10 +641,12 @@ handing the operator a traceback where a verdict belongs, which is precisely the
 `.claude/skills/diagnose-a-run` exists to prevent — and it is closed here as a side effect of the type
 guard rather than by a new `except`.
 
-**Honest scoping.** All of this needs a malformed watch value, and no `watch` producer emits one:
-all three cast with `int()` (`core/perception_plugin.py::_log_oracle`,
-`tools/capture_gate0_baseline_red.py::run.read_watch`, `record.py::main.record` — see the widened
-scoping note in the NEW-1 block above). So none of it is reachable from a well-formed run today. It matters
+**Honest scoping.** All of this needs a malformed watch value, and **no producer that can write a
+Pokémon Red Gate 0 oracle row** emits one: all three cast with `int()`
+(`core/perception_plugin.py::_log_oracle`, `tools/capture_gate0_baseline_red.py::run.read_watch`,
+`record.py::main.record` — see the widened scoping note in the NEW-1 block above, including why that
+sentence is scoped to the Red path and false without the scope). So none of it is reachable from a
+well-formed run today. It matters
 because this scorer's stated premise is tamper/corruption resistance, `post` was the only Red
 capability clause with zero type validation, and the first draft of this entry asserted the opposite
 property.
@@ -558,8 +673,9 @@ sed -n '225,$ p' eval/score_gate0.py     | tr -d '\r' | sha256sum
 `def _red_success` on both. The un-hashed middle is `_red_success` plus its two blank separator lines
 and nothing else, so the two digests cover the whole file between them. Both digests re-derived
 unchanged after each PR #191 fix round; every round only grew `_red_success`, so the head split line
-has moved `167` → `209` → `225` while both digests stayed put. **Re-derive this split line by
-locating `def _miniwob_success`, never by reusing the number** — it has now moved three times.)
+has moved `126` → `167` → `209` → `225` while both digests stayed put. **Re-derive this split line by
+locating `def _miniwob_success`, never by reusing the number** — it has moved three times within this
+PR, four counting `origin/main`'s `102`; see the line-number convention note above.)
 
 So `MODES`, `SOURCE_PIN_FILES`, `MINIWOB_TASK`, `AUDIT_PATH_KEYS`, `_miniwob_success`,
 `_arm_metrics`, `_verify_audit_paths`, `_verify_sources`, the arm caps, and the leak → constancy →
@@ -634,11 +750,45 @@ The digest moves because the file's mere presence flips which token `_verify_sou
 | absent (clean worktree) | `source_unreadable:wake_boundary` |
 | present (after a root-suite run) | `source_hash:wake_boundary` |
 
-Measured, not inferred: `_verify_sources` called twice with only that artifact's path redirected,
-everything else identical. Different string in `failures["source"]` → different sorted-JSON verdict →
-different sha256. **`readiness` is `INSUFFICIENT_SOURCE` in both cases and the failure count is 8 in
-both, so no bar and no verdict moves** — only the absolute digest. This is exactly why the
-`origin/main` == head **equality** column is the load-bearing one and the absolute hex is not.
+Measured, not inferred — and **re-measured for review round 4, because two figures in the previous
+draft were wrong.** The conditions matter more than the numbers here, so they are stated first: a
+**clean git worktree at this head (`bef7797`)**, one that has never received banked data, so `runs/`
+is absent entirely; `paid_gate0` mode via the recipe above; scored **before** and **after** a single
+`uv run --frozen pytest -q` on the root suite. That suite run is the *only* difference between the
+two columns. It creates `runs/gate0_paid/wake_boundary.json`
+(sha256 `9cddf29c4d8c778a71ee9517fe7d9393e7cf2d62a638f78c369a257c4b37b094`, byte-identical to the
+primary checkout's) and writes nothing else anywhere under `runs/`.
+
+| `paid_gate0`, clean worktree at `bef7797` | before the suite run | after the suite run |
+|---|---|---|
+| `runs/gate0_paid/wake_boundary.json` | absent | present |
+| token in `failures["source"]` | `source_unreadable:wake_boundary` | `source_hash:wake_boundary` |
+| `readiness` | **`NO_GO`** | **`NO_GO`** |
+| `overall` | `NO_LEAK` | `NO_LEAK` |
+| `failures` | constancy 2, leak 4, infra 0, **capability 8**, cheap 0, source 23 — **37 total** | *identical, all six buckets* |
+| verdict sha256 | `2286dde5c4ccf332e9980dc3580a3e23f8aa4aabebcdafdb27a00f88f4007cdd` | `9c7f1d8a26273abbedfa7ef1067ffa2a4b001368a179bac7efc3a6eae89ba5c7` |
+
+**Readiness, `overall`, and the entire failure vector are identical across the flip; only that one
+source token — and therefore the hex — moves.** The previous draft supported the same conclusion with
+two wrong numbers: it said *"`readiness` is `INSUFFICIENT_SOURCE` in both cases and the failure count
+is 8 in both"*. `INSUFFICIENT_SOURCE` is **`paid_gate0_v2`'s** readiness in this very measurement, not
+`paid_gate0`'s (which is `NO_GO`, matching its row in the digest table above); and `8` is the
+**capability** bucket, not any total — the total is 37. The conclusion is untouched, which is exactly
+why the `origin/main` == head **equality** column is the load-bearing one and the absolute hex is not.
+
+Two datapoints from the same measurement, both bounding what a reviewer can check from the repo alone:
+
+- In that clean worktree, `paid_gate0` and `readiness_dev` produce the **identical** verdict digest
+  `2286dde5c4ccf332e9980dc3580a3e23f8aa4aabebcdafdb27a00f88f4007cdd` — with no banked artifacts on
+  disk, `paid_gate0` degenerates exactly onto the `readiness_dev` row of the table above. That is the
+  precise reason the `paid_gate0` row is not reviewer-reproducible while the other two are.
+- Scored against the **real banked artifacts** (`ROOT` repointed at the primary checkout's `runs/`,
+  this head's frozen `eval/fixtures/` otherwise unchanged), `paid_gate0` is a different verdict
+  altogether — `readiness NO_GO`, `overall CONSTANCY_BREACH`, constancy 12 / leak 0 / infra 0 /
+  capability 4 / cheap 0 / source 19 — and `wake_boundary.json`'s presence flips the same single
+  token there too, with readiness, `overall` and the whole failure vector again unmoved. So the "no
+  bar moves" conclusion holds in **both** environments; only the figures quoted for it are
+  environment-specific, and the ones tabulated above are the clean-worktree ones.
 
 *Operational consequence:* run the root suite in a worktree, not in the primary checkout, and do not
 compare a `paid_gate0` absolute digest across machines or across a suite run. `runs/` is read-only
