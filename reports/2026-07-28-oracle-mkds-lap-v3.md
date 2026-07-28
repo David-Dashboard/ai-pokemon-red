@@ -192,11 +192,14 @@ Two incidental findings, both worth banking:
   first bend, reaching checkpoint 10 by ~2 min of race time before wedging. The banked savestate
   has acceleration effectively held. This is why the coast run produces a real race at all, and
   it is what made the whole CPU-watching approach possible.
-- **`0x022C8094` DOES decrement — PR #168's headline lead is dead.** That report kept
-  `0x022C8094` alive as "the best surviving lead" specifically because it "stayed flat across
-  every reset event". In this session's coast run it went **`3 → 1`** between f9,900 and
-  f10,200, alongside `0x022C8090` going `10 → 1`. The non-decrement property that made it the
-  lead is **false**. It is a checkpoint/respawn anchor, and it was never the answer.
+- **`0x022C8094` is dead on BOTH of the grounds PR #168 kept it alive on.** That report's
+  surviving lead rested on two claims: that "only values 0/1 were ever observed" (leaving
+  BCD-vs-plain-int open), and that it "stayed flat across every reset event". The zero-input
+  coast run falsifies both at once. It reached **3** by f7,200 — so it exceeds 1, and the
+  BCD question is answered by simply going past it — and then **decremented `3 → 1`** between
+  f9,900 and f10,200, alongside `0x022C8090` going `10 → 1`. It is a checkpoint/respawn anchor,
+  and it was never the answer. Anything downstream that re-scoped EX05 to "a checkpoint-level
+  milestone on the corroborated `0x022C8094` byte" should be re-read: it is not corroborated.
 
 ## 9. The address MOVES between races — tested, and it fails
 
@@ -207,7 +210,7 @@ cup → race (all via `menu_nav.py`, screenshots at every step) lands in a fresh
 Hills. In that race, `0x0236A7F2 .. +7*0x8C` reads **`[194, 0, 0, 1, 68, 205, 255, 17]`** — not
 `[1,1,1,1,1,1,1,1]` — while the top screen plainly shows `LAP 1/3`. The old address is garbage.
 
-`find_array.py` re-derives the array from scratch in any race state, in two stages:
+`find_array.py` re-derives the array from scratch **at a standing start**, in two stages:
 
 1. **Structural**: find every offset where 8 bytes at stride `0x8C` all read the same plausible
    lap value and the 9th does not (so the run is exactly 8 long).
@@ -220,9 +223,16 @@ Hills. In that race, `0x0236A7F2 .. +7*0x8C` reads **`[194, 0, 0, 1, 68, 205, 25
 | fresh race (Desert Hills) | 153 | **1** — `0x0237BED2` |
 
 The structural signature alone is worth 87–153 candidates, i.e. nearly worthless on its own; the
-causal poke test collapses it to exactly one both times. That the method independently
-rediscovers `0x0236A7F2` on the original savestate is the check that it is not just fitting
-noise.
+causal poke test collapses it to exactly one both times, with zero ambiguous rejects. That the
+method independently rediscovers `0x0236A7F2` on the original savestate is the check that it is
+not just fitting noise.
+
+**The locator only works before any racer has completed a lap.** Its structural stage requires
+all eight slots to read the same value, which is true only while the whole field is on the same
+lap. Once the field spreads, the scan returns zero candidates — the script now exits non-zero
+and says so rather than reporting an empty success. This is fine for EX05, whose episodes begin
+at a standing start, but it is **not** a general mid-race locator, and nothing here should be
+read as claiming otherwise.
 
 Delta between the two races: `0x0237BED2 - 0x0236A7F2 = 0x114E0` (70,880 bytes). Whether the
 base is a function of the *track* (different track data loaded) or is genuinely per-race
@@ -244,10 +254,14 @@ Also:
 - **BCD vs plain int is moot.** The only values possible in a 3-lap GP are 1, 2, 3 — identical
   under both decodings. PR #168 left this "genuinely inconclusive"; it is inconclusive *and
   irrelevant* here, and would only matter on a hypothetical >9-lap mode.
-- Companion fields at `lapfield-0x18` and `lapfield-0x0C` also count laps, and a per-lap time
-  record sits at `lapfield-0x2E`. **Do not use them**: `lapfield-0x18` was inconsistent across
-  slots (slot 1 ticked in sync with the lap field; slot 3's ticked a whole lap late,
-  `0 →1 @f7170 →3 @f10950`). Only the `+0x18` column was uniform across all seven CPUs.
+- Two companion lap-ish counters sit at `lapfield-0x18` and `lapfield-0x0C`, and a per-lap time
+  record at `lapfield-0x2E`. **Do not use the companions.** `lapfield-0x18` is inconsistent
+  across slots: slot 1's ticked in sync with the lap field, but slot 3's ticked a whole lap late
+  (`0 →1 @f7170 →3 @f10950`). The lap field itself — the byte this report identifies — was the
+  only one of the three that behaved identically across all seven CPU slots. (Note the two
+  meanings of "`0x18`" in play: the lap field is at `+0x18` **from the struct origin used in
+  §3's array walk**, while `lapfield-0x18` names a *different*, earlier byte relative to the lap
+  field. They are not the same address.)
 - The per-racer key-checkpoint bitmask is at `lapfield + 0x14` (player: `0x0236A806`), filling
   bits `1,2,4,…,128` across a lap. A within-lap progress signal, not a lap counter.
 
@@ -303,17 +317,42 @@ worlds' oracles.
 # MKDS lap oracle -- structure, not a constant.
 #   8-racer array, stride 0x8C; element = current lap, 1-based, numerator of "LAP n/3".
 #   completed >= 1 lap  <=>  value >= 2 .  Saturates at the lap total; never reaches 4.
+#   CAVEAT, do not drop when copying this block: the >= 2 rule is inferred. The PLAYER's own
+#     byte was NEVER observed incrementing -- the 1->2->3 traces are the seven CPU racers',
+#     and the player's byte was moved through 1/2/3 only by poking it (v3 report SS 8).
 #   BASE IS PER-RACE, NOT FIXED:
 #     runs/nds3d_probe/mkds_race_start.state (Figure-8) -> player @ 0x0236A7F2
 #     fresh race (Desert Hills)                          -> player @ 0x0237BED2
-#   Locate per race with reports/probes/2026-07-28-mkds-lap-oracle/find_array.py
+#   Locate at a standing start with reports/probes/2026-07-28-mkds-lap-oracle/find_array.py
 #   (structural stride scan + causal HUD-poke confirmation; 87/153 -> exactly 1, twice).
+#   That locator does NOT work once any racer has completed a lap.
 ```
 
-For EX05 specifically, the cheapest safe wiring is: the run always starts from one pinned
-savestate, so resolve the base **once at world start** with the structural+causal locator and
-carry it for the episode — rather than baking a literal into `world_mcp.py`. That keeps the
-oracle correct if the savestate is ever re-captured.
+### EX05 is not wireable today — two independent blockers
+
+An earlier draft of this section said the "cheapest safe wiring" was to resolve the base once at
+world start. That understated the problem. Two things block it outright:
+
+1. **The `watch` mechanism cannot express a dynamic address.** `watch` is a plain
+   `dict[str, int]` — a module-level literal in `_WORLDS`, passed once at `world_mcp.py:997`,
+   frozen into the plugin at `core/perception_plugin.py:103`, and read per-observe as
+   `self.emu.read(addr)`. There is no callable, no lazy value, and no re-resolve hook anywhere
+   on that path. A per-race address is **inexpressible** in the current contract. Even the
+   weaker "resolve once at episode start, then treat as an int" needs new code in
+   `world_mcp.py` — precisely the file that must not be touched, because edits there cascade
+   into the frozen Gate-0 host/image pins.
+2. **MKDS has no world key of its own.** It rides the generic `"nds"` entry
+   (`world_mcp.py:167-172`) with a `--rom` override. Any `watch` entry added there would apply
+   to **every NDS ROM** — Kirby Super Star Ultra, NSMB, Zelda, Pokémon White — reading a
+   meaningless address in each. Giving MKDS its own world key is a prerequisite, and that is
+   itself a `world_mcp.py` change.
+
+So: the oracle is **found**, and EX05 is **still not scorable**, for reasons that are now
+structural and named rather than unknown. The correct sequencing is (a) settle the same-track
+allocation question in §11.1, (b) give MKDS its own world key and whatever resolve hook the
+`watch` path needs, both batched into the one permitted `world_mcp.py` change alongside the
+other worlds, (c) then wire. Anyone who wires this before (b) will ship a broken oracle for
+every other NDS world.
 
 ## 13. Next attempt — sharpened pin
 

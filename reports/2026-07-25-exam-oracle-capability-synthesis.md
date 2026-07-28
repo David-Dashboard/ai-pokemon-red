@@ -165,6 +165,10 @@ choice hides that:
   (closed-loop, vision-guided steering), not just more of the same technique. I'd re-scope this one
   now — option (ii), to a checkpoint-level milestone using the corroborated `0x022C8094` byte —
   rather than hold the freeze open indefinitely on a harder engineering problem.
+  > **[SUPERSEDED 2026-07-28 — PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`.]** The lap oracle
+  > is FOUND without any new driver (watch the 7 self-driving CPU racers), so this re-scope is moot.
+  > And `0x022C8094` is not "corroborated" — it decrements (`0→1→3→1`); do not build a milestone on
+  > it. EX05 remains unscorable, but now for a *wiring* reason: MKDS has no world key of its own.
 - **EX03 (Emerald)** has two stacked blockers, not one: reaching Oldale needs the starter-Pokemon
   quest completed (a materially bigger task than intro-navigation), AND even a clean-looking
   reading there would be untrustworthy without re-running the outdoor-instability falsification
@@ -205,6 +209,11 @@ samples that happen to be similar to each other is not the same as a reading str
 genuinely varied conditions.
 
 ## 6. What each hunt banked (so the effort isn't re-done)
+
+> **[SUPERSEDED 2026-07-28 — PR #177, `reports/2026-07-28-oracle-mkds-lap-v3.md`.]** The MKDS bullet
+> below is out of date: the lap oracle is FOUND (8-racer array, stride `0x8C`, per-race base —
+> `0x0236A7F2` for the banked savestate), and `0x022C8094` is ELIMINATED, not "the best lead" — it
+> exceeds 1 and decrements (`0→1→3→1`).
 
 - **MKDS** (`reports/2026-07-25-oracle-mkds-lap-v2.md`): `0x022C8090` disqualified a *second*,
   independent way (resets to `0x022C8094`'s value after a stuck/off-track timeout, not just the
