@@ -555,13 +555,73 @@ def test_red_real_banked_wrong_bank_row_in_span_injects_no_false_death_or_map_ch
 
 
 def test_red_wrong_bank_shape_with_a_real_party_still_fails_a_real_death():
-    # The PR #121 review Major 1 property, re-proved against the WIDENED predicate. The filter
-    # requires party == 0, and the safety span exists only after party_idx proved an exact 0->1
-    # transition -- so a GENUINE row here always has party >= 1 and can never be swallowed. A row
-    # carrying the x==y==map==badges shape but a real party and a real HP=0 death must still FAIL.
+    # The PR #121 review Major 1 property, re-proved against the WIDENED predicate. Everything the
+    # widened form newly drops needs `badges != 0` alongside `party == 0` (a Gym Badge held with an
+    # empty party -- not a reachable Red state), so no genuine faint/map-change/badge is in the
+    # delta. A row carrying the x==y==map==badges shape but a REAL party and a real HP=0 death is
+    # outside that delta and must still FAIL.
     rows = _red()
     rows[3]["watch"].update({"x": 1, "y": 1, "map": 1, "badges": 1, "party": 1,
                              "party_hp_hi": 0, "party_hp_lo": 0})
     ok, failures = _red_success(rows)
     assert not ok
     assert "red_player_hp_reached_zero" in failures
+
+
+# --- PR #191 review Major 1: the type guard must be fail-CLOSED at `post`, not just in the span ---
+
+def _red_that_never_moves_after_the_battle():
+    # The standard success fixture with the final row's x/y left where they were, so the run
+    # genuinely never moves after the battle exit and red_no_free_movement_after_exit is the TRUE
+    # verdict. exit_idx == 3 and len == 14, so anything appended lands past exit_idx + 10 and
+    # cannot touch the safety span -- this isolates `post`.
+    rows = _red()
+    rows[-1]["watch"]["y"] = rows[-2]["watch"]["y"]
+    return rows
+
+
+_ZERO_INT_ROW = {"x": 0, "y": 0, "map": 0, "party": 0, "badges": 0, "in_battle": 0,
+                 "party_hp_hi": 0, "party_hp_lo": 0}
+
+
+def test_red_no_movement_baseline_fails():
+    # Pins the baseline the three tests below are measured against -- without it a green result
+    # there could just mean the fixture never failed in the first place.
+    assert _red_success(_red_that_never_moves_after_the_battle()) == (
+        False, ["red_no_free_movement_after_exit"])
+
+
+def test_red_malformed_post_row_cannot_manufacture_free_movement():
+    # `_is_corrupt_glitch_row` KEEPS a row with any bool/non-int field. In the safety span that is
+    # fail-closed (the hi/lo isinstance checks fire). At `post` it was fail-OPEN: the kept row
+    # donated its (x, y) as a second distinct position and flipped this FAIL to PASS. All four rows
+    # below are all-zero -- they carry no real movement -- and none may pass.
+    #
+    # The middle case is why an x/y-only type check is not enough: its x and y ARE plain ints, and
+    # the corruption is on `party`.
+    malformed = {
+        "all-zero floats": {k: 0.0 for k in _ZERO_INT_ROW},
+        "one bool field": dict(_ZERO_INT_ROW, party=False),
+        "all bool fields": {k: False for k in _ZERO_INT_ROW},
+        "string zeroes": {k: "0" for k in _ZERO_INT_ROW},
+    }
+    for label, watch in malformed.items():
+        rows = _red_that_never_moves_after_the_battle() + [{"watch": dict(watch)}]
+        assert _red_success(rows) == (False, ["red_no_free_movement_after_exit"]), label
+
+
+def test_red_corrupt_glitch_row_at_post_is_also_dropped():
+    # The int case, for symmetry: an all-zero-int row is the corrupt signature proper and was
+    # already dropped on origin/main. It must stay dropped.
+    rows = _red_that_never_moves_after_the_battle() + [{"watch": dict(_ZERO_INT_ROW)}]
+    assert _red_success(rows) == (False, ["red_no_free_movement_after_exit"])
+
+
+def test_red_post_guard_does_not_drop_a_genuine_second_position():
+    # The other direction -- the guard must not over-fire. A well-typed row at a genuinely different
+    # (x, y) still counts, and a partial watch dict (no `badges` key, as every fixture row here has)
+    # is NOT treated as malformed.
+    rows = _red_that_never_moves_after_the_battle()
+    rows.append({"watch": {"party": 1, "in_battle": 0, "map": 40, "x": 7, "y": 4,
+                           "party_hp_hi": 0, "party_hp_lo": 5}})
+    assert _red_success(rows) == (True, [])

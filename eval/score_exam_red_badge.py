@@ -43,8 +43,18 @@ def _is_corrupt_glitch_row(watch: dict) -> bool:
     that carry the non-zero variant this scorer already returns the WRONG failure --
     `red_badge_flip_not_after_battle` instead of the true `red_badge_never_earned`.
 
-    Cannot mask a real badge: a genuine badge row has `party >= 1` (a starter is required long
-    before any Gym) and this predicate requires `party == 0`."""
+    Cannot mask a real badge, a real faint or a real map change. Take the set of rows this predicate
+    drops that the old all-zero-only form kept -- the only behaviour change. Every such row has all
+    eight values plain ints, `party == in_battle == party_hp_hi == party_hp_lo == 0`, and
+    `x == y == map == badges == k`. `k == 0` is the all-zero row the old form already dropped, so the
+    entire delta requires **`badges != 0` while `party == 0`** -- a Gym Badge held with an empty
+    party, which is not a reachable Pokemon Red state.
+
+    NOTE the argument is deliberately NOT "the call site runs after an exact `party` 0->1
+    transition". That is true in `score_gate0.py::_red_success` but FALSE here: `_red_badge_success`
+    filters the ENTIRE watch list at `:76`, before `party_idx` exists at `:97`, and `:89` positively
+    REQUIRES `parties[0] == 0`, so the whole pre-starter prefix of every genuine trace has
+    `party == 0`. See reports/2026-07-28-gate0-v2-deviations.md D3."""
     vals = [watch.get(k) for k in _WATCHED_KEYS]
     if any(isinstance(v, bool) or not isinstance(v, int) for v in vals):
         return False

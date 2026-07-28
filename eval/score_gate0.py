@@ -89,17 +89,44 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     # Still deliberately narrow (PR #121 review Major 1): a filter keyed on `party` alone would also
     # drop a row with a genuinely-corrupted party byte AND a real HP=0 or real map-change on the very
     # same row, silently erasing a real failure. This predicate fires only on the full eight-field
-    # signature, never on a single stray field. It additionally requires party == 0, and this span
-    # exists only after `party_idx` proved an exact 0->1 party transition -- so every GENUINE row in
-    # it has party >= 1, which makes a genuine death, a genuine map change and a genuine badge all
-    # unreachable by this filter by construction. Any non-int (or bool) field keeps the row.
+    # signature, never on a single stray field.
+    #
+    # WHY IT CANNOT MASK A GENUINE FAILURE. Take the set of rows this predicate drops that the old
+    # all-zero-only form kept -- the ONLY behaviour change. Every such row has all eight values plain
+    # ints, party == in_battle == party_hp_hi == party_hp_lo == 0, and x == y == map == badges == k.
+    # If k == 0 the row is all-zero, which the old form already dropped; so the entire delta requires
+    # k != 0, i.e. **`badges != 0` while `party == 0`**. That is not a reachable Pokemon Red state --
+    # a Gym Badge cannot be held with an empty party -- so no genuine faint, map change or badge can
+    # be in the delta. (An EARLIER version of this comment argued instead that the call site sits
+    # after `party_idx` proved a 0->1 transition so every genuine row has party >= 1. That argument
+    # is true HERE but false for the mirror in score_exam_red_badge.py, which filters the whole watch
+    # list before party_idx exists -- see reports/2026-07-28-gate0-v2-deviations.md D3. The
+    # badges != 0 AND party == 0 argument above holds at BOTH call sites, so it is the one used.)
+    # Any non-int (or bool) field keeps the row.
+    #
+    # Key order below is the world's own watch order (world_mcp.py GAMES["pokemon_red"]["watch"],
+    # == score_exam_red_badge.py::_WATCHED_KEYS). Keep the two mirrors byte-identical in order:
+    # `party` and `badges` are adjacent, so a swapped unpack silently tests one for the other.
+    watched_keys = ("x", "y", "map", "party", "badges", "in_battle", "party_hp_hi", "party_hp_lo")
+
+    def _plain_int(v):
+        # `bool` is an `int` subclass; `True`/`False` are not RAM bytes. Same rule as the HP checks
+        # below and score_exam_red_badge.py::_plain_int.
+        return not isinstance(v, bool) and isinstance(v, int)
+
     def _is_corrupt_glitch_row(w):
-        vals = [w.get(k) for k in ("x", "y", "map", "badges",
-                                   "party", "in_battle", "party_hp_hi", "party_hp_lo")]
-        if any(isinstance(v, bool) or not isinstance(v, int) for v in vals):
+        vals = [w.get(k) for k in watched_keys]
+        if any(not _plain_int(v) for v in vals):
             return False
-        x, y, map_, badges, party, in_battle, hp_hi, hp_lo = vals
+        x, y, map_, party, badges, in_battle, hp_hi, hp_lo = vals
         return party == in_battle == hp_hi == hp_lo == 0 and x == y == map_ == badges
+
+    def _malformed_row(w):
+        # "_is_corrupt_glitch_row said False" means EITHER "provably a real row" OR "cannot tell --
+        # some field isn't a RAM byte". This separates the second case out. A field that is absent
+        # (None) is not malformed: the Gate 0 Red predicate has always tolerated partial watch dicts
+        # and only `x`/`y` are load-bearing for `post`.
+        return any(w.get(k) is not None and not _plain_int(w.get(k)) for k in watched_keys)
 
     safety_span = [w for w in watches[battle_idx:exit_idx + 10] if not _is_corrupt_glitch_row(w)]
     hp_values = []
@@ -116,8 +143,22 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
             break
     if hp_values and min(hp_values) == 0:
         failures.append("red_player_hp_reached_zero")
+    # Type-guarded (PR #191 review Major 1). `_is_corrupt_glitch_row` KEEPS any row carrying a
+    # bool/non-int field, which is fail-closed in the safety span above (the hi/lo isinstance checks
+    # catch it) but was fail-OPEN here: `post` had no type validation at all, it gated only on
+    # `is not None`. A kept malformed row donated its (x, y) and manufactured the second distinct
+    # position that satisfies this clause. Demonstrated on the standard success fixture with the
+    # final row's x/y left unmoved and ONE row appended past exit_idx + 10 (so the safety span is
+    # never touched): an all-zero-FLOAT row, an all-`false` row, or an all-zero-int row with a single
+    # `"party": false`, each flipped a genuine red_no_free_movement_after_exit FAIL to PASS.
+    # `_malformed_row` and not just an x/y type check: `{"party": false, rest 0}` has plain-int x/y,
+    # so an x/y-only guard still lets it through -- the corruption is elsewhere on the row.
+    # Dropping is the fail-closed direction here: `post` only ever fails for having too FEW distinct
+    # positions, so removing rows can cause this clause but never suppress it. This also closes the
+    # pre-existing string-"0" hole (`"0" is not None` passed on both branches).
     post = [(w.get("x"), w.get("y")) for w in watches[exit_idx:]
-            if w.get("x") is not None and w.get("y") is not None and not _is_corrupt_glitch_row(w)]
+            if _plain_int(w.get("x")) and _plain_int(w.get("y"))
+            and not _malformed_row(w) and not _is_corrupt_glitch_row(w)]
     if len(set(post)) < 2:
         failures.append("red_no_free_movement_after_exit")
     return not failures, failures
