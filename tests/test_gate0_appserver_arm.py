@@ -479,7 +479,13 @@ V2_LOAD_BEARING_CLAUSES = {
     # so its terminating tail was observation-only and its entire margin was the word "several"
     # (two rows per round against a ten-row window: five rounds hit the bar exactly, four missed).
     # These three sentences are what replace it -- a round unit, a floor above a handful, a
-    # refusal to stop at first quiet, and a doubling rule. Worst-case yield 24 rows, floor 12.
+    # refusal to stop at first quiet, and a doubling rule.
+    # WORST-CASE YIELD IS 8 ROWS, NOT 24: every World.call branch already appends one
+    # plugin.observe(), so a move and "the observation that follows it" are ONE row unless the
+    # agent issues a redundant second observe tool call (v1 issued one in 142). At handful=3 the
+    # floor is 4 rounds doubled = 8, UNDER the ten-row window. See deviation D6's measured
+    # row-yield table: this amendment narrows the miss, it does not close it, and the launch
+    # decision is escalated rather than re-worded a third time.
     "settle_round_unit": "one move and the observation that follows it are one round",
     "settle_floor_above_a_handful": "a handful of rounds is not enough",
     "settle_does_not_stop_at_first_quiet": "stopping the first time nothing new appears is not "
@@ -1102,9 +1108,13 @@ _ALL_FOUR_PIN_FIXTURES = [("red", ""), ("red", ".appserver"),
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "prereg §6.1 items 1-4 (re-freeze the four gate0_expected_pins fixtures onto the §5.3 task "
-    "brief) are NOT done. Until they land the fixtures hold the v1 task digests and this code "
-    "renders the v2 ones, so this equality is FALSE -- reported as xfail rather than as a failure "
+    "prereg §6.1 items 1-4 (re-freeze the four gate0_expected_pins fixtures onto the task text "
+    "this module's own task_text_for() renders) are NOT done. RE-FREEZE ONTO THAT, NOT onto the "
+    "§5.3 brief verbatim and NOT onto any digest quoted in an older PR body: §5.3 was amended by "
+    "deviation D6 (reports/2026-07-28-gate0-v2-deviations.md), so the §5.3-verbatim digests "
+    "9adb98f8.../ba1549d4... are dead. Compute the value, never transcribe it. Until they land "
+    "the fixtures hold the v1 task digests and this code "
+    "renders the current ones, so this equality is FALSE -- reported as xfail rather than as a failure "
     "because a red test on the merged branch would block every PR queued behind #193. strict=True "
     "is the tripwire: the moment §6.1 lands this XPASSes, pytest turns an unexpected pass into a "
     "FAILURE, and whoever re-froze the pins must delete this marker. This is the fixture->code "

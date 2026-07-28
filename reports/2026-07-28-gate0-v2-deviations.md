@@ -170,20 +170,23 @@ Not a reviewer's preference — a contradiction inside the frozen document's own
 - §5.4's **C7** defence (`red_map_changed_during_battle_exit_span`) reassures with: *"an
   unconstrained 'wander around' would walk the autopilot through the lab door … and fail here."*
 
-**Those are the same tool.** `World._run_autopilot` serves both `explore` and `goto` and is
-frontier-seeking — its job is to leave the room. §5.3's actual wording takes the C7-safe path
-(*"small local moves … without leaving the place you are in"*) and thereby **discards the margin C5's
-defence was computed on**. What is left is the primitive path, and the primitive path's arithmetic
-was never written down:
+**C5's margin sits on `explore`, which C7's guard makes unusable.** `World._run_autopilot` serves
+both `explore` and `goto`, but only `explore` (`target=None`) is frontier-seeking — its job is to
+leave the room. `_run_autopilot(target=…)`, i.e. `goto`, navigates to an explicit cell and returns
+*"arrived at the target cell"*, so **a `goto` to a tile inside the current room is fully
+C7-compliant** and feeds C5 and C9 together. §5.4 never costed `goto` either. The honest statement
+is not "the C5 defence routes through a tool the C7 defence rules out" — it is that §5.4 quantified
+its C5 reassurance on the one autopilot mode C7 forbids, and left the compliant paths, primitive
+and `goto` alike, unquantified.
 
-| act | rows written | read at |
-|---|---|---|
-| `observe` | **1** | `core/perception_plugin.PerceptionPlugin.observe` — one `_log_oracle` per call, after the patience loop |
-| `press_button` (and every other direct action) | **1** | `world_mcp.World.call`'s direct-action branch: `body = [head, *self._content(self.plugin.observe(_AGENT))]` — one trailing `observe`, therefore one row, whatever the action did |
+§5.4's *"~41"* is also wrong for the tool it names. `_run_autopilot`'s loop is
+`for _ in range(max(1, min(int(max_steps), 200)))` and observes at the **top** of every iteration,
+so a call yields (iterations + 1) rows. The default `max_steps=40` gives 41 — but `max_steps` is
+agent-supplied and the hard cap is 200. **v1's own first `explore` hit that cap: 200 autopilot
+steps, 201 rows, from one tool call.** §5.4 quoted the default as if it were the yield.
 
-So *"alternate observing with small local moves"* × N alternations ⇒ **2N rows**, against
-`_red_success`'s `watches[i:i+10]` window — **ten**. **N = 5 hits the bar exactly; N = 4 gives 8 and
-fails.** The entire margin was the word *"several"*, conventionally 3-5.
+That correction cuts both ways, and the second direction is the one that matters. §5.4's *"~41"*
+made the C5 margin look like an order of magnitude. It is not — see the measured table below.
 
 Worse, the stop condition — *"until several consecutive observations show nothing further
 changing"* — **can only be satisfied by ceasing to move**, because moving changes what is observed.
@@ -213,17 +216,32 @@ negative bound, a refusal to stop at first quiet, and a doubling rule.
 the place you are in"* are **kept verbatim**; the second is C7's entire defence and was never in
 scope to touch.
 
-**No phrase in the brief points at ten.** The floor rules out a handful (below the bar); the
-doubling carries the total well past it. The threshold is reached by *composition*, never named —
-which is a stronger taint position than §5.3's, where "several" sat directly on the bar.
+**No phrase in the brief points at ten**, and no digit is named. **But the floor this buys is 8
+rows, not the 24 first claimed here** — see the measured table below, which supersedes the
+arithmetic this amendment was written on. W1/W2 raise the floor from §5.3's 6 and remove the
+ceasing-to-move tail, both real improvements, and **still leave the worst compliant reading under
+the bar.** They are recorded as landed because they are strictly better than §5.3 and because W3/W4
+(which are load-bearing for Arm W) travel with them — **not** because they close C5.
 
 #### W3 — `task,` deleted from the prohibition's trigger list
 
 §5.3 read *"once the environment reports that an episode, **task**, or input is finished, take no
 further action on it — do not click, type, **press a key**…"*. In Arm R the task-complete and
 episode-complete conditions fire **at the same instant** (winning the rival battle is the stated
-task), and `press_button` is the only way to make a small local move there. The brief therefore told
-the agent to move and not to move simultaneously, and §5.3's stated reason they cannot conflict —
+task), and `press_button` is the only way to make a small local move there.
+
+**Stated at the right strength (correction).** An earlier version of this entry said §5.3 *"forbade
+Arm R's only means of movement at exactly the moment the settle instruction demanded it"*. That is
+stronger than §5.3's own text supports: its trigger was conditioned on *"once **the environment
+reports** that an episode, task, or input is finished"*, and Red's environment reports nothing of
+the sort — `PerceptionPlugin`'s render carries no finished/complete/episode-over state line. On a
+**strict** reading the clause never fired in Red at all. What §5.3 actually risked was a **loose**
+reading — the agent's own "I have finished the task" collapsing into "do not … press a key" — which
+is a real hazard and worth removing, but it is a hazard of misreading, not a contradiction on the
+face of the text. The fix is right; the reason previously given was stronger than the evidence.
+
+On the loose reading the brief told the agent to move and not to move simultaneously, and §5.3's
+stated reason they cannot conflict —
 *"It also states the safe alternative … so [they] cannot be read as contradicting each other"* — is
 a non-sequitur: stating a safe alternative **resolves** a contradiction rather than dissolving it,
 and it resolves it toward **not moving**, which is precisely what §5.1 rejected all three
@@ -274,43 +292,222 @@ unrecoverable failure:
    further input of any kind"*. **Strictly wider** than three named verbs, so it cannot be weaker;
    it simply stops mirroring the tool surface. *"Looking at it is always safe; acting on it is not"*
    survives verbatim.
-2. W4's carve-out **blesses `reset_episode`, which DOES write a row**. So the prohibited set is no
-   longer the writing set and the blessed set is no longer the non-writing set. The correspondence
-   is broken in both directions rather than merely obscured.
+2. W4's carve-out **blesses `reset_episode`, which DOES write a row**, so the blessed set is
+   genuinely no longer the non-writing set.
+
+**Correction — "broken in both directions" was half true.** Only the blessed side actually breaks.
+Extensionally the *prohibited* set is **unchanged**: everything except
+`observe`/`read_region`/`whats_changed`/`reset_episode` is still exactly
+`click`/`type_text`/`press_key`, still exactly the row-writing acts other than `reset_episode`. What
+changed on that side is that the brief no longer *says so*. The correct statement is **broken on the
+blessed side and no longer disclosed on the other** — which is still worth having, because
+disclosure was the leak, but it is one direction, not two.
 
 `observe` remains the one tool name the brief effectively names, and that is deliberate and
 pre-registered: §5.6's own permitted-vocabulary list contains *"observing"*, and it is the act that
 writes nothing in Arm W.
 
-### Worst-case row-yield analysis (the deliverable the amendment is judged on)
+### The measured row-yield table — Arm R's whole tool surface
 
-Under the **most literal, least generous** reading a competent agent could take. One round = one
-small local move + one observation = **2 rows** (both established above, by symbol).
+This table is the thing whose absence caused two failed attempts at this amendment. Every earlier
+version of this section computed against a *model* of the harness. This one is derived by symbol and
+then reconciled, exactly, against the only paid run that exists.
 
-| step | reading | rounds | rows |
+**One row is written at exactly one site:** `PerceptionPlugin._log_oracle`, whose only call site in
+that file is inside `PerceptionPlugin.observe`. So **rows = invocations of `plugin.observe()`**, and
+nothing else. The patience auto-advance loop inside `observe` re-perceives many times but calls
+`_log_oracle` once, so it never changes the count.
+
+Per tool call, over `check_gate0_codex.TOOLS["red"]`:
+
+| tool | moves performed | **oracle rows** | why |
 |---|---|---|---|
-| *"a handful of rounds is not enough"* | a handful is five, so the smallest obedient count is six | ≥ 6 | ≥ 12 |
-| *"stopping the first time nothing new appears is not enough either"* | cannot terminate early on quiet | — | — |
-| *"treat that judgement as the halfway point … carry on … for as many rounds again"* | doubles whatever the agent settled on | ≥ 12 | **≥ 24** |
+| `observe` | 0 | **1** | `World.call`'s `observe` branch: `body = self._content(self.plugin.observe(_AGENT))` |
+| `press_button` | 1 | **1** | direct-action branch: `gw.execute(...)` (which never observes) then one trailing `plugin.observe` |
+| `press_sequence`, 1 button | 1 | **1** | same branch |
+| **`press_sequence`, 16 buttons** | **16** | **1** | `PerceptionPlugin._do_buttons` loops `emu.press` over every button and returns via `_post_action` — **it never observes**. `ToolSpec` caps `buttons` at `maxItems: 16` |
+| `wait` | 0 (ticks only) | **1** | same branch |
+| `remember` | 0 | **1** | `remember` branch also ends in a trailing `plugin.observe` |
+| `goto` | k autopilot steps | **k + 1**, min **2**, max **201** | `_run_autopilot` observes at the top of each loop iteration, plus the branch's trailing observe |
+| `explore` | k autopilot steps | **k + 1**, min **2**, max **201** | same; `for _ in range(max(1, min(int(max_steps), 200)))` |
 
-**24 rows against a threshold of 10 — 14 rows of slack, 2.4×.** Every one of them carries
-`in_battle == 0` (no new objective, so no fresh encounter) and an unchanged map (*"without leaving
-the place you are in"*), which is what C7 needs over the first ten of them; and the moves vary
-`(x, y)`, which is what C9 needs. `exit_idx` lands on the first post-battle row with ≥ 24 rows
-behind it, so `range(battle_idx + 1, len(watches) - 9)` contains it.
+**The ratio between what an agent counts and what the scorer counts spans 16 : 1 to 1 : 201.**
 
-**Degenerate floor.** If the agent disobeys *"Observe again after every move"* and counts a round as
-the move alone, the yield is 12 rounds × 1 row = **12 rows — still over the bar, by 2.** The
-analysis only collapses if the agent ignores *two* explicit imperatives (the observe-after-move and
-the doubling), at which point it is not obeying the brief at all.
+**Reconciliation against `runs/gate0_paid/red/` — exact, not approximate.** From
+`transcript.jsonl`'s 142 `mcp_tool_call` items and the autopilot step counts each `explore`/`goto`
+result reports back:
 
-**For comparison, the same arithmetic on §5.3:** N alternations ⇒ 2N rows, with N = "several" = 3-5
-⇒ **6 to 10 rows**, i.e. a fail at N ≤ 4 and an exact tie at N = 5 — and the terminating tail
-observation-only, so the moves that feed C9 come only from the short prefix.
+| tool | calls | reported steps | predicted rows |
+|---|---|---|---|
+| `press_button` | 131 | — | 131 |
+| `press_sequence` | 4 | 8, 12, 6, 8 buttons | 4 |
+| `wait` | 2 | — | 2 |
+| `observe` | 1 | — | 1 |
+| `explore` | 3 | 200 (hit the cap), 88, 5 | 201 + 90 + 7 = 298 |
+| `goto` | 1 | 0 (*"blocked / no path to the target"*) | 2 |
+| | **142** | | **438** |
 
-**Costs, checked:** ~24 extra MCP tool calls. `primitive_action_events` counts tool calls, not
-autopilot steps, so v1 Red's 142 actions against the 542 cap and 127.75 s against 466.576 s both
-absorb it with room to spare (S-3 is not at risk).
+`runs/gate0_paid/red/world/oracle.jsonl` contains **438** rows. The model above is confirmed to the
+row. Note `press_sequence` moved **34** buttons across four calls and wrote **4** rows.
+
+### What that does to this amendment's floor — the correction
+
+The previous version of this section asserted *"One round = one small local move + one observation =
+**2 rows**"* and concluded **24 rows, 2.4× slack**. **That is wrong, and it is wrong by 2×.**
+
+The two symbols establish that a move writes a row and an observe writes a row. They do **not**
+establish that the agent performs two acts. `World.call`'s direct-action branch returns
+`[head, *self._content(self.plugin.observe(_AGENT))]` and its `observe` branch returns
+`self._content(self.plugin.observe(_AGENT))` — **byte-identical apart from the header**. Every
+action in this world hands back a complete fresh observation. *"Observe again after every move"* is
+therefore satisfied **by the move itself**; a second `observe` call returns the same content and
+writes the only extra row.
+
+**The v1 agent worked this out.** It called `observe` **once in 142 tool calls** — the opening
+*"Begin by observing"* — and never again. Corrected table:
+
+| reading | rounds | rows | vs the ten-row window |
+|---|---|---|---|
+| a separate `observe` after each move (what this section previously assumed) | 12 | 24 | +14 |
+| **observation taken from the action result**, handful = 5 | 12 | **12** | **+2** |
+| handful = 4 | 10 | **10** | **tie, zero slack** |
+| **handful = 3** (ordinary English) | 8 | **8** | **FAIL** |
+
+**The claimed 2.4× does not exist. The true design margin is 2 rows, and two compliant readings land
+at or under the bar.** *"A handful"* is 3-5 in ordinary English; the brief says only that a handful
+is *not enough*, so settling at four rounds is obedient, and the doubling gives eight.
+
+**Retraction — the "degenerate floor" framing was wrong.** This section previously wrote *"if the
+agent **disobeys** 'Observe again after every move'"* and called the resulting 12 rows a degenerate
+case. Taking the observation from the action result is **not disobedience and not degenerate**; on
+the only evidence that exists about how this model behaves on this harness, it is **the expected
+case**, at 141 of 142 calls. The floor is the expected reading, not the pathological one.
+
+**A second, weaker mismatch, recorded because it is the same defect in a different direction.** The
+brief denominates its unit in *moves*; the scorer counts *rows*, which come from row-writing tool
+calls. `press_sequence` carries up to sixteen moves in one call and writes one row. An agent that
+counts buttons as moves can report twelve rounds while writing three. This needs one inconsistency
+(a batched sequence does not observe after *every* move), where the reading above needs none — so it
+is not strictly compliant, and it is not what makes the floor fail. It is recorded because the brief
+defines its unit in a currency the harness converts at up to 16 : 1.
+
+**Costs, unchanged and not the constraint:** `primitive_action_events` counts tool calls, not
+autopilot steps, so v1's 142 actions against the 542 cap and 127.75 s against 466.576 s absorb any
+of these floors with room to spare. S-3 was never at risk and is not the reason this is hard.
+
+### The recommendation: stop amending the brief and escalate. C5 is not fixable in a wording.
+
+Two moves are available: **(A)** a third revision of the text, with the floor denominated in a unit
+that maps 1 : 1 onto rows; **(B)** §11's harness-side v3. Both were assessed. **(B) is recommended,
+and no third text is proposed in this PR.**
+
+#### Why not (A) — with the strongest (A) I can construct, and its arithmetic
+
+The unit that maps 1 : 1 onto rows without depending on a redundant `observe` is **a single move**:
+every direct action writes exactly one row by itself. So the honest (A) is denominated in moves, and
+tool-agnostically forbids batching (which the 16 : 1 `press_sequence` ratio otherwise permits):
+
+> "Make each small move on its own rather than several at once. A handful of moves is not enough,
+> and stopping the first time nothing new appears is not enough either. When you first judge that
+> you have made enough of them, treat that judgement as the halfway point rather than the end —
+> carry on the same way for as many moves again, and only then stop settling."
+
+**Worst compliant reading: handful = 3 → smallest obedient count 4 → doubled → 8 rows.** The same
+miss, one revision later. The doubling has to become a tripling or a second doubling to clear ten,
+and *"carry on for as many again, and then once more for as many again after that"* collapses into a
+single emphatic doubling under an ordinary reading — back to 8. Every variant I could build fails
+one of three ways:
+
+| variant | worst-case rows | why rejected |
+|---|---|---|
+| move-denominated floor + one doubling (above) | **8** | under the bar — v1's failure mode, third time |
+| + a second doubling | 16 if read as two steps, **8** if collapsed | the margin rests on the reader not collapsing it |
+| raise the base: *"a handful is not enough, nor is twice that"* | 14 | *"twice a handful"* evaluates to **exactly the bar** at handful = 5 — the same on-the-bar coincidence *"several"* had |
+| a bigger quantifier word (*"dozens"*) | ≥ 24 | hands the agent a number in words; *"a dozen"* sits 2 above the bar |
+| keep the round unit, force *"a separate look"* | 16 | the margin rests on the agent performing an act the world makes redundant — **the exact behaviour already observed to fail**, 141 times in 142 |
+
+Every (A) either lands its worst case at 8-14, or introduces a number-phrase that evaluates on or
+near the bar, or rests its margin on a redundant act this model has already been seen to skip.
+**A margin of 2-4 rows on a one-shot, unrepeatable run against a spent seed block — computed by the
+third consecutive person to compute a margin here — is not a design margin.** The first two
+computations were 14 and 2.4×; both were wrong, in the same direction, for the same reason.
+
+**And the count matters.** (A) would be draft **three**, each written after a reviewer computed a
+miss, none of them after a run. The risk section below already concedes *"there is no principled
+stopping rule in this document that would tell us when to stop amending and launch."* This is where
+that rule gets written, and the number is **two**.
+
+#### Why (B) — and an honest note on the trigger
+
+§11 pre-commits: *"a brief-level fix has failed twice on one failure mode … v3 does **not** propose a
+third wording; it moves the discipline into the harness."* That is exactly the situation, with one
+deviation stated plainly: **§11's trigger is a v2 run that failed, and no v2 run exists.** This is a
+*pre-run* escalation invoked on arithmetic rather than on a result. It is the cheaper direction of
+error — escalating early costs engineering, escalating late costs the held-out seed block under §10's
+one-attempt rule, which no later fix returns.
+
+#### §11's named mechanism does not work. Two independent defects, both measured.
+
+> *"forcing a fixed number of extra `observe`/`wait` round-trips after the model's `turn/completed`,
+> in `run_gate0_arm_turn`"*
+
+1. **A pure `observe`/`wait` drain converts a C5 failure into a C9 failure.** Neither tool changes
+   `(x, y)`. `_red_success` computes `post = [(x, y) …] for watches[exit_idx:]` — **all** rows to
+   end of file — and needs ≥ 2 distinct tiles. Measured on the only run that exists: v1's entire
+   post-battle tail is **4 rows, every one at `(5, 6)` on map 40 — one distinct tile**. Append any
+   number of forced observes to that trace and `exit_idx` becomes 434, C5 passes, and
+   `red_no_free_movement_after_exit` **fails**. That is §5.1's defect verbatim — *"The draft traded
+   one predicate clause for another and called it a fix"* — repeated at the harness level. **A v3
+   drain must move, not merely look**, which means the launcher performs game actions, which is a
+   materially heavier change than §11 budgeted for.
+2. **The launcher has no channel to the world.** `build_docker_mcp_args` returns
+   `docker run -i --rm …`: the world is a **stdio child of `codex`**, whose pipes `codex` owns.
+   `run_gate0_arm_turn` speaks JSON-RPC to `codex app-server` and never to `gate0_world`; there is no
+   `plugin.observe` for it to call. §11's mechanism is not merely insufficient — **it is not
+   implementable at the site §11 names.**
+
+#### The v3 that *is* implementable, named so the escalation is not a dead end
+
+`build_turn_start_request(thread_id, input_items)` is already parameterised on `thread_id`, so the
+launcher can start a **second turn on the same thread** after `turn/completed`. The world container
+is still alive and the MCP session unchanged, so the agent's own tools do the moving — and the
+second turn's text lives in code, where an integer is permitted and cannot be re-read as *"a
+handful"*. Its costs are real and all of them are David's call:
+
+- one extra short turn's tokens (cached prefix; S-3 has ~400 tool calls of headroom);
+- **a taint decision**: whether an explicit count inside a post-hoc evidence-collection turn leaks
+  the predicate. It is worth arguing rather than assuming, and the argument is this — **C5, C7 and
+  C9 are evidence-quality clauses, not capability clauses.** The claim under test is C2/C3/C4:
+  obtain the starter, win the rival battle. Those are decided, and unfakeable, before the second
+  turn begins. C5 exists to confirm the RAM reading is a sustained real state rather than a one-tick
+  artifact; C9 to confirm the player is alive and free rather than frozen. **Asking the subject to
+  generate the evidence that its own result is trustworthy is the category error underneath both
+  failed drafts**, and it is the thing a harness is for.
+- an `expected_launcher_sha256` re-pin, its own plan/branch/adversarial review per §0.2 and §11.
+
+#### Does #193 still merge? Yes — and merging it cannot cause a launch
+
+W3/W4/W5 are correct, W4 is load-bearing for Arm W, and W1/W2 are strictly better than §5.3 even
+though they do not close C5. Landing them is right. Launching on them is not, and the harness
+already enforces that: `refuse_if_expected_pins_stale` refuses on all four stale fixtures today.
+**§6.1's pin re-freeze is the last gate between here and a paid run, and it must not land until the
+C5 escalation is settled.**
+
+#### Two risks the amendment amplifies, named here rather than discovered later
+
+- **`BLOCKED` may read as rejection.** `PerceptionPlugin`'s render carries
+  `Last move '<b>' -> BLOCKED: you did NOT move; that direction is a wall.`, and the brief's
+  unchanged *"If the environment rejects further input, stop immediately"* meets it. The amendment
+  demands *more* small local moves inside a confined room, so wall collisions multiply; an agent
+  reading BLOCKED as rejection stops settling at its first wall. The clause is pre-registered and
+  unchanged, so this is not a new defect — but the amendment amplifies it, and it is one more reason
+  the floor cannot be entrusted to a wording.
+- **Arm W exposure rose and was not analysed.** Everything above is Arm-R-only. §5.5 pre-registered
+  the risk that an agent applies the settle rule *per episode*; this amendment raises the settle
+  floor, so if that ever happens the damage is proportionally longer. The guards (the prohibition
+  plus W4's carve-out) are intact and improved, so this is not blocking — but per §11 an Arm W
+  `terminal_count` / `terminal_not_last_row` failure is *"a brief defect, not a capability result"*:
+  it burns the run without buying evidence.
 
 ### The honest risk, on the record because David asked for it, not because it is comfortable
 
@@ -392,3 +589,13 @@ codepoint, `U+2014`, ×3, as before. No threshold, span or `exit_idx+9` boundary
 `treat`, `halfway`, `point`, `rather`, `than`, `carry`, `same`, `way`, `then`, `these`, `of`,
 `settling`, `send`, `kind`, `starting`, `next`, `as`, `follows`, `have`. The net movement is **away**
 from the tool surface and toward ordinary effort language.
+
+**Net taint position: a wash, not an improvement — stated at the right strength.** Mechanically the
+amended text is clean, and replacing §5.3's *"several"* (which evaluated to exactly the bar at
+5 alternations × 2 rows) with a negative bound plus a multiplier does remove a real on-the-bar
+coincidence. But the round construction **discloses something §5.3 did not: it hands the agent a
+countable unit and tells it to count.** The scorer's currency is one row per row-writing tool call;
+the brief's new currency is one round per move-plus-look. Defining a unit that maps near-1 : 1 onto
+the scorer's own counting basis is structurally *closer* to the predicate than *"several consecutive
+observations"* was, even with no count named. Improvement on the coincidence, regression on the
+counting basis. This entry does **not** claim a stronger taint position than §5.3's.
