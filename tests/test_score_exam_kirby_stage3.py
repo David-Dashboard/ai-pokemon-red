@@ -46,13 +46,46 @@ def test_never_leaving_stage_2_fails():
 
 
 def test_boot_only_all_zero_rows_never_passes():
-    # Cold boot reads stage=0, hp=0 -- indistinguishable from the PyBoy all-fields-zero glitch, and
-    # from "never started". `== 0` must never be read as "reached Green Greens".
+    # Cold boot reads stage=0, hp=0. A MULTI-row zero stretch is a real boot/title screen, not the
+    # single-tick sampler glitch, so it is kept and scored as what it is: no stage ever reached.
+    # `== 0` must never be read as "reached Green Greens".
     rows = _rows([0, 0, 0, 0], hp=0)
     ok, failures = _kirby_stage3_success(rows)
     assert not ok
-    assert failures == ["kirby_stage3_all_rows_corrupt_glitch"]
+    assert failures == ["kirby_stage3_never_cleared_stage_3"]
     assert scorer.score(rows)["overall"] == "FAIL_CAPABILITY"
+
+
+def test_lone_all_zero_row_is_the_glitch_signature():
+    ok, failures = _kirby_stage3_success(_rows([0], hp=0))
+    assert not ok
+    assert failures == ["kirby_stage3_all_rows_corrupt_glitch"]
+
+
+def test_no_lower_stage_before_the_clear_is_refused():
+    # A trace that reads 3 from its very first row has no progression behind it and is
+    # indistinguishable from a byte stuck/substituted at 3 -- score_exam_red_badge.py's reason.
+    ok, failures = _kirby_stage3_success(_rows([3, 3, 3]))
+    assert not ok
+    assert failures == ["kirby_stage3_no_lower_stage_before_clear"]
+
+
+def test_sampled_death_inside_the_streak_does_not_break_it():
+    # A first-ever clear arrives in Bubbly Clouds on low HP; a single sampled death must not turn a
+    # genuine three-row hold at stage 3 into a "single row transient". The streak is over `stage`
+    # alone; `hp >= 1` only has to hold SOMEWHERE inside it.
+    rows = _rows([2]) + [_row(3, hp=5), _row(3, hp=0), _row(3, hp=5)]
+    ok, failures = _kirby_stage3_success(rows)
+    assert ok, failures
+
+
+def test_two_single_sample_visits_split_by_a_title_screen_are_refused():
+    # The glitch filter must not splice two separate one-sample visits into one apparent 2-row hold:
+    # a multi-row all-zero stretch is a real title-screen reset and has to break the streak.
+    rows = _rows([1]) + _rows([3]) + _rows([0] * 20, hp=0) + _rows([3])
+    ok, failures = _kirby_stage3_success(rows)
+    assert not ok
+    assert failures == ["kirby_stage3_cleared_only_as_single_row_transient"]
 
 
 def test_cleared_then_game_over_still_passes():
