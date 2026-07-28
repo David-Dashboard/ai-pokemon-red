@@ -64,18 +64,42 @@ def _red_success(rows: list[dict]) -> tuple[bool, list[str]]:
     if exit_idx is None:
         failures.append("red_no_sustained_battle_exit")
         return False, failures
-    # A watch row where EVERY watched field simultaneously reads 0 is a corrupted one-tick RAM
-    # read, never a real state (confirmed against real human traces -- runs/gate0_human_baseline/
-    # red/oracle.jsonl -- where PyBoy's polling sampler occasionally caught a mid-battle tick with
-    # x/y/map/party/badges/in_battle/hp all simultaneously bounced to 0, sandwiched between
-    # identical, consistent neighbor rows). Deliberately narrow (PR #121 review Major 1): a filter
-    # keyed on `party` alone would also drop a row with a genuinely-corrupted party byte AND a real
-    # HP=0 or real map-change on the very same row, silently erasing a real failure -- this
-    # predicate only fires on the full corruption signature, never on a single stray field, so it
-    # can never mask a genuine death or a genuine map change elsewhere on the row.
+    # A one-tick corrupted RAM read, never a real state. MECHANISM (established 2026-07-28 by
+    # offline reproduction, not inferred): roms/PokemonRed.gb carries CGB flag 0xC0 in its header,
+    # so PyBoy runs it in CGB mode, where 0xD000-0xDFFF is WRAM-BANK-SWITCHED by SVBK (0xFF70).
+    # Pokemon Red is DMG code and never manages SVBK, but transiently stomps it (values 2-7 observed
+    # live). EVERY watched address (0xD057/0xD163/0xD16C/0xD16D/0xD356/0xD35E/0xD361/0xD362) lies in
+    # that banked window, so a stomped tick reads ALL EIGHT fields out of the wrong WRAM bank at
+    # once, and the next sample is back on bank 1 -- hence "sandwiched between identical, consistent
+    # neighbor rows". 358/358 stomped ticks diverged from truth in a 150k-frame mid-battle scan.
+    #
+    # The alternate bank holds only residue, so the corrupt row reads party/in_battle/HP all 0 with
+    # the four D3xx fields all showing one repeated residue byte. All-zero is the common case (an
+    # untouched bank); a DIRTY bank gives the identical shape with a NON-ZERO byte. Both variants
+    # sit in committed traces: all-zero at eval/fixtures/gate0_red_human_attempt1_no_movement.jsonl
+    # row 624 and gate0_red_human_attempt2_completion.jsonl row 494 (BOTH mid-battle, in_battle==2
+    # on both neighbors -- so this artifact demonstrably lands inside THIS span); the non-zero
+    # variant {x/y/map/badges=1, rest=0} at gate0_red_human_attempt2_completion.jsonl row 363 and
+    # reports/2026-07-24-gate0-armR-verdict/oracle.jsonl rows 335/347. ~1800 offline reproductions
+    # across boot and mid-battle savestates produced this signature and no other shape. The former
+    # all-zero-only predicate was this same signature with a clean bank; widening it closes the gap
+    # reports/2026-07-25-gate0-v2-prereg.md §5.4 C8 pre-registered as a live risk to this exact span
+    # (deviation recorded in reports/2026-07-28-gate0-v2-deviations.md).
+    #
+    # Still deliberately narrow (PR #121 review Major 1): a filter keyed on `party` alone would also
+    # drop a row with a genuinely-corrupted party byte AND a real HP=0 or real map-change on the very
+    # same row, silently erasing a real failure. This predicate fires only on the full eight-field
+    # signature, never on a single stray field. It additionally requires party == 0, and this span
+    # exists only after `party_idx` proved an exact 0->1 party transition -- so every GENUINE row in
+    # it has party >= 1, which makes a genuine death, a genuine map change and a genuine badge all
+    # unreachable by this filter by construction. Any non-int (or bool) field keeps the row.
     def _is_corrupt_glitch_row(w):
-        return all(w.get(k) == 0 for k in
-                   ("x", "y", "map", "party", "badges", "in_battle", "party_hp_hi", "party_hp_lo"))
+        vals = [w.get(k) for k in ("x", "y", "map", "badges",
+                                   "party", "in_battle", "party_hp_hi", "party_hp_lo")]
+        if any(isinstance(v, bool) or not isinstance(v, int) for v in vals):
+            return False
+        x, y, map_, badges, party, in_battle, hp_hi, hp_lo = vals
+        return party == in_battle == hp_hi == hp_lo == 0 and x == y == map_ == badges
 
     safety_span = [w for w in watches[battle_idx:exit_idx + 10] if not _is_corrupt_glitch_row(w)]
     hp_values = []

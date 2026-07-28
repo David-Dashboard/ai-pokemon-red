@@ -529,3 +529,39 @@ def test_frozen_source_pins_load_exact_artifacts(monkeypatch, tmp_path):
     assert failures == []
     assert verified["expected_seeds"] == list(range(5))
     assert verified["metrics"] == _verified()["metrics"]
+
+
+# The REAL wrong-WRAM-bank row, copied verbatim out of the banked paid Red arm
+# (reports/2026-07-24-gate0-armR-verdict/oracle.jsonl row 335, byte-identical to row 347 and to
+# eval/fixtures/gate0_red_human_attempt2_completion.jsonl row 363). Not hand-invented.
+_BANKED_WRONG_BANK_ROW = {"x": 1, "y": 1, "map": 1, "party": 0, "badges": 1, "in_battle": 0,
+                          "party_hp_hi": 0, "party_hp_lo": 0}
+
+
+def test_red_real_banked_wrong_bank_row_in_span_injects_no_false_death_or_map_change():
+    # reports/2026-07-25-gate0-v2-prereg.md §5.4 C8 pre-registered exactly this: "Any mid-battle row
+    # with party_hp_hi == party_hp_lo == 0 that is not the full all-zero signature fires this
+    # clause." v1 never built a safety span so it was never evaluated. The artifact demonstrably
+    # DOES land inside the span -- gate0_red_human_attempt{1,2}*.jsonl rows 624/494 are corrupt rows
+    # with in_battle==2 on both neighbours -- and when the alternate WRAM bank is dirty it arrives
+    # in this non-all-zero shape, which the old all-zero-only filter passed straight through into
+    # hp_values (false red_player_hp_reached_zero) and the map check (false
+    # red_map_changed_during_battle_exit_span). Two false FAILs on a genuinely successful run.
+    rows = _red()
+    rows.insert(3, {"watch": dict(_BANKED_WRONG_BANK_ROW)})
+    ok, failures = _red_success(rows)
+    assert ok, failures
+    assert failures == []
+
+
+def test_red_wrong_bank_shape_with_a_real_party_still_fails_a_real_death():
+    # The PR #121 review Major 1 property, re-proved against the WIDENED predicate. The filter
+    # requires party == 0, and the safety span exists only after party_idx proved an exact 0->1
+    # transition -- so a GENUINE row here always has party >= 1 and can never be swallowed. A row
+    # carrying the x==y==map==badges shape but a real party and a real HP=0 death must still FAIL.
+    rows = _red()
+    rows[3]["watch"].update({"x": 1, "y": 1, "map": 1, "badges": 1, "party": 1,
+                             "party_hp_hi": 0, "party_hp_lo": 0})
+    ok, failures = _red_success(rows)
+    assert not ok
+    assert "red_player_hp_reached_zero" in failures

@@ -228,3 +228,36 @@ def test_cli_subprocess_missing_file_exits_nonzero(tmp_path):
     assert proc.returncode == 1
     payload = json.loads(proc.stdout)
     assert payload["overall"] == "INSUFFICIENT_DATA"
+
+
+# The REAL wrong-WRAM-bank row, copied verbatim out of the banked paid Red arm
+# (reports/2026-07-24-gate0-armR-verdict/oracle.jsonl rows 335 and 347, byte-identical to
+# eval/fixtures/gate0_red_human_attempt2_completion.jsonl row 363). Not hand-invented.
+_BANKED_WRONG_BANK_ROW = {"x": 1, "y": 1, "map": 1, "party": 0, "badges": 1, "in_battle": 0,
+                          "party_hp_hi": 0, "party_hp_lo": 0}
+
+
+def test_real_banked_wrong_bank_row_after_the_battle_is_not_a_false_pass():
+    # The FALSE PASS this scorer's widened filter exists to stop. The corrupt row reads badges == 1
+    # (bit 0 SET). Landing after the qualifying battle it satisfies the badge-flip check, and as the
+    # LAST row nothing after it clears the bit, so red_badge_bit_reverted_after_set never fires --
+    # a trace in which no badge was ever earned scored PASS. Strictly worse than a false FAIL: this
+    # is a graduation-exam scorer.
+    rows = _rows(False) + [{"watch": dict(_BANKED_WRONG_BANK_ROW)}]
+    ok, failures = _red_badge_success(rows)
+    assert not ok
+    assert failures == ["red_badge_never_earned"]
+
+
+def test_real_banked_traces_report_the_true_failure_not_the_artifact():
+    # Regression on committed REAL data, both traces that carry the non-zero variant. Before the
+    # widening both returned red_badge_flip_not_after_battle -- a failure reason manufactured
+    # entirely by the corrupt row's badges==1 flipping the bit at its index, ahead of battle_idx.
+    # The true reason on both traces is that no badge was ever earned.
+    for name in ("reports/2026-07-24-gate0-armR-verdict/oracle.jsonl",
+                 "eval/fixtures/gate0_red_human_attempt2_completion.jsonl"):
+        rows = [json.loads(line) for line
+                in (_REPO_ROOT / name).read_text(encoding="utf-8").splitlines() if line.strip()]
+        ok, failures = _red_badge_success(rows)
+        assert not ok, name
+        assert failures == ["red_badge_never_earned"], (name, failures)

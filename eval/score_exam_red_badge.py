@@ -7,8 +7,8 @@ first Gym Badge." End state: RAM oracle `badges` (0xD356, `world_mcp.py:177`, th
 
 Reads only `oracle.jsonl` `watch` rows -- never the transcript, never a model self-report -- and
 mirrors `score_gate0.py::_red_success`'s fail-closed shape in full, not just the corrupt-row filter:
-a corrupted single-tick RAM read (every watched field simultaneously 0 -- the same PyBoy
-polling-sampler glitch signature documented in `score_gate0.py`) is filtered out before scoring,
+a corrupted single-tick RAM read (the full eight-field wrong-WRAM-bank signature documented in
+`score_gate0.py`) is filtered out before scoring,
 never treated as a real world state; anything else missing/malformed is a hard refusal, never a
 guessed PASS. Critically, a bare `badges` bit-0 flip is NEVER enough on its own (PR #139 review
 finding 1: a stuck/corrupted/substituted single byte can flip with zero real progress behind it) --
@@ -31,7 +31,25 @@ _WATCHED_KEYS = ("x", "y", "map", "party", "badges", "in_battle", "party_hp_hi",
 
 
 def _is_corrupt_glitch_row(watch: dict) -> bool:
-    return all(watch.get(k) == 0 for k in _WATCHED_KEYS)
+    """The full eight-field wrong-WRAM-bank signature -- see `score_gate0.py::_red_success`'s
+    `_is_corrupt_glitch_row` for the established mechanism (CGB-mode SVBK bank stomp; every watched
+    address is in the banked 0xD000-0xDFFF window, so all eight misread together for one tick).
+
+    This scorer needs the widened form MORE than score_gate0.py does, because here the artifact can
+    produce a FALSE PASS, not just a false FAIL: the non-zero variant reads `badges == 1`, i.e. bit 0
+    SET. A corrupt row landing after the qualifying battle flips the badge bit, and if nothing after
+    it clears the bit (e.g. it is the last row) `red_badge_bit_reverted_after_set` never fires and a
+    trace with no badge in it scores PASS. Realised, not hypothetical: on BOTH committed Red traces
+    that carry the non-zero variant this scorer already returns the WRONG failure --
+    `red_badge_flip_not_after_battle` instead of the true `red_badge_never_earned`.
+
+    Cannot mask a real badge: a genuine badge row has `party >= 1` (a starter is required long
+    before any Gym) and this predicate requires `party == 0`."""
+    vals = [watch.get(k) for k in _WATCHED_KEYS]
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in vals):
+        return False
+    x, y, map_, party, badges, in_battle, hp_hi, hp_lo = vals
+    return party == in_battle == hp_hi == hp_lo == 0 and x == y == map_ == badges
 
 
 def _badges_bit0(value: object) -> bool | None:
