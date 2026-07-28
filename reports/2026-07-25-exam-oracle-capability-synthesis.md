@@ -1,5 +1,17 @@
 # Exam-oracle synthesis: 4 blocked tasks are gated on play-capability, not RAM hunting
 
+> ## ⚠ CORRECTION 2026-07-28 — the EX03 Emerald addresses cited here are falsified
+> `reports/2026-07-28-emerald-oldale-oracle.md` shows the 2026-07-23/25 Emerald `map_group`/
+> `map_num` addresses were not map identity at all (`0x0203735C` is the map-entry x-coordinate).
+> Two claims below are therefore wrong:
+> * Birch's Lab is **`(1, 4)`**, not `(2, 13)` — see §2's EX03 row and §4 option (ii).
+> * The Emerald interiors are **not** the "most solid" reading: the same byte gives the truck
+>   interior and May's House 1F an identical value of 9, a genuine cross-map collision.
+>
+> The corrected fixed-address fields are `mapNum 0x02037359`, `mapGroup 0x0203735A`,
+> `regionMapSectionId 0x0203732C`. This report's *conclusion* — that EX03 is gated on
+> play-capability, not RAM hunting — is unaffected and was independently re-confirmed.
+
 Status: **$0, docs only, no runs, no code/scorer/world_mcp/fixture edits.** Synthesizes four
 2026-07-25 oracle-hunt reports plus their two 2026-07-23 predecessors, against the graduation-exam
 v1 definition (PR #129, open/unmerged) and the eight `eval/score_exam_*.py` scorers on `main`
@@ -63,7 +75,7 @@ should not be flattened into one "the agent is bad at games" claim:
 | EX05 MKDS | 8 candidate addresses characterized (2 disqualified, 1 leading, 2 low-confidence, plus a corroborated unpursued cluster) | no fixed/open-loop policy survives more than ~100-250 frames past turn 1 anywhere on the course; ~15,000 frames of scripted+manually-corrected driving across two sessions never finished one lap | **continuous-control / closed-loop driving** — the course requires per-segment steering adaptation no open-loop policy generalizes to |
 | EX02 Kirby GB | 8 survivors pinned (down from 11 candidates across two sessions), all 3 prior candidates eliminated with evidence | Castle Lololo's block-push/door puzzle resisted scripted and hand-tuned eyes-on play; Stage 3 was never reached, only one stage transition (1->2) was ever observed | **puzzle-solving** — the obstacle is a game-design puzzle, not a reflex/dexterity check |
 | EX04 Kirby GBA | `world`/`score` addresses re-verified under continuous live play (stronger than prior snapshot evidence); `A` confirmed as jump/float | a stationary hazard at score 2800 resisted ~10 varied jump-height/timing/crouch attempts; the level's goal door was never reached | **precise platforming** — a single reflex/timing obstacle, not a puzzle or navigation problem |
-| EX03 Emerald | `map_group`/`map_num`/`x`/`y` addresses found and (mostly) verified; Birch's Lab interior newly pinned at `(2,13)` | Route 101's only exit is permanently blocked by a fixed NPC whose dialogue never varies or advances regardless of approach angle, waiting, or prior Lab visit — reachable only by first completing the starter-Pokemon rescue quest | **a scripted game gate requiring prior task completion** — not a navigation, puzzle, or dexterity problem at all; the game itself refuses to let the run proceed |
+| EX03 Emerald | `map_group`/`map_num`/`x`/`y` addresses found and (mostly) verified; Birch's Lab interior newly pinned at `(2,13)` — **⚠ FALSIFIED 2026-07-28: those were not map-identity addresses; the Lab is `(1,4)`** | Route 101's only exit is permanently blocked by a fixed NPC whose dialogue never varies or advances regardless of approach angle, waiting, or prior Lab visit — reachable only by first completing the starter-Pokemon rescue quest | **a scripted game gate requiring prior task completion** — not a navigation, puzzle, or dexterity problem at all; the game itself refuses to let the run proceed |
 
 Each row's "what blocked completion" is a different kind of gap: control-loop design, puzzle
 inference, motor-timing precision, and quest-sequencing respectively. A single fix (e.g., "better
@@ -130,8 +142,10 @@ return a refusal rather than a verdict, until a separate oracle-hunt/readiness e
 gap — which could be never, if a hunt keeps not reaching the terminal state.
 
 **(ii) Re-scope the affected tasks to earlier, reachable, already-oracle-verifiable milestones**
-(e.g., a checkpoint instead of a full lap for EX05; Birch's Lab `(2,13)` — already reached and
-already the most solid Emerald reading — instead of Oldale for EX03). This makes the exam
+(e.g., a checkpoint instead of a full lap for EX05; Birch's Lab — already reached — instead of
+Oldale for EX03; **⚠ corrected 2026-07-28: the Lab is `(1,4)`, not `(2,13)`, and the "most solid
+Emerald reading" claim is withdrawn — the same byte collides the truck interior with May's House
+1F**). This makes the exam
 objectively easier and must be an explicit, documented re-scoping in the frozen v1 text itself
 (a new instruction string, a new end-state definition) — never a silent substitution of what
 "success" means after the fact.

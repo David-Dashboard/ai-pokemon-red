@@ -89,7 +89,12 @@ Counting addresses whose 12-anchor value vector is bit-identical to the candidat
 | `mapGroup` `0x0203735A` | 3 | 1 | `0x020322E4`, `0x0203735A`, `0x0203BC80`, `0x03005E59` |
 
 Four mutually-agreeing copies, adjacent in pairs — i.e. the game keeps redundant `(group, num)`
-mirrors and they never disagreed. Small and structured, not a haystack. For contrast, **250 716 of
+mirrors and they never disagreed. The pairs are internally consistent in a way that is evidence
+rather than coincidence: `0x020322E4/E5` and `0x0203BC80/81` are ordered **group-then-num**, while
+`0x02037359/5A` is **num-then-group** — exactly the field order of a `WarpData` struct versus an
+`ObjectEvent` struct. Two different record types holding the same map identity, each in its own
+declared order, is what a correct hit looks like; a coincidental byte pattern would not respect
+that. Small and structured, not a haystack. For contrast, **250 716 of
 262 144 EWRAM bytes are bit-stable across the six outdoor anchors alone** — "stable within a map" is
 almost no evidence at all, which is precisely how the banked hunt landed on the wrong byte.
 
@@ -116,10 +121,21 @@ Assumption tested, not assumed: `gObjectEvents[0]` is the player because
 `gPlayerAvatar.objectEventId` (`0x02037595`) reads **0 in all 12 anchors**. Only tested inside one
 town.
 
-## 4. Oldale's values — derived from the ROM, not from memory
+## 4. Oldale's values — derived from the ROM, with stated assumptions
 
-I have no network, so nothing here is recalled. `rom_maps.py` anchors on live RAM and walks the
-ROM's own tables:
+I have no network, so no *value* here was looked up — but the derivation is **not** assumption-free,
+and saying otherwise would be an overclaim. `rom_maps.py` hardcodes four pieces of pokeemerald
+domain knowledge: that Littleroot is map number **9** of group 0 (`g0 = refs[0] - 9*4`), the
+`MapHeader` field offsets (`mapsec` at +0x14, `map_type` at +0x17), the **12-byte** `MapConnection`
+stride, and the magic window `0x08480000 <= ptr <= 0x08490000` used to decide where the group table
+ends. Those are assumed, then checked — not derived. What rescues the derivation from circularity is
+that the assumptions are *over-determined* by two independent checks (both `assert len(...) == 1`
+below, and the mapsec-0 census in step 5 landing on exactly the six maps I had already visited
+live). Read step 3's "confirming Littleroot = map (0,9)" as **assumed-then-corroborated**, and read
+"518 maps" as "the maps reachable through that magic window" — the census is only as complete as
+that bound, which I did not verify independently.
+
+`rom_maps.py` anchors on live RAM and walks the ROM's own tables:
 
 1. Live `gMapHeader` (fixed EWRAM `0x02037318`) in outdoor Littleroot gives the ROM pointer quad
    `(0x083EA284, 0x08527840, 0x081E7DCB, 0x0848660C)`.
@@ -137,7 +153,9 @@ ROM's own tables:
      nothing else in the game.
 
 **So: `0x0203732C == 1` is true in Oldale Town and its five interiors and in no other map of the
-518.** `(mapGroup, mapNum) == (0, 10)` is true in outdoor Oldale specifically.
+518** — ***but this is UNCONFIRMED-LIVE. It is a ROM-table derivation; no one has ever stood in
+Oldale and read that byte. Confirm it with a single live read before wiring anything.***
+`(mapGroup, mapNum) == (0, 10)` for outdoor Oldale carries the same UNCONFIRMED-LIVE status.
 
 ## 5. The monotone latch: NOT FOUND, and why a fixed address cannot express it
 
@@ -146,8 +164,11 @@ The right signal for "has *reached* Oldale" is the visited-town flag bit in
 recorded anywhere in this repo and that invalidates any future absolute-address plan for Emerald
 progress state:
 
-**Emerald relocates SaveBlock1 on every map transition.** `gSaveBlock1Ptr` lives at a fixed IWRAM
-address `0x03005D8C`, but its *target* moved across this session's states:
+**Emerald relocates SaveBlock1 across map transitions.** (Seven distinct bases over roughly eleven
+transitions — enough to establish that it moves, *not* enough to establish "on every one"; I did not
+instrument each transition individually. The conclusion below survives either way.)
+`gSaveBlock1Ptr` lives at a fixed IWRAM address `0x03005D8C`, but its *target* moved across this
+session's states:
 
 ```
 0x02025A14  0x02025A28  0x02025A30  0x02025A40  0x02025A44  0x02025A58  0x02025A7C
@@ -165,6 +186,28 @@ Consequences:
   consumed at `:997`). It cannot express `u32 @ 0x03005D8C, then +offset`. **Wiring any Emerald
   flag/latch oracle needs a `watch` schema change first** — that is a contract decision, not a
   hunt result, and it is exactly the kind of thing that must not be smuggled in silently.
+
+Two traps in that reader that whoever wires this must know about:
+
+1. **A mis-wired `watch` fails SILENTLY, not loudly.** `core/perception_plugin.py:302-305` wraps the
+   whole read in a bare `except Exception: pass`:
+   ```python
+   if self._watch:
+       try:
+           rec["watch"] = {nm: int(self.emu.read(ad)) for nm, ad in self._watch.items()}
+       except Exception:
+           pass
+   ```
+   So a callable, a tuple, or any pointer-indirection value does not raise into the log — the
+   `watch` key is simply **absent from every observe record**. A wrong oracle would present as *a
+   world with no oracle at all*, which is far worse than a crash: a scorer would emit
+   `INSUFFICIENT_DATA` and a reader would blame the world, not the address. Anyone extending the
+   schema must fix this swallow in the same PR.
+2. **Reads are u8 only.** `core/gba_emulator.py:99` returns a single byte, and the dict comprehension
+   above calls `int(self.emu.read(ad))` once per name. So my own re-derived **u16** `x = 0x02037360`
+   / `y = 0x02037362` cannot be wired faithfully as-is; they need the hi/lo split the Red arm already
+   uses (`world_mcp.py:178` `party_hp_hi` / `party_hp_lo`) and a scorer-side recombination. The §1
+   map-identity bytes are unaffected — `mapNum`, `mapGroup` and `regionMapSectionId` are all u8.
 * By contrast the §1 candidates (`gObjectEvents`, `gMapHeader`) are in fixed BSS *outside* the
   relocating blocks, so they are safe at absolute addresses. The 2026-07-23 report's proposed
   `x`/`y` at `0x02037360`/`0x02037364` are likewise in fixed BSS and are fine (I re-derived
@@ -256,8 +299,20 @@ reports/probes/2026-07-28-emerald-oldale-oracle/
   evidence/     7 curated screenshots (gate dialogue, May intro, Lab aide, outdoor anchors)
 ```
 
-Savestates and the 24 raw `.bin` region dumps stay in this session's scratchpad (throwaway per repo
-convention); `rom_maps.py` is fully reproducible from the ROM alone.
+**Which numbers are checkable, and which are not — read this before citing anything above.**
+
+| claim | reproducible from committed artifacts? |
+|---|---|
+| §4 ROM derivation: Oldale `(0,10)`, mapsec 1, the 518-map census, the connection walk | **YES** — `rom_maps.py` needs only the ROM path |
+| §1 12-anchor value trace, §2 twin counts, §3 frame traces, §5 SaveBlock1 relocation | **NO — scratchpad-only measurements** |
+
+`sweep.py` / `sweep2.py` read `dumps/A_*.bin` and `etrace.py` writes a JSON trace; none of those
+24 raw region dumps, the savestates that produced them, or the trace JSONs are committed (they are
+throwaway per repo convention, and the savestates depend on a ~48 000-frame scripted intro run).
+The scripts are committed so the *method* is auditable and re-runnable, but the specific numbers in
+§1/§2/§3/§5 are **not independently checkable from this PR** — re-deriving them means replaying the
+drive. That is a real gap, not a formality: treat those numbers as this session's measurements
+pending a second run, and treat only §4 as reproducible on the spot.
 
 All location and dialogue claims in this report are **model-graded from screenshots**, pending
 David's validation.

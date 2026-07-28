@@ -10,6 +10,13 @@ Anchoring argument (this is the part that makes the derivation evidence rather t
   4. From there the connection lists and the whole 34-group / 518-map table are walkable, and the
      regionMapSectionId of every map in the game can be read.
 
+ASSUMED, NOT DERIVED (pokeemerald domain knowledge baked in below — stated so the derivation is not
+mistaken for assumption-free): Littleroot is map number 9 of group 0; MapHeader field offsets
+(mapsec +0x14, map_type +0x17); the 12-byte MapConnection stride; and the `0x08480000..0x08490000`
+window used to find the end of the group table (so the map census is only as complete as that
+bound). The two `assert len(...) == 1` checks and the mapsec-0 census matching the six
+live-visited Littleroot maps are what corroborate these.
+
 Run: python rom_maps.py "<path to Pokemon - Emerald Version (U).gba>"
 """
 import struct
