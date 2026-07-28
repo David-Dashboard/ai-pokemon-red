@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "arm": "miniwob",
+  "role": "agent",
+  "mode": "paid_gate0",
+  "wall_clock_s": 295.5940000000119,
+  "primitive_actions": 97,
+  "human_wall_clock_s": null,
+  "human_primitive_actions": null,
+  "human_source_note": "human baseline file not found (see report for the MiniWoB PENDING caveat)",
+  "cost_usd": 1.02958,
+  "normalized_credits": 25.739499999999996
+}

@@ -19,6 +19,17 @@ requires_powershell = pytest.mark.skipif(
     POWERSHELL is None,
     reason="PowerShell is required to exercise the production resolver AST",
 )
+# The breaker's kill-on-close supervision uses Windows Job Objects (kernel32) plus
+# DETACHED_PROCESS/CREATE_NEW_PROCESS_GROUP -- a Windows-only mechanism, because the paid Gate-0
+# launcher runs on David's Windows PowerShell. pwsh exists on the Linux CI runner but the Job
+# Object APIs do not, so those two tests must skip off-Windows (they run + pass on Windows, where
+# the launcher actually lives and where the local suite runs).
+requires_windows_powershell = pytest.mark.skipif(
+    POWERSHELL is None or os.name != "nt",
+    reason="Job Object kill-on-close supervision is a Windows-only mechanism (the paid launcher "
+           "runs on Windows PowerShell); pwsh exists on the Linux CI runner but kernel32 Job "
+           "Object APIs do not",
+)
 RESOLVER_HARNESS = r"""
 $ErrorActionPreference = 'Stop'
 $tokens = $null
@@ -838,7 +849,7 @@ def test_get_paid_codex_exec_arguments_wraps_overrides_and_reads_the_prompt_from
     ]
 
 
-@requires_powershell
+@requires_windows_powershell
 def test_breaker_supervised_exec_kills_the_child_mid_stream_on_a_synthetic_trip(tmp_path):
     # The precondition-4c shape, exercised fast: the stub emitter (zero spend, zero network) is
     # substituted for codex. The rate is pinned at the TOP of the plausibility band (PR #122 M3,
@@ -918,7 +929,7 @@ sys.exit(0)
 '''
 
 
-@requires_powershell
+@requires_windows_powershell
 def test_breaker_supervised_exec_reaps_a_detached_grandchild_after_the_child_exits_cleanly(tmp_path):
     # PR #122 review Finding 2's exact PoC: a child that spawns a DETACHED_PROCESS/
     # CREATE_NEW_PROCESS_GROUP grandchild, emits one harmless (non-tripping) event, and exits 0.
