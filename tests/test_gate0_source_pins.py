@@ -138,7 +138,7 @@ def test_frozen_seed_hash_matches_the_real_seed_fixture(mode, seed_fixture):
     assert pins["frozen_seed_sha256"] == _sha256(seed_path)
 
 
-@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
 def test_expected_pins_sha256_matches_the_real_expected_pins_files(mode):
     pins = _load(scorer.SOURCE_PIN_FILES[mode])
     for arm in ("red", "miniwob"):
@@ -165,7 +165,7 @@ def test_artifact_paths_has_all_six_required_keys(mode):
     assert set(pins["artifact_sha256"]) == set(required)
 
 
-@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0"])
+@pytest.mark.parametrize("mode", ["readiness_dev", "paid_gate0", "paid_gate0_v2"])
 def test_verify_audit_paths_accepts_a_manifest_pointing_at_the_real_pins(mode):
     # End-to-end shape check against the REAL committed fixtures (not a monkeypatched tmp_path
     # stand-in): a manifest whose codex_audit/oracle exactly match this mode's frozen audit_paths
@@ -264,23 +264,41 @@ def test_v2_seeds_are_fresh_distinct_and_scorer_pinned():
     assert not set(seeds) & set(scorer.MODES["paid_gate0"][1])
 
 
-def test_v2_expected_pins_hashes_are_pending_and_fail_closed():
-    """The v2 expected-pins digests are not knowable until prereg P8 rebuilds the world image and P4
-    re-freezes items 1-9, so they carry PENDING placeholders -- never a fabricated or copied hash.
-    _verify_audit_paths must refuse the arm rather than accept the placeholder."""
-    pins = _load(scorer.SOURCE_PIN_FILES["paid_gate0_v2"])
+def test_v2_expected_pins_hashes_are_frozen_to_the_real_files_and_agree_three_ways():
+    """FROZEN 2026-07-28 (prereg P4), replacing the PENDING guard this test used to be: prereg P8's
+    world-image rebuild has landed (PR #180), so the digests are knowable and are extracted from the
+    real files -- never fabricated, never forward-declared. All three source-pins manifests must
+    carry the SAME two values, because all three point their audit_paths[arm]["expected_pins"] at
+    the SAME two target files; a divergence means one of the three is stale (the coupling hazard
+    each fixture's own _source_expected_pins_sha256 warns about)."""
+    v2 = _load(scorer.SOURCE_PIN_FILES["paid_gate0_v2"])
     manifest = {"mode": "paid_gate0_v2", "arms": {}}
     for arm in ("red", "miniwob"):
-        value = pins["expected_pins_sha256"][arm]
-        assert value.startswith("PENDING_")
-        assert len(value) != 64, "a placeholder must never be mistakable for a real sha256"
-        entry = dict(pins["audit_paths"][arm])
+        value = v2["expected_pins_sha256"][arm]
+        assert len(value) == 64 and set(value) <= set("0123456789abcdef"), "must be a real sha256"
+        assert value == _sha256(EXPECTED_PINS_PATHS[arm])
+        for other in ("readiness_dev", "paid_gate0"):
+            assert _load(scorer.SOURCE_PIN_FILES[other])["expected_pins_sha256"][arm] == value
+        entry = dict(v2["audit_paths"][arm])
         oracle = entry.pop("oracle")
         manifest["arms"][arm] = {"codex_audit": entry, "oracle": oracle}
     resolved, failures = scorer._verify_audit_paths(manifest)
-    assert resolved == {}
-    assert sorted(failures) == ["expected_pins_hash_pin_missing:miniwob",
-                                "expected_pins_hash_pin_missing:red"]
+    assert failures == [], "no expected_pins_hash_pin_missing/mismatch may remain"
+    assert set(resolved) == {"red", "miniwob"}
+
+
+def test_v2_six_checkbox_measurement_is_pinned_to_the_post_rebuild_image():
+    """prereg 4.1.2: the six-checkbox property is a fact about the WORLD IMAGE, so the image the
+    measurement was taken against must be recorded. Re-confirmed against the post-P8 rebuild on
+    2026-07-28 (5/5/2/2/6, 558952 renders six) -- the seed block itself is untouched and binding."""
+    measured = _load(scorer.SOURCE_PIN_FILES["paid_gate0_v2"])["_measured_against"]
+    miniwob_pins = _load(EXPECTED_PINS_PATHS["miniwob"])
+    assert measured["world_image_id"] == miniwob_pins["world_image_id"]
+    assert measured["world_image"] == miniwob_pins["world_image_tag"]
+    assert measured["superseded_world_image_id"] != measured["world_image_id"]
+    assert measured["re_measured_post_p8_on"] == "2026-07-28"
+    # The frozen block is the authority, not the re-derivable rule: 558952 stays the H-e case.
+    assert scorer.MODES["paid_gate0_v2"][1][4] == 558952
 
 
 def test_v2_pending_artifact_hashes_are_never_valid_sha256():
