@@ -1048,7 +1048,7 @@ predicate. Left untouched deliberately so this PR stays docs-only.
 - `eval/fixtures/gate0_paid_source_pins.json`, `gate0_readiness_dev_source_pins.json`,
   `gate0_expected_pins_{red,miniwob}.json`, `gate0_expected_pins_{red,miniwob}.appserver.json`,
   `gate0_signature.appserver.json`, `gate0_miniwob_paid_seeds.json`
-- `tools/capture_gate0_baseline_miniwob.py` (`--mode paid_gate0 --i-am-human`)
+- `tools/capture_gate0_baseline_miniwob.py` (`--mode paid_gate0_v2 --i-am-human` — the v2 mode; see P1a)
 - `reports/2026-07-24-gate0-paired-verdict.md` (**the banked v1 verdict: `CONSTANCY_BREACH`**),
   `reports/2026-07-24-gate0-armR-verdict.md`,
   `reports/2026-07-24-gate0-prereg-amendment-appserver.md`,
