@@ -96,17 +96,22 @@ GAME = "miniwob_click_checkboxes"
 # so a future scorer/verdict-writer can see this from the artifact alone, not just doc prose.
 CAPTURE_MODALITY = "screenshot_relay_typed_action"
 
-# The scroll escape hatch the operator is shown, and how their `key NAME` is delivered. BOTH are
-# recorded verbatim in the artifact because they are INTERFACE ASYMMETRIES vs the paid agent, which a
-# frozen-sha256 artifact must carry on its face: world_mcp.py's press_key schema documents a key NAME
-# (the field is really an index, so the agent's raw name raises ValueError), and its click rejection
-# tells the agent anything below y=176 is "unreachable" without mentioning that the page scrolls.
-# Both asymmetries make the HUMAN faster, i.e. they make the `agent <= 2.0x human` bar HARDER -- they
-# are conservative in the right direction, but an auditor reading only the artifact must still see them.
+# The scroll escape hatch the operator is shown, and how their `key NAME` is delivered. BOTH are still
+# recorded verbatim in the artifact, because a frozen-sha256 artifact must carry its own interface
+# conditions on its face -- but AS OF THE 2026-07-28 BATCHED WORLD REBUILD THEY ARE NO LONGER
+# ASYMMETRIES. Previously: world_mcp.py's press_key schema documented a key NAME while the field was
+# really an index (so the agent's raw name raised ValueError), and its click rejection told the agent
+# anything below y=176 was "unreachable" without mentioning that the page scrolls -- both made the
+# HUMAN faster, which made the `agent <= 2.0x human` bar HARDER (conservative in the right direction,
+# but real). That rebuild fixed BOTH on the agent's side: press_key now takes names via
+# MiniWobSession._resolve_key -- the very same code path this rig now calls, rather than pre-resolving
+# to an index itself -- and both the click description AND its runtime rejection message now name the
+# scroll escape hatch. Kept here as the artifact's honest record of what the operator was told.
 OPERATOR_HINT = ("The page SCROLLS: if Submit renders below the 160x177 viewport (6-checkbox layouts "
                  "put it at y=180, unclickable), 'key ArrowDown' twice scrolls it up into reach -- "
-                 "then re-read the new screenshot, everything has moved up ~39px.")
-PRESS_KEY_RESOLUTION = "name->index (agent received raw-name passthrough)"
+                 "then re-read the new screenshot, everything has moved up. Scrolling saturates at the "
+                 "layout's own maximum (about 39px on a 6-checkbox page), it is not a fixed step.")
+PRESS_KEY_RESOLUTION = "name (resolved by MiniWobSession._resolve_key -- same path as the agent)"
 
 # Per-mode defaults. paid_gate0's real_out is the EXACT path
 # eval/fixtures/gate0_paid_source_pins.json's artifact_paths.miniwob_human names -- keep in sync if
@@ -195,9 +200,15 @@ def _prompt_action(prompt: Callable[[str], str], allowed_keys: list[str]) -> tup
             return "type_text", {"text": parts[1]}
         elif head == "key" and len(parts) == 2:
             name = parts[1].strip()
+            # Validate here (so a typo re-prompts instead of dying inside the browser), but pass the
+            # NAME through -- MiniWobSession._resolve_key is now the single place a name becomes an
+            # index, for the human and the agent alike. Pre-resolving here was the old behaviour and is
+            # deliberately gone: indices 0/5/9 are <Enter>/<Tab>/<ArrowDown> while '0'-'9' are ALSO key
+            # names (indices 22-31), so a pre-resolved "5" and a typed "5" are indistinguishable on the
+            # wire and the world cannot honour both.
             for candidate in (name if name.startswith("<") else f"<{name}>", name):
                 if candidate in allowed_keys:
-                    return "press_key", {"key": str(allowed_keys.index(candidate))}
+                    return "press_key", {"key": candidate}
             print(f"key {name!r} isn't in this environment's key vocabulary. Try one of: "
                   + ", ".join(k.strip("<>") for k in allowed_keys[:11]) + ".")
             continue

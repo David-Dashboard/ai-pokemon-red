@@ -48,10 +48,17 @@ class _FakeInstance:
 
 
 class _FakeActionSpaceConfig:
-    """The real miniwob ActionSpaceConfig's `allowed_keys` tuple. PRESS_KEY's `key` field is a
-    Discrete(len(allowed_keys)) INDEX into this, never a keysym — MiniWobSession._resolve_key reads it to
-    turn the brain's key NAME into that index. Angle-bracketed, same shape as the real vocabulary."""
-    allowed_keys = ("<Enter>", "<Tab>", "<ArrowDown>", "<ArrowUp>", "<Backspace>")
+    """The real miniwob ActionSpaceConfig's `allowed_keys`, VERBATIM for its first 32 entries (copied
+    from `ActionSpaceConfig.get_preset("shi17")` inside the built miniwob-world image). PRESS_KEY's
+    `key` field is a Discrete(len(allowed_keys)) INDEX into this, never a keysym.
+
+    The bare-name half matters and is why this is not a short hand-written stub: '1'-'9' are indices
+    22-30 and '0' is index 31, while indices 0/5/9 are <Enter>/<Tab>/<ArrowDown>. A 5-entry
+    all-angle-bracketed fake cannot exercise that collision, which is the whole hazard
+    MiniWobSession._resolve_key exists to rule out."""
+    allowed_keys = ('<Enter>', '<PageUp>', '<PageDown>', '<Backspace>', '<Delete>', '<Tab>', '<Space>',
+                    '<ArrowUp>', '<ArrowRight>', '<ArrowDown>', '<ArrowLeft>', '[', ']', '-', '=', ';',
+                    '"', '\\', ',', '.', '/', '`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0')
 
 
 class _FakeUnwrapped:
@@ -181,11 +188,48 @@ def test_miniwob_session_rejects_out_of_viewport_click(fake_env_cls, tmp_path):
     args = _args("miniwob_click_button", str(tmp_path / "out"))
     sess = MiniWobSession(args)
     try:
-        result = sess.call("click", {"x": 50, "y": 190})   # y in the unreachable 177-209 band
+        result = sess.call("click", {"x": 50, "y": 190})   # y in the non-clickable 177-209 band
         text = " ".join(c["text"] for c in result if c.get("type") == "text")
         assert "error" in text and "outside" in text
         assert "No click was performed" in text
         assert sess.mw.env._step_n == 0, "out-of-viewport click must not step the env"
+        # The REJECTION MESSAGE is what the brain reads at the exact moment it tries to click a Submit
+        # button below the fold — the failure that cost seed 1001. It must name the scroll escape
+        # hatch, never call the band "unreachable" (the page scrolls; only the description used to say so).
+        assert "unreachable" not in text.lower()
+        assert "SCROLLS" in text and "ArrowDown" in text and "Tab" in text
+    finally:
+        sess.close()
+
+
+def test_press_key_resolves_names_and_never_treats_a_digit_as_an_index(fake_env_cls, tmp_path):
+    """press_key takes key NAMES, and a bare digit is a NAME, never a position in allowed_keys.
+
+    The trap this locks out: indices 0/5/9 are <Enter>/<Tab>/<ArrowDown> while '0'-'9' are themselves
+    key names at indices 22-31. Any rule that also accepted a pre-resolved index would have to guess
+    which meaning "9" carries, and would be silently wrong — pressing the wrong key and reporting ok —
+    for whichever it guessed against. So: names resolve, digits resolve AS DIGITS, indices are refused.
+    """
+    args = _args("miniwob_click_button", str(tmp_path / "out"))
+    sess = MiniWobSession(args)
+    try:
+        keys = _FakeActionSpaceConfig.allowed_keys
+        # Named keys, with and without angle brackets, resolve to their real index.
+        assert sess._resolve_key("Enter") == str(keys.index("<Enter>")) == "0"
+        assert sess._resolve_key("<Tab>") == sess._resolve_key("Tab") == str(keys.index("<Tab>")) == "5"
+        assert sess._resolve_key("ArrowDown") == "9"
+        # Digits are NAMES. "9" is the digit key at index 30 — NOT index 9 (<ArrowDown>).
+        assert sess._resolve_key("9") == str(keys.index("9")) == "30"
+        assert sess._resolve_key("0") == str(keys.index("0")) == "31"
+        assert sess._resolve_key("5") == str(keys.index("5")) == "26"
+        # Non-alphanumeric names work too, and surrounding whitespace is tolerated.
+        assert sess._resolve_key(" [ ") == str(keys.index("["))
+        # An out-of-vocabulary name is REJECTED cleanly, listing valid names — never an IndexError,
+        # never a silent substitution. A number too large to be any key name is just another miss.
+        for bogus in ("Escape", "999", "-1", ""):
+            with pytest.raises(ValueError, match="not a key in this task's vocabulary"):
+                sess._resolve_key(bogus)
+        assert sess.mw.env._step_n == 0, "resolution must not step the env"
     finally:
         sess.close()
 

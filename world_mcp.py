@@ -428,11 +428,14 @@ _MINIWOB_CLICK_TOOL = {
                     "viewport (x 0-159, y 0-176): the page is 210px tall but the headless browser can "
                     "only click down to y=176, so a click outside that band is REJECTED with an error "
                     "(never silently moved). Something rendered below y=176 is NOT out of reach — the "
-                    "page SCROLLS. Bring it up into the clickable band, then re-observe (everything "
-                    "shifts up ~39px per scroll) and click its NEW coordinates. Two ways to scroll: "
-                    "press_key \"ArrowDown\" scrolls immediately and needs no focus; repeated press_key "
-                    "\"Tab\" walks focus through the page and scrolls once focus passes the fold (on a "
-                    "6-checkbox click-checkboxes layout the 7th Tab reaches Submit)."),
+                    "page SCROLLS. Bring it up into the clickable band, then re-observe and click its "
+                    "NEW coordinates. Two ways to scroll: press_key \"ArrowDown\" scrolls immediately "
+                    "and needs no focus; repeated press_key \"Tab\" walks focus through the page and "
+                    "scrolls once focus passes the fold (on a 6-checkbox click-checkboxes layout the "
+                    "7th Tab reaches Submit). Scrolling SATURATES at the layout's own maximum — about "
+                    "39px on a 6-checkbox page, ~33px on a 2-checkbox one — so a few presses reach the "
+                    "bottom and further ones do nothing. Always re-observe rather than assuming a "
+                    "fixed per-press shift."),
     "inputSchema": {"type": "object",
                     "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
                     "required": ["x", "y"]},
@@ -445,10 +448,13 @@ _MINIWOB_TYPE_TOOL = {
 _MINIWOB_KEY_TOOL = {
     "name": "press_key",
     "description": ("Press a single keyboard key on the task page. Pass the key NAME, e.g. \"Enter\", "
-                    "\"Tab\", \"ArrowDown\" (angle brackets optional: \"<Enter>\" works too). Names are "
-                    "resolved against this environment's own key vocabulary; an unknown name is "
-                    "REJECTED with the list of valid names, never silently dropped. \"ArrowDown\" "
-                    "scrolls the page; \"Tab\" advances focus (and scrolls once focus passes the fold)."),
+                    "\"Tab\", \"ArrowDown\" (angle brackets optional: \"<Enter>\" works too). Single "
+                    "characters are names too: \"9\" presses the digit 9 and \"a\" presses the letter a. "
+                    "NAMES ONLY — a numeric position in the key list is NOT accepted, precisely so that "
+                    "\"9\" can never be mistaken for one. A name outside this task's vocabulary is "
+                    "REJECTED with a list of valid names, never silently dropped or substituted. "
+                    "\"ArrowDown\" scrolls the page; \"Tab\" advances focus (and scrolls once focus "
+                    "passes the fold)."),
     "inputSchema": {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
 }
 _MINIWOB_RESET_TOOL = {
@@ -1880,8 +1886,8 @@ class World:
         if not (1 <= frames <= 120):
             return [{"type": "text", "text": f"touch_drag: frames must be in [1,120]; got {frames}."}]
         emu = self.plugin.emu
-        # No inline fallback copy of the drag: touch_drag is dispatched only when args.game == "nds"
-        # (_NDS_TOUCH_DRAG_WORLDS), and an "nds" game refuses to start unless --rom is a .nds file
+        # No inline fallback copy of the drag: touch_drag is dispatched only for an NDS world
+        # (_NDS_TOUCH_DRAG_WORLDS = nds, mkds), and an NDS game refuses to start unless --rom is a .nds file
         # (the fam/ext SystemExit in __init__), which always constructs a DeSmuMEEmulator — which
         # always has touch_drag. A second copy of the interpolation loop was unreachable in
         # production and had already drifted from the real one (no try/finally, no settle tick).
@@ -2079,7 +2085,7 @@ class World:
             if not self._nds_touch_drag_enabled:
                 body = [{"type": "text",
                          "text": "touch_drag error: touch_drag is disabled for this session (set "
-                                 "NDS_TOUCH_DRAG=1 in the environment to enable, on nds only — see "
+                                 "NDS_TOUCH_DRAG=1 in the environment to enable, on NDS worlds only — see "
                                  "runs/nds3d_probe/FINDINGS.md:216-219)."}]
             else:
                 self.decisions += 1
@@ -2297,32 +2303,34 @@ class MiniWobSession:
         return f"{type(e).__name__}: {first[:200]}"
 
     def _resolve_key(self, key: str) -> str:
-        """Resolve a press_key NAME ("Enter", "<Enter>") to the index miniwob's PRESS_KEY field actually
-        wants, raising ValueError with the valid vocabulary on a miss.
+        """Resolve a press_key NAME ("Enter", "<Enter>", "9") to the index miniwob's PRESS_KEY field
+        actually wants, raising ValueError with the valid vocabulary on a miss.
 
         WHY THIS EXISTS: miniwob's PRESS_KEY `key` field is a Discrete(104) INDEX into the env's own
-        `allowed_keys` tuple, not a keysym — passing the raw name reaches `int("Tab")` and dies with
+        `allowed_keys` tuple, not a keysym — passing a raw name reaches `int("Tab")` and dies with
         `ValueError: invalid literal for int()`. The tool description promised names, so a banked paid
-        run lost both its 'Tab' and 'Enter' presses to that error. This is the SAME name->index
-        resolution tools/capture_gate0_baseline_miniwob.py:196-202 already does for the human baseline
-        rig (PR #174), lifted to the agent's side of the seam so the two interfaces finally match:
-        that rig records the gap as PRESS_KEY_RESOLUTION = "name->index (agent received raw-name
-        passthrough)", an asymmetry that made the HUMAN denominator faster than the agent's numerator.
+        run lost both its 'Tab' and 'Enter' presses to that error.
 
-        A bare digit string still passes through unchanged, so anything already sending a raw index
-        keeps working. Fixing the DESCRIPTION instead was the alternative and was rejected: nothing on
-        this tool surface enumerates the 104-entry ordering, so "it's an index" would have left the
-        brain unable to press any key at all without a 104-name dump in the schema.
+        NAMES ONLY, DELIBERATELY — this field does NOT also accept a pre-resolved index, and adding
+        that back would be a silent-wrong-key bug, not a convenience. The vocabulary contains BARE
+        DIGIT NAMES: '1'..'9' are indices 22..30 and '0' is index 31, while indices 0/5/9 are
+        <Enter>/<Tab>/<ArrowDown>. So "9" is ambiguous — the digit key, or the index of <ArrowDown>?
+        Any dual-meaning rule has to pick one and is silently wrong for the other; an index-first rule
+        breaks every digit keypress, and a name-first rule breaks a caller passing index 0/3/5/7/9,
+        i.e. exactly Enter/Backspace/Tab/ArrowUp/ArrowDown. There is no safe ordering, so the ambiguity
+        is removed at the source instead: this resolver is the ONE place a key name becomes an index,
+        and tools/capture_gate0_baseline_miniwob.py (the human-baseline rig) now hands the NAME through
+        to it rather than pre-resolving. Both sides of the seam run this exact code, which is what
+        that rig's PRESS_KEY_RESOLUTION note asks for.
         """
         name = key.strip()
-        if name.isdigit():
-            return name
         allowed = list(self.mw.env.unwrapped.action_space_config.allowed_keys)
         for candidate in ((name if name.startswith("<") else f"<{name}>"), name):
             if candidate in allowed:
                 return str(allowed.index(candidate))
-        raise ValueError(f"press_key: {name!r} is not a key in this task's vocabulary. Valid names include: "
-                         + ", ".join(k.strip("<>") for k in allowed[:11]) + ".")
+        raise ValueError(f"press_key: {name!r} is not a key in this task's vocabulary (names only — a "
+                         f"raw index is not accepted, because '0'-'9' are themselves key names). Valid "
+                         f"names include: " + ", ".join(k.strip("<>") for k in allowed[:11]) + ".")
 
     def call(self, name: str, args: dict) -> list[dict]:
         args = args or {}
@@ -2360,13 +2368,20 @@ class MiniWobSession:
             x_in, y_in = int(args["x"]), int(args["y"])
             # REJECT out-of-viewport clicks loudly instead of silently clamping: a silent clamp turns
             # "I clicked the thing at (50,190)" into an unrelated click at (50,176) — corrupted feedback
-            # the brain can't detect (PR #64 finding 5). The band below y=176 is genuinely unreachable.
+            # the brain can't detect (PR #64 finding 5). The band below y=176 is not CLICKABLE, but it
+            # is reachable: the page scrolls, so the fix is to scroll the target up into the band. This
+            # message is what the brain reads at the exact moment it tries to click a Submit button
+            # that rendered below the fold — telling it "unreachable" here is what cost seed 1001, so
+            # it must name the escape hatch, not just the rejection.
             if not (0 <= x_in < self._viewport_w and 0 <= y_in < self._viewport_h):
                 return [{"type": "text",
                          "text": f"click error: ({x_in},{y_in}) is outside the clickable viewport "
-                                 f"(x 0-{self._viewport_w - 1}, y 0-{self._viewport_h - 1}). The page "
-                                 f"is taller than the viewport; anything below y={self._viewport_h - 1} "
-                                 "is unreachable in this headless browser. No click was performed."}]
+                                 f"(x 0-{self._viewport_w - 1}, y 0-{self._viewport_h - 1}). No click "
+                                 f"was performed. The page is taller than the viewport, but nothing is "
+                                 f"out of reach: it SCROLLS. Press ArrowDown (scrolls immediately, no "
+                                 f"focus needed) or Tab repeatedly (walks focus, scrolling once focus "
+                                 f"passes the fold) to bring the target into y 0-{self._viewport_h - 1}, "
+                                 f"then observe again and click its NEW coordinates."}]
             try:
                 _, ep_over = self.mw.click(x_in, y_in)
             except Exception as e:

@@ -110,17 +110,19 @@ def test_prompt_action_parses_click_type_key_quit():
     answers2 = iter(["type hi there"])
     tool, args = m._prompt_action(lambda _msg: next(answers2), list(_ALLOWED_KEYS))
     assert tool == "type_text" and args == {"text": "hi there"}
-    # A typed key NAME resolves to its INDEX in the env's allowed_keys -- miniwob's PRESS_KEY executor
-    # does int(action["key"]), so passing the name straight through raised
-    # ValueError: invalid literal for int() with base 10: 'Tab' (banked in runs/gate0_paid/miniwob).
-    for typed, idx in (("key Enter", "0"), ("key Tab", "5"), ("key ArrowDown", "9"), ("key <Tab>", "5")):
+    # A typed key NAME is validated here but passed through AS A NAME: MiniWobSession._resolve_key is
+    # the single place a name becomes miniwob's PRESS_KEY index, for human and agent alike. Pre-resolving
+    # here (the old behaviour) is impossible to do safely -- indices 0/5/9 are <Enter>/<Tab>/<ArrowDown>
+    # while '0'-'9' are ALSO key names, so a pre-resolved "5" and a typed "5" are indistinguishable.
+    for typed, sent in (("key Enter", "<Enter>"), ("key Tab", "<Tab>"),
+                        ("key ArrowDown", "<ArrowDown>"), ("key <Tab>", "<Tab>")):
         answers3 = iter([typed])
         tool, args = m._prompt_action(lambda _msg: next(answers3), list(_ALLOWED_KEYS))
-        assert tool == "press_key" and args == {"key": idx}
+        assert tool == "press_key" and args == {"key": sent}
     # A key the environment doesn't accept re-prompts instead of dying inside the browser.
     answers4 = iter(["key Escape", "key Tab"])
     tool, args = m._prompt_action(lambda _msg: next(answers4), list(_ALLOWED_KEYS))
-    assert tool == "press_key" and args == {"key": "5"}
+    assert tool == "press_key" and args == {"key": "<Tab>"}
     answers5 = iter(["quit"])
     tool, args = m._prompt_action(lambda _msg: next(answers5), list(_ALLOWED_KEYS))
     assert tool == "quit" and args == {}
