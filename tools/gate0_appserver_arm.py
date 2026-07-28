@@ -103,7 +103,7 @@ false-`NO_LEAK` bug this section originally missed:
 inspection):** running the ORIGINAL version of this adapter (which renamed ONLY `mcpToolCall`,
 passing `userMessage`/`agentMessage`/`reasoning` through unmapped) over the real, committed M1
 transcript and feeding the result through the frozen, unmodified `audit()` produced
-`overall=NO_LEAK`, `leak_failures=['forbidden_item:...:userMessage',
+`audit_overall=NO_LEAK`, `leak_failures=['forbidden_item:...:userMessage',
 'forbidden_item:...:agentMessage']` -- i.e. the adapter's own "honestly-flagged gap" below was NOT
 merely a theoretical risk, it was a GUARANTEED failure on every real turn, confirmed against real
 data. The fix above (confirmed `agentMessage`/`reasoning` handling + confirmed `userMessage` drop)
@@ -511,7 +511,7 @@ def build_handshake_receipt(*, arm: str, model: str, codex_version: str, codex_p
 # reports/2026-07-21-gate0-readiness-final-v2.md Sec.3 shows a REAL exec-path receipt hitting this
 # EXACT SAME `pin_mismatch:config_sha256`/`pin_mismatch:codex_mcp_list_sha256` when audited against
 # the raw static fixture -- masked only because that receipt had no real transcript (leak_failures
-# forced `overall=NO_LEAK` before constancy_failures could surface as the verdict). No exec-path
+# forced `audit_overall=NO_LEAK` before constancy_failures could surface as the verdict). No exec-path
 # code ever taught check_gate0_codex.py to treat the CONSTRAINT marker as anything but a literal
 # string to compare against -- so this fix does not either. The resolution below happens one layer
 # ABOVE check_gate0_codex.py, in this launcher, exactly where the exec path's own signature
