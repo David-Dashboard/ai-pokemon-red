@@ -192,7 +192,18 @@ def test_build_metrics_artifact_passes_frozen_verify_sources(tmp_path):
 
 # ---- overwrite refusal (one cold attempt per task) ---------------------------------------------
 
-def test_overwrite_refused_without_allow_retake(tmp_path):
+def test_overwrite_refused_without_allow_retake(tmp_path, capsys):
+    """The one-cold-attempt law, pinned so that DELETING it goes red.
+
+    Review D4/M21: the previous version of this test asserted only `rc == 2` and that the existing
+    artifact's attempt_number was still 1, and `if not allow_retake:` -> `if False:` SURVIVED the
+    whole suite. With the guard gone, control simply falls through to the PyBoy setup failure, which
+    also returns 2 and writes a DIFFERENTLY-named file (human_metrics.INCOMPLETE_*.json), leaving
+    both of the old assertions true. Vacuous in exactly the shape review B4 had already caught once.
+
+    What actually distinguishes "refused" from "fell through" is (a) the refusal message and (b) that
+    the refusal writes NOTHING AT ALL -- no INCOMPLETE artifact, no oracle.jsonl, no directory churn.
+    This is the last line of defence behind the write-path guard, so it is pinned on both."""
     out = tmp_path / "out"
     out.mkdir()
     (out / "human_metrics.json").write_text(
@@ -200,8 +211,28 @@ def test_overwrite_refused_without_allow_retake(tmp_path):
     args = _args(tmp_path, out=out)
     rc = m.run(args)
     assert rc == 2
-    # untouched -- no PyBoy/SDL2 was ever reached
+    assert "one cold attempt per task" in capsys.readouterr().err
+    # untouched -- no PyBoy/SDL2 was ever reached, and nothing new appeared beside it
     assert json.loads((out / "human_metrics.json").read_text(encoding="utf-8"))["attempt_number"] == 1
+    assert sorted(p.name for p in out.iterdir()) == ["human_metrics.json"]
+
+
+def test_the_retake_law_holds_for_every_mode_and_flag_combination(tmp_path, monkeypatch,
+                                                                   fake_pyboy_raises):
+    """M21 again, from the other side: no --mode/--i-am-human/--test combination may walk past the
+    one-cold-attempt law. Cross-check neutralised so the retake guard alone is what holds."""
+    monkeypatch.setattr(m, "require_fixture_points_here", lambda mode, out_dir: None)
+    for mode in sorted(m.MODE_CONFIG):
+        for i_am_human in (False, True):
+            for test in (False, True):
+                out = tmp_path / f"out_{mode}_{i_am_human}_{test}"
+                out.mkdir()
+                (out / "human_metrics.json").write_text(
+                    json.dumps({"schema_version": 1, "attempt_number": 1}), encoding="utf-8")
+                rc = m.run(_args(tmp_path, out=out, test=test, mode=mode, i_am_human=i_am_human))
+                assert rc == 2, (mode, i_am_human, test)
+                assert sorted(p.name for p in out.iterdir()) == ["human_metrics.json"], \
+                    (mode, i_am_human, test)
 
 
 def test_no_refusal_when_canonical_artifact_absent(fake_pyboy_raises, tmp_path):
@@ -693,12 +724,45 @@ def test_pinned_red_human_path_does_not_symlink_resolve_because_the_scorer_does_
     assert ".." in str(got), "an un-normalised pin must survive un-normalised, exactly as the scorer sees it"
 
 
+def test_the_cross_check_resolves_the_pin_at_the_comparison(tmp_path, monkeypatch):
+    """Review D4/M2: `pinned.resolve() != target` -> `pinned != target` survived every test.
+
+    The resolve-at-the-comparison split is the design property `pinned_red_human_path`'s docstring
+    spends five lines justifying -- the pin is REPORTED unresolved (as the scorer opens it) but
+    COMPARED resolved -- and nothing pinned it. A pin that names the very directory being written,
+    spelled with a `..` round-trip, must be accepted: without the `.resolve()` on `pinned` it reads
+    as a different path and manufactures a false refusal."""
+    out = tmp_path / "out"
+    out.mkdir()
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2",
+                                          str(out / ".." / out.name / "human_metrics.json")))
+    assert red.require_fixture_points_here("paid_gate0_v2", str(out)) is None
+
+
+def test_the_cross_check_resolves_the_write_target_at_the_comparison(tmp_path, monkeypatch):
+    """Review D4/M3: dropping `.resolve()` from `target` instead also survived. Same invariant, other
+    side -- an `--out` spelled with a `..` round-trip is the same directory and must not be refused
+    against a pin that names it plainly."""
+    out = tmp_path / "out"
+    out.mkdir()
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2",
+                        _pins_pointing_at(tmp_path, "paid_gate0_v2", out / "human_metrics.json"))
+    assert red.require_fixture_points_here(
+        "paid_gate0_v2", str(out / ".." / out.name)) is None
+
+
 def test_the_pin_helper_matches_192s_pinned_artifact_path(tmp_path, monkeypatch):
     """DECLARED DUPLICATION, bound rather than asserted. #192's `pinned_artifact_path(mode, key)` is
-    the symbol this helper temporarily duplicates; the two must agree until one is deleted. #192's
-    body is re-implemented here verbatim (it cannot be imported -- #192 is unmerged and its file is
-    off-limits to this PR) and compared over a matrix of pin spellings including the ones that used
-    to diverge before #192 dropped `.resolve()`."""
+    the symbol this helper temporarily duplicates; the two must agree ON THE RESOLUTION OF A
+    WELL-FORMED PIN until one is deleted. They deliberately DIVERGE elsewhere: review B5 made
+    `pinned_red_human_path` raise on `schema_version != 1` / a `mode` mismatch, which #192's does not,
+    and `_pins_pointing_at` only ever writes well-formed fixtures, so no spelling below reaches that
+    divergence (review D5 -- the previous docstring's flat "the two must agree" overclaimed).
+
+    #192's body is re-implemented here verbatim (it cannot be imported -- #192 is unmerged and its
+    file is off-limits to this PR) and compared over a matrix of pin spellings including the ones
+    that used to diverge before #192 dropped `.resolve()`."""
     def pinned_artifact_path_192(mode, key):                     # verbatim from #192 @ 6ca6b38
         pins = json.loads(scorer.SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))
         path = Path(pins["artifact_paths"][key])
@@ -798,7 +862,238 @@ def _redirect_all_modes(monkeypatch, tmp_path):
     return dirs
 
 
-def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_combination(
+def _bank(d: Path) -> None:
+    """Populate a stand-in real baseline directory with the two append-only files that matter: the
+    canonical artifact three fixtures freeze by digest, and the oracle trace its numbers came from."""
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "human_metrics.json").write_text(
+        json.dumps({"schema_version": 1, "mode": "readiness_dev", "attempt_number": 1}),
+        encoding="utf-8")
+    (d / "oracle.jsonl").write_text('{"BANKED_SENTINEL": true}\n', encoding="utf-8")
+
+
+def _intact(d: Path) -> bool:
+    return (sorted(p.name for p in d.iterdir()) == ["human_metrics.json", "oracle.jsonl"]
+            and (d / "oracle.jsonl").read_text(encoding="utf-8") == '{"BANKED_SENTINEL": true}\n')
+
+
+def _spellings(d: Path):
+    """Every way of naming the SAME directory `d` that review D3 attacked, plus the ones already
+    caught. Returns (label, spelling) pairs; the junction and 8.3 rows are skipped rather than faked
+    if the platform will not produce them."""
+    out = [("plain", str(d)),
+           ("trailing sep", str(d) + os.sep),
+           ("forward slashes", str(d).replace("\\", "/")),
+           ("dotdot round-trip", str(d / ".." / d.name)),
+           ("UPPER", str(d).upper()),
+           ("lower", str(d).lower()),
+           ("mixed-case leaf", str(d.parent / d.name.upper()))]
+    junction = d.parent / (d.name + "_junc")
+    if subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(d)],
+                      capture_output=True, text=True).returncode == 0:
+        out.append(("junction", str(junction)))
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        if ctypes.windll.kernel32.GetShortPathNameW(str(d), buf, 1024) and buf.value != str(d):
+            out.append(("8.3 short name", buf.value))
+    except Exception:                                                       # pragma: no cover
+        pass
+    return out
+
+
+# ---- D1/D2: a mode may never write under ANOTHER mode's real baseline path -------------------------
+
+def test_a_foreign_modes_baseline_directory_is_refused_for_every_flag_combination(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    """REGRESSION (review D1/D2), and the one this fix round itself introduced.
+
+    `a4e5969` refused `--mode paid_gate0_v2 --i-am-human --out <banked readiness_dev dir>
+    --allow-retake "..."` BY ACCIDENT: the cross-check was comparing the mode's default directory
+    against the pin, and those differ today. Binding the cross-check to `args.out` (review B2) made
+    the comparison honest and thereby made it `pinned == target` -- and all three fixtures currently
+    pin `red_human` AT the banked directory, so the only thing blocking that write became a blessing.
+    Measured at `06820ab`: the banked `oracle.jsonl` was RENAMED away and an INCOMPLETE artifact
+    written in its place.
+
+    The replacement is not a comparison against anything fixture-derived. `args.out` is this rig's
+    single write choke point, and no mode may name a DIFFERENT mode's real path there, whatever
+    --test/--i-am-human/--allow-retake say. Proven over mode x foreign-target x --i-am-human x
+    --allow-retake x --test = 3*2*2*2*2 = 48 run() calls, with the cross-check neutralised so this
+    guard alone is what holds."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    for d in dirs.values():
+        _bank(d)
+
+    violations = []
+    for mode in sorted(red.MODE_CONFIG):
+        for target_mode, target in sorted(dirs.items()):
+            if target_mode == mode:
+                continue
+            for i_am_human in (False, True):
+                for allow_retake in (None, "a stated reason"):
+                    for test in (False, True):
+                        rc = red.run(_args(tmp_path, out=target, test=test, mode=mode,
+                                           i_am_human=i_am_human, allow_retake=allow_retake))
+                        if rc != 2 or not _intact(target):
+                            violations.append((mode, target_mode, i_am_human, bool(allow_retake),
+                                               test, rc, sorted(p.name for p in target.iterdir())))
+    assert violations == [], f"wrote under a foreign mode's baseline path: {violations}"
+
+
+def test_the_reviewers_d1_invocation_is_refused_against_todays_fixture_state(tmp_path, monkeypatch,
+                                                                              capsys,
+                                                                              fake_pyboy_raises):
+    """Review D1 verbatim, with the fixture state that actually exists today rather than a
+    neutralised cross-check: ALL THREE fixtures pin `artifact_paths.red_human` at the banked
+    readiness_dev artifact (this file's own
+    test_all_three_fixtures_currently_pin_the_same_banked_red_baseline asserts that of the real
+    ones). The cross-check therefore BLESSES this invocation -- asserted below, so the test cannot
+    quietly start passing for the wrong reason -- and the write-path guard is the only thing left."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    banked = dirs["readiness_dev"]
+    _bank(banked)
+    for mode in red.MODE_CONFIG:
+        monkeypatch.setitem(scorer.SOURCE_PIN_FILES, mode,
+                            _pins_pointing_at(tmp_path, mode, banked / "human_metrics.json"))
+    assert red.require_fixture_points_here("paid_gate0_v2", str(banked)) is None   # it blesses it
+
+    rc = red.run(_args(tmp_path, out=banked, test=False, mode="paid_gate0_v2", i_am_human=True,
+                       allow_retake="a stated reason"))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "under another mode's real baseline path" in err and "No flag overrides this" in err
+    assert _intact(banked), "the banked directory was modified"
+
+
+def test_readiness_dev_cannot_write_into_a_paid_modes_directory(tmp_path, monkeypatch, capsys,
+                                                                 fake_pyboy_raises):
+    """Review D2. readiness_dev is exempt from the fixture cross-check (deliberately -- its own
+    baseline is banked and its pin frozen), so with `--out` pointed at a paid directory there was NO
+    guard at all: measured at `06820ab` it wrote `human_metrics.INCOMPLETE_*.json` into
+    `runs/gate0_paid_v2_human_baseline/red/` and renamed that directory's `oracle.jsonl` away, with
+    only a `warning:` on stderr. A readiness_dev-stamped artifact sitting at the v2 pin is
+    `human_metric_identity:red` at scoring -- the failure class this rig exists to pre-empt."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    paid_v2 = dirs["paid_gate0_v2"]
+    _bank(paid_v2)
+    rc = red.run(_args(tmp_path, out=paid_v2, test=False, mode="readiness_dev"))
+    assert rc == 2
+    assert "under another mode's real baseline path" in capsys.readouterr().err
+    assert _intact(paid_v2)
+
+
+def test_the_write_guard_refuses_before_exists_and_before_any_mkdir(tmp_path, monkeypatch,
+                                                                     fake_pyboy_raises):
+    """Ported property from PR #196's write_artifact(): the guard runs BEFORE the existence test and
+    before any mkdir, so a refusal creates NOTHING on disk. The existence check alone protects only
+    files that happen to already be there -- in a fresh checkout, container or worktree it protects
+    nothing at all."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    banked = dirs["readiness_dev"]
+    assert not banked.exists()
+    assert red.run(_args(tmp_path, out=banked, test=False, mode="paid_gate0_v2",
+                         i_am_human=True)) == 2
+    assert not banked.exists(), "a refusal created the directory it refused to write"
+
+
+def test_the_write_guard_is_directory_wide_not_just_the_canonical_artifact(tmp_path, monkeypatch,
+                                                                            fake_pyboy_raises):
+    """Ported property from PR #196: the guard binds the DIRECTORY, so it covers the append-only
+    `oracle.jsonl` (which run() RENAMES on any fresh attempt) and every subdirectory, not only
+    `human_metrics.json`. A directory holding only the oracle trace -- no canonical artifact, so the
+    retake guard cannot fire -- must still be untouchable."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    banked = dirs["readiness_dev"]
+    banked.mkdir(parents=True)
+    (banked / "oracle.jsonl").write_text('{"BANKED_SENTINEL": true}\n', encoding="utf-8")
+    for out in (banked, banked / "nested" / "deeper"):
+        assert red.run(_args(tmp_path, out=out, test=False, mode="paid_gate0_v2",
+                             i_am_human=True)) == 2, out
+    assert sorted(p.name for p in banked.iterdir()) == ["oracle.jsonl"]
+    assert (banked / "oracle.jsonl").read_text(encoding="utf-8") == '{"BANKED_SENTINEL": true}\n'
+
+
+def test_a_mode_may_still_write_its_own_baseline_directory(tmp_path, monkeypatch, fake_pyboy_raises):
+    """The guard must not be a blanket ban -- unlike PR #196's tool, this rig legitimately writes
+    into a real baseline directory: that is what a capture IS. Control for the two tests above; if
+    this ever fails the guard has stopped being "no FOREIGN mode's path" and become "no path"."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    for mode, target in sorted(dirs.items()):
+        rc = red.run(_args(tmp_path, out=target, test=False, mode=mode, i_am_human=True))
+        assert rc == 2                                   # the FAKED PyBoy failure, not a refusal
+        assert list(target.glob("human_metrics.INCOMPLETE_*.json")), mode
+
+
+# ---- D3: the guard must survive a path-SPELLING attack, not just a flag matrix ---------------------
+
+def test_the_write_guard_survives_every_spelling_of_a_foreign_baseline_directory(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    """Review D3: the 36-combination matrix varied FLAGS only, never path spelling, and
+    `_under_real_path`'s `normpath`/`abspath` form let five different spellings of one directory
+    through -- `UPPER`, `lower`, a mixed-case leaf, a `mklink /J` junction (no admin required) and an
+    8.3 short name -- each writing an INCOMPLETE artifact into a stand-in banked directory and
+    renaming its `oracle.jsonl` away. `normcase` + `realpath` closes all five (and keeps the seven
+    already-caught spellings caught; the negative controls below are what keeps it from
+    over-matching)."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    banked = dirs["readiness_dev"]
+    _bank(banked)
+
+    spellings = _spellings(banked)
+    assert len(spellings) >= 8, f"spelling matrix too thin to prove anything: {spellings}"
+    violations = []
+    for label, spelling in spellings:
+        for test in (False, True):
+            rc = red.run(_args(tmp_path, out=spelling, test=test, mode="paid_gate0_v2",
+                               i_am_human=True, allow_retake="a stated reason"))
+            if rc != 2 or not _intact(banked):
+                violations.append((label, test, rc, sorted(p.name for p in banked.iterdir())))
+    assert violations == [], f"a path spelling walked past the write guard: {violations}"
+
+    # negative controls: the hardening must not start swallowing unrelated directories
+    for label, other in (("unrelated", tmp_path / "somewhere_else"),
+                         ("sibling sharing the prefix", Path(str(banked) + "_other"))):
+        assert not red._under_real_path(str(other), str(banked)), label
+
+
+def test_the_write_guard_survives_spelling_when_the_directory_does_not_exist_yet(
+        tmp_path, monkeypatch, fake_pyboy_raises):
+    """The same spelling attack in a FRESH CHECKOUT -- and the reason `normcase` is not redundant
+    beside `realpath`.
+
+    `os.path.realpath` canonicalises the on-disk case only for a path that ALREADY EXISTS (it asks
+    the filesystem); for one that does not, the case the caller typed survives verbatim. So
+    `realpath` alone closes the junction and the 8.3 escapes but leaves UPPER/lower/mixed-case open
+    in exactly the situation PR #196's guard comment singles out -- a fresh checkout, container or
+    worktree, where `runs/` has not been populated yet and an existence check protects nothing.
+    Caught as a surviving mutant (realpath without normcase); `normcase` is what closes it.
+
+    Nothing may be created under ANY spelling: the assertion is on the parent directory, so a run
+    that quietly created `.../REAL_PAID_GATE0_V2/` beside the expected path fails too."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    paid_v2 = dirs["paid_gate0_v2"]
+    assert not paid_v2.exists(), "this test is about the not-yet-created case"
+
+    violations = []
+    for label, spelling in (("plain", str(paid_v2)),
+                            ("UPPER", str(paid_v2).upper()),
+                            ("lower", str(paid_v2).lower()),
+                            ("mixed-case leaf", str(paid_v2.parent / paid_v2.name.upper()))):
+        rc = red.run(_args(tmp_path, out=spelling, test=False, mode="readiness_dev"))
+        created = sorted(p.name for p in tmp_path.iterdir() if p.is_dir())
+        if rc != 2 or created:
+            violations.append((label, rc, created))
+    assert violations == [], f"a spelling walked past the guard in a fresh checkout: {violations}"
+
+
+def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_and_spelling(
         tmp_path, monkeypatch, fake_pyboy_raises):
     """REGRESSION (review B3), the one true regression against origin/main.
 
@@ -809,37 +1104,60 @@ def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_combinatio
     runs/gate0_human_baseline/red` to write an INCOMPLETE artifact into the banked directory and
     rename the banked append-only oracle.jsonl away.
 
-    The invariant is restored UNCONDITIONALLY and proven exhaustively: mode x target-directory x
-    --i-am-human x --allow-retake = 3*3*2*2 = 36 combinations, each run twice (--test and not), 72
-    run() calls. The cross-check is neutralised throughout so that --test alone is what holds -- the
-    guarantee must not depend on another guard happening to fire first."""
+    The invariant is restored and proven over mode x target-directory x --i-am-human x
+    --allow-retake x SPELLING. The spelling axis is review D3's: the previous version of this test
+    varied flags only, so it certified as "unconditional" a helper that five different spellings of
+    one path walked straight past.
+
+    The cross-check is neutralised throughout so that --test alone is what holds -- the guarantee
+    must not depend on another guard happening to fire first."""
     dirs = _redirect_all_modes(monkeypatch, tmp_path)
     monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    # Computed ONCE per directory, up front: _spellings() creates a junction, so calling it twice for
+    # the same target silently yields a shorter list the second time -- which would quietly shrink
+    # the matrix instead of failing.
+    spellings = {}
+    for target in dirs.values():
+        target.mkdir(parents=True, exist_ok=True)
+        spellings[target] = _spellings(target)
+        assert len(spellings[target]) >= 8, f"spelling matrix too thin: {spellings[target]}"
 
     violations, controls = [], []
     for mode in sorted(red.MODE_CONFIG):
         for target_mode, target in sorted(dirs.items()):
-            for i_am_human in (False, True):
-                for allow_retake in (None, "a stated reason"):
-                    combo = (mode, target_mode, i_am_human, bool(allow_retake))
-                    rc = red.run(_args(tmp_path, out=target, test=True, mode=mode,
-                                       i_am_human=i_am_human, allow_retake=allow_retake))
-                    if rc != 2 or target.exists():
-                        violations.append((combo, rc, target.exists()))
-                    # control: the SAME combination without --test must be able to reach the
-                    # emulator (and so write), otherwise the matrix above proves nothing.
-                    red.run(_args(tmp_path, out=target, test=False, mode=mode,
-                                  i_am_human=i_am_human, allow_retake=allow_retake))
-                    if target.exists():
-                        controls.append(combo)
-                        shutil.rmtree(target)
+            for label, spelling in spellings[target]:
+                for i_am_human in (False, True):
+                    for allow_retake in (None, "a stated reason"):
+                        combo = (mode, target_mode, label, i_am_human, bool(allow_retake))
+                        rc = red.run(_args(tmp_path, out=spelling, test=True, mode=mode,
+                                           i_am_human=i_am_human, allow_retake=allow_retake))
+                        wrote = [p.name for p in target.iterdir()]
+                        if rc != 2 or wrote:
+                            violations.append((combo, rc, wrote))
+                        # control: the SAME combination without --test, into the mode's OWN
+                        # directory, must be able to reach the emulator (and so write), otherwise
+                        # the matrix above proves nothing. Contents are cleared rather than the
+                        # directory removed -- rmtree would invalidate this target's junction and
+                        # 8.3 spellings for every later iteration.
+                        if target_mode == mode:
+                            red.run(_args(tmp_path, out=spelling, test=False, mode=mode,
+                                          i_am_human=i_am_human, allow_retake=allow_retake))
+                            written = list(target.iterdir())
+                            if written:
+                                controls.append(combo)
+                                for p in written:
+                                    p.unlink()
 
     assert violations == [], f"--test wrote under a real baseline path: {violations}"
-    # Four (mode, --i-am-human) pairs get past the acknowledgement gate -- readiness_dev with the
-    # flag either way, and each paid mode with it -- times 3 target directories times 2
-    # --allow-retake values = 24 combinations that genuinely wrote without --test. Everything the
-    # matrix blocked above, it blocked BECAUSE of --test.
-    assert len(controls) == 24, f"matrix is vacuous -- only {len(controls)} combinations wrote"
+    # Own-directory controls only: a FOREIGN directory is now refused with or without --test (review
+    # D1/D2), so it can no longer serve as a control for --test specifically. Four (mode,
+    # --i-am-human) pairs get past the acknowledgement gate -- readiness_dev with the flag either
+    # way, and each paid mode with it -- times 2 --allow-retake values times that mode's own spelling
+    # matrix. Everything the matrix blocked at a mode's OWN directory, it blocked BECAUSE of --test.
+    expected = sum(2 * (2 if mode == "readiness_dev" else 1) * len(spellings[dirs[mode]])
+                   for mode in red.MODE_CONFIG)
+    assert len(controls) == expected, \
+        f"matrix is vacuous -- only {len(controls)} of {expected} combinations wrote"
 
 
 def test_test_mode_refuses_even_when_the_fixture_blesses_the_banked_directory(tmp_path, monkeypatch,
@@ -847,8 +1165,13 @@ def test_test_mode_refuses_even_when_the_fixture_blesses_the_banked_directory(tm
                                                                               fake_pyboy_raises):
     """The reviewer's exact B3 shape, with the cross-check deliberately made permissive: a hostile
     (or simply stale) v2 fixture that points at the banked readiness_dev directory. The cross-check
-    then PASSES and --test is the only thing standing between a smoke test and the banked artifact.
-    On `a4e5969` this wrote; it must refuse."""
+    then PASSES and the path guards are all that stand between a smoke test and the banked artifact.
+    On `a4e5969` this wrote; it must refuse.
+
+    Since review D1 the FOREIGN-path clause catches this one first (it is unconditional, so it does
+    not wait for --test), which is the point: --test is no longer load-bearing here. --test's own
+    clause is what stops the same thing at a mode's OWN directory, pinned in the sibling test
+    below."""
     dirs = _redirect_all_modes(monkeypatch, tmp_path)
     banked = dirs["readiness_dev"]
     banked.mkdir(parents=True)
@@ -860,6 +1183,23 @@ def test_test_mode_refuses_even_when_the_fixture_blesses_the_banked_directory(tm
     args = _args(tmp_path, out=banked, test=True, mode="paid_gate0_v2", i_am_human=True,
                  allow_retake="simulating the hazard")
     assert red.run(args) == 2
-    assert "ANY mode's real baseline path" in capsys.readouterr().err
+    assert "under another mode's real baseline path" in capsys.readouterr().err
     assert sorted(p.name for p in banked.iterdir()) == ["oracle.jsonl"]
     assert '{"BANKED_SENTINEL": true}\n' == (banked / "oracle.jsonl").read_text(encoding="utf-8")
+
+
+def test_test_mode_still_refuses_a_modes_own_real_path(tmp_path, monkeypatch, capsys,
+                                                        fake_pyboy_raises):
+    """--test's OWN clause, isolated from the foreign-path clause: writing into the selected mode's
+    own real directory is legitimate WITHOUT --test (that is what a capture is), and refused WITH
+    it. Nothing else in this file can fail if this clause is deleted, since every other --test
+    scenario now trips the unconditional foreign-path guard first."""
+    dirs = _redirect_all_modes(monkeypatch, tmp_path)
+    monkeypatch.setattr(red, "require_fixture_points_here", lambda mode, out_dir: None)
+    banked = dirs["readiness_dev"]
+    banked.mkdir(parents=True)
+    (banked / "oracle.jsonl").write_text('{"BANKED_SENTINEL": true}\n', encoding="utf-8")
+    assert red.run(_args(tmp_path, out=banked, test=True, mode="readiness_dev",
+                         allow_retake="simulating the hazard")) == 2
+    assert "ANY mode's real baseline path" in capsys.readouterr().err
+    assert sorted(p.name for p in banked.iterdir()) == ["oracle.jsonl"]

@@ -196,9 +196,25 @@ modes only:
    `schema_version`/`mode` exactly as `_verify_sources` does (review **B5**), so the rig and the
    scorer agree on which fixtures are trustworthy.
 
-A third guard is NOT held-out-only: `--test` refuses to write under **any** mode's real baseline
-path, unconditionally. See the identity section below for why that is both a behaviour change and
-the right one.
+   **This guard is not, and must never again be, the last line of defence.** Its verdict is a
+   function of fixture contents, so what it permits moves when a fixture moves — see the D1 entry in
+   the second review round below, where making it *more correct* made it *less protective*.
+
+The **write-path guard** is not held-out-only and consults no fixture. Every write this rig makes
+lands inside `args.out`, so `args.out` — after the per-mode default is filled in — is the single
+choke point both the mode-derived default and an explicit `--out` pass through. The guard sits
+there, with the shape PR #196's `write_artifact()` uses: resolved comparison, directory-wide, before
+the `exists()` test and before any `mkdir`, and no flag overrides it. Two clauses:
+
+1. **Unconditional, every mode, every flag** — `--out` may never be at or under a **different**
+   mode's real baseline path. Referent is `MODE_CONFIG`, a module constant.
+2. **`--test` additionally** may never write under the selected mode's **own** real path, so a
+   smoke test can never touch any of the three.
+
+Where it differs from #196, deliberately: that tool must never write into the banked directory at
+all, so its guard names one fixed `BANKED_DIR`. This rig legitimately writes there under `--mode
+readiness_dev` — that is what a capture *is* — so the invariant has to be relative rather than
+absolute. See the identity section below for the measured behaviour change.
 
 **`readiness_dev` is exempt from guard 2, and that scoping is load-bearing.** Its baseline is already
 captured, banked, and pinned to exactly the file it writes; re-checking protects nothing and would add
@@ -217,31 +233,55 @@ Repo root, temp dirs, unix timestamps and ISO timestamps are normalised so two w
 comparable; both sides were confirmed self-stable (two runs of the same tree hash equal).
 
 `origin/main` (`322499f`, no flag) vs this branch (`--mode readiness_dev`), re-proved after the
-review fix round:
+**second** review fix round. 91 records; both sides confirmed self-stable (two runs of the same tree
+hash equal — the first attempt was not, and the cause was the harness's own `mkdtemp` suffix, not
+the rig):
 
 ```
-base 0d6fbd3d2d2f2af00dab49a85886e71559b090045fd37857040c33bcdb6b1556
-head f89c23fadc4ba3f4986f849f87772c8a42d0cd7abd566fbcb806d1eade0a1eb5
+base ffc09958840dd9a037636dc896de499a397f0db5ca87e2c03964a0b1ad2a0870
+head f014e8f95fa793c44190a3e92952b3aaf98324ad61fb9e417b53ea2a24029ca4
 ```
 
-**Two recorded differences, both created deliberately by the B3 fix and both in the strictly
-more-refusing direction. Everything else is byte-identical** — all constants, the whole
-`_under_real_path` matrix, all three `_build_metrics` payloads, and eight of the ten `run()`
-scenarios including the one that resolves `--out`'s default:
+**76 of 91 records byte-identical** — all constants, all three `_build_metrics` payloads (modulo the
+declared `mode` key), nine of the twelve `_under_real_path` rows, and the `run()` scenarios for a
+first attempt, `--test` to scratch, overwrite-refusal, `--allow-retake`, stale-oracle archival,
+missing ROM, missing savestate, and `--out` left at its default (resolved through each side's **own**
+CLI end to end, never by handing `None` to a parser that never yields it).
 
-| scenario | `322499f` | here |
-|---|---|---|
-| `--test --out runs/gate0_human_baseline/red` | refuses, exit 2, writes nothing | refuses, exit 2, writes nothing — **message reworded** to name the mode |
-| `--test --out runs/gate0_paid_v2_human_baseline/red` | **writes** `human_metrics.INCOMPLETE_*.json` there | refuses, exit 2, writes nothing |
+**Fifteen record-level differences, in six scenario groups. Five groups are strictly more refusing;
+one suppresses a warning that was factually false.** Enumerated rather than summarised:
 
-The second row is review finding **B3** and is the only true regression the review found against
-`origin/main`: `_under_real_path` had a single referent there, so `--test` could never write under
-`runs/gate0_human_baseline/red`; scoping it per-mode (copied verbatim from the MiniWoB sibling) let
-`--test --mode paid_gate0_v2 --out <the banked directory>` write an INCOMPLETE artifact into the
-banked directory and rename the banked append-only `oracle.jsonl` away. The guard is now
-unconditional and cross-mode, proven over all 36 mode × target-directory × `--i-am-human` ×
-`--allow-retake` combinations with the fixture cross-check neutralised so `--test` alone is what
-holds.
+| # | scenario | `322499f` | here | direction |
+|---|---|---|---|---|
+| 1 | `--test --out runs/gate0_human_baseline/red` | refuses, exit 2, writes nothing | same — **message reworded** | neutral |
+| 2 | `--test --out runs/gate0_paid_v2_human_baseline/red` | **writes** `human_metrics.INCOMPLETE_*.json` there | refuses, writes nothing | more refusing |
+| 3 | `--test --out runs/gate0_paid_human_baseline/red` | **writes** there | refuses, writes nothing | more refusing |
+| 4 | **no** `--test`, `--out` at either paid directory | warns "outside the canonical path", then **writes** | refuses, writes nothing | more refusing |
+| 5 | `--test --out <the real path spelled UPPER>` | **writes** into the banked directory | refuses, writes nothing | more refusing |
+| 6 | no `--test`, `--out` at the real path spelled UPPER | warns "**outside** the canonical real baseline path", writes | no warning, writes the same artifact to the same place | **not** more refusing |
+| — | `_under_real_path[UPPER / lower / mixed-case leaf]` | `False` | `True` | underlies 5 and 6 |
+
+Rows 2–3 are review finding **B3**. Row 4 is review **D1/D2** — the blocking finding of the second
+round, and one this PR's own first fix round *introduced*: binding the fixture cross-check to
+`args.out` was right in itself, but it turned the comparison into `pinned == target`, and all three
+fixtures pin `red_human` at the banked directory today, so the accident that had been blocking
+`--mode paid_gate0_v2 --i-am-human --out <banked dir> --allow-retake "..."` became a blessing.
+Reproduced at `06820ab` (banked `oracle.jsonl` renamed away, INCOMPLETE artifact written in) and
+blocked here. Rows 5–6 are review **D3**.
+
+**Row 6 is the one difference that is not "more refusing", and it is stated rather than buried.**
+Both sides write the same artifact to the same directory; only the warning differs. The warning the
+old rig printed was *false*: `<TMP>\REAL_READINESS_DEV` and `<TMP>\real_readiness_dev` are the same
+directory on a case-insensitive filesystem, so `322499f` told the operator the write was "outside
+the canonical real baseline path" **while writing into it**. Suppressing it is a correction, not a
+loosening — but it is a stdout/stderr difference on the `readiness_dev` path and the identity claim
+would be false without it.
+
+The `--test` clause is proven over mode × target-directory × `--i-am-human` × `--allow-retake` ×
+**path spelling** — the spelling axis added this round, because the previous 36-cell matrix varied
+flags only and therefore certified as "unconditional" a helper that five different spellings of one
+path walked straight past. The unconditional foreign-path clause is proven over its own 48-call
+matrix. Both run with the fixture cross-check neutralised, so each guard alone is what holds.
 
 The remaining recorded difference is the parsed argparse namespace, which gains `mode` and
 `i_am_human` and moves `--out`'s default out of argparse into `run()`. The **effective** output
@@ -262,6 +302,49 @@ whole suite green), and the parser's `choices` were not bound to the scorer; bot
 **B5** the cross-check skipped the `schema_version`/`mode` validation `_verify_sources` performs and
 is aligned. **B6** corrected a false claim in the PR body — see below.
 
+### Second review fix round (adversarial review of `06820ab`) — the B2 fix inverted a refusal
+
+**The blocking finding was a regression this PR's own previous round introduced**, and it is the
+most useful thing in this log. Recorded in full because the shape recurs:
+
+> A guard whose referent is *derived* (a fixture, a computed default) can be made **more correct and
+> less protective in the same edit**. Only a guard whose referent is a constant, sitting at the
+> write choke point, is structural.
+
+**D1 (blocking).** `--mode paid_gate0_v2 --i-am-human --out <the banked readiness_dev directory>
+--allow-retake "a stated reason"` was refused at `a4e5969` and **proceeded** at `06820ab` — renaming
+the banked append-only `oracle.jsonl` away and writing an INCOMPLETE artifact in. `a4e5969` refused
+it *by accident*: the cross-check was comparing the mode's default directory (not the one being
+written) against the pin, and those differ today. Fixing that comparison (B2) made it
+`pinned == target`, which today's fixtures satisfy **at the banked directory**. Fixed by the
+write-path guard described above, not by reverting B2 — the B2 fix was right; relying on it for
+safety was the error.
+
+**D2 (major).** `--mode readiness_dev --out <a paid directory>` had no guard at all (`readiness_dev`
+is deliberately exempt from the fixture cross-check), and wrote there with only a warning. Same
+guard closes it.
+
+**D3 (major, pre-existing).** `_under_real_path` compared `normpath`/`abspath`, which five spellings
+of one directory walk past: `UPPER`, `lower`, a mixed-case leaf, a `mklink /J` junction (no admin
+required) and an 8.3 short name. Now `normcase` + `realpath`. **Both halves are load-bearing, and
+that was established by a surviving mutant rather than by argument:** `realpath` alone canonicalises
+on-disk case only for a path that *already exists*, so it leaves `UPPER`/`lower` open in precisely
+the fresh-checkout/container/worktree case PR #196's guard comment singles out. The word
+"unconditional" is retained only where the spelling matrix now backs it.
+
+**D4 (major).** Three of the reviewer's 24 mutants survived, including `if not allow_retake:` →
+`if False:` — deleting the one-cold-attempt law outright left the full 1720-test suite green,
+because control simply fell through to a faked setup failure that also returns 2 and writes a
+*differently named* file. Re-run this round over 32 mutants (the reviewer's 24 plus 8 for the new
+guards): **31 killed.** The single survivor, `M7`, is a **proven equivalent mutant** — once the
+unconditional foreign-path clause precedes the `--test` clause, `blocked ⊆ {mode}` there, so
+`bool(blocked)` and `_under_real_path(args.out, real_out)` are the same predicate; confirmed
+byte-identical over a 504-scenario differential. The `blocked` form is kept as defence in depth.
+
+**D5/D6 (minor).** The #192 binding test's "the two must agree" is narrowed to "agree on the
+resolution of a **well-formed** pin" — they deliberately diverge on malformed ones since B5. D6 is
+noted below.
+
 ### What this does NOT do
 
 It does not satisfy P1c. It supplies the first of three steps. It produces no capability evidence,
@@ -272,7 +355,13 @@ It also does **not** fix `tools/reconstruct_gate0_red_baseline.py`, which still 
 unconditionally — the identical defect this PR fixes, in the tool that actually produced the banked
 artifact and that is the recovery path if a v2 capture mis-detects. Deliberately out of scope here
 (it deserves its own reviewed PR, and it is the fallback if the capture path fails); recorded so the
-gap is not lost.
+gap is not lost. **PR #196 now does exactly that**, independently, and its `write_artifact()` guard
+is the design this PR's write-path guard is ported from. #196 takes no deviation slot.
+
+Nor does it fix the third sibling: `tools/capture_gate0_baseline_miniwob.py:103` still carries
+`DEFAULT_MODE = "readiness_dev"` — the default this rig's own docstring argues "would preserve
+exactly the trap being fixed" (review **D6**). One line, one other PR; recorded here so the last
+instance is not lost.
 
 It leaves a **declared duplication**:
 `pinned_red_human_path()` re-implements #192's `pinned_artifact_path()` because #192 is unmerged (the

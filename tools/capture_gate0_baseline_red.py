@@ -22,11 +22,14 @@ Three modes, selected with a REQUIRED `--mode` (see "Why --mode has no default" 
   * `readiness_dev` -- the readiness-phase capture. This is the mode the banked
     `runs/gate0_human_baseline/red/human_metrics.json` was produced under. Every capture path is
     byte-identical to the pre-`--mode` rig -- same effective output directory, same artifact, same
-    exit codes, same stdout/stderr -- with exactly ONE deliberate exception, measured rather than
-    asserted (see the deviations log's D5): the `--test` refusal below is now UNCONDITIONAL and
-    cross-mode, so it refuses `--out` under any mode's real path and its message names which. On the
-    pre-`--mode` rig the two paid directories did not exist, so `--test` was free to write into
-    them; that is the hole review B3 found and it is closed in the more-refusing direction.
+    exit codes -- with FOUR measured, enumerated exceptions (see the deviations log's D5 for the
+    full table; three refuse where the old rig wrote, one suppresses a warning that was false):
+    `--test` under a paid mode's real path, an `--out` under a paid mode's real path without
+    `--test`, and both of those reached via a differently-SPELLED path (UPPER/lower/mixed case, a
+    junction, an 8.3 short name -- review D3). The fourth is that last spelling change seen from the
+    other side: a non-`--test` `--out` naming readiness_dev's OWN directory in a different case no
+    longer prints "outside the canonical real baseline path", because it is not outside it. Nothing
+    that used to be written stops being written, and nothing new is written anywhere.
   * `paid_gate0` -- Gate 0 v1's paid mode.
   * `paid_gate0_v2` -- Gate 0 v2's paid mode (reports/2026-07-25-gate0-v2-prereg.md P1c).
 
@@ -53,12 +56,22 @@ one:
     paid_gate0    -> runs/gate0_paid_human_baseline/red/
     paid_gate0_v2 -> runs/gate0_paid_v2_human_baseline/red/
 Separate defaults are NOT on their own a safety property, and this docstring used to overclaim that
-they were: an explicit `--out` can still name another mode's directory. What actually binds that is
-(a) require_fixture_points_here, cross-checked against `args.out` -- the directory this invocation
-will really write -- so a held-out mode cannot write anywhere its own fixture does not point, and
-(b) the unconditional cross-mode `--test` guard in run(), which refuses `--out` under ANY mode's
-real path. Both were added after review found `--out` walking past the first and `--test` walking
-past the second.
+they were: an explicit `--out` can still name another mode's directory. What binds that is the
+WRITE-PATH GUARD in run() (see the block marked "THE WRITE-PATH GUARD"): every write this rig makes
+lands inside `args.out`, so `args.out` is the single choke point both the mode-derived default and
+an explicit `--out` pass through, and the guard sits there. It has two clauses:
+  (a) UNCONDITIONAL, every mode, every flag -- `--out` may never be at or under a DIFFERENT mode's
+      real baseline path. Referent is MODE_CONFIG, a module constant, never fixture contents.
+  (b) `--test` additionally may never write under the selected mode's OWN real path, so a smoke test
+      can never touch any of the three.
+Neither is overridable by --test/--i-am-human/--allow-retake, both compare RESOLVED paths (see
+_under_real_path), both are directory-wide (so the append-only oracle.jsonl is covered, not just
+human_metrics.json), and both run before the exists() test and before any mkdir, so a refusal
+creates nothing on disk. Shape ported from PR #196's write_artifact() guard.
+require_fixture_points_here is a SEPARATE, weaker question -- "will the scorer read what I am about
+to write?" -- and is deliberately NOT the thing standing between a paid mode and the banked tree:
+review D1 showed that binding safety to a fixture-derived comparison made the answer correct only by
+accident, and that today's fixtures invert the accident into a blessing.
 This mirrors tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG exactly. It is NOT derived from
 the mode's source-pins fixture, deliberately: all three fixtures currently pin `artifact_paths.
 red_human` at the readiness_dev path, so deriving the OUTPUT from the pin would make a v2 capture
@@ -160,8 +173,20 @@ def _sha256_file(path: str) -> str:
 
 
 def _under_real_path(out: str, real_out: str = REAL_OUT) -> bool:
-    norm = os.path.normpath(os.path.abspath(out))
-    real = os.path.normpath(os.path.abspath(real_out))
+    """Is `out` at, or inside, `real_out`?
+
+    `normcase` + `realpath`, not `normpath` + `abspath`, because the thing that must be bound is
+    WHERE THE WRITE LANDS, not the string the caller typed. Review D3 got five different spellings of
+    one directory past the `normpath`/`abspath` form -- `UPPER`, `lower`, a mixed-case leaf, a
+    `mklink /J` junction (no admin needed) and an 8.3 short name -- each of which wrote an INCOMPLETE
+    artifact into a stand-in banked directory and renamed its append-only oracle.jsonl away.
+    `realpath` collapses the junction and the short name (it is non-strict, so the target need not
+    exist yet); `normcase` collapses the case, which is what a case-insensitive filesystem actually
+    does. Measured on all thirteen spellings: the five escapes close, the seven already-caught ones
+    stay caught, and the two negative controls (an unrelated directory, and a sibling sharing the
+    prefix) stay False -- no false positive."""
+    norm = os.path.normcase(os.path.realpath(out))
+    real = os.path.normcase(os.path.realpath(real_out))
     return norm == real or norm.startswith(real + os.sep)
 
 
@@ -225,6 +250,17 @@ def require_fixture_points_here(mode: str, out_dir: str) -> str | None:
     directory>` validated the directory it was NOT about to write and returned None, letting a
     paid-mode capture land on top of an append-only artifact whose digest three fixtures freeze. The
     guard now answers the question its first sentence asks.
+
+    THIS GUARD IS NOT A SAFETY GUARD, and a previous round of this PR shipped believing it was.
+    Its verdict is a function of FIXTURE CONTENTS, so what it permits moves when a fixture moves.
+    Before `args.out` was passed in, the comparison happened to refuse `--mode paid_gate0_v2 --out
+    <banked dir>` -- for the wrong reason, because it was comparing the wrong directory. Passing
+    `args.out` made the comparison honest and thereby made it `pinned == target`, which today's
+    fixtures satisfy at the banked directory: the fix removed the only thing blocking that write and
+    replaced it with a blessing (review D1, reproduced). What actually protects the banked tree is
+    the unconditional write-path guard in run(), whose referent is MODE_CONFIG, a module constant.
+    Keep these two separate: this one answers "will the scorer read what I write?", that one answers
+    "am I allowed to write here at all?", and only the second may ever be the last line of defence.
 
     Without this the failure is silent and expensive in the way this project keeps getting caught by:
     the capture succeeds, the artifact is perfect, and the scorer reads a DIFFERENT file -- the
@@ -377,15 +413,50 @@ def run(args, max_frames: int | None = None) -> int:
               "(and runs/gate0_readiness_2026-07-14/ receipts) for how to obtain it.", file=sys.stderr)
         return 2
 
-    # --test's invariant is UNCONDITIONAL and cross-mode: it may never write under ANY mode's real
-    # baseline path, whatever --mode/--out/--allow-retake say. Scoping this to the selected mode's
-    # real_out (inherited verbatim from tools/capture_gate0_baseline_miniwob.py) was the one place
-    # copying the sibling WEAKENED this rig against origin/main, where _under_real_path had a single
-    # referent and `--test` therefore could never touch runs/gate0_human_baseline/red. Demonstrated:
-    # `--test --mode paid_gate0_v2 --out runs/gate0_human_baseline/red` wrote an INCOMPLETE artifact
-    # into the banked directory and renamed the banked append-only oracle.jsonl away.
+    # --- THE WRITE-PATH GUARD ---------------------------------------------------------------------
+    # Everything run() writes lands inside args.out: os.makedirs(args.out), the oracle.jsonl archival
+    # rename, the oracle handle, and both _atomic_write_json calls all derive their path from it and
+    # nothing else. So args.out, once the per-mode default above has been filled in, is this rig's
+    # single write choke point -- the one place the mode-derived default and an explicit --out arrive
+    # as the same value -- and gating it here gates every write. Shape ported from PR #196's
+    # write_artifact() guard, with the four properties that make it structural rather than incidental:
+    # it is checked at the choke point (an explicit --out cannot route around it), it compares
+    # RESOLVED paths (see _under_real_path), it is DIRECTORY-wide so it covers the append-only
+    # oracle.jsonl and not just human_metrics.json, and it runs BEFORE the exists() test and before
+    # any mkdir, so a refusal creates nothing on disk. No flag overrides it.
+    #
+    # What differs from #196, deliberately: that tool must never write into the banked directory at
+    # all, so its guard names one fixed BANKED_DIR. This rig legitimately writes there under --mode
+    # readiness_dev -- that IS the banked artifact's own mode -- so the invariant is relative: a mode
+    # may never write under a DIFFERENT mode's real baseline path. The referent is MODE_CONFIG, a
+    # module constant, never fixture contents. That is the whole point of review D1: binding the
+    # question to a fixture-derived value made the answer correct only by accident, and today's
+    # fixtures (all three still pinning red_human at the banked readiness_dev artifact) turned that
+    # accident into a blessing -- `--mode paid_gate0_v2 --i-am-human --out <the banked directory>
+    # --allow-retake "..."` renamed the banked oracle.jsonl away and wrote a paid-stamped artifact in.
     blocked = sorted(m for m, cfg in MODE_CONFIG.items()
                      if _under_real_path(args.out, cfg["real_out"]))
+    foreign = [m for m in blocked if m != mode]
+    if foreign:
+        which = "; ".join(f"{m} -> {MODE_CONFIG[m]['real_out']}" for m in foreign)
+        print(f"refusing: --out {args.out!r} is under another mode's real baseline path ({which}), "
+              f"but this capture runs as --mode {mode}. A mode may never write under a different "
+              "mode's baseline directory: that tree is append-only raw data whose digest the "
+              "source-pin fixtures freeze, and an artifact stamped with the wrong mode fails "
+              "eval/score_gate0.py's human_metric_identity check anyway. No flag overrides this. "
+              "Fix the FIXTURE, not the destination.", file=sys.stderr)
+        return 2
+    # --test may never write under ANY mode's real baseline path, whatever --mode/--out/
+    # --allow-retake say -- including, unlike the guard above, the selected mode's OWN one. The word
+    # "unconditional" is used advisedly and only as far as it is proven: over mode x target x
+    # --i-am-human x --allow-retake x PATH SPELLING, the last axis added after review D3 found the
+    # previous flags-only matrix certifying a helper that five spellings of one path walked past.
+    # Scoping this to the selected mode's real_out (inherited verbatim
+    # from tools/capture_gate0_baseline_miniwob.py) was the one place copying the sibling WEAKENED
+    # this rig against origin/main, where _under_real_path had a single referent and `--test`
+    # therefore could never touch runs/gate0_human_baseline/red. Demonstrated: `--test --mode
+    # paid_gate0_v2 --out runs/gate0_human_baseline/red` wrote an INCOMPLETE artifact into the banked
+    # directory and renamed the banked append-only oracle.jsonl away.
     if args.test and blocked:
         which = "; ".join(f"{m} -> {MODE_CONFIG[m]['real_out']}" for m in blocked)
         print(f"--test refuses to write under ANY mode's real baseline path; --out {args.out!r} is "

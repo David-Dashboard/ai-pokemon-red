@@ -91,9 +91,20 @@ A paid-mode capture **refuses to start** unless that mode's source-pins fixture 
 P1c) -- executed as written on 2026-07-28, it prints that refusal and exits `2`, which is the
 correct behaviour today, not a breakage. The refusal names the exact fixture field to change. Do
 **not** work around it by pointing `--out` at the banked dev directory: that file is append-only raw
-data and three fixtures freeze its digest. `--out` will not get you there anyway -- the refusal is
-checked against the directory the run would actually write, and `--test` refuses to write under any
-mode's real baseline path at all.
+data and three fixtures freeze its digest.
+
+`--out` will not get you there. The rig refuses, before it creates anything, any `--out` that lands
+at or under **another mode's** real baseline directory -- and the banked dev directory is another
+mode's, for both paid modes. No flag turns that off: not `--test`, not `--i-am-human`, not
+`--allow-retake`. Nor does spelling the path differently (case, a junction, an 8.3 short name); the
+comparison is made on the resolved path.
+
+An earlier draft of this paragraph said `--out` could not get you there *because the refusal is
+checked against the directory the run would actually write*. That reason was **wrong, and backwards
+in exactly this window**: it described the fixture cross-check, whose verdict follows the fixtures,
+and today all three fixtures point at the banked directory -- so that check **blesses** the write
+rather than blocking it. What blocks it is the separate path guard described above, which does not
+consult a fixture at all. Recorded because a false reassurance here is worse than none.
 
 What you'll see: a real PyBoy window opens straight into the fresh bedroom. The terminal prints the
 fresh party count (must read `0` -- if it doesn't, you've got the wrong savestate, Ctrl-C and fix
