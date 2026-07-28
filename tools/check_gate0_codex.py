@@ -1,17 +1,34 @@
-"""Fail-closed Codex transcript audit against frozen, observed Gate 0 pins."""
+"""Fail-closed Codex transcript audit against frozen, observed Gate 0 pins.
+
+=====================================================================================================
+THIS MODULE'S `audit_overall` IS NOT THE GATE 0 VERDICT -- DO NOT QUOTE IT AS ONE
+=====================================================================================================
+
+- `audit()`'s `audit_overall` is an INTERMEDIATE PER-ARM AUDIT INPUT, not the gate's printed
+  verdict. The Gate 0 verdict authority is `eval/score_gate0.py::score()` and its OWN `overall`.
+- `score()` consumes exactly four fields off an audit dict -- `leak_failures`,
+  `constancy_failures`, `run_failures` (eval/score_gate0.py:318-320) and `accounting_failures`
+  (:336). It NEVER reads `audit_overall`. `wake_accounting` is read once (:297) purely to populate
+  an informational `"status": "DEFERRED"` payload, and never gates.
+- `audit_overall` can NEVER be "PASS": wake accounting is permanently fail-closed by design (see
+  the block comment above audit()'s return), so the verdict chain always bottoms out in
+  "NO_GO_INSUFFICIENT_WAKES". That does NOT cap the gate -- see
+  reports/2026-07-25-gate0-v2-prereg.md Sec. 0.1 and reports/2026-07-18-gate0-prereg.md:81-83,
+  which said the same thing first.
+- The field is called `audit_overall` and not `overall` precisely because this misreading is
+  recurring: on 2026-07-28 a reviewer read `overall: NO_GO_INSUFFICIENT_WAKES` as the gate's
+  ceiling and escalated that Gate 0 v2 was structurally unwinnable. It was false, and the rename
+  exists so the next reader cannot make the same substitution by accident.
+"""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import sys
 from pathlib import Path
 
 
 SERVER = "gate0_world"
-# eval/score_gate0.py::MODES -- duplicated here (not imported) to keep this module free of any
-# eval.* import, matching its existing zero-cross-package-import shape.
-AGENT_METRICS_MODES = ("readiness_dev", "paid_gate0")
 TOOLS = {
     "red": ["observe", "explore", "goto", "remember", "press_button", "press_sequence", "wait"],
     "miniwob": ["observe", "read_region", "whats_changed", "click", "type_text",
@@ -276,24 +293,28 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
     # north-star-gate-0-design.md L237-241's own caveat against exactly this substitution). wakes/
     # wake_accounting stay hardcoded until Codex ships a documented per-model-call boundary event:
     # any transcript, however clean, reports wakes=None / wake_accounting="INSUFFICIENT_WAKES", so
-    # overall can never reach "PASS" via a wake count. primitive_action_events (below, counted in
-    # the same loop) is unaffected -- it counts actual allowlisted tool-call items, not model
-    # decisions, and has no analogous undercount problem.
+    # audit_overall can never reach "PASS" via a wake count. primitive_action_events (below,
+    # counted in the same loop) is unaffected -- it counts actual allowlisted tool-call items, not
+    # model decisions, and has no analogous undercount problem.
     if leak_failures:
-        overall, no_leak = "NO_LEAK", "NO_LEAK"
+        audit_overall, no_leak = "NO_LEAK", "NO_LEAK"
     elif constancy_failures:
-        overall, no_leak = "CONSTANCY_BREACH", "PASS"
+        audit_overall, no_leak = "CONSTANCY_BREACH", "PASS"
     elif run_failures:
-        overall, no_leak = "NO_GO_RUN_FAILED", "PASS"
+        audit_overall, no_leak = "NO_GO_RUN_FAILED", "PASS"
     elif accounting_failures:
-        overall, no_leak = "NO_GO_INSUFFICIENT_ACCOUNTING", "PASS"
+        audit_overall, no_leak = "NO_GO_INSUFFICIENT_ACCOUNTING", "PASS"
     else:
-        overall, no_leak = "NO_GO_INSUFFICIENT_WAKES", "PASS"
+        audit_overall, no_leak = "NO_GO_INSUFFICIENT_WAKES", "PASS"
     return {
-        "schema_version": 2,
+        # 3 (was 2): the emitted verdict field was renamed "overall" -> "audit_overall" so it can
+        # never again be misread as eval/score_gate0.py::score()'s own "overall" (module docstring).
+        # The RUN RECEIPT's schema_version (_receipt_shape_failures above) is a DIFFERENT object and
+        # deliberately stays 2.
+        "schema_version": 3,
         "arm": expected_arm,
         "no_leak": no_leak,
-        "overall": overall,
+        "audit_overall": audit_overall,
         "wakes": None,
         "wake_accounting": "INSUFFICIENT_WAKES",
         "peer_constancy": "PASS" if peer_receipt_path is not None and not any(
@@ -308,39 +329,6 @@ def audit(transcript_path: Path, receipt_path: Path, expected_path: Path,
     }
 
 
-def build_agent_metrics(result: dict, arm: str, mode: str, wall_clock_s: float, cost_usd: float,
-                         normalized_credits: float) -> dict:
-    """Build the eval/score_gate0.py-shaped `{arm}_agent` metrics record straight off an audit()
-    result -- wakes and primitive_actions are read from the SAME pass over the transcript that
-    already produced them above, never recomputed. wall_clock_s/cost_usd/normalized_credits are
-    not observable from the transcript alone (they are supervision-level timing and signed-rate-
-    pin outputs tools/gate0_credit_accountant.py and the paid launcher already produce), so the
-    caller supplies them. Fail-closed: refuses to build a metrics record from anything but a clean
-    overall=PASS/wake_accounting=PASS audit -- an agent_metrics.json `wakes` field must never be
-    sourced from a run whose wake accounting itself could not be trusted.
-
-    As of reports/2026-07-21-gate0-wake-grounding.md, audit() itself can never actually produce
-    overall=PASS/wake_accounting=PASS (wake accounting is permanently fail-closed until Codex
-    exposes a real per-model-call boundary event -- see the comment above the return statement in
-    audit()) -- so this function is unreachable via any real audit() call today. It is kept as
-    forward-looking plumbing (schema + fail-closed refusal logic already correct and tested) for
-    whenever a grounded wake mechanism exists; it is not itself a way to reach PASS."""
-    if (result.get("overall") != "PASS" or result.get("wake_accounting") != "PASS"
-            or not isinstance(result.get("wakes"), int) or isinstance(result.get("wakes"), bool)):
-        raise ValueError("audit_not_clean: refusing to write agent_metrics.json from a non-PASS audit")
-    return {
-        "schema_version": 1,
-        "arm": arm,
-        "role": "agent",
-        "mode": mode,
-        "wall_clock_s": wall_clock_s,
-        "primitive_actions": result["primitive_action_events"],
-        "wakes": result["wakes"],
-        "cost_usd": cost_usd,
-        "normalized_credits": normalized_credits,
-    }
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("transcript", type=Path)
@@ -349,35 +337,14 @@ def main() -> int:
     parser.add_argument("artifacts_dir", type=Path)
     parser.add_argument("--arm", required=True, choices=sorted(TOOLS))
     parser.add_argument("--peer-receipt", type=Path)
-    parser.add_argument("--write-agent-metrics", type=Path,
-                         help="Also write an eval/score_gate0.py-shaped agent_metrics.json here, "
-                              "from the SAME audit() pass (requires --mode/--wall-clock-s/"
-                              "--cost-usd/--normalized-credits).")
-    parser.add_argument("--mode", choices=AGENT_METRICS_MODES)
-    parser.add_argument("--wall-clock-s", type=float)
-    parser.add_argument("--cost-usd", type=float)
-    parser.add_argument("--normalized-credits", type=float)
     args = parser.parse_args()
     summary = audit(args.transcript, args.receipt, args.expected_pins, args.artifacts_dir,
                     args.arm, args.peer_receipt)
     print(json.dumps(summary, sort_keys=True))
-    if args.write_agent_metrics is not None:
-        missing = [name for name, value in (
-            ("--mode", args.mode), ("--wall-clock-s", args.wall_clock_s),
-            ("--cost-usd", args.cost_usd), ("--normalized-credits", args.normalized_credits),
-        ) if value is None]
-        if missing:
-            parser.error(f"--write-agent-metrics requires {', '.join(missing)}")
-        try:
-            metrics = build_agent_metrics(summary, args.arm, args.mode, args.wall_clock_s,
-                                          args.cost_usd, args.normalized_credits)
-        except ValueError as exc:
-            print(json.dumps({"error": str(exc)}), file=sys.stderr)
-            return 1
-        args.write_agent_metrics.parent.mkdir(parents=True, exist_ok=True)
-        args.write_agent_metrics.write_text(json.dumps(metrics, sort_keys=True) + "\n",
-                                            encoding="utf-8", newline="\n")
-    return 0 if summary["overall"] == "PASS" else 1
+    # Exit 0 means ONLY that the four fields eval/score_gate0.py::score() consumes are clean -- it
+    # is NOT a Gate 0 PASS (module docstring). Keying it on audit_overall would exit 1 forever.
+    return 0 if not (summary["leak_failures"] or summary["constancy_failures"]
+                     or summary["run_failures"] or summary["accounting_failures"]) else 1
 
 
 if __name__ == "__main__":

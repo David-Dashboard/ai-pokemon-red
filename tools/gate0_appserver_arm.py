@@ -856,11 +856,13 @@ def run_gate0_arm_turn(client: ObservingGate0Client, *, cwd: str, task_text: str
 
 
 # ---------------------------------------------------------------------------------------------
-# agent_metrics.json / wake_boundary.json builders. Deliberately NOT
-# tools/check_gate0_codex.py::build_agent_metrics (permanently unreachable dead wake gate, per
-# that function's own docstring) -- primitive_actions is read from a plain audit() call's
-# `primitive_action_events` (the SAME sound counter, reused not reimplemented), everything else
-# is this launcher's own job per the build-spec.
+# agent_metrics.json / wake_boundary.json builders. This launcher has always built its own metrics
+# record rather than delegating to check_gate0_codex.py: that module used to carry a
+# build_agent_metrics() of its own, gated on a wake-accounting PASS that audit() can never emit
+# (permanently unreachable dead code -- deleted 2026-07-28 along with the audit_overall rename).
+# primitive_actions is still read from a plain audit() call's `primitive_action_events` (the SAME
+# sound counter, reused not reimplemented); everything else is this launcher's own job per the
+# build-spec.
 # ---------------------------------------------------------------------------------------------
 
 def build_agent_metrics(*, arm: str, mode: str, wall_clock_s: float, primitive_actions: int,
@@ -1128,7 +1130,7 @@ def _run_dry_run(args: argparse.Namespace, out_dir: Path) -> dict:
         "primitive_action_events": audit_result["primitive_action_events"],
         "audit_leak_failures": audit_result["leak_failures"],
         "audit_constancy_failures": audit_result["constancy_failures"],
-        "audit_overall": audit_result["overall"],
+        "audit_overall": audit_result["audit_overall"],
     }
     _write_json(out_dir / "dry_run_verdict.json", verdict)
     print(json.dumps(verdict, sort_keys=True))
@@ -1181,7 +1183,7 @@ def _finalize_real_run(*, receipt: dict, receipt_path: Path, transcript_path: Pa
         _write_json(resolved_expected_path, resolved_expected)
         audit_result = audit(transcript_path, receipt_path, resolved_expected_path, out_dir, arm)
     else:
-        audit_result = {"overall": "LAUNCH_SIGNATURE_MISMATCH", "primitive_action_events": 0}
+        audit_result = {"audit_overall": "LAUNCH_SIGNATURE_MISMATCH", "primitive_action_events": 0}
 
     normalized_credits = (credits_result.get("final_total_normalized_credits")
                           if credits_result.get("final_total_normalized_credits") is not None
@@ -1201,7 +1203,7 @@ def _finalize_real_run(*, receipt: dict, receipt_path: Path, transcript_path: Pa
         "model": model, "credit_breaker_tripped": bool(credits_result.get("tripped", False)),
         "soft_cap_warned": watcher.warned, "soft_cap_warned_at": watcher.warned_at,
         "wall_clock_s": wall_clock_s, "auth_note": auth_note,
-        "audit_overall": audit_result["overall"],
+        "audit_overall": audit_result["audit_overall"],
         # All launch-time hashes in one place (build-spec deliverable 1): config/mcp-list hashes
         # and the docker-inspected image id are ALSO in handshake-receipt.json (the scorer-pinned
         # artifact); launcher_sha256 (this runner's OWN canonical git-blob-at-HEAD hash, same

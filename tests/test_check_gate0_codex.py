@@ -81,7 +81,7 @@ def test_exact_observed_pins_are_still_no_go_until_wakes_exist(tmp_path):
     # valid turn.completed event must still report the fail-closed hardcode, not a fabricated count.
     result = _audit(_fixture(tmp_path))
     assert result["no_leak"] == "PASS"
-    assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
     assert result["wakes"] is None
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
     assert result["token_usage"] == {"input_tokens": 10, "cached_input_tokens": 3,
@@ -99,7 +99,7 @@ def test_primitive_action_events_counts_every_allowlisted_tool_call(tmp_path):
             "type": "mcp_tool_call", "server": SERVER, "tool": "observe"}})
         events.append({"type": "turn.completed", "usage": usage})
     result = _audit(_fixture(tmp_path, events=events))
-    assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
     assert result["wakes"] is None
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
     assert result["primitive_action_events"] == 5
@@ -109,7 +109,7 @@ def test_missing_transcript_data_still_reports_insufficient_wakes_honestly(tmp_p
     # The free-handshake case (no codex exec ever ran, so no transcript exists) must not fabricate
     # a wake count just because the receipt/pins/artifacts are otherwise clean.
     result = _audit(_fixture(tmp_path, events=[]))
-    assert result["overall"] == "NO_LEAK"
+    assert result["audit_overall"] == "NO_LEAK"
     assert "transcript_empty" in result["leak_failures"]
     assert result["wakes"] is None
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
@@ -122,7 +122,7 @@ def test_invalid_usage_accounting_failure_keeps_wakes_insufficient(tmp_path):
                                               "output_tokens": 0, "reasoning_output_tokens": 0}},
     ])
     result = _audit(run)
-    assert result["overall"] == "NO_GO_INSUFFICIENT_ACCOUNTING"
+    assert result["audit_overall"] == "NO_GO_INSUFFICIENT_ACCOUNTING"
     assert result["wakes"] is None
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
 
@@ -139,7 +139,7 @@ def test_nonworld_surface_fails_no_leak(tmp_path, item):
                                                 "output_tokens": 1, "reasoning_output_tokens": 0}},
     ])
     result = _audit(run)
-    assert result["overall"] == "NO_LEAK"
+    assert result["audit_overall"] == "NO_LEAK"
     assert result["leak_failures"]
 
 
@@ -149,7 +149,7 @@ def test_expected_pin_drift_fails_constancy(tmp_path):
     expected["planned_model"] = "different"
     run[2].write_text(json.dumps(expected), encoding="utf-8")
     result = _audit(run)
-    assert result["overall"] == "CONSTANCY_BREACH"
+    assert result["audit_overall"] == "CONSTANCY_BREACH"
     assert "pin_mismatch:planned_model" in result["constancy_failures"]
 
 
@@ -194,25 +194,25 @@ def test_peer_receipts_prove_only_common_brain_constancy(tmp_path):
     red_receipt["planned_model"] = "different"
     red[1].write_text(json.dumps(red_receipt), encoding="utf-8")
     result = audit(mini[0], mini[1], mini[2], mini[3], "miniwob", red[1])
-    assert result["overall"] == "CONSTANCY_BREACH"
+    assert result["audit_overall"] == "CONSTANCY_BREACH"
     assert "peer_mismatch:planned_model" in result["constancy_failures"]
 
 
 def test_run_failure_precedes_missing_accounting(tmp_path):
     run = _fixture(tmp_path, events=[{"type": "thread.started"}, {"type": "error"}])
-    assert _audit(run)["overall"] == "NO_GO_RUN_FAILED"
+    assert _audit(run)["audit_overall"] == "NO_GO_RUN_FAILED"
 
 
-def test_main_exits_nonzero_for_a_clean_synthetic_transcript(monkeypatch, capsys, tmp_path):
-    # A clean transcript with a valid turn.completed decision must NOT reach PASS: wake accounting
-    # is permanently fail-closed until Codex exposes a real per-decision boundary event
-    # (reports/2026-07-21-gate0-wake-grounding.md).
+def test_main_exits_zero_for_a_clean_synthetic_transcript(monkeypatch, capsys, tmp_path):
+    # Exit 0 == the four fields eval/score_gate0.py::score() consumes are clean. It is NOT a Gate 0
+    # PASS: audit_overall still reports the permanently fail-closed NO_GO_INSUFFICIENT_WAKES
+    # (reports/2026-07-21-gate0-wake-grounding.md), which is not what the exit code tracks.
     run = _fixture(tmp_path)
     monkeypatch.setattr(sys, "argv", ["check_gate0_codex.py", str(run[0]), str(run[1]),
                                       str(run[2]), str(run[3]), "--arm", "miniwob"])
-    assert checker.main() == 1
+    assert checker.main() == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
 
 
@@ -222,66 +222,14 @@ def test_main_exits_nonzero_when_transcript_lacks_wake_data(monkeypatch, capsys,
                                       str(run[2]), str(run[3]), "--arm", "miniwob"])
     assert checker.main() == 1
     result = json.loads(capsys.readouterr().out)
-    assert result["overall"] == "NO_LEAK"
+    assert result["audit_overall"] == "NO_LEAK"
     assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
 
 
-def test_build_agent_metrics_reuses_a_clean_audit_pass():
-    # audit() itself can never produce overall=PASS/wake_accounting=PASS today (reports/2026-07-21-
-    # gate0-wake-grounding.md) -- this hand-constructs the shape a FUTURE grounded wake mechanism
-    # would need to supply, to keep build_agent_metrics()'s own mapping logic covered in isolation.
-    result = {"overall": "PASS", "wake_accounting": "PASS", "wakes": 7, "primitive_action_events": 4}
-    metrics = checker.build_agent_metrics(result, "miniwob", "readiness_dev",
-                                          wall_clock_s=12.5, cost_usd=0.5, normalized_credits=10.0)
-    assert metrics == {
-        "schema_version": 1, "arm": "miniwob", "role": "agent", "mode": "readiness_dev",
-        "wall_clock_s": 12.5, "primitive_actions": 4, "wakes": 7,
-        "cost_usd": 0.5, "normalized_credits": 10.0,
-    }
-
-
-def test_build_agent_metrics_refuses_a_non_pass_audit(tmp_path):
-    result = _audit(_fixture(tmp_path, events=[]))
-    assert result["overall"] != "PASS"
-    with pytest.raises(ValueError, match="audit_not_clean"):
-        checker.build_agent_metrics(result, "miniwob", "readiness_dev",
-                                    wall_clock_s=12.5, cost_usd=0.5, normalized_credits=10.0)
-
-
-def test_build_agent_metrics_refuses_even_a_maximally_clean_real_transcript(tmp_path):
-    # The important case: a transcript with ZERO leak/constancy/run/accounting failures -- the
-    # kind of clean run that (pre-#126) would have earned a PASS wake count -- still cannot
-    # produce agent_metrics.json, because audit() itself never reports wake_accounting="PASS".
+def test_audit_never_emits_a_bare_overall_key(tmp_path):
+    # Locks the 2026-07-28 rename so the trap cannot be reintroduced: a key literally named
+    # "overall" here reads as eval/score_gate0.py::score()'s verdict field and gets misquoted as
+    # the Gate 0 result (it is not -- see tools/check_gate0_codex.py's module docstring).
     result = _audit(_fixture(tmp_path))
-    assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
-    with pytest.raises(ValueError, match="audit_not_clean"):
-        checker.build_agent_metrics(result, "miniwob", "readiness_dev",
-                                    wall_clock_s=12.5, cost_usd=0.5, normalized_credits=10.0)
-
-
-def test_main_write_agent_metrics_refuses_even_a_clean_transcript(monkeypatch, capsys, tmp_path):
-    run = _fixture(tmp_path)
-    out_path = tmp_path / "agent_metrics.json"
-    monkeypatch.setattr(sys, "argv", [
-        "check_gate0_codex.py", str(run[0]), str(run[1]), str(run[2]), str(run[3]),
-        "--arm", "miniwob", "--write-agent-metrics", str(out_path),
-        "--mode", "readiness_dev", "--wall-clock-s", "12.5",
-        "--cost-usd", "0.5", "--normalized-credits", "10.0",
-    ])
-    assert checker.main() == 1
-    capsys.readouterr()
-    assert not out_path.exists()
-
-
-def test_main_write_agent_metrics_refuses_missing_data_transcript(monkeypatch, capsys, tmp_path):
-    run = _fixture(tmp_path, events=[])
-    out_path = tmp_path / "agent_metrics.json"
-    monkeypatch.setattr(sys, "argv", [
-        "check_gate0_codex.py", str(run[0]), str(run[1]), str(run[2]), str(run[3]),
-        "--arm", "miniwob", "--write-agent-metrics", str(out_path),
-        "--mode", "readiness_dev", "--wall-clock-s", "12.5",
-        "--cost-usd", "0.5", "--normalized-credits", "10.0",
-    ])
-    assert checker.main() == 1
-    capsys.readouterr()
-    assert not out_path.exists()
+    assert "overall" not in result
+    assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
