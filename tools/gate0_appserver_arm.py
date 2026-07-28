@@ -319,12 +319,24 @@ def source_pins_for(mode: str) -> dict:
 def pinned_artifact_path(mode: str, key: str) -> Path:
     """The absolute path `mode`'s source-pins fixture pins for `key` (red_human, miniwob_agent,
     wake_boundary, ...), resolved EXACTLY as eval/score_gate0.py::_verify_sources resolves it --
-    relative entries against the scorer's own ROOT, absolute ones left alone. Two independent
-    resolutions of the same pin would be a new drift source, which is the defect class this file
-    is being fixed for."""
+    relative entries against the scorer's own ROOT, absolute ones left alone, and NO symlink
+    resolution (`.resolve()`) on top, because the scorer applies none. Two independent resolutions
+    of the same pin would be a new drift source, which is the defect class this file is being fixed
+    for; the one caller that needs a symlink-resolved form (_validate_args, comparing against an
+    already-resolved --out-dir) resolves it at the comparison, where that asymmetry is visible.
+
+    Refuses through SystemExit, not a raw KeyError/JSONDecodeError/FileNotFoundError, so a broken
+    pins fixture surfaces the same way resolve_mode_seed_manifest's does -- one failure style for
+    every launch guard in this file (PR #192 adversarial review, G3)."""
+    try:
+        pinned = source_pins_for(mode)["artifact_paths"][key]
+    except Exception as exc:
+        raise SystemExit(f"refusing to launch: the {mode!r} source-pins fixture is unreadable or "
+                          f"has no artifact_paths.{key} ({exc!r}). eval/score_gate0.py::"
+                          "_verify_sources reads the same entry and would void the run.") from exc
     from eval.score_gate0 import ROOT
-    path = Path(source_pins_for(mode)["artifact_paths"][key])
-    return (path if path.is_absolute() else ROOT / path).resolve()
+    path = Path(pinned)
+    return path if path.is_absolute() else ROOT / path
 
 
 def resolve_mode_seed_manifest(mode: str) -> Path:
@@ -1137,8 +1149,23 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     # REAL RUNS ONLY. --dry-run and --seam-check are $0 rehearsals that legitimately run into
     # tmp_path/scratch dirs (this build's own tests do exactly that), and a --dry-run writes its
     # wake boundary INSIDE out_dir anyway, so it cannot escape.
+    #
+    # BOTH SIDES ARE SYMLINK-RESOLVED HERE, and only here. args.out_dir was just forced through
+    # Path.resolve() above, so the pinned side must be too or a repository whose path contains a
+    # symlink/junction ANYWHERE above runs/ would refuse every legitimate launch. Residual, measured
+    # rather than assumed (PR #192 adversarial review, G1): a junction at the LEAF arm directory
+    # itself (`mklink /J runs/<attempt>/<arm> elsewhere`, no admin needed) resolves both sides to the
+    # same target, so this guard accepts and the wake boundary lands at that target's parent --
+    # outside the attempt tree. It is left standing deliberately: creating it needs local write
+    # access to the repo, which is strictly more than any guard in this file defends against (see
+    # resolve_mode_seed_manifest's TOCTOU note -- an actor with that access can write the wake
+    # boundary anywhere directly), and it fails CLOSED at scoring, because _verify_sources then reads
+    # artifact_paths.wake_boundary at the un-resolved pinned location and reports
+    # `source_unreadable:wake_boundary`. Ancestor junctions are harmless: both sides resolve through
+    # them to the same file. What this guard exists to catch is operator error in --out-dir, and it
+    # catches all of it.
     if real_run:
-        pinned_out_dir = pinned_artifact_path(args.mode, f"{args.arm}_agent").parent
+        pinned_out_dir = pinned_artifact_path(args.mode, f"{args.arm}_agent").parent.resolve()
         if Path(args.out_dir) != pinned_out_dir:
             parser.error(
                 f"--out-dir must be the directory {args.mode!r} pre-registers for arm "

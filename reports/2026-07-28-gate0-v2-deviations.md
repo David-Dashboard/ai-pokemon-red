@@ -174,20 +174,44 @@ launcher/scorer disagreement is impossible rather than merely absent today:
    `--out-dir runs/gate0_paid_v2` dropped one at the top of `runs/`, a bare relative path in the
    repo root (F2). Binding `out_dir` itself, rather than deriving the wake path from the pin, was
    deliberate: deriving would reinstate the very defect fixed above, a launch pointed at a scratch
-   directory reaching into `runs/gate0_paid_v2/` uninvited;
+   directory reaching into `runs/gate0_paid_v2/` uninvited. **Bound, not sealed** (approval round,
+   G1): that comparison is symlink-resolved on both sides — it has to be, or a checkout sitting
+   under a junction would refuse every legitimate launch — so a junction planted at the *leaf* arm
+   directory resolves both sides to the same target and is accepted, moving the wake boundary out
+   of the attempt tree. Recorded rather than fixed: creating it needs local write access to the
+   repo (with which one could write the file anywhere directly), and it fails **closed** at
+   scoring as `source_unreadable:wake_boundary`. Reproduced with `mklink /J`, no admin;
 3. the human-baseline path is read from the mode's own `artifact_paths.<arm>_human` (F1).
 
 `paid_gate0` behaviour is **unchanged**, proven by differential rather than asserted, and re-proven
-after the review fixes with a second harness that records full JSON payloads rather than hashes.
-Run against `322499f` and against this branch with `--mode paid_gate0`, the docker argv of both
-arms, the resolved human-baseline path of both arms, the seed manifest, the `agent_metrics` mode
-stamp, the wake-boundary path, and every file `_finalize_real_run` writes (path **and** content) are
-byte-identical: sha256 `898049a0b2df650fc7891588486a697daf53b9e92a19cfb2bdb3683ada719235` on both
-sides. The **one** deliberate behaviour change is guard 2: at both pre-registered v1 out-dirs
-(`runs/gate0_paid/red`, `runs/gate0_paid/miniwob`) the launcher accepts exactly as before; it now
-refuses only real-run invocations aimed off that shape, which are precisely the ones `main` allowed
-to write outside the attempt tree. v1's banked artifacts stay scoreable exactly as printed, which is
-what §0.2 requires.
+after each review round. Run against `322499f` and against this branch with `--mode paid_gate0`, the
+docker argv of both arms, the resolved human-baseline path of both arms, the seed manifest, the
+`agent_metrics` mode stamp, the wake-boundary path, and every file `_finalize_real_run` writes (path
+**and** content) are identical. (The capture harness prints a digest of its own normalized record.
+That digest is **internal to the harness and not re-derivable by a third party** — it hashes a
+private normalization. The reproducible claim is the *equality* of the two sides, which any reader
+can re-obtain from the two checkouts; the number is not evidence and is not reproduced here.)
+
+**Two deliberate behaviour changes, both outside `--mode paid_gate0`:**
+
+1. **Guard 2, on the real-run path of every mode.** At both pre-registered v1 out-dirs
+   (`runs/gate0_paid/red`, `runs/gate0_paid/miniwob`) the launcher accepts exactly as before; it now
+   refuses only real-run invocations aimed off that shape, which are precisely the ones `main`
+   allowed to write outside the attempt tree.
+2. **`readiness_dev`'s MiniWoB human baseline moves.** Guard 3 is mode-aware, so
+   `--mode readiness_dev --arm miniwob` now reads `runs/gate0_human_baseline/miniwob/` (that mode's
+   own pin) instead of v1's `runs/gate0_paid_human_baseline/miniwob/`. In David's primary checkout
+   the v1-paid file is **absent** and the dev file **exists**, so a `readiness_dev` MiniWoB run's
+   `agent_metrics.json` changes from `human_wall_clock_s: null` + `human_source_note: "human
+   baseline file not found"` to the dev baseline's real numbers + `"copied from
+   .../gate0_human_baseline/miniwob/human_metrics.json"`. This is the correct value — it is the
+   file `eval/score_gate0.py::_verify_sources` reads for that mode, so before this change the
+   launcher's own record disagreed with the scorer — and `readiness_dev` is the **$0 dev mode**, so
+   no paid artifact is affected. It was not disclosed in the first two rounds and is recorded here
+   because a governance record that omits a behaviour change is the defect, not the change.
+
+`paid_gate0` and `paid_gate0_v2` human baselines are untouched by (2). v1's banked artifacts stay
+scoreable exactly as printed, which is what §0.2 requires.
 
 ### What this does NOT do
 
@@ -199,6 +223,18 @@ launch surface; see the PR body for why that was left, and treat it as a live tr
 reaches for that script. Sharper than the PR body originally put it: that script's paid path is
 gated by `Confirm-PaidExecSignature` against `eval/fixtures/gate0_signature.json`, which is
 **untracked and absent from git but present and fully populated (no `REPLACE_WITH_…` placeholders)
-in David's primary checkout** — so on the machine a v2 attempt would actually be launched from, the
-mitigation is weaker than the repo suggests, not stronger. The honest minimum follow-up is to make
-that script *refuse* a non-v1 attempt outright rather than to teach it modes.
+in David's primary checkout** — so on the machine a v2 attempt would actually be launched from, that
+file is a real, populated signature rather than the template the repo implies.
+
+**Corrected (approval round, G4): populated is not the same as passable, and the earlier wording
+blurred them.** That signature pins `frozen_commit
+53a8ded5c90ef5362233f9daaead7581e7d5989e` (signed 2026-07-22, for Arm R) and `arm: red`.
+`Confirm-PaidExecSignature` compares `frozen_commit` against the checkout's live HEAD and `arm`
+against the launch's arm, so **as of today it refuses every launch from that script** — HEAD is
+`322499f`, not `53a8ded`. What the populated file demonstrates is the file's *shape* — that David
+has authored a real signature before and the machinery is exercised, not placeholder-only — **not**
+that the gate is currently open. The trap is therefore narrower than stated: reaching for
+`run_gate0_codex.ps1` for a v2 attempt fails at the signature check first, and only becomes a spent-
+seed hazard if someone re-signs it for a v2 HEAD without noticing `:632`'s v1 seed hardcode. The
+honest minimum follow-up is unchanged: make that script *refuse* a non-v1 attempt outright rather
+than teach it modes.

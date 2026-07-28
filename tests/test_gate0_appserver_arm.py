@@ -1366,3 +1366,55 @@ def test_a_whitespace_only_reformat_of_a_seed_manifest_is_refused(tmp_path, monk
     with pytest.raises(SystemExit, match="frozen_seed_sha256"):
         build_docker_mcp_args("miniwob", ARM_IMAGE_IDS["miniwob"], tmp_path / "world",
                               mode="paid_gate0_v2")
+
+
+# ---------------------------------------------------------------------------
+# PR #192 approval round: G1 (pinned_artifact_path diverged from _verify_sources by an extra
+# .resolve()), G3 (the two launch guards refused in two different styles).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("mode", ["paid_gate0", "paid_gate0_v2", "readiness_dev"])
+@pytest.mark.parametrize("key", ["red_agent", "miniwob_human", "wake_boundary"])
+def test_pinned_artifact_path_resolves_exactly_as_the_scorer_does(mode, key, tmp_path, monkeypatch):
+    # G1: eval/score_gate0.py::_verify_sources does `path = Path(pin); ROOT / path if not absolute`
+    # and applies NO .resolve(). This helper must do the same, or the two disagree about which file
+    # a pin names -- the drift class this PR exists to remove.
+    #
+    # ROOT is monkeypatched to an UN-NORMALIZED path deliberately. Against the real (already
+    # .resolve()d, junction-free) ROOT the two forms are equal, so an assertion there would pass
+    # under the very mutation it exists to catch -- the F4 trap. A `..` segment makes `.resolve()`
+    # observable with no symlink, junction or privilege needed on any platform.
+    from pathlib import Path
+    import eval.score_gate0 as scorer
+    fake_root = tmp_path / "checkout" / ".." / "checkout"
+    monkeypatch.setattr(scorer, "ROOT", fake_root)
+    pin = json.loads(scorer.SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))["artifact_paths"][key]
+    scorer_side = Path(pin)
+    if not scorer_side.is_absolute():
+        scorer_side = fake_root / scorer_side
+    assert pinned_artifact_path(mode, key) == scorer_side
+    assert ".." in pinned_artifact_path(mode, key).parts  # the mutation guard itself
+
+
+@pytest.mark.parametrize("broken, label", [
+    (None, "fixture missing"),
+    ("{ not json", "fixture undecodable"),
+    ('{"artifact_paths": {}}', "artifact_paths has no such key"),
+])
+def test_a_broken_pins_fixture_refuses_the_same_way_a_broken_seed_manifest_does(
+        broken, label, tmp_path, monkeypatch):
+    # G3: resolve_mode_seed_manifest already raised SystemExit with an operator-readable message,
+    # while pinned_artifact_path let a raw KeyError/JSONDecodeError/FileNotFoundError out of
+    # _validate_args. A launcher whose guards fail in two different styles is harder to operate
+    # under pressure; both now refuse identically.
+    import eval.score_gate0 as scorer
+    fixture = tmp_path / "pins.json"
+    if broken is not None:
+        fixture.write_text(broken, encoding="utf-8")
+    monkeypatch.setitem(scorer.SOURCE_PIN_FILES, "paid_gate0_v2", fixture)
+    with pytest.raises(SystemExit, match="source-pins fixture"):
+        pinned_artifact_path("paid_gate0_v2", "miniwob_agent")
+    parser = arm_mod.build_arg_parser()
+    args = parser.parse_args(_real_run_argv("miniwob", "paid_gate0_v2", tmp_path / "out"))
+    with pytest.raises(SystemExit, match="source-pins fixture"):
+        arm_mod._validate_args(parser, args)
