@@ -12,14 +12,21 @@ re-execution, no docker. Calls the FROZEN tools/check_gate0_codex.py::audit() tw
                        handshake-receipt.json, i.e. what the launcher at commit 3c3f704
                        (landed 13 min after the miniwob arm finished) does today.
 
-READ THE `overall` FIELD BELOW CORRECTLY. `audit()["overall"]` is an INTERMEDIATE per-arm audit
-input, NOT the Gate-0 verdict (reports/2026-07-18-gate0-prereg.md:81-83 -- "do not quote them as
-the Gate 0 result"). "NO_GO_INSUFFICIENT_WAKES" is simply its terminal value for ANY clean run:
-check_gate0_codex.py:290-291 is the final `else` after the four failure-list branches, and
-wakes/wake_accounting are hardcoded literals at :297-298. The signal in Mode B is the FAILURE
-LISTS being empty, not that string. The real verdict is eval/score_gate0.py::score()["overall"],
-which does reach PASS/GO (score_gate0.py:359-360); it reads only the four failure lists and never
-gates on wake_accounting (deferred and non-gating since 2026-07-21, score_gate0.py:263-270).
+READ THE `audit_overall` FIELD BELOW CORRECTLY. `audit()["audit_overall"]` is an INTERMEDIATE
+per-arm audit input, NOT the Gate-0 verdict (reports/2026-07-18-gate0-prereg.md:81-83 -- "do not
+quote them as the Gate 0 result"). "NO_GO_INSUFFICIENT_WAKES" is simply its terminal value for ANY
+clean run: it is the final `else` of `check_gate0_codex.audit()`'s verdict chain, after the four
+failure-list branches, and `wakes`/`wake_accounting` are hardcoded literals in the dict that
+function returns. The signal in Mode B is the FAILURE LISTS being empty, not that string. The real
+verdict is `eval/score_gate0.py::score()["overall"]`, which does reach PASS/GO; it reads only the
+four failure lists and never gates on `wake_accounting` (deferred and non-gating since 2026-07-21).
+
+(The field was named plain `overall` when this probe was written; it was renamed to `audit_overall`
+because this very confusion recurred -- see tools/check_gate0_codex.py's module docstring. Only the
+key name and these citations are updated here; no finding of this probe changes. The citations are
+now by IDENTIFIER, not line number, deliberately: the line-numbered versions went stale twice in
+one day -- once from the rename, once from a six-line docstring edit in the very PR that fixed the
+first one. Per the v2 prereg's own rule, "the quoted code and the named identifier win".)
 
 Run dirs are READ-ONLY here: nothing under runs/ is written, moved, or created. The
 resolved fixture is materialised into a scratch dir outside the repo.
@@ -76,13 +83,13 @@ def run_arm(arm: str, runs_root: Path, scratch: Path) -> dict:
         "expected_pins_resolved_json_present_in_run_dir": (
             run_dir / "expected-pins.resolved.json").exists(),
         "A_raw_fixture": {k: raw[k] for k in (
-            "overall", "no_leak", "constancy_failures", "leak_failures",
+            "audit_overall", "no_leak", "constancy_failures", "leak_failures",
             "accounting_failures", "run_failures")},
         "B_resolved_fixture": {k: post[k] for k in (
-            "overall", "no_leak", "constancy_failures", "leak_failures",
+            "audit_overall", "no_leak", "constancy_failures", "leak_failures",
             "accounting_failures", "run_failures")},
         "C_score_gate0_exec_fixture": {k: scorer[k] for k in (
-            "overall", "no_leak", "peer_constancy", "constancy_failures", "leak_failures",
+            "audit_overall", "no_leak", "peer_constancy", "constancy_failures", "leak_failures",
             "accounting_failures", "run_failures")},
     }
 
