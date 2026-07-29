@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import os
 import sys
 import types
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -289,3 +292,174 @@ def test_retake_allowed_past_setup_failure_records_attempt_2_and_reason(fake_pyb
     assert metrics["retake_reason"] == "Docker died mid-capture, never scored"
     # the pre-existing canonical file (a genuinely different attempt) must be untouched
     assert json.loads((out / "human_metrics.json").read_text(encoding="utf-8"))["attempt_number"] == 1
+
+
+# ---- cwd-relative paths survive world_mcp's import-time os.chdir(<repo root>) -------------------
+
+@pytest.fixture
+def world_mcp_that_chdirs(monkeypatch):
+    """Installs a stand-in for `world_mcp` behind a real import hook, so that `import world_mcp`
+    inside run() performs the process-wide os.chdir(<repo root>) the real module does at import
+    time -- landing at exactly the point in run()'s flow the real one does.
+
+    Faked rather than driven through the real import for two reasons: the real module chdirs exactly
+    once per process, in whichever test imports it first, so a later test relying on the real import
+    would silently get a no-op cache hit and pass even with the defect present; and the chdir has to
+    fire on the IMPORT itself, not on first attribute use, or a fix placed between the two would look
+    correct here while still being too late in production."""
+    def _install(repo_root, **attrs):
+        module = types.ModuleType("world_mcp")
+        for name, value in attrs.items():
+            setattr(module, name, value)
+
+        class _ChdirOnImport:
+            def create_module(self, _spec):
+                os.chdir(repo_root)
+                return module
+
+            def exec_module(self, _module):
+                pass
+
+        class _Finder:
+            def find_spec(self, fullname, _path=None, _target=None):
+                if fullname != "world_mcp":
+                    return None
+                return importlib.util.spec_from_loader(fullname, _ChdirOnImport())
+
+        monkeypatch.delitem(sys.modules, "world_mcp", raising=False)
+        monkeypatch.setattr(sys, "meta_path", [_Finder(), *sys.meta_path])
+    return _install
+
+
+def test_test_mode_relative_out_cannot_escape_into_the_repo_roots_banked_directory(
+        fake_pyboy_raises, world_mcp_that_chdirs, tmp_path, monkeypatch):
+    """The reported escape, end to end. With cwd OUTSIDE the repo, `--test --out
+    runs/gate0_human_baseline/red` resolved to a harmless directory under the caller's cwd for the
+    guard, and then -- after world_mcp's chdir -- to the REAL banked directory for the write, so an
+    INCOMPLETE artifact landed in the banked baseline that --test may never touch."""
+    repo_root = tmp_path / "repo"
+    banked = repo_root / "runs" / "gate0_human_baseline" / "red"
+    banked.mkdir(parents=True)
+    world_mcp_that_chdirs(str(repo_root), GAMES={"pokemon_red": {"watch": {"party": 0xD163}}})
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    rom, state = _rom_state(tmp_path)
+
+    args = argparse.Namespace(rom=rom, state=state,
+                              out=os.path.join("runs", "gate0_human_baseline", "red"),
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
+    rc = m.run(args)
+
+    assert rc == 2
+    # nothing whatsoever reached the repo root's banked directory ...
+    assert list(banked.iterdir()) == []
+    # ... it went where the guard actually validated: under the caller's cwd
+    assert len(list((outside / "runs" / "gate0_human_baseline" / "red")
+                    .glob("human_metrics.INCOMPLETE_*.json"))) == 1
+
+
+def test_relative_out_is_resolved_against_the_callers_cwd_not_the_repo_root(
+        fake_pyboy_raises, tmp_path, monkeypatch):
+    """`import world_mcp` runs a process-wide os.chdir(<repo root>) at import time, and run() reaches
+    it AFTER the --test guard and makedirs but BEFORE every write. A still-relative --out was
+    therefore VALIDATED against the caller's cwd and WRITTEN against the repo root -- so
+    `--test --out runs/gate0_human_baseline/red`, run from outside the repo, sailed past the guard
+    (that path is harmless relative to the caller's cwd) and dropped an INCOMPLETE artifact into the
+    REAL banked baseline directory, breaking --test's "never writes under a real baseline path"
+    invariant. Pin that --out is absolutised up front, against the cwd the caller actually meant."""
+    rom, state = _rom_state(tmp_path)
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+
+    args = argparse.Namespace(rom=rom, state=state, out="scratch_out",
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
+    rc = m.run(args)
+
+    assert rc == 2   # faked PyBoy construction failure -- the INCOMPLETE-artifact path
+    assert args.out == str(workdir / "scratch_out")
+    assert len(list((workdir / "scratch_out").glob("human_metrics.INCOMPLETE_*.json"))) == 1
+
+
+def test_relative_rom_and_state_are_resolved_against_the_callers_cwd(
+        fake_pyboy_raises, tmp_path, monkeypatch):
+    """Same defect, worse consequence: --rom/--state were existence-checked and sha256'd relative to
+    the caller's cwd, then handed to PyBoy AFTER the chdir -- so a same-named ROM at the repo root
+    would be the one actually played while the artifact banked the hash of the one that was checked.
+    A provenance rig must never be able to record a hash for a ROM it did not load."""
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    (workdir / "rom.gb").write_bytes(b"fake-rom-bytes")
+    (workdir / "state.sav").write_bytes(b"fake-state-bytes")
+    monkeypatch.chdir(workdir)
+
+    args = argparse.Namespace(rom="rom.gb", state="state.sav", out=str(tmp_path / "out"),
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
+    rc = m.run(args)
+
+    assert rc == 2
+    assert args.rom == str(workdir / "rom.gb")
+    assert args.state == str(workdir / "state.sav")
+    metrics = json.loads(
+        list((tmp_path / "out").glob("human_metrics.INCOMPLETE_*.json"))[0].read_text(encoding="utf-8"))
+    # the banked path is the file that was actually hashed, not a bare name the repo root could
+    # re-point at
+    assert metrics["rom_path"] == str(workdir / "rom.gb")
+    assert metrics["rom_sha256"] == hashlib.sha256(b"fake-rom-bytes").hexdigest()
+
+
+def test_test_mode_still_refuses_a_relative_out_landing_under_the_real_baseline_path(
+        fake_pyboy_raises, tmp_path, monkeypatch):
+    """The closure direction: once --out is absolutised, a relative path that DOES resolve under the
+    real baseline path must still be refused by the --test guard (rc==2, nothing written)."""
+    repo = tmp_path / "repo"
+    real = repo / "runs" / "gate0_human_baseline" / "red"
+    real.mkdir(parents=True)
+    monkeypatch.setattr(m, "REAL_OUT", str(real))
+    monkeypatch.chdir(repo)
+    rom, state = _rom_state(tmp_path)
+
+    args = argparse.Namespace(rom=rom, state=state,
+                              out=os.path.join("runs", "gate0_human_baseline", "red"),
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
+
+    assert m.run(args) == 2
+    assert list(real.iterdir()) == []
+
+
+@pytest.mark.parametrize("rel", ["scratch", os.path.join("a", "b", "c"),
+                                 os.path.join(os.pardir, "sibling_scratch")])
+def test_absolutising_does_not_over_refuse_legitimate_relative_out(
+        fake_pyboy_raises, tmp_path, monkeypatch, rel):
+    """The other direction, which has had far less scrutiny than the escape: a guard that rejects a
+    legitimate --out breaks the rig. Ordinary relative, nested, and ..-relative --out values must all
+    still be accepted and written to, under the caller's cwd."""
+    rom, state = _rom_state(tmp_path)
+    workdir = tmp_path / "wd" / "here"
+    workdir.mkdir(parents=True)
+    monkeypatch.chdir(workdir)
+
+    args = argparse.Namespace(rom=rom, state=state, out=rel,
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
+    rc = m.run(args)
+
+    assert rc == 2   # reached PyBoy (the faked failure), i.e. no guard refusal
+    assert args.out == os.path.abspath(os.path.join(str(workdir), rel))
+    assert len(list(Path(args.out).glob("human_metrics.INCOMPLETE_*.json"))) == 1

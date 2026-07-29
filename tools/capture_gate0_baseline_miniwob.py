@@ -250,6 +250,18 @@ def run(args, prompt: Callable[[str], str] = input,
     if args.seeds_file is None:
         args.seeds_file = str(MODE_CONFIG[mode]["seeds_file"])
 
+    # Resolve every user-supplied path against the CALLER's cwd, before anything below validates or
+    # uses one. `import world_mcp` (below, deliberately lazy) runs an unconditional process-wide
+    # os.chdir(<repo root>) at import time -- it lands AFTER the --test/TTY guards and AFTER makedirs
+    # but BEFORE every write and before MiniWobSession re-reads the seeds file. So any path still
+    # relative at that point is VALIDATED against one directory and then USED against another:
+    # `--test --out runs/gate0_human_baseline/miniwob` from outside the repo passed the guard (it
+    # resolved to a harmless dir under the caller's cwd) and then wrote into the real banked baseline
+    # directory, and a relative --seeds-file was cross-contamination-checked as one file while the
+    # session loaded another -- the exact substitution the held-out-seed law exists to prevent.
+    args.out = os.path.abspath(args.out)
+    args.seeds_file = os.path.abspath(args.seeds_file)
+
     # Held-out law, defense in depth: paid_gate0 is the held-out-seed replay (1000..1004) -- a
     # scripted stand-in must never be able to produce it. Require an explicit, un-default-able
     # acknowledgement that a real human is at the keyboard, on top of the TTY check below (which
