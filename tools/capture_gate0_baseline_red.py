@@ -146,6 +146,19 @@ def run(args, max_frames: int | None = None) -> int:
     the interactive loop so an in-process test can exercise the full boot/log/write path without a
     real window-close or Ctrl-C. It never presses a button; a capped run with zero human input simply
     writes an INCOMPLETE artifact, exactly like a human closing the window immediately would."""
+    # Resolve every user-supplied path against the CALLER's cwd, before anything below validates or
+    # uses one. `import world_mcp` (below, deliberately lazy) runs an unconditional process-wide
+    # os.chdir(<repo root>) at import time -- it lands AFTER the --test guard and AFTER makedirs but
+    # BEFORE every write and before PyBoy opens the ROM. So any path still relative at that point is
+    # VALIDATED against one directory and then USED against another: `--test --out
+    # runs/gate0_human_baseline/red` from outside the repo passed the guard (it resolved to a harmless
+    # dir under the caller's cwd) and then wrote its INCOMPLETE artifact straight into the real banked
+    # baseline directory, and a relative --rom was existence-checked and sha256'd as one file while
+    # PyBoy loaded a different one -- silently banking a hash for a ROM that was never played.
+    args.out = os.path.abspath(args.out)
+    args.rom = os.path.abspath(args.rom)
+    args.state = os.path.abspath(args.state)
+
     if not os.path.exists(args.rom):
         print(f"ROM not found: {args.rom}", file=sys.stderr)
         return 2
