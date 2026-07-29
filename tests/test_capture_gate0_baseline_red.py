@@ -349,7 +349,10 @@ def test_test_mode_relative_out_cannot_escape_into_the_repo_roots_banked_directo
 
     args = argparse.Namespace(rom=rom, state=state,
                               out=os.path.join("runs", "gate0_human_baseline", "red"),
-                              player="AutomatedSmokeTest", test=True, allow_retake=None)
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
     rc = m.run(args)
 
     assert rc == 2
@@ -375,7 +378,10 @@ def test_relative_out_is_resolved_against_the_callers_cwd_not_the_repo_root(
     monkeypatch.chdir(workdir)
 
     args = argparse.Namespace(rom=rom, state=state, out="scratch_out",
-                              player="AutomatedSmokeTest", test=True, allow_retake=None)
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
     rc = m.run(args)
 
     assert rc == 2   # faked PyBoy construction failure -- the INCOMPLETE-artifact path
@@ -396,7 +402,10 @@ def test_relative_rom_and_state_are_resolved_against_the_callers_cwd(
     monkeypatch.chdir(workdir)
 
     args = argparse.Namespace(rom="rom.gb", state="state.sav", out=str(tmp_path / "out"),
-                              player="AutomatedSmokeTest", test=True, allow_retake=None)
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
     rc = m.run(args)
 
     assert rc == 2
@@ -423,7 +432,10 @@ def test_test_mode_still_refuses_a_relative_out_landing_under_the_real_baseline_
 
     args = argparse.Namespace(rom=rom, state=state,
                               out=os.path.join("runs", "gate0_human_baseline", "red"),
-                              player="AutomatedSmokeTest", test=True, allow_retake=None)
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
 
     assert m.run(args) == 2
     assert list(real.iterdir()) == []
@@ -442,7 +454,10 @@ def test_absolutising_does_not_over_refuse_legitimate_relative_out(
     monkeypatch.chdir(workdir)
 
     args = argparse.Namespace(rom=rom, state=state, out=rel,
-                              player="AutomatedSmokeTest", test=True, allow_retake=None)
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              # forward-compatible with PR #195, which makes --mode required;
+                              # run() on this base never reads either attribute.
+                              mode="readiness_dev", i_am_human=False)
     rc = m.run(args)
 
     assert rc == 2   # reached PyBoy (the faked failure), i.e. no guard refusal
