@@ -447,3 +447,88 @@ that boots (still no window, no gameplay, no real keyboard: `sdl2` stays real an
 
 **E5 (minor).** The PR body's merged-stack suite counts cited SHAs that are not descendants of this
 branch, so a reader could not reproduce them. Dropped rather than re-derived.
+
+### Fourth review fix round (adversarial review of `b6667c5`) — the strip was hiding two spellings
+
+The round-four review confirmed, for the first time in four rounds, that the change **trades nothing
+away**: no spelling `322499f` or `d8cbe00` caught is let through. One escape and one prose defect
+remained.
+
+**E6 (blocking, pre-existing — all three heads escape).** `--test --mode paid_gate0_v2 --i-am-human
+--allow-retake "..." --out "\\?\Volume{GUID}\<banked>"` renamed a stand-in banked `oracle.jsonl` away
+and wrote an INCOMPLETE artifact in. Identical via `\\?\GLOBALROOT\GLOBAL??\C:\<banked>`. Both
+spellings are available to any user with no admin and no setup (`mountvol C: /L` prints the GUID);
+both were reproduced end-to-end through the real `run()` before the fix and again after it.
+
+The cause is worth stating because it is the opposite of the obvious one: **the E1 prefix strip is
+what hid them.** `_strip_extended_prefix` maps `\\?\X` → `X`. For `\\?\C:\...` that yields a drive
+path and for `\\?\UNC\...` a UNC path — both correct — but for the device-namespace forms it yields
+a remainder (`Volume{GUID}\...`, `GLOBALROOT\GLOBAL??\C:\...`) that is *neither* drive-rooted *nor*
+`\\`-prefixed. So `_is_unc_or_device_path` saw a non-separator first character and returned `False`,
+**and** `_under_real_path` resolved the remainder as a RELATIVE path against the cwd. Both clauses
+missed, and they missed *because of* the strip. Closed by one clause: an extended-length prefix that
+did not reveal a drive letter is a device-namespace path, refused outright.
+
+> **Transferable lesson, and it is the E1 lesson's shadow.** A normalisation that closes a hole
+> creates a new input shape nothing downstream was written for. E1 added the strip to make two
+> spellings comparable; it also manufactured a third class of string — prefix-stripped-but-not-drive
+> — that every existing clause silently misclassified as relative. When you add a normalisation, ask
+> what its *output* now looks like to the code beneath it, not just what it fixed.
+
+Both spellings are now rows in `_hostile_spellings`, so all three of that helper's consumers exercise
+them; the new clause is killed by **four** independent test failures. They are kept non-vacuous by a
+dedicated ground-truth test that writes *through* each device spelling and asserts the bytes land in
+the drive-letter directory — without it, a fabricated GUID would make every refusal row pass for the
+wrong reason, which is the exact shape reviews E1/E2 kept finding.
+
+**The fix silently removed a mutation kill, and the mutation re-run is what caught it.** At `b6667c5`,
+deleting the UNC branch of `_strip_extended_prefix` was killed: `\\?\UNC\...` then stopped looking
+like a UNC path and (a0) let it through. After E6 the new clause catches `\\?\UNC\...` anyway —
+stripping `\\?\` leaves `UNC\host\share\...`, which has no drive letter — so **no refusal test can
+tell the branch is gone**, and that mutant survived a re-run in which 18 of 20 died. The branch is
+still load-bearing on exactly the checkout (a0) is off for: a share-hosted one, where it is the only
+thing making `\\?\UNC\host\share\x` compare equal to `\\host\share\x`. Pinned directly now, by
+assertion on `_strip_extended_prefix` itself rather than through a refusal, with the reason written
+at the test. Generalisation worth keeping: **a fix that makes a second mechanism sufficient can make
+a first mechanism untested without making it unnecessary** — only re-running mutation *after* the fix
+surfaces that, which is why the re-run is not a formality.
+
+**Mutation, final: 20 run, 19 killed, 1 survivor.** Newly run and killed this round: the E6 clause
+replaced by `False` (4 failures), with its `q != p` half dropped, with its `splitdrive` half dropped,
+and reverted to the pre-fix first-clause-only form. Re-killed: both halves of the union, `normcase`,
+the prefix strip, the strip's UNC branch, the asymmetric candidate-only form, `startswith` without
+the separator, (a0) removed / gated behind `--test` / returning 0, `HELD_OUT_MODES` emptied, and both
+halves of the E4 ternary. **The single survivor is the one the round-four review already proved
+equivalent** — `not any(...)` → `not all(...)` in (a0)'s referent condition, equivalent because all
+three `real_out` derive from one `ROOT` and can never disagree. Baseline measured green immediately
+before and after the run, so no mutant is resident on disk.
+
+**Over-refusal measured, not assumed**, because the recurring failure on this PR has been fixes that
+trade: the predicate was re-run over 17 legitimate spellings — plain drive in upper and lower case,
+forward slashes, relative / `..`-relative / root-relative in both separator styles, drive-relative
+(`C:scratch`), a bare leaf, three `\\?\<drive>` forms, a trailing dot, a trailing space, and a
+single-separator `\server\share\x` — every one still `False`; and end-to-end a plain, a
+`\\?\<drive>` and a relative scratch `--out` all still reach the emulator and write their artifact.
+
+**E7 (major, prose).** The E3 table's last row said the rig *"refuses **any** UNC or device `--out`"*.
+False twice: the two E6 spellings are device `--out`s that were not refused, and the refusal is
+conditional on every baseline directory being a drive path — which the table never said. That was the
+**fourth** false reassurance in this one passage, each introduced by the fix for the previous one, so
+the shape of the claim changed rather than its content: the rows are now per-spelling statements of
+what has been executed, with no universal quantifier anywhere, matching the closing hedge that was
+already there. The same row's first line also **misattributed the mechanism** — `normcase` was
+credited for trailing separator, forward slashes and `..` round-trip, all three of which `322499f`
+caught with no `normcase` at all; those are `normpath`/`abspath`/`realpath`. Split into two rows.
+
+**E8 (minor, prose).** Clause (a0)'s conditional was verified sound — it does not brick a
+share-hosted checkout — but the residual it leaves was documented nowhere: once (a0) is off, a
+UNC/device `--out` falls back to a comparison that does not recognise `\\server.corp.example.com\...`,
+`\\127.0.0.1\...` and `\\localhost\...` as one directory. Not a regression (every earlier version of
+this rig behaved that way unconditionally) and unreachable from a drive-letter checkout. Now stated
+in both the (a0) comment and `DAVID_BASELINES.md`, with "do not host this checkout on a share".
+
+**Follow-up, deliberately NOT done here.** `tools/reconstruct_gate0_red_baseline.py` (#196) is being
+fixed for the same `\\?\` family in parallel. No shared helper was extracted — two PRs editing one
+new module would conflict on every round. When both land, this duplication and the one already noted
+above should be lifted together in a single follow-up, and the E6 clause is now part of what has to
+be lifted.

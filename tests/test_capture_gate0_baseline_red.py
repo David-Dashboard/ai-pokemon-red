@@ -966,6 +966,11 @@ def _hostile_spellings(d: Path):
       `abspath` both return these VERBATIM. `\\?\<drive>` is closed by stripping the prefix; the
       share and device forms cannot be closed by normalisation at all (unbounded host aliases) and
       are refused outright by the guard's clause (a0).
+    * DEVICE NAMESPACE BEHIND AN EXTENDED-LENGTH PREFIX (E6, pre-existing on all three heads) --
+      `\\?\Volume{GUID}\...` and `\\?\GLOBALROOT\GLOBAL??\C:\...`. These escaped *because* of the
+      strip: it leaves a remainder that is neither `\\`-prefixed nor drive-rooted, so (a0) saw a
+      non-separator first character and `_under_real_path` resolved the remainder as RELATIVE. Both
+      renamed a stand-in banked `oracle.jsonl` away under `--test`. Closed by (a0)'s second clause.
 
     No junction/8.3 row here: those are D3's and `_spellings` already carries them."""
     s = str(d)
@@ -980,7 +985,29 @@ def _hostile_spellings(d: Path):
             (r"\\?\UNC\ admin share", "\\\\?\\UNC\\localhost" + unc_tail),
             (r"\\localhost\ admin share", "\\\\localhost" + unc_tail),
             (r"\\127.0.0.1\ admin share", "\\\\127.0.0.1" + unc_tail),
-            (r"\\.\ device namespace", "\\\\.\\" + s)]
+            (r"\\.\ device namespace", "\\\\.\\" + s),
+            (r"\\?\Volume{GUID}\ device namespace", _volume_guid_spelling(s)),
+            (r"\\?\GLOBALROOT\ device namespace", _globalroot_spelling(s))]
+
+
+def _volume_guid_spelling(s: str) -> str:
+    r"""`C:\x\y` -> `\\?\Volume{GUID}\x\y`, the volume-GUID spelling of the same object. ASSERTS
+    rather than skipping: a fabricated GUID would make every row that uses it pass vacuously, which
+    is precisely the failure mode these tests exist to prevent. Any user can obtain this -- `mountvol
+    C: /L` prints it, no admin and no setup -- so there is no legitimate reason for it to be absent.
+    """
+    import ctypes
+    mount_point = os.path.splitdrive(s)[0] + "\\"
+    buf = ctypes.create_unicode_buffer(64)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW(mount_point, buf, 64), \
+        f"GetVolumeNameForVolumeMountPointW failed for {mount_point!r}"
+    return buf.value.rstrip("\\") + s[2:]
+
+
+def _globalroot_spelling(s: str) -> str:
+    r"""`C:\x\y` -> `\\?\GLOBALROOT\GLOBAL??\C:\x\y`, the object-manager spelling of the same object.
+    Structural (no lookup), available to any user."""
+    return "\\\\?\\GLOBALROOT\\GLOBAL??\\" + s
 
 
 def _spellings(d: Path):
@@ -1363,9 +1390,55 @@ def test_a_unc_or_device_out_is_refused_outright_with_its_own_message(tmp_path, 
     assert red._is_unc_or_device_path(r"\\?\UNC\localhost\C$\x")
     assert red._is_unc_or_device_path(r"\\.\C:\x")
     assert red._is_unc_or_device_path("//localhost/C$/x")           # forward slashes are separators too
+    # E6: a prefix strip that reveals NO drive letter is a device-namespace path, and it is the strip
+    # itself that hides it -- see _is_unc_or_device_path's second clause.
+    assert red._is_unc_or_device_path(_volume_guid_spelling(str(tmp_path)))
+    assert red._is_unc_or_device_path(_globalroot_spelling(str(tmp_path)))
+    assert red._is_unc_or_device_path(r"\\?\globalroot\GLOBAL??\C:\x")   # prefix match is case-blind
     assert not red._is_unc_or_device_path(r"\\?\C:\x")              # extended-length DRIVE path: fine
     assert not red._is_unc_or_device_path(r"C:\x")
     assert not red._is_unc_or_device_path(str(tmp_path))
+    assert not red._is_unc_or_device_path(r"runs\scratch")          # relative: not a device path
+    assert not red._is_unc_or_device_path(r"..\scratch")
+    assert not red._is_unc_or_device_path(r"C:scratch")             # drive-relative
+
+
+def test_the_extended_prefix_strip_maps_both_families_back_to_their_plain_spelling():
+    r"""The UNC branch of `_strip_extended_prefix` is pinned HERE, directly, rather than through a
+    refusal -- and the reason is a mutation-coverage regression the E6 fix ITSELF caused.
+
+    Before E6, deleting that branch was killed by the refusal tests: `\\?\UNC\...` then stopped
+    looking like a UNC path and clause (a0) let it through. After E6 the new clause catches
+    `\\?\UNC\...` regardless (stripping `\\?\` leaves a remainder with no drive letter), so no
+    refusal test can tell the branch is gone any more -- it survived a re-run that killed 18 of 20.
+
+    The branch is still load-bearing, on precisely the checkout (a0) deliberately does NOT fire for:
+    a share-hosted one, where every referent is UNC, (a0) switches itself off, and this strip is the
+    only thing that makes `\\?\UNC\host\share\x` compare equal to `\\host\share\x`."""
+    assert red._strip_extended_prefix(r"\\?\UNC\localhost\C$\x") == r"\\localhost\C$\x"
+    assert red._strip_extended_prefix(r"\\?\unc\localhost\C$\x") == r"\\localhost\C$\x"
+    assert red._strip_extended_prefix(r"\\?\C:\x") == r"C:\x"
+    assert red._strip_extended_prefix(r"C:\x") == r"C:\x"
+    # the share-checkout comparison the UNC branch exists for, which (a0) is off for by design
+    assert red._under_real_path(r"\\?\UNC\server\share\runs\red", r"\\server\share\runs\red")
+
+
+def test_the_two_device_namespace_spellings_really_do_open_the_same_directory(tmp_path):
+    r"""NON-VACUITY for the two E6 rows `_hostile_spellings` now carries.
+
+    Every other test that uses them asserts a REFUSAL, so a spelling that quietly did not name the
+    referent at all would make those rows pass for the wrong reason -- the exact shape review E1/E2
+    kept finding. Ground truth, therefore: write THROUGH each device spelling and confirm the bytes
+    land in the drive-letter directory. This is what makes `\\?\Volume{GUID}\...` and
+    `\\?\GLOBALROOT\GLOBAL??\...` a real escape rather than a plausible-looking one."""
+    referent = tmp_path / "referent"
+    referent.mkdir()
+    for label, spelling in (("volume GUID", _volume_guid_spelling(str(referent))),
+                            ("GLOBALROOT", _globalroot_spelling(str(referent)))):
+        Path(os.path.join(spelling, f"{label}.probe")).write_text("landed", encoding="utf-8")
+        landed = referent / f"{label}.probe"
+        assert landed.is_file() and landed.read_text(encoding="utf-8") == "landed", \
+            f"{label} spelling {spelling!r} did not open {referent!r} -- the E6 rows would be vacuous"
 
 
 def test_a_plain_scratch_out_is_still_allowed_through(tmp_path, monkeypatch, fake_pyboy_raises):

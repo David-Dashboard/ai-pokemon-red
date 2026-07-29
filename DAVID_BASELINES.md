@@ -98,25 +98,40 @@ at or under **another mode's** real baseline directory -- and the banked dev dir
 mode's, for both paid modes. No flag turns that off: not `--test`, not `--i-am-human`, not
 `--allow-retake`.
 
-Spelling the path differently does not get you there either, but read what that does and does not
-claim. Each spelling below is pinned by a test that drives the real `run()` against a stand-in
-baseline directory and asserts nothing was written, moved or renamed -- in **both** states, the
-directory existing and the directory not yet created (the live one today: neither paid directory
-exists on this checkout):
+Spelling the path differently does not get you there either -- but read the table as what it is: a
+**list of spellings that have been executed**, one row per spelling, not a statement about spellings
+in general. Each row is pinned by a test that drives the real `run()` against a stand-in baseline
+directory and asserts nothing was written, moved or renamed -- in **both** states, the directory
+existing and the directory not yet created (the live one today: neither paid directory exists on
+this checkout):
 
 | spelling | how it is stopped |
 |---|---|
-| case (`UPPER`, `lower`, mixed-case leaf), trailing separator, forward slashes, `..` round-trip | compared after `normcase` |
-| a `mklink /J` junction, an 8.3 short name | compared after `realpath` (applied to **both** sides, so a junction on a shared prefix cancels) |
-| a trailing dot or space (`...\red.`, `...\red `) | compared after `abspath`, which strips them as Win32 does |
+| trailing separator, forward slashes, `..` round-trip | collapsed by `normpath`/`abspath` before the comparison |
+| case (`UPPER`, `lower`, mixed-case leaf) | `normcase` -- the only row where `normcase` is load-bearing; the row above was already caught by `322499f`, which had no `normcase` at all |
+| a `mklink /J` junction, an 8.3 short name | `realpath` (applied to **both** sides, so a junction on a shared prefix cancels) |
+| a trailing dot or space (`...\red.`, `...\red `) | `abspath`, which strips them as Win32 does |
 | `\\?\C:\...` extended-length | the prefix is stripped, then compared |
-| `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\?\UNC\...`, `\\.\C:\...` | **not compared at all -- refused outright.** No normalisation maps a share back to a drive letter and the set of host aliases is unbounded, so the rig refuses any UNC or device `--out` instead of pretending to check it |
+| `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\?\UNC\...`, `\\.\C:\...`, `\\?\Volume{GUID}\...`, `\\?\GLOBALROOT\GLOBAL??\C:\...` | **not compared at all -- refused outright**, because no normalisation maps a share or a device name back to a drive letter and the set of host aliases is unbounded. Conditional: see the paragraph below |
 
 The comparison takes the **union** of two normalisations because neither dominates: `realpath` sees
 through junctions and short names but leaves a trailing dot verbatim, while `abspath` strips the
 trailing dot but is blind to junctions. A previous round *replaced* one with the other and thereby
 opened the trailing-dot escape it now closes (review E1/E2). What is **not** claimed: that this
-enumeration is exhaustive. It is the set that has been executed.
+enumeration is exhaustive, or that any spelling absent from it is stopped. It is the set that has
+been executed -- and it grew again in review E6, when `\\?\Volume{GUID}\...` and
+`\\?\GLOBALROOT\GLOBAL??\C:\...` turned out to walk past a table row that had claimed all device
+paths were refused.
+
+**The last row's refusal is conditional, and here is the residual.** It fires only while *every*
+baseline directory on this checkout is a drive path -- true today. If this repo were itself checked
+out on a share, every baseline directory would be UNC too, refusing UNC would break the only thing
+this rig exists to do, and the refusal therefore switches itself off. On such a checkout a UNC or
+device `--out` falls back to the ordinary path comparison, which does **not** recognise
+`\\server.corp.example.com\...`, `\\127.0.0.1\...` and `\\localhost\...` as the same directory. That
+is not a new weakness -- it is what every earlier version of this rig did unconditionally, and it is
+unreachable from a drive-letter checkout -- but it is real, and until review E8 it was written down
+nowhere an operator would look. **Do not host this checkout on a network share.**
 
 An earlier draft of this paragraph said `--out` could not get you there *because the refusal is
 checked against the directory the run would actually write*. That reason was **wrong, and backwards

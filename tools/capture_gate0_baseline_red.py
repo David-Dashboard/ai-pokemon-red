@@ -60,8 +60,11 @@ they were: an explicit `--out` can still name another mode's directory. What bin
 WRITE-PATH GUARD in run() (see the block marked "THE WRITE-PATH GUARD"): every write this rig makes
 lands inside `args.out`, so `args.out` is the single choke point both the mode-derived default and
 an explicit `--out` pass through, and the guard sits there. It has three clauses:
-  (a0) UNC/device `--out` (`\\host\share\...`, `\\localhost\C$\...`, `\\.\C:\...`) is refused
-      outright, because clauses (a)/(b) provably cannot answer for it -- see _is_unc_or_device_path.
+  (a0) UNC/device `--out` (`\\host\share\...`, `\\localhost\C$\...`, `\\.\C:\...`,
+      `\\?\Volume{GUID}\...`, `\\?\GLOBALROOT\GLOBAL??\C:\...`) is refused outright, because clauses
+      (a)/(b) provably cannot answer for it -- see _is_unc_or_device_path. Conditional on every
+      MODE_CONFIG referent being a drive path, so a share-hosted checkout is not bricked; the
+      residual that leaves is spelled out at the clause and in DAVID_BASELINES.md.
   (a) UNCONDITIONAL, every mode, every flag -- `--out` may never be at or under a DIFFERENT mode's
       real baseline path. Referent is MODE_CONFIG, a module constant, never fixture contents.
   (b) `--test` additionally may never write under the selected mode's OWN real path, so a smoke test
@@ -190,15 +193,25 @@ def _strip_extended_prefix(p: str) -> str:
 
 def _is_unc_or_device_path(p: str) -> bool:
     r"""Does `p` reach the filesystem through a share or a device namespace (`\\host\share\...`,
-    `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\.\C:\...`) rather than a drive letter, after any
-    extended-length prefix is stripped?
+    `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\.\C:\...`, `\\?\Volume{GUID}\...`,
+    `\\?\GLOBALROOT\GLOBAL??\C:\...`) rather than a drive letter, after any extended-length prefix
+    is stripped?
 
     `_under_real_path` CANNOT answer for these and no amount of normalisation will make it: every
     host alias (`localhost`, `127.0.0.1`, `::1`, the machine name, a DNS alias, an IPv6-literal
     name) is a different spelling of the same admin share, and the set is unbounded. run() therefore
     REFUSES them outright rather than trying to compare them -- see the write-path guard's (a0)."""
     q = _strip_extended_prefix(p)
-    return q[:1] in ("\\", "/") and q[1:2] in ("\\", "/")
+    if q[:1] in ("\\", "/") and q[1:2] in ("\\", "/"):
+        return True
+    # An extended-length prefix that did NOT reveal a drive letter is a DEVICE-NAMESPACE path
+    # (`\\?\Volume{GUID}\...`, `\\?\GLOBALROOT\GLOBAL??\C:\...`, both of which any user can spell --
+    # `mountvol C: /L` prints the GUID, no admin, no setup). Without this, the strip itself is what
+    # hides them: it leaves a remainder that is neither `\\`-prefixed nor drive-rooted, so the clause
+    # above sees a non-separator first character AND `_under_real_path` resolves the remainder as a
+    # RELATIVE path against the cwd -- both miss, and review E6 drove `--test --mode paid_gate0_v2`
+    # through each into a stand-in banked directory, renaming its append-only oracle.jsonl away.
+    return q != p and not os.path.splitdrive(q)[0]
 
 
 def _under_real_path(out: str, real_out: str = REAL_OUT) -> bool:
@@ -490,16 +503,24 @@ def run(args, max_frames: int | None = None) -> int:
     # --allow-retake "..."` renamed the banked oracle.jsonl away and wrote a paid-stamped artifact in.
     #
     # (a0) A UNC or device-namespace --out is REFUSED OUTRIGHT, before the two clauses below, because
-    # they cannot answer for it: `\\localhost\C$\...`, `\\127.0.0.1\C$\...` and `\\?\UNC\...` all open
-    # the same directory as the drive-letter spelling, but no normalisation maps them back to it --
-    # the set of host aliases is unbounded. Review E1 drove `--test --mode readiness_dev --out
-    # "\\?\<banked>"` into a stand-in banked directory: the append-only oracle.jsonl was renamed away
-    # and an INCOMPLETE artifact written in, by the one flag whose stated invariant is that it may
-    # never write under ANY mode's real baseline path. (`\\?\<drive-letter>` itself IS handled, by
-    # _strip_extended_prefix; only the share/device forms have to be refused.) No legitimate capture
-    # needs one -- but if this repo itself were checked out on a share, every real_out would be UNC
-    # too and refusing would break the only thing this rig exists to do, so the refusal is conditioned
-    # on the referents being drive paths.
+    # they cannot answer for it: `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\?\UNC\...`,
+    # `\\?\Volume{GUID}\...` and `\\?\GLOBALROOT\GLOBAL??\C:\...` all open the same directory as the
+    # drive-letter spelling, but no normalisation maps them back to it -- the set of host aliases is
+    # unbounded. Review E1 drove `--test --mode readiness_dev --out "\\?\<banked>"` into a stand-in
+    # banked directory, and review E6 did the same through the two device-namespace spellings: the
+    # append-only oracle.jsonl was renamed away and an INCOMPLETE artifact written in, by the one flag
+    # whose stated invariant is that it may never write under ANY mode's real baseline path.
+    # (`\\?\<drive-letter>` itself IS handled, by _strip_extended_prefix; only the share/device forms
+    # have to be refused.) No legitimate capture needs one -- but if this repo itself were checked out
+    # on a share, every real_out would be UNC too and refusing would break the only thing this rig
+    # exists to do, so the refusal is conditioned on the referents being drive paths.
+    #
+    # THE RESIDUAL THAT CONDITION LEAVES, stated because it is invisible from the code: on a
+    # share-hosted checkout (a0) switches itself off, and a UNC/device --out then falls through to
+    # _under_real_path, which over UNC is an ordinary string comparison and does NOT recognise
+    # `\\server.corp.example.com\...`, `\\127.0.0.1\...` and `\\localhost\...` as one directory. Not a
+    # regression -- every earlier version of this rig behaved that way unconditionally -- and
+    # unreachable from a drive-letter checkout, but real. DAVID_BASELINES.md says so out loud.
     if _is_unc_or_device_path(args.out) and not any(_is_unc_or_device_path(cfg["real_out"])
                                                     for cfg in MODE_CONFIG.values()):
         print(f"refusing: --out {args.out!r} names a UNC share or device path. Every baseline "
