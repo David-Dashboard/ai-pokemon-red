@@ -45,8 +45,10 @@ Usage:
         --trace <oracle.jsonl> --incomplete <human_metrics.INCOMPLETE_*.json> [--out <path>]
 
 Refuses to overwrite an existing canonical human_metrics.json at the resolved --out -- the same
-one-cold-attempt-per-task law the live rig enforces -- and refuses outright, in every mode and with
-every flag combination, to write anywhere inside BANKED_DIR (see write_artifact).
+one-cold-attempt-per-task law the live rig enforces -- and refuses, in every mode and with every flag
+combination, to write anywhere that resolves inside THIS repo root's BANKED_DIR (see write_artifact
+for the guard, and _resolves_inside_banked for what it can and cannot decide; the guard is scoped to
+this module's own repo root, so it does not bind a path aimed at a DIFFERENT checkout's runs/).
 
 Why `--mode` has NO default (same decision as tools/capture_gate0_baseline_red.py's --mode, PR
 #195): the defect it closes is a SILENT one. Until 2026-07-28 this tool hardcoded
@@ -114,6 +116,10 @@ HELD_OUT_MODES = frozenset({"paid_gate0", "paid_gate0_v2"})
 # every Red number in the project, whose digest three source-pin fixtures freeze, plus the oracle
 # trace those numbers were derived from.
 BANKED_DIR = MODE_CONFIG["readiness_dev"]["real_out"]
+# Windows extended-length path prefixes. `Path.resolve()` preserves them, so they must be stripped
+# before BANKED_DIR containment is decided -- see _strip_extended_prefix().
+_EXT_PREFIX = "\\\\?\\"
+_EXT_UNC_PREFIX = "\\\\?\\UNC\\"
 # Clock-start cross-check tolerance: the live rig sets `started_at` and appends
 # input_event_times[0] in the same loop iteration (see capture_gate0_baseline_red.run()); any
 # larger gap in an archived INCOMPLETE artifact means our clock-start assumption doesn't hold there.
@@ -231,29 +237,92 @@ def reconstruct(trace_path: Path, incomplete_path: Path, mode: str) -> dict:
     }
 
 
+def _strip_extended_prefix(p: Path) -> Path:
+    r"""Drop a caller-supplied Windows extended-length prefix (`\\?\`, `\\?\UNC\`).
+
+    `Path.resolve()` deliberately PRESERVES such a prefix -- CPython's `ntpath.realpath` only strips
+    one it added itself -- so `\\?\C:\x` and `C:\x` name the same file on disk and still compare
+    unequal. Stripping is what makes the comparison in `_resolves_inside_banked` see one file
+    instead of two.
+
+    Called BEFORE `.resolve()`. Windows does not normalise a `\\?\` path at all, so
+    `\\?\C:\a\elsewhere\..\banked\x` survives `.resolve()` with its `..` intact and would evade a
+    containment check applied afterwards; stripping first collapses it. Stated precisely, because the
+    obvious stronger claim is false: that ordering is DEFENSIVENESS, not a closed hole -- the same
+    switched-off normalisation means Windows cannot open such a path either (`OSError` [Errno 22]),
+    so neither order permits a write through it, and reversing the two can only make the guard
+    OVER-refuse (an uncollapsed `banked\..\elsewhere` still has `banked` among its `.parents`), never
+    under-refuse. Deliberately left unpinned for that reason -- it is a mutation survivor that cannot
+    fail open. The holes actually closed here are the plain `\\?\C:\...` and `\\?\UNC\...` spellings,
+    which open fine and did reach the banked directory.
+
+    Note this helper is NOT what refuses those two: the UNC fail-closed rule below subsumes it, since
+    `Path(r"\\?\C:\x").drive` is `\\?\C:` and already starts with `\\`. What it buys is that a
+    LEGITIMATE extended-length path -- how Windows addresses anything past MAX_PATH -- is not
+    over-refused. That is the one behaviour that distinguishes keeping it from deleting it, and it is
+    pinned by tests/...::test_an_extended_length_path_outside_the_banked_dir_is_still_allowed."""
+    s = str(p)
+    if s.startswith(_EXT_UNC_PREFIX):
+        return Path("\\\\" + s[len(_EXT_UNC_PREFIX):])
+    if s.startswith(_EXT_PREFIX):
+        return Path(s[len(_EXT_PREFIX):])
+    return p
+
+
 def _resolves_inside_banked(out_path: Path) -> bool:
-    """Is `out_path`'s EFFECTIVE write target at or under BANKED_DIR?
+    r"""Is `out_path`'s EFFECTIVE write target at or under BANKED_DIR?
 
     Resolved, not merely normalised: the thing that must be bound is where the write actually lands,
     not the string the caller typed. `Path.resolve()` is non-strict (the target need not exist yet)
     and follows symlinks in the existing parents, so `--out <symlink-into-runs>/human_metrics.json`
     is caught too. PR #195's review found exactly this hole in the sibling -- an explicit `--out`
-    slipping past a check that had been applied only to the mode-derived path."""
-    target = out_path.resolve()
-    banked = BANKED_DIR.resolve()
+    slipping past a check that had been applied only to the mode-derived path.
+
+    Two Windows properties this must keep, both found by PR #196's review, both pinned by tests:
+
+    * NO SAME-VOLUME ASSUMPTION, and it must not start making one. The `.resolve()` on the REFERENT
+      side (`BANKED_DIR`) is load-bearing, not decoration. `runs/` on this machine already holds 26
+      NTFS junctions pointing at another volume (`D:\ai_pokemon_runs\`); if `runs/gate0_human_baseline/`
+      ever gets the same treatment, the referent is NAMED on one volume and LIVES on another, and only
+      resolving both sides keeps them comparable. Dropping that one `.resolve()` leaves the entire
+      suite green while the guard silently stops firing -- see
+      tests/...::test_write_artifact_refuses_through_a_junctioned_parent, which is the mutant's
+      counterexample.
+    * SPELLINGS THAT NAME THE SAME FILE MUST NOT COMPARE UNEQUAL. `\\?\C:\x` is handled by
+      `_strip_extended_prefix`. `\\localhost\C$\x` and `\\127.0.0.1\C$\x` also name the same file as
+      `C:\x`, but nothing in pathlib maps a UNC admin share back to its drive letter, and no rule
+      decides which hostnames mean "this machine" (an alias, the machine's own name, `::1`, a
+      genuinely remote host that happens to be spelled the same way). Containment across the two
+      naming universes is therefore UNDECIDABLE, so a UNC target measured against a drive-letter
+      referent returns True: FAIL CLOSED. An unnecessary refusal costs a re-run with a different
+      `--out`; a write into the banked tree is not recoverable. When both sides are UNC (repo hosted
+      on a share) the ordinary comparison applies and nothing is over-refused."""
+    target = _strip_extended_prefix(out_path).resolve()
+    banked = _strip_extended_prefix(BANKED_DIR).resolve()
+    if target.drive.startswith("\\\\") != banked.drive.startswith("\\\\"):
+        return True
     return target == banked or banked in target.parents
 
 
 def write_artifact(artifact: dict, out_path: Path) -> None:
     # UNCONDITIONAL, and deliberately not overridable by any flag. This is the single choke point
     # every write goes through -- the mode-derived default and an explicit `--out` both arrive here
-    # as the same `out_path` -- so there is no argument, mode, or flag combination that can reach
-    # BANKED_DIR. It is checked BEFORE the existence test and before any mkdir, so a refusal creates
-    # nothing on disk. Two distinct reasons it is a path check rather than the existence check
-    # below: (1) the existence check only protects files that happen to already be there, so in a
-    # fresh checkout/container/worktree it protects nothing -- verified on origin/main, where a
-    # no-`--out` run silently CREATED runs/gate0_human_baseline/red/human_metrics.json and exited 0;
-    # (2) it also covers oracle.jsonl and everything else banked alongside it.
+    # as the same `out_path` -- so no argument, mode, or flag combination ROUTES AROUND the check.
+    # It is checked BEFORE the existence test and before any mkdir, so a refusal creates nothing on
+    # disk. Two distinct reasons it is a path check rather than the existence check below: (1) the
+    # existence check only protects files that happen to already be there, so in a fresh
+    # checkout/container/worktree it protects nothing -- verified on origin/main, where a no-`--out`
+    # run silently CREATED runs/gate0_human_baseline/red/human_metrics.json and exited 0; (2) it also
+    # covers oracle.jsonl and everything else banked alongside it.
+    #
+    # SCOPE, stated rather than implied (PR #196's review). "Unreachable" is a claim about THIS
+    # process's BANKED_DIR, which is derived from THIS module's own repo root
+    # (Path(__file__).resolve().parents[1]). Run this tool from one worktree -- where `runs/` is
+    # gitignored and typically absent -- and aim `--out` at ANOTHER checkout's
+    # runs/gate0_human_baseline/red/ and the guard does not fire, because that path is not under this
+    # root; the existence check does not fire either when the target is absent there. That is not a
+    # defect to fix here (repo-relative is the only sane definition of BANKED_DIR) but it is a real
+    # limit, and with many worktrees live in this checkout it is not hypothetical.
     if _resolves_inside_banked(out_path):
         raise SystemExit(
             f"refusing: {out_path} is inside the banked Red baseline directory {BANKED_DIR} -- "

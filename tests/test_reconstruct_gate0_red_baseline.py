@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,6 +26,19 @@ NEVER_COMPLETES_TRACE = Path("eval/fixtures/gate0_red_human_attempt1_no_movement
 # Pinned by inspection: eval.score_gate0._red_success first returns True at this row of the fixture.
 FIXTURE_COMPLETION_ROW = 821
 FIXTURE_T_DONE = 1784594284.2743576
+# The two held-out modes, as a LITERAL. Every test below that needs to enumerate them parametrizes
+# over THIS, never over `m.HELD_OUT_MODES`.
+#
+# Why: a test that parametrizes over the constant it exists to protect cannot fail when that constant
+# is emptied -- pytest turns an empty parameter set into a SKIP, not a failure, and a skip is
+# invisible in a green report. Demonstrated on this very file (PR #196 review, BLOCKING-for-edit 1):
+# with `HELD_OUT_MODES = frozenset()` the full suite was 1699 passed / 20 skipped / ZERO failures,
+# while `--mode paid_gate0_v2` WITHOUT `--i-am-human` exited 0 and wrote a paid-mode artifact. The
+# literal here plus test_held_out_modes_are_exactly_the_two_paid_modes are what make that mutation
+# fail. (Both sibling rigs already carried such a pin and this one did not:
+# tests/test_capture_gate0_baseline_miniwob.py::test_v2_is_registered_as_a_held_out_mode and
+# tests/test_capture_gate0_baseline_red.py::test_held_out_modes_are_exactly_the_paid_modes.)
+PAID_MODES = ["paid_gate0", "paid_gate0_v2"]
 
 
 def _rows(path: Path) -> list[dict]:
@@ -329,7 +344,19 @@ def test_default_out_is_derived_per_mode():
     assert m.MODE_CONFIG["paid_gate0_v2"]["real_out"] == root / "runs" / "gate0_paid_v2_human_baseline" / "red"
 
 
-@pytest.mark.parametrize("mode", sorted(m.HELD_OUT_MODES))
+def test_held_out_modes_are_exactly_the_two_paid_modes():
+    """Pure constant, no I/O -- the pin that makes `HELD_OUT_MODES` unmutatable.
+
+    Without it, `HELD_OUT_MODES = frozenset()` deletes the entire `--i-am-human` gate and leaves the
+    full suite green, because every OTHER test that touches the gate reads the constant back: the two
+    tests below would parametrize to nothing (silent skips) and the mode x flag matrix would branch on
+    the mutant's own value and assert the mutant's own behaviour. This assertion is the only place in
+    the file that states what the value must BE."""
+    assert m.HELD_OUT_MODES == frozenset(PAID_MODES)
+    assert set(m.MODE_CONFIG) - m.HELD_OUT_MODES == {"readiness_dev"}
+
+
+@pytest.mark.parametrize("mode", PAID_MODES)
 def test_paid_modes_require_i_am_human(tmp_path, monkeypatch, capsys, mode):
     """Refuses BEFORE reading the trace, so nothing is created anywhere."""
     out = tmp_path / "scratch" / "human_metrics.json"
@@ -339,7 +366,7 @@ def test_paid_modes_require_i_am_human(tmp_path, monkeypatch, capsys, mode):
     assert not out.exists()
 
 
-@pytest.mark.parametrize("mode", sorted(m.HELD_OUT_MODES))
+@pytest.mark.parametrize("mode", PAID_MODES)
 def test_paid_modes_proceed_with_i_am_human(tmp_path, monkeypatch, mode):
     out = tmp_path / "scratch" / "human_metrics.json"
     monkeypatch.setattr("sys.argv",
@@ -437,12 +464,152 @@ def test_no_mode_flag_combination_can_write_into_banked_dir(tmp_path, monkeypatc
         extra.append("--i-am-human")
     monkeypatch.setattr("sys.argv", _argv(tmp_path, *extra))
 
-    if mode in m.HELD_OUT_MODES and not i_am_human:
+    # Branches on the LITERAL, not on m.HELD_OUT_MODES: branching on the constant would make this
+    # test adapt to a mutated gate and assert the mutant's own behaviour instead of the requirement.
+    if mode in PAID_MODES and not i_am_human:
         assert m.main() == 2                       # stopped even earlier, at the held-out gate
     else:
         with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
             m.main()
     assert not banked.exists()
+
+
+# ---- the banked guard vs Windows path spellings that name the same file ---------------------------
+#
+# PR #196's review demonstrated FOUR spellings that evaded the guard and PROVABLY landed the file in
+# the protected directory: `Path.resolve()` preserves a caller-supplied `\\?\` prefix, and treats an
+# admin share as a distinct root, so both sides of the comparison disagreed while the OS opened the
+# same file. Closed by tools/reconstruct_gate0_red_baseline.py::_strip_extended_prefix (the `\\?\`
+# family) plus the UNC-vs-drive-letter fail-closed rule in _resolves_inside_banked (the admin-share
+# family, which is not decidable by normalisation -- see that docstring).
+
+# The four spellings the review demonstrated reaching the banked directory, plus the device path it
+# found already refused (kept so a regression in either direction shows up).
+ALIAS_SPELLINGS = ["extended_length", "extended_unc", "admin_share_host", "admin_share_ip",
+                   "device_path"]
+# Not an alias -- see test_extended_length_dotdot_is_not_writable_at_all. Refused anyway, and listed
+# separately so nobody reads it as a demonstrated write vector.
+ALL_SPELLINGS = ALIAS_SPELLINGS + ["extended_length_dotdot"]
+
+
+def _spellings(directory: Path, name: str) -> dict[str, str]:
+    r"""Exotic Windows spellings of `<directory>\<name>`. All but the last name the same file."""
+    drive, rest = str(directory)[0], str(directory)[3:]
+    return {
+        "extended_length":        f"\\\\?\\{drive}:\\{rest}\\{name}",
+        "extended_unc":           f"\\\\?\\UNC\\localhost\\{drive}$\\{rest}\\{name}",
+        "admin_share_host":       f"\\\\localhost\\{drive}$\\{rest}\\{name}",
+        "admin_share_ip":         f"\\\\127.0.0.1\\{drive}$\\{rest}\\{name}",
+        "device_path":            f"\\\\.\\{drive}:\\{rest}\\{name}",
+        "extended_length_dotdot": f"\\\\?\\{drive}:\\{rest}\\..\\{directory.name}\\{name}",
+    }
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+def test_the_exotic_spellings_really_are_aliases_not_nonsense_paths(tmp_path):
+    """Positive control for the refusal test below, which would otherwise pass vacuously if these
+    spellings simply did not address anything. Written to an ORDINARY directory (never the banked
+    one): each spelling must produce a file readable at the plain path."""
+    plain = tmp_path / "not_banked"
+    plain.mkdir()
+    for label in ALIAS_SPELLINGS:
+        Path(_spellings(plain, "probe.json")[label]).write_text(label, encoding="utf-8")
+        assert (plain / "probe.json").read_text(encoding="utf-8") == label, label
+        (plain / "probe.json").unlink()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+def test_extended_length_dotdot_is_not_writable_at_all(tmp_path):
+    r"""`\\?\` switches OFF Windows path normalisation, so a `..` inside one is a literal component,
+    not a parent reference -- and the open fails outright. Pinned because it bounds the claim: the
+    module strips the prefix BEFORE resolving (so the guard sees the collapsed path and refuses), but
+    the reverse order would NOT have been a write vector either. It is a defensiveness difference, not
+    a closed hole; the four entries in ALIAS_SPELLINGS are the closed holes."""
+    plain = tmp_path / "not_banked"
+    plain.mkdir()
+    with pytest.raises(OSError):
+        Path(_spellings(plain, "probe.json")["extended_length_dotdot"]).write_text("x",
+                                                                                  encoding="utf-8")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+@pytest.mark.parametrize("spelling", ALL_SPELLINGS)
+def test_write_artifact_refuses_exotic_windows_spellings_of_the_banked_dir(tmp_path, monkeypatch,
+                                                                          spelling):
+    banked = tmp_path / "banked"
+    banked.mkdir()
+    monkeypatch.setattr(m, "BANKED_DIR", banked)
+    out = Path(_spellings(banked, "human_metrics.json")[spelling])
+    with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
+        m.write_artifact({"arm": "red"}, out)
+    assert list(banked.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+def test_an_extended_length_path_outside_the_banked_dir_is_still_allowed(tmp_path, monkeypatch):
+    r"""The `\\?\` handling must not collapse into a blanket refusal of every long path.
+
+    `Path(r"\\?\C:\x").drive` is `\\?\C:`, which starts with `\\`, so the UNC fail-closed rule in
+    `_resolves_inside_banked` refuses every extended-length path ON ITS OWN -- it fully subsumes
+    `_strip_extended_prefix` for the REFUSAL cases above, which is why deleting that helper leaves the
+    rest of the suite green (mutation M15). What the helper actually buys is this: an extended-length
+    path aimed somewhere legitimate stays usable. `\\?\` is how Windows addresses anything past
+    MAX_PATH, which the deeply nested worktrees this repo runs in get close to, so over-refusing it is
+    a real cost. This is the only test that distinguishes the two."""
+    banked = tmp_path / "banked"
+    monkeypatch.setattr(m, "BANKED_DIR", banked)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    m.write_artifact({"arm": "red"},
+                     Path(_spellings(elsewhere, "human_metrics.json")["extended_length"]))
+    written = (elsewhere / "human_metrics.json").read_text(encoding="utf-8")
+    assert json.loads(written) == {"arm": "red"}
+    assert not banked.exists()
+
+
+# ---- the banked guard vs a junctioned parent ------------------------------------------------------
+
+def _make_junction(link: Path, target: Path) -> None:
+    """NTFS junction on Windows (`mklink /J` -- needs no elevation, unlike `/D`), symlink elsewhere."""
+    if os.name == "nt":
+        r = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            pytest.skip(f"mklink /J unavailable: {(r.stdout + r.stderr).strip()}")
+    else:
+        os.symlink(target, link, target_is_directory=True)
+
+
+def test_write_artifact_refuses_through_a_junctioned_parent(tmp_path, monkeypatch):
+    r"""BANKED_DIR named THROUGH a junction that leaves the tree -- and the same file named through
+    the junction's target. Both must refuse.
+
+    Not hypothetical: `runs/` on this machine already holds 26 NTFS junctions pointing at
+    `D:\ai_pokemon_runs\` (bulk run data moved to another volume for space), so Gate-0 directories are
+    obvious future candidates for the same treatment. The line that makes this work is
+    `banked = _strip_extended_prefix(BANKED_DIR).resolve()` -- the `.resolve()` on the REFERENT side.
+    Drop it and the whole suite stays green (1703 passed, 18 skipped) while the guard silently fails
+    open here, because every OTHER guard test monkeypatches BANKED_DIR to an already-resolved
+    `tmp_path`, where that `.resolve()` is a no-op. This test is that mutant's only counterexample."""
+    out_of_tree = tmp_path / "other_volume_stand_in"
+    (out_of_tree / "red").mkdir(parents=True)
+    runs = tmp_path / "runs_stand_in"
+    _make_junction(runs, out_of_tree)
+
+    banked = runs / "red"                                  # NAMED through the junction
+    monkeypatch.setattr(m, "BANKED_DIR", banked)
+    assert banked.resolve() == (out_of_tree / "red").resolve()   # the junction really is followed
+
+    with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
+        m.write_artifact({"arm": "red"}, banked / "human_metrics.json")
+    with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
+        m.write_artifact({"arm": "red"}, out_of_tree / "red" / "oracle.jsonl")
+    assert list((out_of_tree / "red").iterdir()) == []
+
+    # Containment is still by component, not by prefix, on the far side of the junction.
+    sibling = out_of_tree / "red_v2" / "human_metrics.json"
+    m.write_artifact({"arm": "red"}, sibling)
+    assert json.loads(sibling.read_text(encoding="utf-8")) == {"arm": "red"}
 
 
 def test_default_out_for_readiness_dev_is_refused_by_the_banked_guard(tmp_path, monkeypatch):
