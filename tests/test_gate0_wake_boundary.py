@@ -14,7 +14,7 @@ def test_dry_run_synthetic_stays_fail_closed_even_for_a_maximally_clean_transcri
     assert artifact["kind"] == "exact_wake_boundary"
     assert artifact["status"] == "FAIL"
     assert artifact["fail_closed_regression_guard_holds"] is True
-    assert artifact["audit_result"]["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    assert artifact["audit_result"]["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
     assert artifact["audit_result"]["wake_accounting"] == "INSUFFICIENT_WAKES"
     assert artifact["audit_result"]["wakes"] is None
     assert artifact["audit_result"]["primitive_action_events"] == _DECISION_COUNT

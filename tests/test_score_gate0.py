@@ -529,3 +529,134 @@ def test_frozen_source_pins_load_exact_artifacts(monkeypatch, tmp_path):
     assert failures == []
     assert verified["expected_seeds"] == list(range(5))
     assert verified["metrics"] == _verified()["metrics"]
+
+
+# The REAL wrong-WRAM-bank row, copied verbatim out of the banked paid Red arm
+# (reports/2026-07-24-gate0-armR-verdict/oracle.jsonl row 335, byte-identical to row 347 and to
+# eval/fixtures/gate0_red_human_attempt2_completion.jsonl row 363). Not hand-invented.
+_BANKED_WRONG_BANK_ROW = {"x": 1, "y": 1, "map": 1, "party": 0, "badges": 1, "in_battle": 0,
+                          "party_hp_hi": 0, "party_hp_lo": 0}
+
+
+def test_red_real_banked_wrong_bank_row_in_span_injects_no_false_death_or_map_change():
+    # reports/2026-07-25-gate0-v2-prereg.md §5.4 C8 pre-registered exactly this: "Any mid-battle row
+    # with party_hp_hi == party_hp_lo == 0 that is not the full all-zero signature fires this
+    # clause." v1 never built a safety span so it was never evaluated. The artifact demonstrably
+    # DOES land inside the span -- gate0_red_human_attempt{1,2}*.jsonl rows 624/494 are corrupt rows
+    # with in_battle==2 on both neighbours -- and when the alternate WRAM bank is dirty it arrives
+    # in this non-all-zero shape, which the old all-zero-only filter passed straight through into
+    # hp_values (false red_player_hp_reached_zero) and the map check (false
+    # red_map_changed_during_battle_exit_span). Two false FAILs on a genuinely successful run.
+    rows = _red()
+    rows.insert(3, {"watch": dict(_BANKED_WRONG_BANK_ROW)})
+    ok, failures = _red_success(rows)
+    assert ok, failures
+    assert failures == []
+
+
+def test_red_wrong_bank_shape_with_a_real_party_still_fails_a_real_death():
+    # The PR #121 review Major 1 property, re-proved against the WIDENED predicate. Everything the
+    # widened form newly drops needs `badges != 0` alongside `party == 0` (a Gym Badge held with an
+    # empty party -- not a reachable Red state), so no genuine faint/map-change/badge is in the
+    # delta. A row carrying the x==y==map==badges shape but a REAL party and a real HP=0 death is
+    # outside that delta and must still FAIL.
+    rows = _red()
+    rows[3]["watch"].update({"x": 1, "y": 1, "map": 1, "badges": 1, "party": 1,
+                             "party_hp_hi": 0, "party_hp_lo": 0})
+    ok, failures = _red_success(rows)
+    assert not ok
+    assert "red_player_hp_reached_zero" in failures
+
+
+# --- PR #191 review Major 1: the type guard must be fail-CLOSED at `post`, not just in the span ---
+
+def _red_that_never_moves_after_the_battle():
+    # The standard success fixture with the final row's x/y left where they were, so the run
+    # genuinely never moves after the battle exit and red_no_free_movement_after_exit is the TRUE
+    # verdict. exit_idx == 3 and len == 14, so anything appended lands past exit_idx + 10 and
+    # cannot touch the safety span -- this isolates `post`.
+    rows = _red()
+    rows[-1]["watch"]["y"] = rows[-2]["watch"]["y"]
+    return rows
+
+
+_ZERO_INT_ROW = {"x": 0, "y": 0, "map": 0, "party": 0, "badges": 0, "in_battle": 0,
+                 "party_hp_hi": 0, "party_hp_lo": 0}
+
+
+def test_red_no_movement_baseline_fails():
+    # Pins the baseline the three tests below are measured against -- without it a green result
+    # there could just mean the fixture never failed in the first place.
+    assert _red_success(_red_that_never_moves_after_the_battle()) == (
+        False, ["red_no_free_movement_after_exit"])
+
+
+def test_red_malformed_post_row_cannot_manufacture_free_movement():
+    # `_is_corrupt_glitch_row` KEEPS a row with any bool/non-int field. At `post` that was
+    # fail-OPEN: the kept row donated its (x, y) as a second distinct position and flipped this FAIL
+    # to PASS. All four rows below are all-zero -- they carry no real movement -- and none may pass.
+    # (An earlier version of this comment added "in the safety span that is fail-closed (the hi/lo
+    # isinstance checks fire)". That was false for six of the eight fields -- see
+    # test_red_malformed_row_inside_the_safety_span_is_refused_not_read below.)
+    #
+    # The middle case is why an x/y-only type check is not enough: its x and y ARE plain ints, and
+    # the corruption is on `party`.
+    malformed = {
+        "all-zero floats": {k: 0.0 for k in _ZERO_INT_ROW},
+        "one bool field": dict(_ZERO_INT_ROW, party=False),
+        "all bool fields": {k: False for k in _ZERO_INT_ROW},
+        "string zeroes": {k: "0" for k in _ZERO_INT_ROW},
+    }
+    for label, watch in malformed.items():
+        rows = _red_that_never_moves_after_the_battle() + [{"watch": dict(watch)}]
+        assert _red_success(rows) == (False, ["red_no_free_movement_after_exit"]), label
+
+
+def test_red_corrupt_glitch_row_at_post_is_also_dropped():
+    # The int case, for symmetry: an all-zero-int row is the corrupt signature proper and was
+    # already dropped on origin/main. It must stay dropped.
+    rows = _red_that_never_moves_after_the_battle() + [{"watch": dict(_ZERO_INT_ROW)}]
+    assert _red_success(rows) == (False, ["red_no_free_movement_after_exit"])
+
+
+def test_red_post_guard_does_not_drop_a_genuine_second_position():
+    # The other direction -- the guard must not over-fire. A well-typed row at a genuinely different
+    # (x, y) still counts, and a partial watch dict (no `badges` key, as every fixture row here has)
+    # is NOT treated as malformed.
+    rows = _red_that_never_moves_after_the_battle()
+    rows.append({"watch": {"party": 1, "in_battle": 0, "map": 40, "x": 7, "y": 4,
+                           "party_hp_hi": 0, "party_hp_lo": 5}})
+    assert _red_success(rows) == (True, [])
+
+
+# --- PR #191 RE-review NEW-1: the safety span must REFUSE an untypeable row, never read it ---
+
+def test_red_malformed_row_inside_the_safety_span_is_refused_not_read():
+    # The span KEEPS a row `_is_corrupt_glitch_row` could not type. Before the guard it then READ
+    # that row: `map` was compared with no type check at all, and the plain-int hp_hi/hp_lo == 0
+    # passed the HP checks whenever the mistyped field was one of the other SIX -- so a single
+    # `"party": false` produced the substantive claims red_player_hp_reached_zero AND
+    # red_map_changed_during_battle_exit_span from a row whose type the predicate had explicitly
+    # declined to establish. A refusal is the only honest verdict on a row the scorer cannot read.
+    #
+    # Refuse and do NOT drop: the span's three clauses only ever ADD failures, so dropping could
+    # suppress a real HP=0 or a real map change riding on the same row (the PR #121 Major 1 hazard).
+    # That is the opposite of `post` above, where dropping IS the fail-closed direction.
+    for bad in (0.0, False, "0"):
+        for field in _ZERO_INT_ROW:
+            rows = _red()
+            # exit_idx == 3, so index 5 is inside the safety span (battle_idx .. exit_idx + 10).
+            rows.insert(5, {"watch": dict(_ZERO_INT_ROW, **{field: bad})})
+            # `in_battle: "0"` is refused EARLIER, by the sustained-exit scan (`== 0` is False for a
+            # str), so the span is never reached. Still a refusal, just a different clause -- named
+            # explicitly rather than loosening the assert, so this test cannot silently pass on the
+            # wrong reason.
+            expected = ("red_no_sustained_battle_exit" if (field == "in_battle" and bad == "0")
+                        else "red_missing_player_hp_oracle")
+            assert _red_success(rows) == (False, [expected]), (bad, field)
+
+
+def test_red_safety_span_guard_does_not_fire_on_a_partial_watch_dict():
+    # The other direction: `_red()`'s own rows omit `badges` entirely, and an absent field is NOT
+    # malformed. Without this the guard would refuse every fixture in this file.
+    assert _red_success(_red()) == (True, [])
