@@ -17,9 +17,12 @@ which these tests never touch (the fake env ignores its seed argument entirely).
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import os
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -546,3 +549,115 @@ def test_v2_mode_never_prints_task_utterance(fake_env_cls, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Select the indicated checkboxes" not in out
     assert "suppressed in --mode paid_gate0_v2" in out
+
+
+# ---------------------------------------------------------------------------------------------
+# cwd-relative paths survive world_mcp's import-time os.chdir(<repo root>)
+# ---------------------------------------------------------------------------------------------
+
+@pytest.fixture
+def world_mcp_that_chdirs(monkeypatch):
+    """Installs a stand-in for `world_mcp` behind a real import hook, so that `import world_mcp`
+    inside run() performs the process-wide os.chdir(<repo root>) the real module does at import
+    time -- landing at exactly the point in run()'s flow the real one does.
+
+    Faked rather than driven through the real import for two reasons: the real module chdirs exactly
+    once per process, in whichever test imports it first, so a later test relying on the real import
+    would silently get a no-op cache hit and pass even with the defect present; and the chdir has to
+    fire on the IMPORT itself, not on first attribute use, or a fix placed between the two would look
+    correct here while still being too late in production."""
+    def _install(repo_root, **attrs):
+        module = types.ModuleType("world_mcp")
+        for name, value in attrs.items():
+            setattr(module, name, value)
+
+        class _ChdirOnImport:
+            def create_module(self, _spec):
+                os.chdir(repo_root)
+                return module
+
+            def exec_module(self, _module):
+                pass
+
+        class _Finder:
+            def find_spec(self, fullname, _path=None, _target=None):
+                if fullname != "world_mcp":
+                    return None
+                return importlib.util.spec_from_loader(fullname, _ChdirOnImport())
+
+        monkeypatch.delitem(sys.modules, "world_mcp", raising=False)
+        monkeypatch.setattr(sys, "meta_path", [_Finder(), *sys.meta_path])
+    return _install
+
+
+def test_test_mode_relative_out_cannot_escape_into_the_repo_roots_banked_directory(
+        world_mcp_that_chdirs, tmp_path, monkeypatch):
+    """The same escape the Red rig had. With cwd OUTSIDE the repo, `--test --out
+    runs/gate0_human_baseline/miniwob` resolved to a harmless directory under the caller's cwd for
+    the guard, and then -- after world_mcp's chdir -- to the REAL banked directory for the write."""
+    repo_root = tmp_path / "repo"
+    banked = repo_root / "runs" / "gate0_human_baseline" / "miniwob"
+    banked.mkdir(parents=True)
+
+    class _BoomSession:
+        def __init__(self, *_a, **_kw):
+            raise RuntimeError("simulated session construction failure (test double, no browser)")
+
+    world_mcp_that_chdirs(str(repo_root), MiniWobSession=_BoomSession)
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(json.dumps([0, 1, 2, 3, 4]), encoding="utf-8")
+    monkeypatch.chdir(outside)
+
+    args = argparse.Namespace(out=os.path.join("runs", "gate0_human_baseline", "miniwob"),
+                              seeds_file=str(seeds_file), player="AutomatedSmokeTest", test=True,
+                              allow_retake=None, mode="readiness_dev", i_am_human=False)
+    with pytest.raises(RuntimeError):
+        m.run(args, prompt=lambda _msg: "quit", opener=lambda _path: None)
+
+    assert args.out == str(outside / "runs" / "gate0_human_baseline" / "miniwob")
+    assert list(banked.iterdir()) == []
+
+
+def test_relative_seeds_file_is_resolved_against_the_callers_cwd(fake_env_cls, tmp_path, monkeypatch):
+    """--seeds-file was cross-contamination-checked relative to the caller's cwd and then handed to
+    MiniWobSession, which re-reads it AFTER the chdir -- so a same-named seeds file at the repo root
+    would be the one actually played. That is exactly the substitution the held-out-seed law exists
+    to prevent."""
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    (workdir / "seeds.json").write_text(json.dumps([0, 1, 2, 3, 4]), encoding="utf-8")
+    monkeypatch.chdir(workdir)
+
+    args = argparse.Namespace(out=str(tmp_path / "out"), seeds_file="seeds.json",
+                              player="AutomatedSmokeTest", test=True, allow_retake=None,
+                              mode="readiness_dev", i_am_human=False)
+    answers = iter(["click 10 10"] * 5)
+    assert m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None) == 0
+
+    assert args.seeds_file == str(workdir / "seeds.json")
+    metrics = json.loads((tmp_path / "out" / "human_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["seeds_file"] == str(workdir / "seeds.json")
+
+
+@pytest.mark.parametrize("rel", ["scratch", os.path.join("a", "b", "c"),
+                                 os.path.join(os.pardir, "sibling_scratch")])
+def test_absolutising_does_not_over_refuse_legitimate_relative_out(
+        fake_env_cls, tmp_path, monkeypatch, rel):
+    """The other direction: ordinary relative, nested and ..-relative --out values must all still be
+    accepted and written to, under the caller's cwd."""
+    workdir = tmp_path / "wd" / "here"
+    workdir.mkdir(parents=True)
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(json.dumps([0, 1, 2, 3, 4]), encoding="utf-8")
+    monkeypatch.chdir(workdir)
+
+    args = argparse.Namespace(out=rel, seeds_file=str(seeds_file), player="AutomatedSmokeTest",
+                              test=True, allow_retake=None, mode="readiness_dev", i_am_human=False)
+    answers = iter(["click 10 10"] * 5)
+    assert m.run(args, prompt=lambda _msg: next(answers), opener=lambda _path: None) == 0
+
+    assert args.out == os.path.abspath(os.path.join(str(workdir), rel))
+    assert (Path(args.out) / "human_metrics.json").exists()
