@@ -951,6 +951,25 @@ def _intact(d: Path) -> bool:
             and (d / "oracle.jsonl").read_text(encoding="utf-8") == '{"BANKED_SENTINEL": true}\n')
 
 
+# The spelling-attack tests marked below probe Win32 PATH SEMANTICS: a case-insensitive filesystem,
+# trailing dot/space stripping (GetFullPathNameW), `mklink /J` junctions, 8.3 short names, and the
+# UNC / extended-length / device namespaces. None of these exist on POSIX -- `FOO` and `foo` are
+# DIFFERENT directories there (`str(tmp_path).upper()` even lands on an uncreatable `/TMP/...`),
+# `red.` is a different name from `red`, and a `\\?\...` string is just a funny filename -- so those
+# tests run only where the rig itself runs (David's Windows machine; same reasoning as
+# test_run_gate0_codex_launcher.py's requires_windows_powershell). The guard logic that IS
+# platform-independent stays exercised on the Linux CI runner: the foreign-mode clause, --test's
+# clause, refuse-before-mkdir, directory-wideness and the relative/`..`/trailing-sep spellings all
+# run everywhere, and _spellings() swaps the junction row for an os.symlink row off-Windows so the
+# realpath link-resolution axis is proven there too.
+requires_win32_path_semantics = pytest.mark.skipif(
+    os.name != "nt",
+    reason="probes Win32 path semantics (case-insensitive filesystem, trailing dot/space "
+           "stripping, junctions, 8.3 short names, UNC/device namespaces) that POSIX does not "
+           "have; the platform-independent guard clauses stay covered by the unmarked tests",
+)
+
+
 def _hostile_spellings(d: Path):
     r"""Review E1/E2: the spellings that walked past the `normcase`+`realpath`-ONLY form that D3
     introduced. Kept SEPARATE from `_spellings` below on purpose -- these are spellings a legitimate
@@ -1010,20 +1029,35 @@ def _globalroot_spelling(s: str) -> str:
     return "\\\\?\\GLOBALROOT\\GLOBAL??\\" + s
 
 
+# The vacuity floor for a _spellings() matrix. Windows carries all of D3's rows; POSIX carries the
+# platform-independent five (plain, trailing sep, forward slashes, dotdot round-trip, symlink) --
+# the case rows would name genuinely DIFFERENT directories on a case-sensitive filesystem, so
+# carrying them there would prove nothing about the guard. On Windows this stays 8, exactly the
+# literal it replaces.
+SPELLING_FLOOR = 8 if os.name == "nt" else 5
+
+
 def _spellings(d: Path):
     """Every way of naming the SAME directory `d` that review D3 attacked, plus the ones already
     caught. Returns (label, spelling) pairs; the junction and 8.3 rows are skipped rather than faked
-    if the platform will not produce them."""
+    if the platform will not produce them. Off-Windows the case rows are dropped (different
+    directories there, not different spellings of one) and the junction row becomes an `os.symlink`
+    row -- the analogous POSIX escape, which `realpath` exists to close -- so the link-resolution
+    axis still runs on the Linux CI runner."""
     out = [("plain", str(d)),
            ("trailing sep", str(d) + os.sep),
            ("forward slashes", str(d).replace("\\", "/")),
-           ("dotdot round-trip", str(d / ".." / d.name)),
-           ("UPPER", str(d).upper()),
-           ("lower", str(d).lower()),
-           ("mixed-case leaf", str(d.parent / d.name.upper()))]
+           ("dotdot round-trip", str(d / ".." / d.name))]
+    if os.name == "nt":
+        out += [("UPPER", str(d).upper()),
+                ("lower", str(d).lower()),
+                ("mixed-case leaf", str(d.parent / d.name.upper()))]
     junction = d.parent / (d.name + "_junc")
-    if subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(d)],
-                      capture_output=True, text=True).returncode == 0:
+    if os.name != "nt":
+        os.symlink(str(d), str(junction), target_is_directory=True)
+        out.append(("symlink", str(junction)))
+    elif subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(d)],
+                        capture_output=True, text=True).returncode == 0:
         out.append(("junction", str(junction)))
     try:
         import ctypes
@@ -1179,7 +1213,7 @@ def test_the_write_guard_survives_every_spelling_of_a_foreign_baseline_directory
     _bank(banked)
 
     spellings = _spellings(banked)
-    assert len(spellings) >= 8, f"spelling matrix too thin to prove anything: {spellings}"
+    assert len(spellings) >= SPELLING_FLOOR, f"spelling matrix too thin to prove anything: {spellings}"
     violations = []
     for label, spelling in spellings:
         for test in (False, True):
@@ -1195,6 +1229,7 @@ def test_the_write_guard_survives_every_spelling_of_a_foreign_baseline_directory
         assert not red._under_real_path(str(other), str(banked)), label
 
 
+@requires_win32_path_semantics
 def test_the_write_guard_survives_spelling_when_the_directory_does_not_exist_yet(
         tmp_path, monkeypatch, fake_pyboy_raises):
     """The same spelling attack in a FRESH CHECKOUT -- and the reason `normcase` is not redundant
@@ -1253,7 +1288,7 @@ def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_and_spelli
     for target in dirs.values():
         target.mkdir(parents=True, exist_ok=True)
         spellings[target] = _spellings(target)
-        assert len(spellings[target]) >= 8, f"spelling matrix too thin: {spellings[target]}"
+        assert len(spellings[target]) >= SPELLING_FLOOR, f"spelling matrix too thin: {spellings[target]}"
 
     violations, controls = [], []
     for mode in sorted(red.MODE_CONFIG):
@@ -1295,6 +1330,7 @@ def test_test_mode_refuses_under_every_modes_real_path_for_every_flag_and_spelli
 
 # ---- E1/E2: the spellings the D3 form was blind to ------------------------------------------------
 
+@requires_win32_path_semantics
 def test_the_write_guard_survives_the_e1_e2_spellings_when_the_target_exists(
         tmp_path, monkeypatch, fake_pyboy_raises):
     r"""REGRESSION (review E1). `--test --mode readiness_dev --allow-retake "x" --out "\\?\<banked>"`
@@ -1319,6 +1355,7 @@ def test_the_write_guard_survives_the_e1_e2_spellings_when_the_target_exists(
     assert violations == [], f"an E1/E2 spelling walked past the write guard: {violations}"
 
 
+@requires_win32_path_semantics
 def test_the_write_guard_survives_the_e1_e2_spellings_when_the_target_does_not_exist_yet(
         tmp_path, monkeypatch, fake_pyboy_raises):
     r"""REGRESSION (review E2) -- the one this PR itself introduced, and the reason the guard now
@@ -1347,6 +1384,7 @@ def test_the_write_guard_survives_the_e1_e2_spellings_when_the_target_does_not_e
     assert violations == [], f"an E1/E2 spelling walked past the guard in a fresh checkout: {violations}"
 
 
+@requires_win32_path_semantics
 def test_test_mode_refuses_the_e1_e2_spellings_of_a_modes_own_real_path(
         tmp_path, monkeypatch, fake_pyboy_raises):
     r"""Review E1's demonstration verbatim: the escape was reached with `--mode readiness_dev`, whose
@@ -1367,6 +1405,7 @@ def test_test_mode_refuses_the_e1_e2_spellings_of_a_modes_own_real_path(
     assert violations == [], f"--test wrote under a real baseline path via a spelling: {violations}"
 
 
+@requires_win32_path_semantics
 def test_a_unc_or_device_out_is_refused_outright_with_its_own_message(tmp_path, monkeypatch, capsys,
                                                                        fake_pyboy_raises):
     r"""Clause (a0). Unlike every other spelling, the share forms are refused because they CANNOT be
@@ -1423,6 +1462,7 @@ def test_the_extended_prefix_strip_maps_both_families_back_to_their_plain_spelli
     assert red._under_real_path(r"\\?\UNC\server\share\runs\red", r"\\server\share\runs\red")
 
 
+@requires_win32_path_semantics
 def test_the_two_device_namespace_spellings_really_do_open_the_same_directory(tmp_path):
     r"""NON-VACUITY for the two E6 rows `_hostile_spellings` now carries.
 
@@ -1453,6 +1493,7 @@ def test_a_plain_scratch_out_is_still_allowed_through(tmp_path, monkeypatch, fak
     assert list(scratch.glob("human_metrics.INCOMPLETE_*.json"))
 
 
+@requires_win32_path_semantics
 def test_both_normalisations_are_load_bearing_and_neither_dominates(tmp_path):
     r"""The invariant the fix round exists to protect, stated as an executable claim rather than a
     comment: `realpath` and `abspath` each catch a spelling the other misses, so the guard must
