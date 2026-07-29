@@ -109,8 +109,8 @@ def dry_run_synthetic() -> dict:
     shaped exact_wake_boundary artifact. `status` is always "FAIL" today -- no exact wake boundary
     is provable given Codex's current JSONL schema (see module docstring) -- but
     `fail_closed_regression_guard_holds` reports whether audit() actually kept its documented
-    fail-closed promise (wakes=None/wake_accounting="INSUFFICIENT_WAKES"/overall != "PASS") even
-    for this maximally-clean transcript. That flag going False would mean the fail-closed guarantee
+    fail-closed promise (wakes=None/wake_accounting="INSUFFICIENT_WAKES"/audit_overall != "PASS")
+    even for this maximally-clean transcript. That flag going False would mean the fail-closed guarantee
     silently broke -- the actual regression this demo exists to catch."""
     events = _synthetic_transcript_events()
     stream_bytes = ("\n".join(json.dumps(e) for e in events) + "\n").encode("utf-8")
@@ -120,7 +120,7 @@ def dry_run_synthetic() -> dict:
         transcript_path, receipt_path, expected_path, artifacts_dir = _build_fixture(Path(tmp))
         result = audit(transcript_path, receipt_path, expected_path, artifacts_dir, _ARM)
 
-    fail_closed_holds = (result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+    fail_closed_holds = (result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
                          and result["wake_accounting"] == "INSUFFICIENT_WAKES"
                          and result["wakes"] is None
                          and result["primitive_action_events"] == _DECISION_COUNT)

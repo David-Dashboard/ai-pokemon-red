@@ -23,9 +23,11 @@ amendment) all the way through the real scorer, proving:
 2. `test_synthetic_run_over_cost_cap_still_fails_cheap_even_with_wakes_deferred` -- the SAME clean/
    wakes-deferred setup, but with cost pushed over the unchanged per-arm cap, still fails
    FAIL_CHEAP -- proving the cost bar's strictness is completely unchanged by this amendment.
-3. `test_all_arms_refuse_a_real_wake_count` (below, unmodified) -- the writer-level guarantee
-   (build_agent_metrics() itself still refuses to write a "wakes" number from a non-PASS audit)
-   is untouched by this amendment; it is orthogonal to whether the SCORER gates on wakes.
+3. `test_all_arms_stay_fail_closed_on_wakes` (below) -- the audit-level guarantee (a maximally
+   clean transcript still reports wakes=None/INSUFFICIENT_WAKES per arm) is untouched by this
+   amendment; it is orthogonal to whether the SCORER gates on wakes. (The writer-level half of
+   this test -- check_gate0_codex.build_agent_metrics() refusing a non-PASS audit -- went away
+   with that permanently unreachable function on 2026-07-28.)
 
 Everything here is $0 and synthetic -- no codex exec, no paid run.
 """
@@ -34,18 +36,15 @@ from __future__ import annotations
 import hashlib
 import json
 
-import pytest
-
 import eval.score_gate0 as scorer
-import tools.check_gate0_codex as checker
 import tools.gate0_credit_breaker as breaker
 import tools.gate0_wake_boundary as wake_boundary
 from tools.check_gate0_codex import SERVER, TOOLS, audit as audit_codex
 
 DECISIONS = {"red": 10, "miniwob": 5}
 _USAGE = {"input_tokens": 12, "cached_input_tokens": 4, "output_tokens": 5, "reasoning_output_tokens": 1}
-# Modeling an external bypass of our own fail-closed writer (build_agent_metrics refuses this --
-# see test_all_arms_refuse_a_real_wake_count below). The exact numbers don't matter: audit()'s
+# Modeling a hand-written agent_metrics.json carrying a wake count nothing in this repo can
+# actually produce. The exact numbers don't matter: audit()'s
 # wake_accounting stays "INSUFFICIENT_WAKES" regardless, which alone fails the scorer's cross-check.
 FABRICATED_WAKES = {"red": 10, "miniwob": 5}
 
@@ -134,9 +133,8 @@ def _build_sources_with_fabricated_wakes(tmp_path, audits: dict[str, dict],
                                           agent_cost: dict | None = None) -> tuple[dict, dict]:
     """Write red_agent/miniwob_agent/red_human/miniwob_human/wake_boundary/live_breaker.json.
 
-    The agent metrics files are hand-written directly (NOT via build_agent_metrics, which
-    correctly refuses -- see test_all_arms_refuse_a_real_wake_count) to model the one remaining
-    way a wake number could reach agent_metrics.json: someone bypasses our writer entirely. Under
+    The agent metrics files are hand-written directly to model the one remaining way a wake number
+    could reach agent_metrics.json: someone writes it by hand. Under
     the 2026-07-21 Cheap-basis amendment this "wakes" number is purely informational (reported in
     the verdict payload, never gating) -- it can never manufacture a PASS by itself, and it can
     never manufacture a FAIL_CHEAP by itself either; only cost_usd/normalized_credits gate Cheap
@@ -190,10 +188,10 @@ def _build_sources_with_fabricated_wakes(tmp_path, audits: dict[str, dict],
     return paths, hashes
 
 
-def test_all_arms_refuse_a_real_wake_count(tmp_path):
+def test_all_arms_stay_fail_closed_on_wakes(tmp_path):
     """Sanity check ahead of the main proof: even the maximally clean transcript per arm (zero
     leak/constancy/run/accounting failures -- exactly the shape that, pre-#126, would have earned
-    a PASS wake count) still reports the fail-closed hardcode, and our own writer refuses it."""
+    a PASS wake count) still reports the fail-closed hardcode."""
     for arm in ("red", "miniwob"):
         transcript, receipt, expected, artifacts_dir = _build_arm_transcript(tmp_path, arm)
         result = audit_codex(transcript, receipt, expected, artifacts_dir, arm)
@@ -201,12 +199,9 @@ def test_all_arms_refuse_a_real_wake_count(tmp_path):
         assert result["constancy_failures"] == []
         assert result["run_failures"] == []
         assert result["accounting_failures"] == []
-        assert result["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+        assert result["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
         assert result["wake_accounting"] == "INSUFFICIENT_WAKES"
         assert result["wakes"] is None
-        with pytest.raises(ValueError, match="audit_not_clean"):
-            checker.build_agent_metrics(result, arm, "readiness_dev",
-                                        wall_clock_s=20.0, cost_usd=1.0, normalized_credits=20.0)
 
 
 def _audit_clean_arms(tmp_path):
@@ -214,7 +209,7 @@ def _audit_clean_arms(tmp_path):
     for arm in ("red", "miniwob"):
         transcript, receipt, expected, artifacts_dir = _build_arm_transcript(tmp_path, arm)
         audits[arm] = audit_codex(transcript, receipt, expected, artifacts_dir, arm)
-        assert audits[arm]["overall"] == "NO_GO_INSUFFICIENT_WAKES"
+        assert audits[arm]["audit_overall"] == "NO_GO_INSUFFICIENT_WAKES"
         assert audits[arm]["wake_accounting"] == "INSUFFICIENT_WAKES"
         assert audits[arm]["wakes"] is None
     return audits
@@ -241,7 +236,7 @@ def _score_with_fabricated_sources(tmp_path, monkeypatch, audits, agent_cost=Non
 def test_synthetic_successful_run_within_cost_caps_now_passes_wakes_deferred(tmp_path, monkeypatch):
     """Scenario (a): clean run, within cost caps, wakes accounting INSUFFICIENT -> PASS/GO.
 
-    Drives the REAL audit_codex() (permanently fail-closed on wakes: overall=
+    Drives the REAL audit_codex() (permanently fail-closed on wakes: audit_overall=
     NO_GO_INSUFFICIENT_WAKES, wake_accounting=INSUFFICIENT_WAKES, wakes=None for both arms,
     confirmed above) all the way through the real scorer. Cost ($1.00 red / $0.50 miniwob) and
     credits (20/10) are well within the unchanged per-arm and combined caps. Pre-amendment this
