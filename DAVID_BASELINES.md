@@ -53,8 +53,92 @@ docstring) or copy the one from an existing checkout/readiness run
 (`runs/gate0_readiness_2026-07-14/`).
 
 ```
-uv run python tools/capture_gate0_baseline_red.py
+UV_PROJECT_ENVIRONMENT=.venv-win uv run --frozen python \
+    tools/capture_gate0_baseline_red.py --mode readiness_dev
 ```
+
+(Windows: that is the form used everywhere in this repo. On Linux/Pi, drop the two `UV_` bits and
+use `uv run python ...`. Either way, running the file directly works -- the script puts the repo
+root on `sys.path` itself, so you do not need `PYTHONPATH=.` or `python -m`. Both this command and
+`--help` were executed as written on 2026-07-28 before this was documented; `--help` exits 0 and the
+capture command reaches the ROM/savestate checks.)
+
+`--mode` is **required and has no default** (2026-07-28), exactly like the MiniWoB rig's. It stamps
+`human_metrics.json`'s `mode` field -- which `eval/score_gate0.py` requires to equal the mode being
+scored -- and picks the output directory:
+
+| `--mode` | writes to | extra flag |
+|---|---|---|
+| `readiness_dev` | `runs/gate0_human_baseline/red/` | -- |
+| `paid_gate0` | `runs/gate0_paid_human_baseline/red/` | `--i-am-human` |
+| `paid_gate0_v2` | `runs/gate0_paid_v2_human_baseline/red/` | `--i-am-human` |
+
+Red has **no held-out seeds** (the design doc's "Red uses the same fixed start for agent and human"),
+so the task, the savestate and the predicate are identical in every mode -- you play exactly the same
+thing. `--i-am-human` is required for the paid modes anyway, because that artifact becomes the
+denominator the `agent <= 2.0x human` bar is measured against.
+
+For the Gate 0 v2 paid baseline (prereg P1c), the command is:
+
+```
+UV_PROJECT_ENVIRONMENT=.venv-win uv run --frozen python \
+    tools/capture_gate0_baseline_red.py --mode paid_gate0_v2 --i-am-human
+```
+
+A paid-mode capture **refuses to start** unless that mode's source-pins fixture already points
+`artifact_paths.red_human` at the directory above. Today all three fixtures still point at
+`runs/gate0_human_baseline/red/`, so the command above refuses until that re-point lands (prereg
+P1c) -- executed as written on 2026-07-28, it prints that refusal and exits `2`, which is the
+correct behaviour today, not a breakage. The refusal names the exact fixture field to change. Do
+**not** work around it by pointing `--out` at the banked dev directory: that file is append-only raw
+data and three fixtures freeze its digest.
+
+`--out` will not get you there. The rig refuses, before it creates anything, any `--out` that lands
+at or under **another mode's** real baseline directory -- and the banked dev directory is another
+mode's, for both paid modes. No flag turns that off: not `--test`, not `--i-am-human`, not
+`--allow-retake`.
+
+Spelling the path differently does not get you there either -- but read the table as what it is: a
+**list of spellings that have been executed**, one row per spelling, not a statement about spellings
+in general. Each row is pinned by a test that drives the real `run()` against a stand-in baseline
+directory and asserts nothing was written, moved or renamed -- in **both** states, the directory
+existing and the directory not yet created (the live one today: neither paid directory exists on
+this checkout):
+
+| spelling | how it is stopped |
+|---|---|
+| trailing separator, forward slashes, `..` round-trip | collapsed by `normpath`/`abspath` before the comparison |
+| case (`UPPER`, `lower`, mixed-case leaf) | `normcase` -- the only row where `normcase` is load-bearing; the row above was already caught by `322499f`, which had no `normcase` at all |
+| a `mklink /J` junction, an 8.3 short name | `realpath` (applied to **both** sides, so a junction on a shared prefix cancels) |
+| a trailing dot or space (`...\red.`, `...\red `) | `abspath`, which strips them as Win32 does |
+| `\\?\C:\...` extended-length | the prefix is stripped, then compared |
+| `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\?\UNC\...`, `\\.\C:\...`, `\\?\Volume{GUID}\...`, `\\?\GLOBALROOT\GLOBAL??\C:\...` | **not compared at all -- refused outright**, because no normalisation maps a share or a device name back to a drive letter and the set of host aliases is unbounded. Conditional: see the paragraph below |
+
+The comparison takes the **union** of two normalisations because neither dominates: `realpath` sees
+through junctions and short names but leaves a trailing dot verbatim, while `abspath` strips the
+trailing dot but is blind to junctions. A previous round *replaced* one with the other and thereby
+opened the trailing-dot escape it now closes (review E1/E2). What is **not** claimed: that this
+enumeration is exhaustive, or that any spelling absent from it is stopped. It is the set that has
+been executed -- and it grew again in review E6, when `\\?\Volume{GUID}\...` and
+`\\?\GLOBALROOT\GLOBAL??\C:\...` turned out to walk past a table row that had claimed all device
+paths were refused.
+
+**The last row's refusal is conditional, and here is the residual.** It fires only while *every*
+baseline directory on this checkout is a drive path -- true today. If this repo were itself checked
+out on a share, every baseline directory would be UNC too, refusing UNC would break the only thing
+this rig exists to do, and the refusal therefore switches itself off. On such a checkout a UNC or
+device `--out` falls back to the ordinary path comparison, which does **not** recognise
+`\\server.corp.example.com\...`, `\\127.0.0.1\...` and `\\localhost\...` as the same directory. That
+is not a new weakness -- it is what every earlier version of this rig did unconditionally, and it is
+unreachable from a drive-letter checkout -- but it is real, and until review E8 it was written down
+nowhere an operator would look. **Do not host this checkout on a network share.**
+
+An earlier draft of this paragraph said `--out` could not get you there *because the refusal is
+checked against the directory the run would actually write*. That reason was **wrong, and backwards
+in exactly this window**: it described the fixture cross-check, whose verdict follows the fixtures,
+and today all three fixtures point at the banked directory -- so that check **blesses** the write
+rather than blocking it. What blocks it is the separate path guard described above, which does not
+consult a fixture at all. Recorded because a false reassurance here is worse than none.
 
 What you'll see: a real PyBoy window opens straight into the fresh bedroom. The terminal prints the
 fresh party count (must read `0` -- if it doesn't, you've got the wrong savestate, Ctrl-C and fix
@@ -73,7 +157,8 @@ never changes the banked numbers. The window then **auto-closes itself a few sec
 (`COMPLETION_GRACE_SECONDS`) so you don't have to notice the message or react quickly; you can also
 close it yourself (or Ctrl-C) any time, including before completion, to finish early or abort.
 
-Writes to `runs/gate0_human_baseline/red/`:
+Writes to the `--mode` directory in the table above (`runs/gate0_human_baseline/red/` for
+`readiness_dev`):
 - `human_metrics.json` -- your wall-clock time and button-press count, frozen at detection (the
   exact fields `eval/score_gate0.py` reads for the human side of the `<=2.0x` Capability bar), plus
   `player`, `started_at`/`completed_at` (ISO 8601 UTC), `rom_sha256`/`savestate_sha256`,

@@ -109,3 +109,426 @@ triage could be misled. This is the identical shape the pre-existing unpinned-ar
 in `score_manifest()` already produced, so it is inherited, not created here. Left alone
 deliberately: fixing it would mean touching `score()`, which this deviation exists to prove was not
 touched.
+
+---
+
+## D5 — P1c's named satisfaction method is incomplete: a fresh capture alone does not satisfy it
+
+**Landed by:** PR #195, `fix/gate0-red-capture-mode`.
+**Touches:** `tools/capture_gate0_baseline_red.py`, its tests, and `DAVID_BASELINES.md`. No fixture,
+no scorer, no `runs/` artifact, and **not** `reports/2026-07-25-gate0-v2-prereg.md`.
+
+**Why D5 and not D2/D3/D4:** D1 is on `main`; #188 claims **D2**, #191 claims **D3**, #192 claims
+**D4** — verified by reading this file on each branch head (`origin/fix/audit-verdict-not-gate-verdict`,
+`origin/fix/red-glitch-row-signature`, `origin/fix/gate0-launcher-mode`) on 2026-07-28. #193 and #194
+do not touch this file. D5 is the first uncontested slot; no collision. Append newest-last, so this
+section belongs after D4.
+
+### The rig change itself is NOT a deviation — the prereg pre-authorised it
+
+Stated plainly so the log is not read as claiming more than it should. Prereg `:264-269` already
+says:
+
+> If the capture tool cannot yet emit Red under that mode, extending it to do so is in-scope
+> plumbing for the P8/P9 batch
+
+That plumbing was simply never done — the P8/P9 batch landed as **#180** without it, and
+`tools/capture_gate0_baseline_red.py` still carried `MODE = "readiness_dev"  # the only mode this rig
+supports` with no `--mode` flag at all. Adding the flag **satisfies** a precondition. It is recorded
+here only for context; it is not the deviation.
+
+### The deviation: this rig now REFUSES a capture the prereg says should just work
+
+P1c does not leave its method open. It says (`:264-266`, emphasis original):
+
+> **The satisfaction method is named here, not left open: P1c is satisfied by a FRESH CAPTURE under
+> `--mode paid_gate0_v2`, producing a new artifact.**
+
+**That is not sufficient, and this PR makes the rig say so out loud instead of letting the gap pass.**
+All three source-pin fixtures pin `artifact_paths.red_human` at the SAME file —
+`runs/gate0_human_baseline/red/human_metrics.json`, the banked `readiness_dev` artifact — and all
+three freeze the same real digest `5144a5b3…` for it. Verified on `origin/main` (`322499f`) and
+pinned mechanically by
+`tests/test_capture_gate0_baseline_red.py::test_all_three_fixtures_currently_pin_the_same_banked_red_baseline`.
+
+So a fresh v2 capture has exactly two possible destinations, and the prereg's text sanctions neither:
+
+| destination | outcome |
+|---|---|
+| the pinned path (`runs/gate0_human_baseline/red/`) | **overwrites** an append-only banked artifact whose digest THREE fixtures freeze — breaking `readiness_dev` and `paid_gate0` source verification at the same time, and doing by `--out` exactly what `:266-269` forbids doing by hand-edit |
+| anywhere else | the artifact is correct and **nothing reads it**; `_verify_sources` still loads the banked `readiness_dev` file, still fails `human_metric_identity:red`, still yields `INSUFFICIENT_DATA` |
+
+**P1c therefore has a third step the prereg does not name: re-point `artifact_paths.red_human` (and
+re-freeze `artifact_sha256.red_human`) in `eval/fixtures/gate0_paid_v2_source_pins.json`.** PR #194's
+runbook reached the same conclusion independently ("a code change to the rig, a human replay by
+David, and a re-point + re-freeze of `artifact_paths.red_human`").
+
+This is the same shape of finding as **D4**: a `§0`/P-item that asserts its own completeness and is
+not complete. It is recorded, not silently worked around.
+
+### What changed, and the one deliberate behaviour difference
+
+One required `--mode` (choices read from `eval.score_gate0.MODES` itself, function-local import), no
+default — an unstated mode is a refusal, not a guess. It drives both mode-dependent values: the
+`mode` field stamped into `human_metrics.json`, and the output directory, from a per-mode
+`MODE_CONFIG` mirroring `tools/capture_gate0_baseline_miniwob.py`'s. Two guards, both on held-out
+modes only:
+
+1. **`--i-am-human`**, mirroring the MiniWoB rig. The rationale differs and the difference is
+   deliberate: there it protects held-out SEEDS (and the rig also suppresses the task utterance);
+   Red has no held-out seed family, its task text is public and printed in full in every mode, so
+   there is nothing to suppress. What it protects here is the ARTIFACT — a paid-mode
+   `human_metrics.json` is the denominator the `agent <= 2.0x human` bar is measured against.
+2. **The fixture cross-check** — refuse unless the mode's own source-pins fixture already points
+   `red_human` at the directory this capture writes to. **This is the deviation.** The prereg says a
+   fresh capture satisfies P1c; the rig now refuses that capture until the fixture re-point exists.
+   Refusing costs a `$0`, ~4-minute human replay. Not refusing costs the discovery at scoring, after
+   the paid run. The refusal message names the exact fixture field to edit and explicitly forbids the
+   two wrong workarounds (hand-editing the banked artifact; pointing `--out` at it).
+
+   **Validate and refuse, never derive** (#192's F2 lesson, applied to a write path): deriving the
+   output directory from the pin would send a v2 capture straight into the banked artifact — the
+   worse of the two rows in the table above.
+
+   It is cross-checked against `args.out` — the directory this invocation will *actually* write —
+   not against `MODE_CONFIG`'s `real_out`. Binding it to `real_out` (review **B2**) meant an
+   explicit `--out` was never checked at all, and it also validates the fixture's
+   `schema_version`/`mode` exactly as `_verify_sources` does (review **B5**), so the rig and the
+   scorer agree on which fixtures are trustworthy.
+
+   **This guard is not, and must never again be, the last line of defence.** Its verdict is a
+   function of fixture contents, so what it permits moves when a fixture moves — see the D1 entry in
+   the second review round below, where making it *more correct* made it *less protective*.
+
+The **write-path guard** is not held-out-only and consults no fixture. Every write this rig makes
+lands inside `args.out`, so `args.out` — after the per-mode default is filled in — is the single
+choke point both the mode-derived default and an explicit `--out` pass through. The guard sits
+there, with the shape PR #196's `write_artifact()` uses: resolved comparison, directory-wide, before
+the `exists()` test and before any `mkdir`, and no flag overrides it. Two clauses:
+
+1. **Unconditional, every mode, every flag** — `--out` may never be at or under a **different**
+   mode's real baseline path. Referent is `MODE_CONFIG`, a module constant.
+2. **`--test` additionally** may never write under the selected mode's **own** real path, so a
+   smoke test can never touch any of the three.
+
+Where it differs from #196, deliberately: that tool must never write into the banked directory at
+all, so its guard names one fixed `BANKED_DIR`. This rig legitimately writes there under `--mode
+readiness_dev` — that is what a capture *is* — so the invariant has to be relative rather than
+absolute. See the identity section below for the measured behaviour change.
+
+**`readiness_dev` is exempt from guard 2, and that scoping is load-bearing.** Its baseline is already
+captured, banked, and pinned to exactly the file it writes; re-checking protects nothing and would add
+a new way for a legitimate `--allow-retake` to fail. The exemption is what keeps that path untouched.
+
+### `readiness_dev` identity — measured, not asserted
+
+A throwaway differential harness (not committed) records what the tool **actually writes and where**:
+the effective output directory, `REAL_OUT`, the `_under_real_path` answers over an 11-path matrix,
+the full `_build_metrics` payload in three configurations, and — driving the real `run()` with
+`PyBoy` faked to raise, so no SDL2 window is ever created — the exit code, stdout, stderr and
+**every file written (path and content)** across ten scenarios: first attempt, `--test` to scratch,
+`--test` under the real path, overwrite-refusal, `--allow-retake`, stale-oracle archival, missing
+ROM, missing savestate, `--out` left at its default, and `--test` aimed at another mode's directory.
+Repo root, temp dirs, unix timestamps and ISO timestamps are normalised so two worktrees are
+comparable; both sides were confirmed self-stable (two runs of the same tree hash equal).
+
+`origin/main` (`322499f`, no flag) vs this branch (`--mode readiness_dev`), re-proved after the
+**second** review fix round. 91 records; both sides confirmed self-stable (two runs of the same tree
+hash equal — the first attempt was not, and the cause was the harness's own `mkdtemp` suffix, not
+the rig):
+
+```
+base ffc09958840dd9a037636dc896de499a397f0db5ca87e2c03964a0b1ad2a0870
+head f014e8f95fa793c44190a3e92952b3aaf98324ad61fb9e417b53ea2a24029ca4
+```
+
+**76 of 91 records byte-identical** — all constants, all three `_build_metrics` payloads (modulo the
+declared `mode` key), nine of the twelve `_under_real_path` rows, and the `run()` scenarios for a
+first attempt, `--test` to scratch, overwrite-refusal, `--allow-retake`, stale-oracle archival,
+missing ROM, missing savestate, and `--out` left at its default (resolved through each side's **own**
+CLI end to end, never by handing `None` to a parser that never yields it).
+
+**Fifteen record-level differences, in six scenario groups. Five groups are strictly more refusing;
+one suppresses a warning that was factually false.** Enumerated rather than summarised:
+
+| # | scenario | `322499f` | here | direction |
+|---|---|---|---|---|
+| 1 | `--test --out runs/gate0_human_baseline/red` | refuses, exit 2, writes nothing | same — **message reworded** | neutral |
+| 2 | `--test --out runs/gate0_paid_v2_human_baseline/red` | **writes** `human_metrics.INCOMPLETE_*.json` there | refuses, writes nothing | more refusing |
+| 3 | `--test --out runs/gate0_paid_human_baseline/red` | **writes** there | refuses, writes nothing | more refusing |
+| 4 | **no** `--test`, `--out` at either paid directory | warns "outside the canonical path", then **writes** | refuses, writes nothing | more refusing |
+| 5 | `--test --out <the real path spelled UPPER>` | **writes** into the banked directory | refuses, writes nothing | more refusing |
+| 6 | no `--test`, `--out` at the real path spelled UPPER | warns "**outside** the canonical real baseline path", writes | no warning, writes the same artifact to the same place | **not** more refusing |
+| — | `_under_real_path[UPPER / lower / mixed-case leaf]` | `False` | `True` | underlies 5 and 6 |
+
+Rows 2–3 are review finding **B3**. Row 4 is review **D1/D2** — the blocking finding of the second
+round, and one this PR's own first fix round *introduced*: binding the fixture cross-check to
+`args.out` was right in itself, but it turned the comparison into `pinned == target`, and all three
+fixtures pin `red_human` at the banked directory today, so the accident that had been blocking
+`--mode paid_gate0_v2 --i-am-human --out <banked dir> --allow-retake "..."` became a blessing.
+Reproduced at `06820ab` (banked `oracle.jsonl` renamed away, INCOMPLETE artifact written in) and
+blocked here. Rows 5–6 are review **D3**.
+
+**Row 6 is the one difference that is not "more refusing", and it is stated rather than buried.**
+Both sides write the same artifact to the same directory; only the warning differs. The warning the
+old rig printed was *false*: `<TMP>\REAL_READINESS_DEV` and `<TMP>\real_readiness_dev` are the same
+directory on a case-insensitive filesystem, so `322499f` told the operator the write was "outside
+the canonical real baseline path" **while writing into it**. Suppressing it is a correction, not a
+loosening — but it is a stdout/stderr difference on the `readiness_dev` path and the identity claim
+would be false without it.
+
+The `--test` clause is proven over mode × target-directory × `--i-am-human` × `--allow-retake` ×
+**path spelling** — the spelling axis added this round, because the previous 36-cell matrix varied
+flags only and therefore certified as "unconditional" a helper that five different spellings of one
+path walked straight past. The unconditional foreign-path clause is proven over its own 48-call
+matrix. Both run with the fixture cross-check neutralised, so each guard alone is what holds.
+
+The remaining recorded difference is the parsed argparse namespace, which gains `mode` and
+`i_am_human` and moves `--out`'s default out of argparse into `run()`. The **effective** output
+directory is byte-identical and is compared inside the hashes above.
+
+### Review fix round (adversarial review of `a4e5969`)
+
+Six findings, all addressed on this branch; the review's structural claims about the design all
+survived being re-run. **B1** the documented command tracebacked with `ModuleNotFoundError: No
+module named 'eval'` (and `--help` regressed against `322499f`) because `build_arg_parser()` reads
+the scorer's `MODES` at parser-build time while `python tools/x.py` puts `tools/` on `sys.path[0]`;
+fixed with the same 3-line shim three sibling tools carry, and now pinned by two subprocess tests
+that invoke the file as a script. **B2** the fixture cross-check validated `MODE_CONFIG`'s
+`real_out` rather than the directory actually being written, so an explicit `--out` walked past it
+once the fixture re-point lands; it is bound to `args.out` now. **B3** above. **B4** the
+`--i-am-human` gate was not distinguishable from the cross-check by any test (deleting it left the
+whole suite green), and the parser's `choices` were not bound to the scorer; both isolated now.
+**B5** the cross-check skipped the `schema_version`/`mode` validation `_verify_sources` performs and
+is aligned. **B6** corrected a false claim in the PR body — see below.
+
+### Second review fix round (adversarial review of `06820ab`) — the B2 fix inverted a refusal
+
+**The blocking finding was a regression this PR's own previous round introduced**, and it is the
+most useful thing in this log. Recorded in full because the shape recurs:
+
+> A guard whose referent is *derived* (a fixture, a computed default) can be made **more correct and
+> less protective in the same edit**. Only a guard whose referent is a constant, sitting at the
+> write choke point, is structural.
+
+**D1 (blocking).** `--mode paid_gate0_v2 --i-am-human --out <the banked readiness_dev directory>
+--allow-retake "a stated reason"` was refused at `a4e5969` and **proceeded** at `06820ab` — renaming
+the banked append-only `oracle.jsonl` away and writing an INCOMPLETE artifact in. `a4e5969` refused
+it *by accident*: the cross-check was comparing the mode's default directory (not the one being
+written) against the pin, and those differ today. Fixing that comparison (B2) made it
+`pinned == target`, which today's fixtures satisfy **at the banked directory**. Fixed by the
+write-path guard described above, not by reverting B2 — the B2 fix was right; relying on it for
+safety was the error.
+
+**D2 (major).** `--mode readiness_dev --out <a paid directory>` had no guard at all (`readiness_dev`
+is deliberately exempt from the fixture cross-check), and wrote there with only a warning. Same
+guard closes it.
+
+**D3 (major, pre-existing).** `_under_real_path` compared `normpath`/`abspath`, which five spellings
+of one directory walk past: `UPPER`, `lower`, a mixed-case leaf, a `mklink /J` junction (no admin
+required) and an 8.3 short name. Now `normcase` + `realpath`. **Both halves are load-bearing, and
+that was established by a surviving mutant rather than by argument:** `realpath` alone canonicalises
+on-disk case only for a path that *already exists*, so it leaves `UPPER`/`lower` open in precisely
+the fresh-checkout/container/worktree case PR #196's guard comment singles out. The word
+"unconditional" is retained only where the spelling matrix now backs it.
+
+> **CORRECTED by the third review round — do not read D3 as unqualified strengthening.** It was a
+> **trade**: `normcase`+`realpath` *replaced* `normpath`+`abspath` rather than joining it, and the
+> replacement **opened** trailing-dot and trailing-space on a not-yet-created target while closing
+> the five above. See **E2** below. The five closures are real; the paragraph above simply does not
+> record the one that opened, and that omission is the finding.
+
+**D4 (major).** Three of the reviewer's 24 mutants survived, including `if not allow_retake:` →
+`if False:` — deleting the one-cold-attempt law outright left the full 1720-test suite green,
+because control simply fell through to a faked setup failure that also returns 2 and writes a
+*differently named* file. Re-run this round over 32 mutants (the reviewer's 24 plus 8 for the new
+guards): **31 killed.** The single survivor, `M7`, is a **proven equivalent mutant** — once the
+unconditional foreign-path clause precedes the `--test` clause, `blocked ⊆ {mode}` there, so
+`bool(blocked)` and `_under_real_path(args.out, real_out)` are the same predicate; confirmed
+byte-identical over a 504-scenario differential. The `blocked` form is kept as defence in depth.
+
+**D5/D6 (minor).** The #192 binding test's "the two must agree" is narrowed to "agree on the
+resolution of a **well-formed** pin" — they deliberately diverge on malformed ones since B5. D6 is
+noted below.
+
+### What this does NOT do
+
+It does not satisfy P1c. It supplies the first of three steps. It produces no capability evidence,
+touches no `runs/` artifact, and re-freezes nothing.
+
+It also does **not** fix `tools/reconstruct_gate0_red_baseline.py`, which still carries
+`MODE = "readiness_dev"` with the banked path as its `DEFAULT_OUT` and stamps that mode
+unconditionally — the identical defect this PR fixes, in the tool that actually produced the banked
+artifact and that is the recovery path if a v2 capture mis-detects. Deliberately out of scope here
+(it deserves its own reviewed PR, and it is the fallback if the capture path fails); recorded so the
+gap is not lost. **PR #196 now does exactly that**, independently, and its `write_artifact()` guard
+is the design this PR's write-path guard is ported from. #196 takes no deviation slot.
+
+Nor does it fix the third sibling: `tools/capture_gate0_baseline_miniwob.py:103` still carries
+`DEFAULT_MODE = "readiness_dev"` — the default this rig's own docstring argues "would preserve
+exactly the trap being fixed" (review **D6**). One line, one other PR; recorded here so the last
+instance is not lost.
+
+It leaves a **declared duplication**:
+`pinned_red_human_path()` re-implements #192's `pinned_artifact_path()` because #192 is unmerged (the
+symbol does not exist on `origin/main`) and `tools/gate0_appserver_arm.py` was off-limits to this
+change. Two resolutions of one pin is the drift class this workstream exists to remove — once both
+land, lift one shared helper and delete both.
+
+### Third review fix round (adversarial review of `d8cbe00`) — the D3 fix was a trade, not a strict win
+
+Two blocking findings, one of them **a regression D3 itself introduced**. The transferable lesson,
+and the reason this round exists at all:
+
+> **Harden by UNION, not by REPLACEMENT.** D3 swapped one normalisation for a stronger-looking one.
+> "Stronger" was not a total order: the two see different things and neither dominates, so the swap
+> closed five spellings and opened two. Adding a normalisation can only ever refuse more. Replacing
+> one can always refuse less, somewhere you did not measure.
+
+**E1 (blocking, pre-existing — `322499f` escapes too).** `os.path.realpath` returns extended-length
+and UNC paths **verbatim**; it canonicalises neither. So `--test --mode readiness_dev --allow-retake
+"x" --out "\\?\<banked dir>"` renamed a stand-in banked `oracle.jsonl` away and wrote an INCOMPLETE
+artifact in — by `--test`, whose stated invariant is that it may never write under **any** mode's
+real baseline path. Identical via `\\localhost\<drive>$\...`. The plain spelling of the same command
+was correctly refused, so it was purely the spelling. Worse than a curiosity for two reasons:
+`readiness_dev` is exempt from the fixture cross-check, so on that mode the path guard is the only
+line of defence and there was nothing behind it; and for the paid modes the escape was stopped only
+by the cross-check — the guard this PR's own D1 lesson says may never be the last line.
+
+Closed in two pieces, because one mechanism cannot do both:
+
+* `\\?\C:\...` and `\\?\UNC\...`: the prefix is **stripped** before normalising. Both spellings open
+  the same object; the prefix exists precisely to tell Win32 "do not normalise this".
+* `\\localhost\C$\...`, `\\127.0.0.1\C$\...`, `\\.\C:\...`: **refused outright**, not compared. No
+  normalisation maps a share back to a drive letter, and the set of host aliases (`localhost`, the
+  machine name, IPv4/IPv6 literals, DNS aliases) is unbounded — so the rig refuses rather than
+  pretending to check. Conditioned on the referents being drive paths, so a checkout that genuinely
+  lives on a share is not bricked.
+
+**E2 (blocking, REGRESSION introduced by D3).** Win32 strips a trailing dot or space from a path
+component, and `abspath` (via `GetFullPathNameW`) strips them too — so the **old** form caught them.
+`realpath` does not, for a path that does not exist yet. `--mode readiness_dev --out "<paid_v2
+dir>."` therefore wrote an INCOMPLETE artifact into the paid v2 directory at `d8cbe00`, and would
+have on the **real tree today**: neither paid directory exists on this checkout, which is exactly the
+condition the escape needs. Closed by comparing the **union** of both normalisations. A union can
+only ever refuse more, so it cannot reintroduce a false negative; the negative controls (an unrelated
+directory, a sibling sharing the prefix, the parent, and a plain scratch `--out` that must still
+reach the emulator) are what keep it from over-matching.
+
+**Both halves are now pinned by mutation, not by argument.** Dropping the `abspath` half reopens E2;
+dropping the `realpath` half reopens D3; dropping `normcase` reopens the fresh-checkout case;
+dropping the prefix strip reopens E1; and resolving only the **candidate** against a literal referent
+— the asymmetric shape — is killed too. That last one matters: the symmetry is what makes this guard
+immune to a junction on a shared prefix (`runs/` already holds 26 junctions into another volume), and
+it was an unstated invariant. It is now written into `_under_real_path`'s docstring, along with the
+union rule, because both are invisible to a reader and a plausible-looking simplification breaks them.
+
+**Matrix re-run in BOTH states** — target existing and target not yet created — over 19 spellings ×
+`--test` ∈ {False, True}, driving the real `run()` against stand-in directories: every row refused,
+nothing written/moved/renamed, negative control still reaches the emulator. The 8.3 row is exercised
+in the existing state (`GetShortPathNameW` requires an existing path, so it is inherently unavailable
+in the other) — contrary to the review's aside, 8.3 generation **is** enabled here and that row
+asserts rather than skips.
+
+**E3 (major).** `DAVID_BASELINES.md` claimed "*Nor does spelling the path differently (case, a
+junction, an 8.3 short name); the comparison is made on the resolved path*" — false for exactly the
+spellings above, and one paragraph after this PR replaced a *different* false reassurance in the same
+place with the note "a false reassurance here is worse than none". Replaced with a table that names
+each spelling, says which mechanism stops it, and states explicitly that the enumeration is **what
+has been executed, not a proof of exhaustiveness**.
+
+**E4 (minor, pre-existing).** `name = "human_metrics.json" if success else
+f"human_metrics.INCOMPLETE_{...}.json"` survived the full 1732-test suite. Every test asserting on an
+INCOMPLETE artifact reached it through the *setup-failure* path, which hardcodes that name
+separately — so the one line the module docstring cites for "a botched capture can never silently
+masquerade as a banked baseline" had no test. Pinned now in **both** directions with a PyBoy stub
+that boots (still no window, no gameplay, no real keyboard: `sdl2` stays real and only
+`SDL_GetKeyboardState` is replaced by an array the test drives).
+
+**E5 (minor).** The PR body's merged-stack suite counts cited SHAs that are not descendants of this
+branch, so a reader could not reproduce them. Dropped rather than re-derived.
+
+### Fourth review fix round (adversarial review of `b6667c5`) — the strip was hiding two spellings
+
+The round-four review confirmed, for the first time in four rounds, that the change **trades nothing
+away**: no spelling `322499f` or `d8cbe00` caught is let through. One escape and one prose defect
+remained.
+
+**E6 (blocking, pre-existing — all three heads escape).** `--test --mode paid_gate0_v2 --i-am-human
+--allow-retake "..." --out "\\?\Volume{GUID}\<banked>"` renamed a stand-in banked `oracle.jsonl` away
+and wrote an INCOMPLETE artifact in. Identical via `\\?\GLOBALROOT\GLOBAL??\C:\<banked>`. Both
+spellings are available to any user with no admin and no setup (`mountvol C: /L` prints the GUID);
+both were reproduced end-to-end through the real `run()` before the fix and again after it.
+
+The cause is worth stating because it is the opposite of the obvious one: **the E1 prefix strip is
+what hid them.** `_strip_extended_prefix` maps `\\?\X` → `X`. For `\\?\C:\...` that yields a drive
+path and for `\\?\UNC\...` a UNC path — both correct — but for the device-namespace forms it yields
+a remainder (`Volume{GUID}\...`, `GLOBALROOT\GLOBAL??\C:\...`) that is *neither* drive-rooted *nor*
+`\\`-prefixed. So `_is_unc_or_device_path` saw a non-separator first character and returned `False`,
+**and** `_under_real_path` resolved the remainder as a RELATIVE path against the cwd. Both clauses
+missed, and they missed *because of* the strip. Closed by one clause: an extended-length prefix that
+did not reveal a drive letter is a device-namespace path, refused outright.
+
+> **Transferable lesson, and it is the E1 lesson's shadow.** A normalisation that closes a hole
+> creates a new input shape nothing downstream was written for. E1 added the strip to make two
+> spellings comparable; it also manufactured a third class of string — prefix-stripped-but-not-drive
+> — that every existing clause silently misclassified as relative. When you add a normalisation, ask
+> what its *output* now looks like to the code beneath it, not just what it fixed.
+
+Both spellings are now rows in `_hostile_spellings`, so all three of that helper's consumers exercise
+them; the new clause is killed by **four** independent test failures. They are kept non-vacuous by a
+dedicated ground-truth test that writes *through* each device spelling and asserts the bytes land in
+the drive-letter directory — without it, a fabricated GUID would make every refusal row pass for the
+wrong reason, which is the exact shape reviews E1/E2 kept finding.
+
+**The fix silently removed a mutation kill, and the mutation re-run is what caught it.** At `b6667c5`,
+deleting the UNC branch of `_strip_extended_prefix` was killed: `\\?\UNC\...` then stopped looking
+like a UNC path and (a0) let it through. After E6 the new clause catches `\\?\UNC\...` anyway —
+stripping `\\?\` leaves `UNC\host\share\...`, which has no drive letter — so **no refusal test can
+tell the branch is gone**, and that mutant survived a re-run in which 18 of 20 died. The branch is
+still load-bearing on exactly the checkout (a0) is off for: a share-hosted one, where it is the only
+thing making `\\?\UNC\host\share\x` compare equal to `\\host\share\x`. Pinned directly now, by
+assertion on `_strip_extended_prefix` itself rather than through a refusal, with the reason written
+at the test. Generalisation worth keeping: **a fix that makes a second mechanism sufficient can make
+a first mechanism untested without making it unnecessary** — only re-running mutation *after* the fix
+surfaces that, which is why the re-run is not a formality.
+
+**Mutation, final: 20 run, 19 killed, 1 survivor.** Newly run and killed this round: the E6 clause
+replaced by `False` (4 failures), with its `q != p` half dropped, with its `splitdrive` half dropped,
+and reverted to the pre-fix first-clause-only form. Re-killed: both halves of the union, `normcase`,
+the prefix strip, the strip's UNC branch, the asymmetric candidate-only form, `startswith` without
+the separator, (a0) removed / gated behind `--test` / returning 0, `HELD_OUT_MODES` emptied, and both
+halves of the E4 ternary. **The single survivor is the one the round-four review already proved
+equivalent** — `not any(...)` → `not all(...)` in (a0)'s referent condition, equivalent because all
+three `real_out` derive from one `ROOT` and can never disagree. Baseline measured green immediately
+before and after the run, so no mutant is resident on disk.
+
+**Over-refusal measured, not assumed**, because the recurring failure on this PR has been fixes that
+trade: the predicate was re-run over 17 legitimate spellings — plain drive in upper and lower case,
+forward slashes, relative / `..`-relative / root-relative in both separator styles, drive-relative
+(`C:scratch`), a bare leaf, three `\\?\<drive>` forms, a trailing dot, a trailing space, and a
+single-separator `\server\share\x` — every one still `False`; and end-to-end a plain, a
+`\\?\<drive>` and a relative scratch `--out` all still reach the emulator and write their artifact.
+
+**E7 (major, prose).** The E3 table's last row said the rig *"refuses **any** UNC or device `--out`"*.
+False twice: the two E6 spellings are device `--out`s that were not refused, and the refusal is
+conditional on every baseline directory being a drive path — which the table never said. That was the
+**fourth** false reassurance in this one passage, each introduced by the fix for the previous one, so
+the shape of the claim changed rather than its content: the rows are now per-spelling statements of
+what has been executed, with no universal quantifier anywhere, matching the closing hedge that was
+already there. The same row's first line also **misattributed the mechanism** — `normcase` was
+credited for trailing separator, forward slashes and `..` round-trip, all three of which `322499f`
+caught with no `normcase` at all; those are `normpath`/`abspath`/`realpath`. Split into two rows.
+
+**E8 (minor, prose).** Clause (a0)'s conditional was verified sound — it does not brick a
+share-hosted checkout — but the residual it leaves was documented nowhere: once (a0) is off, a
+UNC/device `--out` falls back to a comparison that does not recognise `\\server.corp.example.com\...`,
+`\\127.0.0.1\...` and `\\localhost\...` as one directory. Not a regression (every earlier version of
+this rig behaved that way unconditionally) and unreachable from a drive-letter checkout. Now stated
+in both the (a0) comment and `DAVID_BASELINES.md`, with "do not host this checkout on a share".
+
+**Follow-up, deliberately NOT done here.** `tools/reconstruct_gate0_red_baseline.py` (#196) is being
+fixed for the same `\\?\` family in parallel. No shared helper was extracted — two PRs editing one
+new module would conflict on every round. When both land, this duplication and the one already noted
+above should be lifted together in a single follow-up, and the E6 clause is now part of what has to
+be lifted.
