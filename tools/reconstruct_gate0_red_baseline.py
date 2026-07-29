@@ -117,7 +117,8 @@ HELD_OUT_MODES = frozenset({"paid_gate0", "paid_gate0_v2"})
 # trace those numbers were derived from.
 BANKED_DIR = MODE_CONFIG["readiness_dev"]["real_out"]
 # Windows extended-length path prefixes. `Path.resolve()` preserves them, so they must be stripped
-# before BANKED_DIR containment is decided -- see _strip_extended_prefix().
+# before BANKED_DIR containment is decided -- but AFTER `.resolve()`, never before. That ordering is
+# load-bearing and got two live write vectors wrong once; see _strip_extended_prefix().
 _EXT_PREFIX = "\\\\?\\"
 _EXT_UNC_PREFIX = "\\\\?\\UNC\\"
 # Clock-start cross-check tolerance: the live rig sets `started_at` and appends
@@ -245,22 +246,36 @@ def _strip_extended_prefix(p: Path) -> Path:
     unequal. Stripping is what makes the comparison in `_resolves_inside_banked` see one file
     instead of two.
 
-    Called BEFORE `.resolve()`. Windows does not normalise a `\\?\` path at all, so
-    `\\?\C:\a\elsewhere\..\banked\x` survives `.resolve()` with its `..` intact and would evade a
-    containment check applied afterwards; stripping first collapses it. Stated precisely, because the
-    obvious stronger claim is false: that ordering is DEFENSIVENESS, not a closed hole -- the same
-    switched-off normalisation means Windows cannot open such a path either (`OSError` [Errno 22]),
-    so neither order permits a write through it, and reversing the two can only make the guard
-    OVER-refuse (an uncollapsed `banked\..\elsewhere` still has `banked` among its `.parents`), never
-    under-refuse. Deliberately left unpinned for that reason -- it is a mutation survivor that cannot
-    fail open. The holes actually closed here are the plain `\\?\C:\...` and `\\?\UNC\...` spellings,
-    which open fine and did reach the banked directory.
+    Called AFTER `.resolve()`, and that ordering is the whole ballgame. Two more spellings carry the
+    bare `\\?\` prefix but do NOT continue with a drive letter:
 
-    Note this helper is NOT what refuses those two: the UNC fail-closed rule below subsumes it, since
-    `Path(r"\\?\C:\x").drive` is `\\?\C:` and already starts with `\\`. What it buys is that a
-    LEGITIMATE extended-length path -- how Windows addresses anything past MAX_PATH -- is not
-    over-refused. That is the one behaviour that distinguishes keeping it from deleting it, and it is
-    pinned by tests/...::test_an_extended_length_path_outside_the_banked_dir_is_still_allowed."""
+        \\?\GLOBALROOT\GLOBAL??\C:\...\banked\x
+        \\?\Volume{a9f08932-...}\...\banked\x
+
+    Strip the prefix off either one FIRST and what is left (`GLOBALROOT\GLOBAL??\C:\...`,
+    `Volume{...}\...`) is a RELATIVE path. `.resolve()` then anchors it to the CWD, so the comparison
+    is made against a path in a completely unrelated place -- the drive matches the referent's, the
+    UNC fail-closed rule below never fires, containment fails, and the write goes to the banked
+    directory anyway through the original spelling, which Windows opens fine. Both spellings were live
+    write vectors under the reverse order, in both filesystem states. Resolving FIRST collapses both
+    aliases to `\\?\C:\...` -- `Path.resolve()` does normalise them -- so the strip only ever sees a
+    drive letter and can only produce an absolute path.
+
+    The one thing the reverse order did that this one does not: it refused
+    `\\?\C:\a\elsewhere\..\banked\x`, because `\\?\` switches Windows path normalisation off, the `..`
+    survives `.resolve()` as a literal component, and `banked` stays among the `.parents`. That
+    refusal protected nothing. The same switched-off normalisation means Windows cannot OPEN such a
+    path -- `OSError` [Errno 22] / WinError 123, at `mkdir`, at `write_text` and at a raw `open` alike
+    -- so it is not a write vector in either order; it is pinned as a non-vector by
+    tests/...::test_extended_length_dotdot_is_not_writable_at_all. A `..` in an ORDINARY path still
+    normalises and still reaches the banked directory, and is still refused, under either order.
+
+    Note this helper is NOT what refuses the plain `\\?\C:\...` spelling: the UNC fail-closed rule
+    below subsumes that, since `Path(r"\\?\C:\x").drive` is `\\?\C:` and already starts with `\\`.
+    What it buys is that a LEGITIMATE extended-length path -- how Windows addresses anything past
+    MAX_PATH, which the deeply nested worktrees this repo runs in get close to -- is not over-refused.
+    That is the one behaviour that distinguishes keeping it from deleting it, and it is pinned by
+    tests/...::test_an_extended_length_path_outside_the_banked_dir_is_still_allowed."""
     s = str(p)
     if s.startswith(_EXT_UNC_PREFIX):
         return Path("\\\\" + s[len(_EXT_UNC_PREFIX):])
@@ -288,17 +303,30 @@ def _resolves_inside_banked(out_path: Path) -> bool:
       suite green while the guard silently stops firing -- see
       tests/...::test_write_artifact_refuses_through_a_junctioned_parent, which is the mutant's
       counterexample.
-    * SPELLINGS THAT NAME THE SAME FILE MUST NOT COMPARE UNEQUAL. `\\?\C:\x` is handled by
-      `_strip_extended_prefix`. `\\localhost\C$\x` and `\\127.0.0.1\C$\x` also name the same file as
+    * SPELLINGS THAT NAME THE SAME FILE MUST NOT COMPARE UNEQUAL. `\\?\C:\x`, and the volume aliases
+      `\\?\GLOBALROOT\GLOBAL??\C:\x` and `\\?\Volume{GUID}\x`, are handled by `.resolve()` followed by
+      `_strip_extended_prefix` -- IN THAT ORDER, for the reason spelled out in that helper's docstring;
+      the reverse order left the two volume aliases as live write vectors into this very directory.
+      `\\localhost\C$\x` and `\\127.0.0.1\C$\x` also name the same file as
       `C:\x`, but nothing in pathlib maps a UNC admin share back to its drive letter, and no rule
       decides which hostnames mean "this machine" (an alias, the machine's own name, `::1`, a
       genuinely remote host that happens to be spelled the same way). Containment across the two
       naming universes is therefore UNDECIDABLE, so a UNC target measured against a drive-letter
       referent returns True: FAIL CLOSED. An unnecessary refusal costs a re-run with a different
-      `--out`; a write into the banked tree is not recoverable. When both sides are UNC (repo hosted
-      on a share) the ordinary comparison applies and nothing is over-refused."""
-    target = _strip_extended_prefix(out_path).resolve()
-    banked = _strip_extended_prefix(BANKED_DIR).resolve()
+      `--out`; a write into the banked tree is not recoverable.
+
+      The rule is an XOR and BOTH of its terms are load-bearing. When both sides are UNC (repo hosted
+      on a share) the ordinary comparison applies and nothing is over-refused -- widening it to `or`,
+      or dropping the referent term, would refuse EVERY write on such a checkout, and left the whole
+      suite green until tests/...::test_a_unc_referent_still_decides_a_target_on_the_same_share
+      existed (mutations M23/M24). ⚠ That branch's own limit, since it is now claimed explicitly: with
+      both sides UNC the comparison is ordinary string containment, and host aliases
+      (`\\server\...` vs `\\10.0.0.5\...`) are as undecidable there as against a drive letter, so it
+      can UNDER-refuse where the drive-letter branch fails closed. Unreachable here -- BANKED_DIR is
+      derived from `Path(__file__).resolve().parents[1]` and is always drive-lettered -- and there is
+      no correct answer to hardcode."""
+    target = _strip_extended_prefix(out_path.resolve())
+    banked = _strip_extended_prefix(BANKED_DIR.resolve())
     if target.drive.startswith("\\\\") != banked.drive.startswith("\\\\"):
         return True
     return target == banked or banked in target.parents

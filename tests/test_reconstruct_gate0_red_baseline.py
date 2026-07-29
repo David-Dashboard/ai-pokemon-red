@@ -476,33 +476,67 @@ def test_no_mode_flag_combination_can_write_into_banked_dir(tmp_path, monkeypatc
 
 # ---- the banked guard vs Windows path spellings that name the same file ---------------------------
 #
-# PR #196's review demonstrated FOUR spellings that evaded the guard and PROVABLY landed the file in
-# the protected directory: `Path.resolve()` preserves a caller-supplied `\\?\` prefix, and treats an
-# admin share as a distinct root, so both sides of the comparison disagreed while the OS opened the
-# same file. Closed by tools/reconstruct_gate0_red_baseline.py::_strip_extended_prefix (the `\\?\`
-# family) plus the UNC-vs-drive-letter fail-closed rule in _resolves_inside_banked (the admin-share
-# family, which is not decidable by normalisation -- see that docstring).
+# PR #196's review found SIX spellings that evaded the guard and PROVABLY landed the file in the
+# protected directory, over two rounds. Four in the first round: `Path.resolve()` preserves a
+# caller-supplied `\\?\` prefix, and treats an admin share as a distinct root, so both sides of the
+# comparison disagreed while the OS opened the same file. Two more in the second, and those were
+# opened by the FIX for the first four -- `\\?\GLOBALROOT\GLOBAL??\C:\...` and
+# `\\?\Volume{GUID}\...` carry the bare `\\?\` prefix but do not continue with a drive letter, so
+# stripping it left a RELATIVE path that `.resolve()` then anchored to the CWD.
+#
+# Closed by tools/reconstruct_gate0_red_baseline.py::_strip_extended_prefix applied AFTER `.resolve()`
+# (the whole `\\?\` family, volume aliases included) plus the UNC-vs-drive-letter fail-closed rule in
+# _resolves_inside_banked (the admin-share family, which is not decidable by normalisation -- see
+# that docstring). The ORDER is the load-bearing part and is pinned by the two new entries below.
 
-# The four spellings the review demonstrated reaching the banked directory, plus the device path it
-# found already refused (kept so a regression in either direction shows up).
+# Every spelling demonstrated to reach the banked directory, plus the device path found already
+# refused (kept so a regression in either direction shows up). `globalroot` and `volume_guid` were
+# live write vectors in BOTH filesystem states until the strip/resolve order was swapped -- they are
+# the two that the reverse order re-opens, so they are what pins the ordering. A LITERAL list: never
+# derived from anything in the product module (see PAID_MODES and the F1 note above for why).
 ALIAS_SPELLINGS = ["extended_length", "extended_unc", "admin_share_host", "admin_share_ip",
-                   "device_path"]
-# Not an alias -- see test_extended_length_dotdot_is_not_writable_at_all. Refused anyway, and listed
-# separately so nobody reads it as a demonstrated write vector.
-ALL_SPELLINGS = ALIAS_SPELLINGS + ["extended_length_dotdot"]
+                   "device_path", "globalroot", "volume_guid"]
+# `extended_length_dotdot` is deliberately NOT here. The guard ALLOWS it, and that is correct: it is
+# not an alias and not a write vector -- Windows refuses to open it at all. See
+# test_extended_length_dotdot_is_not_writable_at_all, which is what licenses leaving it allowed.
+
+
+def _volume_guid_prefix(drive: str) -> str | None:
+    r"""`\\?\Volume{GUID}\` for `<drive>:` per `mountvol`, or None if it reports none."""
+    if os.name != "nt":
+        return None
+    try:
+        r = subprocess.run(["mountvol", f"{drive}:", "/L"], capture_output=True, text=True)
+    except OSError:
+        return None
+    for line in (r.stdout + r.stderr).splitlines():
+        line = line.strip()
+        if line.startswith("\\\\?\\Volume{"):
+            return line if line.endswith("\\") else line + "\\"
+    return None
 
 
 def _spellings(directory: Path, name: str) -> dict[str, str]:
-    r"""Exotic Windows spellings of `<directory>\<name>`. All but the last name the same file."""
+    r"""Exotic Windows spellings of `<directory>\<name>`.
+
+    All name the same file except `extended_length_dotdot`, which names nothing openable. The
+    `volume_guid` key is absent when `mountvol` reports no GUID for the drive -- callers skip."""
     drive, rest = str(directory)[0], str(directory)[3:]
-    return {
+    out = {
         "extended_length":        f"\\\\?\\{drive}:\\{rest}\\{name}",
         "extended_unc":           f"\\\\?\\UNC\\localhost\\{drive}$\\{rest}\\{name}",
         "admin_share_host":       f"\\\\localhost\\{drive}$\\{rest}\\{name}",
         "admin_share_ip":         f"\\\\127.0.0.1\\{drive}$\\{rest}\\{name}",
         "device_path":            f"\\\\.\\{drive}:\\{rest}\\{name}",
+        # The two volume aliases. Both are spelled `\\?\...` but neither continues with a drive
+        # letter, which is exactly what made stripping the prefix BEFORE resolving unsafe.
+        "globalroot":             f"\\\\?\\GLOBALROOT\\GLOBAL??\\{drive}:\\{rest}\\{name}",
         "extended_length_dotdot": f"\\\\?\\{drive}:\\{rest}\\..\\{directory.name}\\{name}",
     }
+    guid = _volume_guid_prefix(drive)
+    if guid:
+        out["volume_guid"] = f"{guid}{rest}\\{name}"
+    return out
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
@@ -512,8 +546,11 @@ def test_the_exotic_spellings_really_are_aliases_not_nonsense_paths(tmp_path):
     one): each spelling must produce a file readable at the plain path."""
     plain = tmp_path / "not_banked"
     plain.mkdir()
+    sp = _spellings(plain, "probe.json")
     for label in ALIAS_SPELLINGS:
-        Path(_spellings(plain, "probe.json")[label]).write_text(label, encoding="utf-8")
+        if label not in sp:
+            continue  # only `volume_guid`, and only when mountvol reports no GUID for this drive
+        Path(sp[label]).write_text(label, encoding="utf-8")
         assert (plain / "probe.json").read_text(encoding="utf-8") == label, label
         (plain / "probe.json").unlink()
 
@@ -521,28 +558,117 @@ def test_the_exotic_spellings_really_are_aliases_not_nonsense_paths(tmp_path):
 @pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
 def test_extended_length_dotdot_is_not_writable_at_all(tmp_path):
     r"""`\\?\` switches OFF Windows path normalisation, so a `..` inside one is a literal component,
-    not a parent reference -- and the open fails outright. Pinned because it bounds the claim: the
-    module strips the prefix BEFORE resolving (so the guard sees the collapsed path and refuses), but
-    the reverse order would NOT have been a write vector either. It is a defensiveness difference, not
-    a closed hole; the four entries in ALIAS_SPELLINGS are the closed holes."""
+    not a parent reference -- and the open fails outright, at every stage.
+
+    This test is what licenses the guard ALLOWING this spelling. `_strip_extended_prefix` runs after
+    `.resolve()` (see its docstring: the reverse order left two volume aliases as live write vectors),
+    and a consequence of that order is that a `..` inside a `\\?\` path is no longer collapsed before
+    the containment check, so the guard returns False here where the reverse order returned True.
+    That is a lost OVER-refusal, not a lost protection: there is no way to write through this
+    spelling, so there is nothing to protect. A `..` in an ORDINARY path still normalises, still
+    reaches the banked directory, and is still refused -- pinned separately by
+    test_write_artifact_refuses_a_dotdot_path_that_only_resolves_into_the_banked_dir."""
     plain = tmp_path / "not_banked"
     plain.mkdir()
-    with pytest.raises(OSError):
-        Path(_spellings(plain, "probe.json")["extended_length_dotdot"]).write_text("x",
-                                                                                  encoding="utf-8")
+    p = Path(_spellings(plain, "probe.json")["extended_length_dotdot"])
+    for attempt in (lambda: p.parent.mkdir(parents=True, exist_ok=True),
+                    lambda: p.write_text("x", encoding="utf-8"),
+                    lambda: open(str(p), "w").close()):
+        with pytest.raises(OSError) as exc:
+            attempt()
+        assert exc.value.errno == 22, exc.value          # EINVAL / WinError 123
+    assert not (plain / "probe.json").exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
-@pytest.mark.parametrize("spelling", ALL_SPELLINGS)
+def test_write_artifact_refuses_a_dotdot_path_that_only_resolves_into_the_banked_dir(tmp_path,
+                                                                                    monkeypatch):
+    """The `..` case that IS a write vector: an ordinary path, which Windows does normalise."""
+    banked = tmp_path / "banked"
+    banked.mkdir()
+    (tmp_path / "sibling").mkdir()
+    monkeypatch.setattr(m, "BANKED_DIR", banked)
+    out = tmp_path / "sibling" / ".." / "banked" / "human_metrics.json"
+    with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
+        m.write_artifact({"arm": "red"}, out)
+    assert list(banked.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+@pytest.mark.parametrize("spelling", ALIAS_SPELLINGS)
 def test_write_artifact_refuses_exotic_windows_spellings_of_the_banked_dir(tmp_path, monkeypatch,
                                                                           spelling):
     banked = tmp_path / "banked"
     banked.mkdir()
     monkeypatch.setattr(m, "BANKED_DIR", banked)
-    out = Path(_spellings(banked, "human_metrics.json")[spelling])
+    sp = _spellings(banked, "human_metrics.json")
+    if spelling not in sp:
+        pytest.skip("mountvol reports no volume GUID for this drive")
     with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
-        m.write_artifact({"arm": "red"}, out)
+        m.write_artifact({"arm": "red"}, Path(sp[spelling]))
     assert list(banked.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+@pytest.mark.parametrize("spelling", ["globalroot", "volume_guid"])
+def test_a_volume_alias_outside_the_banked_dir_is_still_allowed(tmp_path, monkeypatch, spelling):
+    r"""The volume aliases must be DECIDED, not blanket-refused.
+
+    `.resolve()` collapses `\\?\GLOBALROOT\GLOBAL??\C:\x` and `\\?\Volume{GUID}\x` to `\\?\C:\x`, so
+    after the strip the guard can compare them properly and correctly allow one aimed elsewhere. The
+    alternative fix considered -- keeping the strip first but declining to strip when that would
+    produce a relative path -- closes the same two holes but fails THIS test, because it leaves the
+    raw `\\?\` prefix on and the UNC fail-closed rule then refuses a perfectly decidable path. That
+    rule exists for the genuinely undecidable admin-share case; spending it here would be a guess
+    where an answer is available."""
+    banked = tmp_path / "banked"
+    monkeypatch.setattr(m, "BANKED_DIR", banked)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    sp = _spellings(elsewhere, "human_metrics.json")
+    if spelling not in sp:
+        pytest.skip("mountvol reports no volume GUID for this drive")
+    m.write_artifact({"arm": "red"}, Path(sp[spelling]))
+    assert json.loads((elsewhere / "human_metrics.json").read_text(encoding="utf-8")) == {"arm":
+                                                                                          "red"}
+    assert not banked.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
+def test_a_unc_referent_still_decides_a_target_on_the_same_share(tmp_path, monkeypatch):
+    r"""The fail-closed rule is an XOR, and the REFERENT side of it is load-bearing.
+
+    `_resolves_inside_banked` refuses when EXACTLY ONE side is UNC, because containment across the
+    two naming universes is undecidable. When BOTH sides are UNC -- the repo itself hosted on a
+    share -- the ordinary comparison applies and nothing is over-refused. Nothing pinned that until
+    this test: every other guard test hands `BANKED_DIR` a drive-lettered `tmp_path`, so the
+    referent's half of the XOR is never exercised, and BOTH `... or ...` and dropping the referent
+    term entirely left the whole suite green (mutation M23, M24) while silently making the tool
+    refuse every write on a share-hosted checkout.
+
+    Scope limit, stated because this test does NOT close it: with both sides UNC the comparison is an
+    ordinary string containment, and UNC host aliases (`\\server\...` vs `\\10.0.0.5\...`) are exactly
+    as undecidable there as they are against a drive letter -- so the both-UNC branch can UNDER-refuse
+    in a way the drive-letter branch fails closed on. Unreachable on this repo, whose BANKED_DIR is
+    always drive-lettered (`Path(__file__).resolve().parents[1]`), and there is no correct answer to
+    hardcode; the alternative is refusing every UNC-vs-UNC comparison, which is what M23/M24 do and
+    what this test forbids."""
+    banked_plain = tmp_path / "banked"
+    banked_plain.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    drive = str(tmp_path)[0]
+    monkeypatch.setattr(m, "BANKED_DIR",
+                        Path(f"\\\\localhost\\{drive}$\\{str(banked_plain)[3:]}"))
+    # same share, INSIDE the referent -> ordinary comparison decides it, and refuses
+    with pytest.raises(SystemExit, match="inside the banked Red baseline directory"):
+        m.write_artifact({"arm": "red"},
+                         Path(_spellings(banked_plain, "human_metrics.json")["admin_share_host"]))
+    assert list(banked_plain.iterdir()) == []
+    # same share, OUTSIDE the referent -> must be ALLOWED, not swept up by the fail-closed rule
+    m.write_artifact({"arm": "red"},
+                     Path(_spellings(elsewhere, "human_metrics.json")["admin_share_host"]))
+    assert json.loads((elsewhere / "human_metrics.json").read_text(encoding="utf-8")) == {"arm": "red"}
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-only path spellings")
@@ -587,7 +713,7 @@ def test_write_artifact_refuses_through_a_junctioned_parent(tmp_path, monkeypatc
     Not hypothetical: `runs/` on this machine already holds 26 NTFS junctions pointing at
     `D:\ai_pokemon_runs\` (bulk run data moved to another volume for space), so Gate-0 directories are
     obvious future candidates for the same treatment. The line that makes this work is
-    `banked = _strip_extended_prefix(BANKED_DIR).resolve()` -- the `.resolve()` on the REFERENT side.
+    `banked = _strip_extended_prefix(BANKED_DIR.resolve())` -- the `.resolve()` on the REFERENT side.
     Drop it and the whole suite stays green (1703 passed, 18 skipped) while the guard silently fails
     open here, because every OTHER guard test monkeypatches BANKED_DIR to an already-resolved
     `tmp_path`, where that `.resolve()` is a no-op. This test is that mutant's only counterexample."""

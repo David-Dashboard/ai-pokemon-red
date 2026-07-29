@@ -238,12 +238,20 @@ real and none has a home anywhere else:**
   the rule stops matching), **#195's holds**, **#196's holds** — including when the banked directory
   itself is a junction. ⛔ **Not doable while #195/#197 are in flight** (a cross-PR extraction would
   collide with both); do it after they land.
-- **The `\\?\` / UNC admin-share hole is FAMILY-WIDE, and #196 closed only its own copy.** Four
-  spellings — `\\?\C:\…`, `\\?\UNC\localhost\C$\…`, `\\localhost\C$\…`, `\\127.0.0.1\C$\…` — reach a
-  protected directory because `Path.resolve()` **preserves** a caller-supplied `\\?\` prefix and
-  treats an admin share as a distinct root. #196 now strips the prefix before resolving and fails
-  closed on a UNC-vs-drive-letter comparison. **#195's `_under_real_path` (`os.path.normcase(os.path.realpath(…))`)
-  has the identical hole, verified** — the same fix belongs there. Nobody types these by accident, so
+- **The `\\?\` / UNC admin-share hole is FAMILY-WIDE, and #196 closed only its own copy.** **SIX**
+  spellings reach a protected directory: `\\?\C:\…`, `\\?\UNC\localhost\C$\…`, `\\localhost\C$\…`,
+  `\\127.0.0.1\C$\…` (because `Path.resolve()` **preserves** a caller-supplied `\\?\` prefix and
+  treats an admin share as a distinct root), plus the two **volume aliases**
+  `\\?\GLOBALROOT\GLOBAL??\C:\…` and `\\?\Volume{GUID}\…`. ⚠ **The volume-alias pair is opened by the
+  NAIVE FIX for the first four** — they carry the bare `\\?\` prefix but do not continue with a drive
+  letter, so stripping it leaves a **relative** path that `.resolve()` anchors to the CWD. **All six
+  are closed in #196**, by stripping the prefix **after** `.resolve()` (never before) plus a
+  UNC-vs-drive-letter fail-closed rule. **#195's `_under_real_path`
+  (`os.path.normcase(os.path.realpath(…))`) has the identical hole, verified** — and it must be fixed
+  in the resolve-then-strip direction, or fixing the first four re-opens the volume-alias pair.
+  ⚠ **#195 and #196 currently carry DIFFERENT fixes for one root cause** (#195 detects the
+  strip-produced-relative condition inside `_is_unc_or_device_path`; #196 reorders). A shared helper
+  is deliberately deferred until both land — see the item above. Nobody types these by accident, so
   this is hardening, not a live risk.
 - **One line at P1c in #194's v2 runbook:** if the live v2 capture mis-detects, recovery is
   `tools/reconstruct_gate0_red_baseline.py --mode paid_gate0_v2`, and **that use needs its own entry
