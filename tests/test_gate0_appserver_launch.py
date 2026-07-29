@@ -4,6 +4,8 @@ credit-guard/config-builder tests exercise pure functions/threads directly. Mirr
 discipline of tests/test_gate0_appserver_client.py."""
 import json
 import sys
+import threading
+import time
 
 import pytest
 
@@ -13,6 +15,8 @@ from tools.gate0_appserver_launch import (
     ObservingGate0Client,
     StubAppServerPeer,
     _extract_thread_id,
+    _extract_turn_id,
+    _notification_turn_id,
     _resolve_mcp_server,
     app_server_usage_notification_to_credit_event,
     build_overrides,
@@ -536,3 +540,58 @@ def test_resolve_mcp_server_docker_requires_image():
         docker_tool = None
     with pytest.raises(SystemExit):
         _resolve_mcp_server(Args())
+
+
+# ---------------------------------------------------------------------------
+# wait_for_notification: the SECOND-TURN rescan bug. Before the turn-id filter, a second
+# turn/start on the same thread returned turn 1's still-present terminal notification instantly
+# and never waited for turn 2. Shapes are copied from the real 2026-07-24 paid Red arm transcript
+# (runs/gate0_paid/red/transcript.raw_appserver.jsonl).
+# ---------------------------------------------------------------------------
+
+_TURN1_END = {"method": "turn/completed",
+              "params": {"threadId": "thr_1", "turn": {"id": "turn_1", "status": "completed"}}}
+_TURN2_END = {"method": "turn/completed",
+              "params": {"threadId": "thr_1", "turn": {"id": "turn_2", "status": "completed"}}}
+
+
+def test_wait_for_notification_second_turn_does_not_return_turn_ones_terminal_note():
+    client = _client_with_notifications([_TURN1_END])
+    started = time.monotonic()
+    assert client.wait_for_notification(("turn/completed",), timeout=0.3, turn_id="turn_2") is None
+    assert time.monotonic() - started >= 0.25  # it actually WAITED instead of matching turn 1
+
+
+def test_wait_for_notification_second_turn_returns_turn_twos_note_once_it_arrives():
+    client = _client_with_notifications([_TURN1_END])
+
+    def _late_arrival():
+        time.sleep(0.1)
+        client.notifications.append(_TURN2_END)
+
+    thread = threading.Thread(target=_late_arrival, daemon=True)
+    thread.start()
+    note = client.wait_for_notification(("turn/completed",), timeout=5.0, turn_id="turn_2")
+    thread.join(timeout=5.0)
+    assert note is not None and note["params"]["turn"]["id"] == "turn_2"
+
+
+def test_wait_for_notification_without_a_turn_id_keeps_the_unscoped_behaviour():
+    client = _client_with_notifications([_TURN1_END])
+    note = client.wait_for_notification(("turn/completed",), timeout=0.3)
+    assert note is not None and note["params"]["turn"]["id"] == "turn_1"
+
+
+def test_extract_turn_id_reads_the_real_turn_start_response_shape():
+    assert _extract_turn_id({"turn": {"id": "019f946b-5d5a-7593-80d9-04990927728b",
+                                      "status": "inProgress"}}) == "019f946b-5d5a-7593-80d9-04990927728b"
+    assert _extract_turn_id({"turnId": "t2"}) == "t2"
+    assert _extract_turn_id({"nothing": "here"}) is None
+
+
+def test_notification_turn_id_reads_both_the_nested_and_flat_spellings():
+    assert _notification_turn_id(_TURN1_END) == "turn_1"
+    # thread/tokenUsage/updated uses the flat `turnId` spelling in the same transcript.
+    assert _notification_turn_id({"method": "thread/tokenUsage/updated",
+                                  "params": {"threadId": "thr_1", "turnId": "turn_9"}}) == "turn_9"
+    assert _notification_turn_id({"method": "turn/completed", "params": {}}) is None

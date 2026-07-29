@@ -129,11 +129,19 @@ class ObservingGate0Client(Gate0AppServerClient):
             self.notifications.append(message)
         super().handle_message(message)
 
-    def wait_for_notification(self, methods, timeout: float) -> dict | None:
+    def wait_for_notification(self, methods, timeout: float, turn_id: str | None = None) -> dict | None:
+        """`turn_id` scopes the match to ONE turn. Without it this rescans the WHOLE
+        `self.notifications` list from index 0 on every poll, so a SECOND `turn/start` on the same
+        thread returns turn 1's terminal notification instantly (it is still in the list) and never
+        waits for turn 2 -- see test_wait_for_notification_second_turn_*. Filtering on the turn id
+        rather than a start offset is deliberate: an offset is positional and rots the moment
+        anything else appends. Left optional/None-default so every existing single-turn caller
+        keeps its current behaviour unchanged."""
         deadline = time.monotonic() + timeout
         while True:
             for note in self.notifications:
-                if note.get("method") in methods:
+                if note.get("method") in methods and (
+                        turn_id is None or _notification_turn_id(note) == turn_id):
                     return note
             if time.monotonic() >= deadline:
                 return None
@@ -248,6 +256,34 @@ def _extract_thread_id(thread_start_result: dict) -> str:
     raise RuntimeError(f"could not find a thread id in thread/start result: {thread_start_result!r}")
 
 
+def _extract_turn_id(turn_start_result: dict) -> str | None:
+    """The turn id `turn/start` hands back, used to scope wait_for_notification to ONE turn.
+    Ground truth (runs/gate0_paid/red/transcript.raw_appserver.jsonl, the 2026-07-24 paid Red arm):
+    the `turn/start` RESPONSE is `{"turn": {"id": "019f946b-5d5a-...", "status": "inProgress", ...}}`
+    and the matching `turn/completed` NOTIFICATION is `{"params": {"threadId": ..., "turn":
+    {"id": <same id>, "status": "completed", ...}}}`. Returns None (never raises) when no id is
+    present -- callers then fall back to the unscoped, single-turn-only behaviour rather than
+    hanging forever on a filter that can never match."""
+    turn = turn_start_result.get("turn") if isinstance(turn_start_result, dict) else None
+    if isinstance(turn, dict) and isinstance(turn.get("id"), str):
+        return turn["id"]
+    if isinstance(turn_start_result, dict) and isinstance(turn_start_result.get("turnId"), str):
+        return turn_start_result["turnId"]
+    return None
+
+
+def _notification_turn_id(note: dict) -> str | None:
+    """The turn id carried by a server->client notification (`params.turn.id`, with `params.turnId`
+    as the flat fallback -- `thread/tokenUsage/updated` uses that spelling in the same transcript)."""
+    params = note.get("params") or {}
+    turn = params.get("turn")
+    if isinstance(turn, dict) and isinstance(turn.get("id"), str):
+        return turn["id"]
+    if isinstance(params.get("turnId"), str):
+        return params["turnId"]
+    return None
+
+
 def _item_has_error(item: dict) -> bool:
     """A terminal item can report `status:"completed"` and STILL carry a truthy `error`/`isError`
     -- the exact "cancel-with-error" shape (openai/codex#16685) this harness exists to tell apart
@@ -303,8 +339,9 @@ def run_one_tool_call_turn(client: ObservingGate0Client, *, cwd: str, prompt: st
     thread_result = client.start_thread(cwd=cwd, approvals_reviewer="user")
     thread_id = _extract_thread_id(thread_result)
     turn_params = build_turn_start_request(thread_id, [{"type": "text", "text": prompt}])
-    client.send_request("turn/start", turn_params)
-    end_note = client.wait_for_notification(DEFAULT_TURN_END_METHODS, timeout=turn_timeout_s)
+    turn_result = client.send_request("turn/start", turn_params)
+    end_note = client.wait_for_notification(DEFAULT_TURN_END_METHODS, timeout=turn_timeout_s,
+                                            turn_id=_extract_turn_id(turn_result))
     result = score_turn(client, tool_name=tool_name)
     if end_note is None:
         result["notes"].append(f"no terminal notification observed within {turn_timeout_s}s")
@@ -723,9 +760,10 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     thread_id = _extract_thread_id(thread_result)
                     turn_params = build_turn_start_request(thread_id, [{"type": "text", "text": args.prompt}])
-                    client.send_request("turn/start", turn_params)
-                    end_note = client.wait_for_notification(DEFAULT_TURN_END_METHODS,
-                                                             timeout=args.turn_timeout_s)
+                    turn_result = client.send_request("turn/start", turn_params)
+                    end_note = client.wait_for_notification(
+                        DEFAULT_TURN_END_METHODS, timeout=args.turn_timeout_s,
+                        turn_id=_extract_turn_id(turn_result))
                     result = score_turn(client, tool_name=args.tool_name)
                     if end_note is None:
                         result.setdefault("notes", []).append(
