@@ -221,6 +221,44 @@ inside #180.)
   blob's hash moves — P4's `expected_launcher_sha256` re-freeze must be computed AFTER #188 merges, which
   also sequences the held #181.** Judge it on its merits; do not merge it because this file mentions it.
 
+**TRACKED FOLLOW-UPS from PR #196's adversarial review — none of them block #196, all of them are
+real and none has a home anywhere else:**
+- **A reconstructed paid-mode artifact can land where the frozen source-pins do not point, and
+  nothing says so until SCORING.** `tools/reconstruct_gate0_red_baseline.py` deliberately does NOT
+  copy the `require_fixture_points_here` / `pinned_artifact_path` cross-check that
+  `tools/capture_gate0_baseline_red.py` (#195) and `tools/gate0_appserver_arm.py` (#192) both carry —
+  a third copy would turn their known-temporary duplication into a three-way un-drift. The cost is
+  that this is the **same late-discovery class the `--mode` change exists to eliminate**, just moved
+  from the mode stamp to the output path. Acceptable while the shared helper is pending; wire it up
+  the moment that helper exists. Not "a one-liner later" — a tracked residual.
+- **Lift the banked-path guard into shared code — from #196's implementation, not #197's.** Three PRs
+  now carry three different rules for "is this write target inside a protected tree", and against the
+  26 real junctions under `runs/` they give three different answers: **#197's is DEFEATED** (it
+  blanket-refuses anything under `runs/`, and `resolve()` walks a junction straight off the tree, so
+  the rule stops matching), **#195's holds**, **#196's holds** — including when the banked directory
+  itself is a junction. ⛔ **Not doable while #195/#197 are in flight** (a cross-PR extraction would
+  collide with both); do it after they land.
+- **The `\\?\` / UNC admin-share hole is FAMILY-WIDE, and #196 closed only its own copy.** **SIX**
+  spellings reach a protected directory: `\\?\C:\…`, `\\?\UNC\localhost\C$\…`, `\\localhost\C$\…`,
+  `\\127.0.0.1\C$\…` (because `Path.resolve()` **preserves** a caller-supplied `\\?\` prefix and
+  treats an admin share as a distinct root), plus the two **volume aliases**
+  `\\?\GLOBALROOT\GLOBAL??\C:\…` and `\\?\Volume{GUID}\…`. ⚠ **The volume-alias pair is opened by the
+  NAIVE FIX for the first four** — they carry the bare `\\?\` prefix but do not continue with a drive
+  letter, so stripping it leaves a **relative** path that `.resolve()` anchors to the CWD. **All six
+  are closed in #196**, by stripping the prefix **after** `.resolve()` (never before) plus a
+  UNC-vs-drive-letter fail-closed rule. **#195's `_under_real_path`
+  (`os.path.normcase(os.path.realpath(…))`) has the identical hole, verified** — and it must be fixed
+  in the resolve-then-strip direction, or fixing the first four re-opens the volume-alias pair.
+  ⚠ **#195 and #196 currently carry DIFFERENT fixes for one root cause** (#195 detects the
+  strip-produced-relative condition inside `_is_unc_or_device_path`; #196 reorders). A shared helper
+  is deliberately deferred until both land — see the item above. Nobody types these by accident, so
+  this is hardening, not a live risk.
+- **One line at P1c in #194's v2 runbook:** if the live v2 capture mis-detects, recovery is
+  `tools/reconstruct_gate0_red_baseline.py --mode paid_gate0_v2`, and **that use needs its own entry
+  in `reports/2026-07-28-gate0-v2-deviations.md`** (P1c names its satisfaction method as *"a FRESH
+  CAPTURE … producing a new artifact"*, and a reconstruction is not literally that). The tension is
+  recorded in the tool's own docstring; the runbook is where the person who needs it will be reading.
+
 **OPERATIONAL FACTS a future session most needs (verified this session, quote these not the folklore):**
 10. **The `watch` contract, precisely.** It is `watch: Optional[dict]` (`core/perception_plugin.py:74`),
     de-facto `name -> absolute address`; there is no `dict[str, int]` annotation anywhere on the path.
