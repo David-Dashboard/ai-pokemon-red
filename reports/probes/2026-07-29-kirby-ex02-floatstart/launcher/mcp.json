@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "kirby": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+        "-v", "/mnt/e/AI_Personas/10_pokemon_and_chess_and_office/ai-pokemon-red/roms:/app/roms:ro",
+        "-v", "/mnt/e/AI_Personas/10_pokemon_and_chess_and_office/ai-pokemon-red/runs:/app/runs",
+        "gb-mcp-world", "--game", "kirby_dreamland",
+        "--init-state", "REPLACE_WITH_FLOAT_ISLANDS_STATE",
+        "--out", "runs/probe_ex02_kirby_stage3_floatstart/world", "--record", "--keep-frames"]
+    }
+  }
+}

@@ -23,6 +23,9 @@ Clouds) on a budget framed as "$5". A FAIL is near-certain, would cost far more 
 would re-measure exactly what longhaul already measured. See §5 for the one variant that is worth
 running, which costs $0 to set up.
 
+**→ §6 (added 2026-07-29, same day) IS that re-scope, approved by David: the Float-Islands capture
+procedure (verified live) + launch-ready assets, one paid command away.**
+
 ---
 
 ## 1. Rig verification — executed today at $0
@@ -204,3 +207,202 @@ the still-open Stage-3 → Stage-4 bound asks for.
 
 **My recommendation:** capture the Float Islands savestate first ($0), then re-scope. Running the
 cold-start version now buys a predictable FAIL at 20–200x the stated budget.
+
+---
+
+# §6 AMENDMENT (2026-07-29, later the same day): the float-start variant, launch-ready
+
+David approved the float-start re-scope and the probe spend at the §4 cap (~$10–15). This section
+adds (a) the verified capture procedure for the Float Islands savestate, and (b) the launch assets,
+every command executed today up to — and only up to — the paid line. **$0 spent.** Assets live in
+`reports/probes/2026-07-29-kirby-ex02-floatstart/launcher/` (`CLAUDE.md` brief, `mcp.json`
+template, `run.sh`, `preflight.sh`). Nothing lands under `runs/` until launch step 1 in §6.4.
+
+## 6.1 Capture procedure (David, ~20 min, desktop)
+
+⚠ **Do not run `record.py` from this checkout as it sits.** The main checkout is currently on
+branch `fix/miniwob-key-name-press`, whose `record.py` is 25 lines behind `origin/main` and still
+has the pre-fix checkpoint path — **pressing C crashes it** (reproduced live today:
+`FileNotFoundError: runs\capcheck\checkpoint_01.state`). The command in step 2 therefore runs the
+#199 worktree's copy, byte-identical to `origin/main`. Once a checkout is back on current `main`,
+plain `record.py` is fine.
+
+1. On the desktop, open PowerShell:
+   `cd E:\AI_Personas\10_pokemon_and_chess_and_office\ai-pokemon-red`
+   `$env:UV_PROJECT_ENVIRONMENT=".venv-win"; $env:UV_NATIVE_TLS="true"`
+2. Launch the recorder (one line):
+   `uv run --frozen python E:\AI_Personas\10_pokemon_and_chess_and_office\wt-kirby-probe\record.py --rom "roms\Kirby's Dream Land (USA, Europe).gb" --name kirby_floatislands_human --mode human --watch "hp=0xD086,stage=0xD03B"`
+   A PyBoy window opens at the Kirby title screen. Output dir (fresh dated dir = allowed append):
+   `runs\<today>_kirby_floatislands_human\`. Add `--sound` for audio if you want it (untested here).
+3. Controls: **WASD** = move, **J** = A (jump/float), **K** = B (inhale/spit), **Enter** = Start.
+   Press Enter to start the game.
+4. Play Green Greens; beat Whispy Woods. At the **start of Castle Lololo** press **C** once —
+   insurance checkpoint; the console prints `[checkpoint -> ...checkpoint_01.state]`.
+5. Play Castle Lololo; beat Lololo & Lalala.
+6. The moment **Float Islands begins** — Kirby standing, under your control, vitality bar full —
+   press **C**. Play a few seconds more and press **C** again at another clean spot (backup).
+7. Press **ESC** to quit; the console prints `saved N steps`.
+8. Verify each Float Islands candidate (swap the date and `NN`); want **`stage=2 hp=6`**
+   (hp 5 acceptable; `stage≠2` or `hp=0` = wrong moment, try the other checkpoint):
+   `uv run --frozen python -c "import sys; from pyboy import PyBoy; pb = PyBoy(sys.argv[1], window='null'); pb.load_state(open(sys.argv[2], 'rb')); pb.tick(2); print('stage=%d hp=%d' % (pb.memory[0xD03B], pb.memory[0xD086])); pb.stop(save=False)" "roms\Kirby's Dream Land (USA, Europe).gb" "runs\2026-XX-XX_kirby_floatislands_human\checkpoint_NN.state"`
+9. If no candidate passes: relaunch the step-2 command with
+   `--load-state runs\<dir>\checkpoint_01.state` appended — it appends to the same dir and the
+   checkpoint numbering continues — and recapture from Castle Lololo.
+10. Report the passing checkpoint's path plus its printed `stage=/hp=` line. That exact file
+    becomes the probe's `--init-state`; do not rename or move it.
+
+## 6.2 What was executed today to verify §6.1 (all $0, scratch dirs, nothing in `runs/`)
+
+| Check | Receipt |
+|---|---|
+| `uv run --frozen python record.py --help` from the main checkout | clean, full flag list |
+| Pre-fix `record.py` (main checkout's branch) with a **real C keypress** in a live window | **CRASHED** — `FileNotFoundError: runs\capcheck\checkpoint_01.state` — this is why step 2 pins the worktree copy |
+| Fixed (`origin/main`) `record.py`, live window, real keypresses | C → `checkpoint_01.state` (143,103 B); C again → `checkpoint_02.state`; ESC → clean exit, `saved 210 steps` |
+| `meta.json` watch persistence (the PR #180-era fix) | `"watch": {"hp": "0xD086", "stage": "0xD03B"}` + `watch_arg` present |
+| `oracle.jsonl` rows | `{"step": 0, ..., "watch": {"hp": 0, "stage": 0}}` (title screen — correct cold-boot signature) |
+| Step-8 verify one-liner, byte-for-byte | fresh checkpoint → `stage=0 hp=0`; banked in-play `runs/kirby_probe/kirby_stage1.state` → `stage=0 hp=6` |
+
+The step-2 command's three ingredients were each verified from David's exact CWD (env resolution +
+relative ROM path from the main checkout; worktree `record.py` + hotkeys + watch from a scratch
+CWD); only their composition was not run as one line, because that would have written a throwaway
+dir into `runs/`.
+
+## 6.3 AMENDED PRE-REGISTRATION — EX02 float-start probe (supersedes §3's start state/caps/artifacts; all else carries over)
+
+- **Start state:** David's human-captured Float Islands checkpoint (§6.1), verified `stage=2 hp>=5`
+  twice — the §6.1 step-8 one-liner at capture, `preflight.sh` at launch (which also pins its
+  sha256 into `preflight.ok`).
+- **Bar — frozen in code, cited not restated:** `eval/score_exam_kirby_stage3.py::STAGE_INDEX_TARGET`
+  (with `_MIN_CONSECUTIVE_ROWS`, `_MAX_STAGE_INDEX`, predicate `_kirby_stage3_success`). Scored
+  offline from `runs/probe_ex02_kirby_stage3_floatstart/world/oracle.jsonl` only.
+- **Tools:** exactly `explore, goto, observe, press_button, press_sequence, read_region, remember,
+  wait, whats_changed` (9); `KIRBY_SKILLS`/`KIRBY_CLAIMS` unset. Account-B `claude -p`.
+- **Brief:** Appendix A below, verbatim (= `launcher/CLAUDE.md`, the file the run copies in);
+  kickoff `-p` prompt pinned inside `run.sh`. Neither mentions the oracle, RAM, addresses, stage
+  indices, row counts, or the target value. The scorer reads `oracle.jsonl` only — never the
+  transcript — and the brief mandates no claim shapes, so the v3.1 regex-taint class cannot occur.
+- **Caps:** `--max-turns 150` (on hit: `subtype=error_max_turns`, score whatever exists);
+  `timeout 2400` s (on hit: exit 124, score whatever exists). Expected **$10–15** (§4 economics).
+  ⚠ **There is NO live spend kill switch on this path** — `LiveCreditGuard` is constructed only in
+  `tools/gate0_appserver_arm.py:1517` and `tools/gate0_appserver_launch.py:670`; the `claude -p`
+  harness never imports it. The two caps above are the ONLY bounds. Raising either = prereg
+  amendment, in this file, before launch.
+- **ONE attempt.** A completed run's verdict is banked whatever it says; INSUFFICIENT_DATA is a
+  verdict. Relaunch only on infra death before ~10 decisions (MCP never connected, container crash,
+  429) — §3's rule, unchanged. `run.sh` mechanically refuses a second launch (§6.5 F).
+- **Artifacts:** `runs/probe_ex02_kirby_stage3_floatstart/` (launcher copies, `preflight.ok`,
+  `world/`, `transcript.jsonl`, `run.err`, `run.exit`). Never under `runs/gate0_*`; no Gate-0
+  deviation slot consumed.
+- **Honesty clause 1 — what a PASS is:** the **first natural `2→3` increment ever observed**
+  (every prior `3` on record was written into memory). Inspect the run — frames + oracle rows
+  around the increment — before repeating the claim. It **bears on** the still-open
+  Stage-3→Stage-4 bound; whether it discharges that bound is David's call on inspection, not
+  automatic. It is **NOT a graduation-exam attempt**: the exam's overall pass bar is unset and its
+  own rule forbids attempting the battery before David's freeze.
+- **Honesty clause 2 — what a FAIL is:** from this start, `kirby_stage3_never_cleared_stage_3`
+  genuinely means "could not clear Float Islands on 150 turns from its start at full vitality."
+  The §5 objection (budget death two stages before the bar) does not apply. Bankable as the
+  EX02-item capability read at this budget.
+- **What a PASS does NOT license:** unchanged from §3 (no exam statement, no automatic bound
+  discharge, no general Kirby-competence claim from n=1).
+
+## 6.4 Launch runbook (each command below executed today except step 3's paid line)
+
+1. **Stage the launch dir** (PowerShell; first and only write into `runs/`; swap the state path
+   for David's verified checkpoint from §6.1 step 10):
+   ```powershell
+   $L = "E:\AI_Personas\10_pokemon_and_chess_and_office\ai-pokemon-red\runs\probe_ex02_kirby_stage3_floatstart"
+   $T = "E:\AI_Personas\10_pokemon_and_chess_and_office\wt-kirby-probe\reports\probes\2026-07-29-kirby-ex02-floatstart\launcher"
+   New-Item -ItemType Directory $L | Out-Null
+   Copy-Item "$T\CLAUDE.md","$T\run.sh","$T\preflight.sh" $L
+   (Get-Content "$T\mcp.json" -Raw).Replace("REPLACE_WITH_FLOAT_ISLANDS_STATE", "runs/2026-XX-XX_kirby_floatislands_human/checkpoint_NN.state") | Set-Content -NoNewline -Encoding ascii "$L\.mcp.json"
+   ```
+2. **Pre-flight, $0** (must print `PREFLIGHT: OK`; §6.5 lists what it checks):
+   `wsl.exe -u nvidia -- bash -c "bash /mnt/e/AI_Personas/10_pokemon_and_chess_and_office/ai-pokemon-red/runs/probe_ex02_kirby_stage3_floatstart/preflight.sh"`
+   Optional guard dry-run (also $0, must print `DRY_RUN OK`):
+   `wsl.exe -u nvidia -- bash -c "EX02_DRY_RUN=1 bash /mnt/e/AI_Personas/10_pokemon_and_chess_and_office/ai-pokemon-red/runs/probe_ex02_kirby_stage3_floatstart/run.sh"`
+3. **THE PAID LINE — the one command this doc exists for** (David's go; up to 40 min):
+   `wsl.exe -u nvidia -- bash -c "bash /mnt/e/AI_Personas/10_pokemon_and_chess_and_office/ai-pokemon-red/runs/probe_ex02_kirby_stage3_floatstart/run.sh"`
+4. Monitor, $0: `transcript.jsonl` growing; `run.err` PyBoy noise only; `world/frame_*.png` count
+   rising.
+5. On completion: `run.exit` (`EXIT=0`; `124` = wall timeout); last `transcript.jsonl` line is the
+   `type=result` event — **report `num_turns` and `total_cost_usd` to David, always**.
+6. Score offline (from a checkout carrying the frozen scorer — the #199 worktree today):
+   ```powershell
+   cd E:\AI_Personas\10_pokemon_and_chess_and_office\wt-kirby-probe
+   $env:UV_PROJECT_ENVIRONMENT=".venv-win"; $env:UV_NATIVE_TLS="true"
+   uv run --frozen python -m eval.score_exam_kirby_stage3 E:\AI_Personas\10_pokemon_and_chess_and_office\ai-pokemon-red\runs\probe_ex02_kirby_stage3_floatstart\world\oracle.jsonl
+   ```
+
+## 6.5 Pre-flight checklist — what `preflight.sh` gates, with today's rehearsal receipts
+
+Checks, in order (all $0; the world boot mounts `runs/` **read-only** and writes to a per-invocation
+`/tmp` scratch): launch dir populated (`.mcp.json` + `CLAUDE.md`) → placeholder resolved → the
+EXACT `--init-state` in `.mcp.json` exists under `runs/` → WSL `claude` binary, account-B dir,
+`gb-mcp-world:latest` present → world boots from that state, `tools/list` is exactly the 9 expected
+tools, one `observe` succeeds → the resulting oracle row has exactly the `hp`+`stage` keys with
+**`stage==2`** and `hp>=1` → the frozen scorer refuses a missing oracle (`INSUFFICIENT_DATA`) and
+does **not** PASS the pre-run trace → writes `preflight.ok` (sha256 of the state) which `run.sh`
+requires.
+
+Rehearsed today (test overrides, no `preflight.ok` written): **placeholder** dir → `PREFLIGHT: FAIL
+— placeholder` rc=1; **banked stage=0 state** → boots, `tools OK (9), observe OK`, then FAIL
+`stage=0 (want 2)` rc=1 — the gate discriminates; **synthetic stage=2 fixture** (banked state with
+the stage byte set to 2, scratch-only, never a run input) → `oracle row OK: {'hp': 6, 'stage': 2}`,
+`PREFLIGHT: OK` rc=0. `run.sh` guard chain walked A–F on a scratch copy: missing dir / missing
+`.mcp.json` / unresolved placeholder / missing `preflight.ok` → `REFUSING` rc=3; all green →
+`DRY_RUN OK` rc=0; prior `transcript.jsonl` present → one-attempt `REFUSING` rc=4. Scorer refusals
+also executed directly: missing file → `INSUFFICIENT_DATA`/`oracle_file_missing_or_malformed`;
+single pre-bar row → `FAIL_CAPABILITY`/`kirby_stage3_never_cleared_stage_3`.
+
+## Appendix A — the run brief, verbatim (= `reports/probes/2026-07-29-kirby-ex02-floatstart/launcher/CLAUDE.md`)
+
+```markdown
+# You are the brain playing Kirby's Dream Land (Game Boy)
+
+You play ONLY through the MCP tools below (server `kirby`). There is no other channel — no memory
+access, no source code, no files. What the tools return is everything you know about the world.
+There is no time pressure: the game waits for your next tool call.
+
+## What this is
+A single fixed-budget play session. The game is loaded from a MID-GAME save: Kirby is at the start
+of an island stage, alive, with full vitality. You play onward from exactly here — there is no
+title screen to get through.
+
+## HOW THIS WORLD READS (verified in prior sessions — trust these, they save runs)
+- **SIDE-SCROLLER.** The position/pose/walls part of `observe` is UNRELIABLE — walls data mislabels
+  ordinary step-ups as "walls", and pose drifts. **IGNORE pose/walls.** Trust instead: the entities
+  line, `read_region`, and `whats_changed`. Use `whats_changed` after a move to confirm the screen
+  actually scrolled / something changed.
+- **Kirby can FLOAT.** Press `up` (or tap `a` repeatedly) to puff up and float over gaps, pits, and
+  enemies — floating is your main tool for crossing hazards. Come back down when the hazard is
+  cleared.
+- **Inhale then act.** `b` inhales: suck in an enemy, then either spit it as a projectile (`b`
+  again) or swallow it (`down`). Inhale-then-spit is your main weapon; some bosses have their own
+  gimmick — observe a pattern before committing to it.
+- **Contact damage is INSTANT.** Touching an enemy or hazard costs vitality the moment you touch
+  it (brief invincibility after). Losing all vitality costs a life; running out of lives is game
+  over. Grab any food (health pickup) you see.
+- Step-ups: at a raised ledge, a short hop / float carries you up; if a `right` press does not
+  scroll (check `whats_changed`), try `up`/`a` to rise, then `right` again.
+
+## Tools (MCP server `kirby`)
+`observe` / `read_region` / `whats_changed` / `press_button` / `press_sequence` / `wait` /
+`remember` (also `explore` / `goto` generic helpers).
+- `press_sequence` (up to 16 buttons) covers ground fast where you are confident; `press_button` +
+  `whats_changed` is for reacting. `wait` lets a timed hazard or animation pass.
+- Log milestones with `remember`: stage entered, mini-boss/boss beaten, life lost, stage cleared.
+
+## ▶ YOUR TASK
+1. `observe` first. Confirm you have control: one small press, then `whats_changed`.
+2. **Clear the island stage you are in**: fight through it, defeat whatever blocks the way out,
+   and advance OUT of the stage. This is the priority.
+3. Whatever follows the clear — keep playing into it, as far as the budget allows.
+4. Stuck at one spot for many decisions? Change maneuver (float over it, inhale it, approach from
+   another side). Never repeat an input that has already failed twice unchanged.
+
+## Budget
+150 decisions for the whole session. Pace yourself — do not spend the budget proving one ledge.
+
+End by stating in ONE line how far you got: what you cleared, where you stopped, lives left.
+```
