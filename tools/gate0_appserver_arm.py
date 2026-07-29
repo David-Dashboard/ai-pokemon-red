@@ -134,8 +134,9 @@ eval/fixtures/gate0_paid_source_pins.json audit_paths.<arm>.transcript) is the A
 
 ADDITIVE ONLY: this module IMPORTS (never edits) tools/gate0_appserver_client.py,
 tools/gate0_appserver_launch.py, tools/gate0_credit_breaker.py, tools/gate0_codex_credit_rate.py,
-tools/check_gate0_codex.py. It never touches tools/run_gate0_codex.ps1, world_mcp.py, core/,
-games/, the brain, contracts, or any tool schema.
+tools/check_gate0_codex.py, and -- lazily, inside score_gate0_modes() -- eval/score_gate0.py's
+MODES map. It never touches tools/run_gate0_codex.ps1, world_mcp.py, core/, games/, the brain,
+contracts, or any tool schema.
 """
 from __future__ import annotations
 
@@ -296,10 +297,107 @@ def render_full_config_toml(brain_text: str, world_text: str) -> str:
     return brain_text + "\n" + world_text
 
 
+def score_gate0_modes() -> dict:
+    """`eval.score_gate0.MODES` -- the frozen scorer's own {mode: (seed_manifest, exact_seeds)} map.
+
+    Read from the scorer, NEVER re-declared here. This launcher and the scorer must agree about
+    which seed block a mode means, and the only way to make disagreement impossible (rather than
+    merely absent today) is to have exactly one declaration. Function-local import, matching
+    tools/capture_gate0_baseline_miniwob.py's identical tools->eval idiom (`from eval.score_gate0
+    import MODES` inside main), so nothing in eval/ is imported just by importing this module."""
+    from eval.score_gate0 import MODES
+    return MODES
+
+
+def source_pins_for(mode: str) -> dict:
+    """`eval.score_gate0.SOURCE_PIN_FILES[mode]`, parsed. Same one-declaration rule as
+    score_gate0_modes(): the scorer owns the mode->pins map, this launcher only reads it."""
+    from eval.score_gate0 import SOURCE_PIN_FILES
+    return json.loads(SOURCE_PIN_FILES[mode].read_text(encoding="utf-8"))
+
+
+def pinned_artifact_path(mode: str, key: str) -> Path:
+    """The absolute path `mode`'s source-pins fixture pins for `key` (red_human, miniwob_agent,
+    wake_boundary, ...), resolved EXACTLY as eval/score_gate0.py::_verify_sources resolves it --
+    relative entries against the scorer's own ROOT, absolute ones left alone, and NO symlink
+    resolution (`.resolve()`) on top, because the scorer applies none. Two independent resolutions
+    of the same pin would be a new drift source, which is the defect class this file is being fixed
+    for; the one caller that needs a symlink-resolved form (_validate_args, comparing against an
+    already-resolved --out-dir) resolves it at the comparison, where that asymmetry is visible.
+
+    Refuses through SystemExit, not a raw KeyError/JSONDecodeError/FileNotFoundError, so a broken
+    pins fixture surfaces the same way resolve_mode_seed_manifest's does -- one failure style for
+    every launch guard in this file (PR #192 adversarial review, G3)."""
+    try:
+        pinned = source_pins_for(mode)["artifact_paths"][key]
+    except Exception as exc:
+        raise SystemExit(f"refusing to launch: the {mode!r} source-pins fixture is unreadable or "
+                          f"has no artifact_paths.{key} ({exc!r}). eval/score_gate0.py::"
+                          "_verify_sources reads the same entry and would void the run.") from exc
+    from eval.score_gate0 import ROOT
+    path = Path(pinned)
+    return path if path.is_absolute() else ROOT / path
+
+
+def resolve_mode_seed_manifest(mode: str) -> Path:
+    """The seed manifest `mode` pins, verified against the scorer's own exact seed list AND against
+    the byte digest that mode's source-pins fixture already freezes.
+
+    THE GUARD IS THE POINT, not a nicety. Before this, build_docker_mcp_args hardwired the
+    paid_gate0 manifest for every mode, so a Gate 0 v2 launch would have played the SPENT
+    1000..1004 block and been void at scoring -- after the money was gone. Failing loudly HERE, at
+    launch, on any launcher/scorer disagreement is the root-cause fix; picking the right file today
+    is only the symptom fix. Same cross-contamination guard tools/capture_gate0_baseline_miniwob.py
+    already applies on the human-replay side.
+
+    BOTH checks, in this order, deliberately. The contents comparison names the offending values,
+    which is the error message an operator can act on -- but Python's `==` is type-blind across
+    int/float/bool, so `[417545.0, ...]` and `[false, true, 2, 3, 4]` both compare EQUAL to the
+    frozen lists and launched under a contents-only guard (PR #192 adversarial review, F3). The
+    sha256 comparison against `frozen_seed_sha256` is byte-exact and is the SAME test
+    eval/score_gate0.py::_verify_sources applies at scoring (`frozen_seed_hash`), so the launcher
+    now refuses at launch exactly what the scorer would have voided after the money was spent.
+
+    NOT a TOCTOU guard: the manifest is read here and mounted by docker later, so a local writer
+    could swap it in between. That requires write access to the repo, which is strictly more than
+    this guard is scoped to defend against. Arm R returns before build_docker_mcp_args reaches this
+    function at all (it takes a pinned savestate, not seeds), so on the Red arm `--mode` is
+    validated by argparse's `choices` and nothing further."""
+    seed_path, expected_seeds = score_gate0_modes()[mode]
+    try:
+        on_disk = json.loads(Path(seed_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SystemExit(f"refusing to launch: the {mode!r} seed manifest {seed_path} is "
+                          f"unreadable ({exc}).") from exc
+    if on_disk != expected_seeds:
+        raise SystemExit(f"refusing to launch: {seed_path} does not match the frozen {mode!r} seed "
+                          f"manifest in eval.score_gate0.MODES (expected {expected_seeds}, got "
+                          f"{on_disk}). A launch on the wrong seed block is void at scoring.")
+    try:
+        pinned_digest = source_pins_for(mode)["frozen_seed_sha256"]
+    except Exception as exc:
+        raise SystemExit(f"refusing to launch: the {mode!r} source-pins fixture is unreadable or "
+                          f"has no frozen_seed_sha256 ({exc}).") from exc
+    actual_digest = _sha256_file(Path(seed_path))
+    if pinned_digest != actual_digest:
+        raise SystemExit(f"refusing to launch: {seed_path} is byte-different from the {mode!r} "
+                          f"frozen_seed_sha256 pin (pinned {pinned_digest}, got {actual_digest}). "
+                          "The decoded values compared equal, so this is a type/encoding-level "
+                          "difference -- eval/score_gate0.py would void the run as "
+                          "`frozen_seed_hash`.")
+    return Path(seed_path)
+
+
 def build_docker_mcp_args(arm: str, image_id: str, world_dir: Path,
-                           repo_root: Path = REPO_ROOT) -> list[str]:
+                           repo_root: Path = REPO_ROOT, *, mode: str) -> list[str]:
     """Exact per-arm docker invocation from tools/run_gate0_codex.ps1's $McpArgs (BY IMMUTABLE
-    IMAGE ID, never a mutable tag)."""
+    IMAGE ID, never a mutable tag).
+
+    `mode` is keyword-only and has NO default on purpose (see build_arg_parser's --mode): Arm W's
+    seed manifest is derived from it, and a default would silently reinstate the exact trap this
+    argument exists to close. Arm R takes a pinned savestate, not seeds, so `mode` does not reach
+    its docker line at all -- it is still required there so there is exactly one call shape and no
+    caller can be "the one that forgot"."""
     if arm == "red":
         roms = repo_root / "roms"
         state = repo_root / "runs" / "red_start.state"
@@ -310,7 +408,11 @@ def build_docker_mcp_args(arm: str, image_id: str, world_dir: Path,
                 image_id, "--game", "pokemon_red", "--init-state", "/app/red_start.state",
                 "--out", "/app/world", "--keep-frames"]
     if arm == "miniwob":
-        seeds = repo_root / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json"
+        # Was `repo_root / "eval" / "fixtures" / "gate0_miniwob_paid_seeds.json"`. The path now
+        # comes from the scorer's own manifest, so it is anchored at eval.score_gate0.ROOT rather
+        # than `repo_root` -- both are this repository's root, so for --mode paid_gate0 the rendered
+        # mount string is byte-identical to the old hardcode (asserted in the tests).
+        seeds = resolve_mode_seed_manifest(mode)
         return ["run", "-i", "--rm", "--network", "none",
                 "--mount", f"type=bind,source={seeds},target=/app/seeds.json,readonly",
                 "--mount", f"type=bind,source={world_dir.resolve()},target=/app/world",
@@ -894,10 +996,32 @@ def build_agent_metrics(*, arm: str, mode: str, wall_clock_s: float, primitive_a
     }
 
 
+def wake_boundary_path_for(out_dir: Path) -> Path:
+    """WHERE a real run's wake_boundary.json goes, given the arm's --out-dir.
+
+    One directory ABOVE the arm out-dir, because it is a per-ATTEMPT, cross-ARM artifact: both arms
+    of one attempt write the same file. For the pre-registered `<attempt>/<arm>` convention that
+    reproduces v1's removed hardcode exactly (runs/gate0_paid/red -> runs/gate0_paid/wake_boundary
+    .json) and lands v2's at runs/gate0_paid_v2/wake_boundary.json, which is what each mode's
+    source-pins `artifact_paths.wake_boundary` already pins -- pinned mechanically by
+    test_wake_boundary_path_matches_each_modes_pinned_artifact_path, which calls THIS function.
+
+    A named function rather than an inline `out_dir.parent` (PR #192 adversarial review, F4) so the
+    derivation has exactly one definition that a test can call; asserting the relationship over
+    fixture arithmetic alone survives a regression of the derivation itself. `out_dir` is bound to
+    the mode's pre-registered arm directory by _validate_args on the real-run path, so the parent
+    cannot escape the attempt tree."""
+    return out_dir.parent / "wake_boundary.json"
+
+
 def ensure_wake_boundary_artifact(path: Path) -> dict:
-    """Writes runs/gate0_paid/wake_boundary.json (schema_version 1, kind exact_wake_boundary,
-    status DEFERRED) if it does not already exist -- shared across BOTH arms, never overwritten by
-    the second arm's launch. `status` is "DEFERRED" (reported, never gated -- eval/score_gate0.py
+    """Writes the caller's wake_boundary.json (schema_version 1, kind exact_wake_boundary, status
+    DEFERRED) if it does not already exist -- shared across BOTH arms of one attempt, never
+    overwritten by the second arm's launch. The path is the CALLER's to choose and is derived from
+    --out-dir (`wake_boundary_path_for`), so it lands at the attempt directory each
+    mode's source-pins fixture pins -- runs/gate0_paid/wake_boundary.json for paid_gate0,
+    runs/gate0_paid_v2/wake_boundary.json for paid_gate0_v2 -- and never in a tree the launch was
+    not pointed at. `status` is "DEFERRED" (reported, never gated -- eval/score_gate0.py
     reads this structurally only), matching the project-wide 2026-07-21 wake-grounding amendment;
     unaffected by the exec->app-server transport change."""
     if path.is_file():
@@ -948,6 +1072,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--arm", required=True, choices=("red", "miniwob"))
     p.add_argument("--out-dir", required=True)
+    # REQUIRED, NO DEFAULT -- deliberate, and not negotiable for convenience. A default of
+    # "paid_gate0" would preserve exactly the trap this flag closes: someone launching Gate 0 v2
+    # omits the flag, gets a full-price run on the SPENT 1000..1004 seeds stamped with the wrong
+    # mode, and finds out only at scoring, after the money is gone. Choices come from the frozen
+    # scorer's own MODES map, so the launcher can never offer a mode the scorer cannot score.
+    # Three things derive from this one flag and can therefore never disagree with each other:
+    # Arm W's seed manifest (build_docker_mcp_args), agent_metrics.json's `mode` stamp (which
+    # eval/score_gate0.py::_verify_sources checks as `agent_metric_identity:<arm>`), and -- with
+    # --out-dir -- where wake_boundary.json lands.
+    p.add_argument("--mode", required=True, choices=tuple(score_gate0_modes()),
+                    help="which pre-registered Gate 0 mode this launch belongs to; selects the "
+                         "frozen seed manifest and stamps agent_metrics.json. No default: an "
+                         "unstated mode is a void run.")
     p.add_argument("--model", default=None, help="explicit model id; required for a real run.")
     p.add_argument("--dry-run", action="store_true",
                     help="$0: in-process multi-call stub peer, no codex/docker spawned.")
@@ -998,12 +1135,66 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     # source), the exact bug class the exec path's Confirm-PaidExecSignature guards against and this
     # launcher did not. Force it absolute once, here, before any other code reads args.out_dir.
     args.out_dir = str(Path(args.out_dir).resolve())
+    # 2026-07-28 fix (adversarial review of PR #192, F2). The wake boundary is the ONE artifact this
+    # launcher writes OUTSIDE out_dir (out_dir.parent, because both arms of one attempt share it),
+    # so a wrong --out-dir is the only input that can make a write ESCAPE the tree the launch was
+    # pointed at -- `--out-dir runs/gate0_paid_v2` drops a new wake_boundary.json at the top of the
+    # append-only runs/ tree, a bare relative path drops one in the repo root. Every other artifact
+    # lands inside out_dir, where a wrong value is self-contained; that asymmetry is why "a wrong
+    # --out-dir is already fatal for everything else" does not cover this one.
+    #
+    # VALIDATE-AND-REFUSE, not derive-from-the-pin. Deriving the wake path from
+    # SOURCE_PIN_FILES[mode] would reinstate the exact defect this PR removed: a launch pointed at a
+    # scratch directory would once again reach into runs/gate0_paid_v2/ uninvited. Binding out_dir
+    # ITSELF bounds the wake boundary AND every other artifact, with one refusal, before any spend.
+    #
+    # REAL RUNS ONLY. --dry-run and --seam-check are $0 rehearsals that legitimately run into
+    # tmp_path/scratch dirs (this build's own tests do exactly that), and a --dry-run writes its
+    # wake boundary INSIDE out_dir anyway, so it cannot escape.
+    #
+    # BOTH SIDES ARE SYMLINK-RESOLVED HERE, and only here. args.out_dir was just forced through
+    # Path.resolve() above, so the pinned side must be too or a repository whose path contains a
+    # symlink/junction ANYWHERE above runs/ would refuse every legitimate launch. Residual, measured
+    # rather than assumed (PR #192 adversarial review, G1): a junction at the LEAF arm directory
+    # itself (`mklink /J runs/<attempt>/<arm> elsewhere`, no admin needed) resolves both sides to the
+    # same target, so this guard accepts and the wake boundary lands at that target's parent --
+    # outside the attempt tree. It is left standing deliberately: creating it needs local write
+    # access to the repo, which is strictly more than any guard in this file defends against (see
+    # resolve_mode_seed_manifest's TOCTOU note -- an actor with that access can write the wake
+    # boundary anywhere directly), and it fails CLOSED at scoring, because _verify_sources then reads
+    # artifact_paths.wake_boundary at the un-resolved pinned location and reports
+    # `source_unreadable:wake_boundary`. Ancestor junctions are harmless: both sides resolve through
+    # them to the same file. What this guard exists to catch is operator error in --out-dir, and it
+    # catches all of it.
+    if real_run:
+        pinned_out_dir = pinned_artifact_path(args.mode, f"{args.arm}_agent").parent.resolve()
+        if Path(args.out_dir) != pinned_out_dir:
+            parser.error(
+                f"--out-dir must be the directory {args.mode!r} pre-registers for arm "
+                f"{args.arm!r}: {pinned_out_dir} (got {args.out_dir}). It is the parent of "
+                f"artifact_paths.{args.arm}_agent in that mode's source-pins fixture, and "
+                "wake_boundary.json is written one level ABOVE it -- an out-dir off that shape "
+                "writes the wake boundary outside the attempt tree.")
 
 
-def _default_human_metrics_path(arm: str) -> Path:
-    if arm == "red":
-        return REPO_ROOT / "runs" / "gate0_human_baseline" / "red" / "human_metrics.json"
-    return REPO_ROOT / "runs" / "gate0_paid_human_baseline" / "miniwob" / "human_metrics.json"
+def _default_human_metrics_path(arm: str, mode: str) -> Path:
+    """The human baseline `mode` pins for `arm`, read from that mode's OWN source-pins fixture.
+
+    Was mode-blind (PR #192 adversarial review, F1): it hardcoded v1's
+    runs/gate0_paid_human_baseline/miniwob/ for every mode, while paid_gate0_v2 pins
+    runs/gate0_paid_v2_human_baseline/miniwob/ (prereg P1a) and
+    tools/capture_gate0_baseline_miniwob.py's MODE_CONFIG already routes the CAPTURE side there.
+    So the launcher was the one peer of that pair that was not mode-aware.
+
+    Not verdict-gating -- eval/score_gate0.py::_verify_sources reads the human numbers from the
+    human file at the PINNED path, never from agent_metrics.json. It is a PROVENANCE defect: a v2
+    agent_metrics.json would have banked `human_source_note: "copied from .../gate0_paid_human_
+    baseline/..."`, i.e. v1's denominator named inside a v2 record, in an append-only artifact.
+
+    For paid_gate0 both arms' pins are byte-identical to the removed hardcodes
+    (red -> runs/gate0_human_baseline/red/, miniwob -> runs/gate0_paid_human_baseline/miniwob/),
+    so v1 behaviour is unchanged -- asserted in the tests."""
+    return pinned_artifact_path(mode, f"{arm}_human")
 
 
 def _run_seam_check(args: argparse.Namespace, out_dir: Path) -> dict:
@@ -1027,7 +1218,7 @@ def _run_seam_check(args: argparse.Namespace, out_dir: Path) -> dict:
     if args.with_tools_list:
         world_dir = out_dir / "world"
         world_dir.mkdir(parents=True, exist_ok=True)
-        mcp_args = build_docker_mcp_args(arm, ARM_IMAGE_IDS[arm], world_dir)
+        mcp_args = build_docker_mcp_args(arm, ARM_IMAGE_IDS[arm], world_dir, mode=args.mode)
         try:
             tools = docker_tools_list(docker_path, mcp_args)
             observed_names = [t.get("name") for t in tools]
@@ -1115,8 +1306,14 @@ def _run_dry_run(args: argparse.Namespace, out_dir: Path) -> dict:
 
     audit_result = audit(out_dir / "transcript.jsonl", receipt_path, expected_path, artifacts_dir, arm)
 
+    # args.mode, not "dry_run": the human baseline a rehearsal reads is the one belonging to the
+    # mode being rehearsed. Only the STAMP below is forced to "dry_run".
     human_path = (Path(args.human_metrics_path) if args.human_metrics_path
-                  else _default_human_metrics_path(arm))
+                  else _default_human_metrics_path(arm, args.mode))
+    # Stamped "dry_run", NEVER args.mode: a $0 rehearsal must stay structurally unmistakable for a
+    # real gate artifact. --mode is still required for a dry run (it is what the rehearsal is a
+    # rehearsal OF, and --seam-check --with-tools-list genuinely needs it to pick the seed mount),
+    # but it must not leak into a metrics record eval/score_gate0.py would accept as an arm's own.
     agent_metrics = build_agent_metrics(
         arm=arm, mode="dry_run", wall_clock_s=wall_clock_s,
         primitive_actions=audit_result["primitive_action_events"],
@@ -1145,8 +1342,8 @@ def resolve_isolated_codex_home(explicit: str | None, out_dir: Path) -> str:
 
 
 def _finalize_real_run(*, receipt: dict, receipt_path: Path, transcript_path: Path, out_dir: Path,
-                        arm: str, wall_clock_s: float, credits_result: dict, rate_pin: dict,
-                        watcher: SoftCapWatcher, auth_note: str, model: str,
+                        arm: str, mode: str, wall_clock_s: float, credits_result: dict,
+                        rate_pin: dict, watcher: SoftCapWatcher, auth_note: str, model: str,
                         human_path: Path) -> dict:
     """Post-turn scoring + artifact-writing, factored out of _run_real so the ordering fix below is
     independently testable without a real codex/docker launch.
@@ -1190,13 +1387,23 @@ def _finalize_real_run(*, receipt: dict, receipt_path: Path, transcript_path: Pa
                           else credits_result.get("credits_at_trip", 0.0)) or 0.0
     cost_usd = normalized_credits / rate_pin["credits_per_usd"] if rate_pin["credits_per_usd"] else 0.0
 
+    # Was mode="paid_gate0", hardwired. eval/score_gate0.py::_verify_sources requires this stamp to
+    # EQUAL the mode being scored, so a hardwired stamp fails `agent_metric_identity:<arm>` for
+    # every non-v1 run -- i.e. the run is void, discovered only at scoring.
     agent_metrics = build_agent_metrics(
-        arm=arm, mode="paid_gate0", wall_clock_s=wall_clock_s,
+        arm=arm, mode=mode, wall_clock_s=wall_clock_s,
         primitive_actions=audit_result["primitive_action_events"], cost_usd=cost_usd,
         normalized_credits=normalized_credits, human_metrics_path=human_path)
     _write_json(out_dir / "agent_metrics.json", agent_metrics)
-    wake_boundary_path = REPO_ROOT / "runs" / "gate0_paid" / "wake_boundary.json"
-    ensure_wake_boundary_artifact(wake_boundary_path)
+    # Was REPO_ROOT/"runs"/"gate0_paid"/"wake_boundary.json", written unconditionally -- so ANY run
+    # through this launcher (v2, a scratch out-dir, the test suite) reached into v1's banked tree
+    # uninvited. It is a per-attempt, cross-ARM artifact: both arms of one attempt write the same
+    # file, one directory ABOVE their own <attempt>/<arm>/ out-dirs. Deriving it from --out-dir's
+    # parent keeps that sharing, stops the reach into runs/, and reproduces the old path EXACTLY for
+    # the pinned v1 convention (--out-dir runs/gate0_paid/<arm> -> runs/gate0_paid/wake_boundary.json)
+    # while landing v2's at runs/gate0_paid_v2/wake_boundary.json, which is what
+    # eval/fixtures/gate0_paid_v2_source_pins.json's artifact_paths.wake_boundary already pins.
+    ensure_wake_boundary_artifact(wake_boundary_path_for(out_dir))
 
     run_receipt = {
         "schema_version": 1, "kind": "gate0_appserver_arm_run_receipt", "arm": arm,
@@ -1252,7 +1459,7 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
     if host_code != image_code:
         raise SystemExit("world image is stale: host/image code parity check failed.")
 
-    mcp_args = build_docker_mcp_args(arm, observed_image_id, world_dir)
+    mcp_args = build_docker_mcp_args(arm, observed_image_id, world_dir, mode=args.mode)
     enabled_tools = TOOLS[arm]
     overrides = build_overrides(model=args.model, mcp_server_name=SERVER_NAME,
                                  mcp_command="docker", mcp_args=mcp_args, mcp_cwd=str(REPO_ROOT),
@@ -1351,12 +1558,12 @@ def _run_real(args: argparse.Namespace, out_dir: Path) -> dict:
     write_jsonl(transcript_path, adapted)
 
     human_path = (Path(args.human_metrics_path) if args.human_metrics_path
-                  else _default_human_metrics_path(arm))
+                  else _default_human_metrics_path(arm, args.mode))
     finalized = _finalize_real_run(
         receipt=receipt, receipt_path=receipt_path, transcript_path=transcript_path,
-        out_dir=out_dir, arm=arm, wall_clock_s=wall_clock_s, credits_result=(guard.result or {}),
-        rate_pin=rate_pin, watcher=watcher, auth_note=auth_note, model=args.model,
-        human_path=human_path)
+        out_dir=out_dir, arm=arm, mode=args.mode, wall_clock_s=wall_clock_s,
+        credits_result=(guard.result or {}), rate_pin=rate_pin, watcher=watcher,
+        auth_note=auth_note, model=args.model, human_path=human_path)
     return {"receipt": receipt, **finalized}
 
 
